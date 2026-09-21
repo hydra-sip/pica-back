@@ -798,7 +798,7 @@ components:
             eliminado: {type: boolean}
             eliminadoEn: {type: [string, 'null'], format: date-time}
             creadoEn: {type: string, format: date-time}
-            actualizadoEn: {type: [string, 'null'], format: date-time}
+            modificadoEn: {type: [string, 'null'], format: date-time}
             usuario: {oneOf: [{$ref: '#/components/schemas/UsuarioMinimo'}, {type: 'null'}], description: 'Vinculado, o null'}
     PersonaRequest:
       type: object
@@ -863,7 +863,7 @@ components:
         persona: {$ref: '#/components/schemas/PersonaDatos'}
         roles: {type: array, items: {$ref: '#/components/schemas/RolMinimo'}}
         creadoEn: {type: string, format: date-time}
-        actualizadoEn: {type: [string, 'null'], format: date-time}
+        modificadoEn: {type: [string, 'null'], format: date-time}
     UsuarioCreateRequest:
       type: object
       required: [username, email, passwordTemporal, personaId, roles]
@@ -914,7 +914,7 @@ components:
             permisos: {type: array, items: {$ref: '#/components/schemas/CodigoPermiso'}}
             eliminadoEn: {type: [string, 'null'], format: date-time}
             creadoEn: {type: string, format: date-time}
-            actualizadoEn: {type: [string, 'null'], format: date-time}
+            modificadoEn: {type: [string, 'null'], format: date-time}
     RolRequest:
       type: object
       required: [nombre, nombreAmigable]
