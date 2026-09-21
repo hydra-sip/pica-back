@@ -1,0 +1,937 @@
+# Contrato de la API de PICA – Entrega 2 (Sprint 1, épica PICA-1).
+#
+# Fuente de verdad entre pica-back y pica-web. El que necesita cambiar algo lo cambia
+# PRIMERO acá, avisa en el grupo y después toca código. Con esto Salvador arma los mocks
+# de MSW sin esperar a que exista el endpoint.
+#
+# Cada operación dice qué subtarea la implementa (x-jira), quién (x-owner) y, en /admin,
+# qué permiso exige (x-permiso). Los códigos de error están todos en schemas.CodigoError.
+# Para verlo con interfaz: pegarlo en https://editor.swagger.io
+#
+# Decisiones tomadas acá que hay que confirmar en el grupo:
+#   1. Refresh token en el body; el front lo guarda en localStorage (PICA-130).
+#   2. Ids numéricos (bigserial). Si V1 usa UUID, se cambia el schema Id.
+#   3. Rol con `nombre` técnico en mayúsculas (SUPER_USUARIO) y `nombreAmigable` para mostrar.
+#   4. Página con spring.data.web.pageable.serialization-mode=via_dto (setearlo en application.yml).
+#   5. Login de usuario eliminado responde CREDENCIALES_INVALIDAS, no se revela que existió.
+
+openapi: 3.1.0
+
+info:
+  title: PICA API
+  version: 0.2.0
+  description: |
+    Backend `pica-back`, módulo de usuarios (registro, sesión, perfil, backoffice).
+
+    **Convenciones**
+    - Todo bajo `/api/v1`. `Authorization: Bearer <access token>` salvo lo marcado `security: []`.
+    - Errores en `application/problem+json` (RFC 9457) con un campo `codigo` (ver `ProblemDetail`).
+    - Para no repetirlos en cada operación: todo endpoint autenticado puede responder
+      **401** (`NO_AUTENTICADO`, `TOKEN_INVALIDO`, `TOKEN_VENCIDO`), todo `/admin` **403**
+      `SIN_PERMISO`, todo `{id}` **404** (`USUARIO_NO_ENCONTRADO`, `PERSONA_NO_ENCONTRADA`,
+      `ROL_NO_ENCONTRADO`), y todo request con body **400** `VALIDACION`.
+      Abajo solo figuran los errores con código propio de cada operación.
+    - Fechas ISO-8601: `date` = `YYYY-MM-DD`, `date-time` = UTC.
+    - Baja lógica en todo: lo eliminado no sale en listados salvo `incluirEliminados=true`,
+      y viene con `eliminado: true`.
+
+servers:
+  - {url: 'http://localhost:8080', description: Local}
+  - {url: 'https://PENDIENTE.up.railway.app', description: Staging (completar cuando esté T3)}
+
+tags:
+  - {name: Auth, description: 'Registro, verificación, login, refresh, Google. HU-101/102, Mateo.'}
+  - {name: Perfil, description: 'Datos del usuario logueado. HU-103, Laura.'}
+  - {name: Admin – Usuarios, description: 'ABM de usuarios. HU-101, Laura. Roles de un usuario: HU-105, Tomás.'}
+  - {name: Admin – Personas, description: 'ABM de personas. HU-104, Laura.'}
+  - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  # --- Auth --------------------------------------------------------------------
+
+  /api/v1/auth/registro:
+    post:
+      tags: [Auth]
+      summary: Registro autoservicio
+      x-jira: PICA-112
+      x-owner: Mateo
+      security: []
+      description: >-
+        Crea la persona (o la vincula si ya existe una activa con ese documento) y el usuario
+        PARTICIPANTE en `PENDIENTE_VERIFICACION`. Manda el mail de verificación (en dev lo loguea).
+        Por dentro: `UsuarioService.crear(NuevoUsuario.autoRegistro(...))`.
+        409: `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`.
+      requestBody: {$ref: '#/components/requestBodies/Registro'}
+      responses:
+        '201': {description: Creado, content: {application/json: {schema: {$ref: '#/components/schemas/IdResponse'}}}}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/auth/verificar:
+    get:
+      tags: [Auth]
+      summary: Verificar correo (link del mail)
+      x-jira: PICA-113
+      x-owner: Mateo
+      security: []
+      description: >-
+        Token de un solo uso, dura 24 h. El usuario pasa a `ACTIVO`.
+        400: `TOKEN_INVALIDO`, `TOKEN_EXPIRADO`, `TOKEN_USADO`.
+      parameters:
+        - {name: token, in: query, required: true, schema: {type: string}}
+      responses:
+        '204': {description: 'Verificado, ya puede loguearse'}
+        '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/auth/reenviar-verificacion:
+    post:
+      tags: [Auth]
+      summary: Reenviar mail de verificación
+      x-jira: PICA-113
+      x-owner: Mateo
+      security: []
+      description: Responde 202 siempre, exista o no el mail, para no revelar qué correos están registrados.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [email], properties: {email: {$ref: '#/components/schemas/Email'}}}}}
+      responses:
+        '202': {description: 'Si correspondía, se envió'}
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Iniciar sesión
+      x-jira: PICA-118
+      x-owner: Mateo
+      security: []
+      description: >-
+        Username o email en el mismo campo. Access dura 15 min, refresh 7 días.
+        401 `CREDENCIALES_INVALIDAS` (no existe, clave incorrecta o eliminado).
+        403 `EMAIL_NO_VERIFICADO`, `USUARIO_BLOQUEADO`.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}}
+      responses:
+        '200': {$ref: '#/components/responses/Tokens'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Renovar tokens (rotación)
+      x-jira: PICA-118
+      x-owner: Mateo
+      security: []
+      description: >-
+        Devuelve un par nuevo y revoca el refresh usado. Si se reutiliza uno ya rotado se revoca
+        toda la familia. 401 `REFRESH_INVALIDO` o `REFRESH_REUTILIZADO`; el front en ambos casos
+        limpia la sesión y va al login.
+      requestBody: {$ref: '#/components/requestBodies/Refresh'}
+      responses:
+        '200': {$ref: '#/components/responses/Tokens'}
+        '401': {$ref: '#/components/responses/Error'}
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Cerrar sesión
+      x-jira: PICA-118
+      x-owner: Mateo
+      security: []
+      description: Revoca el refresh que se manda. No pide Authorization así funciona aunque el access haya vencido.
+      requestBody: {$ref: '#/components/requestBodies/Refresh'}
+      responses:
+        '204': {description: Cerrada (también si ya estaba revocado)}
+
+  /api/v1/auth/exchange:
+    post:
+      tags: [Auth]
+      summary: Canjear el código del login con Google
+      x-jira: PICA-120
+      x-owner: Mateo
+      security: []
+      description: >-
+        Flujo: el front manda el navegador a `GET /oauth2/authorization/google` (Spring Security);
+        Google vuelve a `/login/oauth2/code/google`; el backend busca por `google_sub`, después por
+        email, si no existe crea con `NuevoUsuario.desdeGoogle()` (persona sin documento, ACTIVO,
+        mail verificado) y redirige a `{APP_WEB_URL}/oauth/callback?code=`. El front canjea ese
+        código acá. Dura 60 s, un solo uso. El JWT nunca va en la URL. 400 `CODIGO_INVALIDO`.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [code], properties: {code: {type: string}}}}}
+      responses:
+        '200': {$ref: '#/components/responses/Tokens'}
+        '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/auth/public-key:
+    get:
+      tags: [Auth]
+      summary: Clave pública (PEM)
+      x-jira: PICA-119
+      x-owner: Mateo
+      security: []
+      responses:
+        '200': {description: Clave RSA pública, content: {text/plain: {schema: {type: string}}}}
+
+  /.well-known/jwks.json:
+    get:
+      tags: [Auth]
+      summary: JWKS
+      x-jira: PICA-119
+      x-owner: Mateo
+      security: []
+      responses:
+        '200': {description: Conjunto de claves, content: {application/json: {schema: {type: object, properties: {keys: {type: array, items: {type: object}}}}}}}
+
+  # --- Perfil propio -----------------------------------------------------------
+
+  /api/v1/me:
+    get:
+      tags: [Perfil]
+      summary: Quién soy
+      x-jira: PICA-121
+      x-owner: Laura
+      description: >-
+        El front lo llama apenas tiene token: con `permisos` decide el menú y con `datosCompletos`
+        el banner "Completá tus datos" (true cuando hay documento, fecha de nacimiento, domicilio
+        y teléfono; un usuario de Google arranca en false).
+      responses:
+        '200': {$ref: '#/components/responses/Me'}
+    put:
+      tags: [Perfil]
+      summary: Editar mis datos de persona
+      x-jira: PICA-121
+      x-owner: Laura
+      description: >-
+        Email y username no se editan en la E2. El documento se carga solo si estaba vacío
+        (409 `DOCUMENTO_NO_EDITABLE`); si ya es de otra persona, 409 `DOCUMENTO_DUPLICADO`.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/MeUpdateRequest'}}}
+      responses:
+        '200': {$ref: '#/components/responses/Me'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/me/password:
+    put:
+      tags: [Perfil]
+      summary: Cambiar mi contraseña
+      x-jira: PICA-122
+      x-owner: Laura
+      description: >-
+        Pide la actual salvo que el usuario no tenga (Google): el front lo sabe por
+        `usuario.tieneContrasena`. Revoca todos los refresh tokens, así que el front vuelve a
+        loguear. 400 `PASSWORD_ACTUAL_INCORRECTA`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [passwordNueva]
+              properties:
+                passwordActual: {type: string, format: password}
+                passwordNueva: {$ref: '#/components/schemas/Password'}
+      responses:
+        '204': {description: 'Cambiada, volver a iniciar sesión'}
+        '400': {$ref: '#/components/responses/Error'}
+
+  # --- Admin: usuarios ---------------------------------------------------------
+
+  /api/v1/admin/usuarios:
+    get:
+      tags: [Admin – Usuarios]
+      summary: Listar usuarios
+      x-jira: PICA-114
+      x-owner: Laura
+      x-permiso: USUARIO_VER
+      description: '`q` busca en username, email, apellido y número de documento. Los filtros se combinan con AND.'
+      parameters:
+        - {$ref: '#/components/parameters/q'}
+        - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoUsuario'}}
+        - {name: rol, in: query, description: Id del rol, schema: {$ref: '#/components/schemas/Id'}}
+        - {$ref: '#/components/parameters/incluirEliminados'}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+        - {$ref: '#/components/parameters/sort'}
+      responses:
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageUsuarioResumen'}}}}
+    post:
+      tags: [Admin – Usuarios]
+      summary: Alta por administrador
+      x-jira: PICA-115
+      x-owner: Laura
+      x-permiso: USUARIO_CREAR
+      description: >-
+        La persona tiene que existir: se manda `personaId` (la pantalla la busca en
+        `GET /admin/personas?q=` y si no está la crea). Nace ACTIVO con el mail verificado.
+        Por dentro: `UsuarioService.crear(NuevoUsuario.porAdmin(...))`.
+        404 `PERSONA_NO_ENCONTRADA`, `ROL_NO_ENCONTRADO`.
+        409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`, `ROL_INACTIVO`.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/UsuarioCreateRequest'}}}
+      responses:
+        '201': {$ref: '#/components/responses/Usuario'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/admin/usuarios/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Admin – Usuarios]
+      summary: Ver un usuario
+      x-jira: PICA-115
+      x-owner: Laura
+      x-permiso: USUARIO_VER
+      description: Incluye eliminados, para poder reactivarlos desde la ficha.
+      responses:
+        '200': {$ref: '#/components/responses/Usuario'}
+    put:
+      tags: [Admin – Usuarios]
+      summary: Modificar un usuario
+      x-jira: PICA-116
+      x-owner: Laura
+      x-permiso: USUARIO_EDITAR
+      description: >-
+        Se mandan todos los campos. Los roles van por su propio endpoint porque exigen otro permiso.
+        403 `USUARIO_PROTEGIDO` (el Admin del sistema).
+        409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/UsuarioUpdateRequest'}}}
+      responses:
+        '200': {$ref: '#/components/responses/Usuario'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Admin – Usuarios]
+      summary: Baja lógica
+      x-jira: PICA-116
+      x-owner: Laura
+      x-permiso: USUARIO_ELIMINAR
+      description: >-
+        Marca `eliminado_en` y revoca sus refresh tokens: no puede loguearse ni renovar.
+        Idempotente. 403 `USUARIO_PROTEGIDO`.
+      responses:
+        '204': {description: Dado de baja}
+        '403': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/usuarios/{id}/reactivar:
+    post:
+      tags: [Admin – Usuarios]
+      summary: Reactivar
+      x-jira: PICA-116
+      x-owner: Laura
+      x-permiso: USUARIO_ELIMINAR
+      description: Limpia `eliminado_en`; conserva roles y estado.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200': {$ref: '#/components/responses/Usuario'}
+
+  /api/v1/admin/usuarios/{id}/password:
+    put:
+      tags: [Admin – Usuarios]
+      summary: Resetear contraseña
+      x-jira: PICA-116
+      x-owner: Laura
+      x-permiso: USUARIO_EDITAR
+      description: El admin define una temporal y se la pasa por fuera. Revoca los refresh tokens. 403 `USUARIO_PROTEGIDO`.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [password], properties: {password: {$ref: '#/components/schemas/Password'}}}}}
+      responses:
+        '204': {description: Reemplazada}
+        '403': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/usuarios/{id}/roles:
+    put:
+      tags: [Admin – Usuarios]
+      summary: Reemplazar los roles de un usuario
+      x-jira: PICA-127
+      x-owner: Tomás
+      x-permiso: ROL_ASIGNAR
+      description: >-
+        Lista completa, reemplaza (vacía = sin roles). Revoca los refresh tokens del usuario para que
+        el próximo login traiga los permisos nuevos.
+        403 `USUARIO_PROTEGIDO` (sacarle SUPER_USUARIO al Admin), `ULTIMO_ASIGNADOR` (sacarse uno
+        mismo el último rol con ROL_ASIGNAR). 404 `ROL_NO_ENCONTRADO`.
+        409 `ROL_INACTIVO`, `USUARIO_NO_ACTIVO`.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [roles], properties: {roles: {type: array, items: {$ref: '#/components/schemas/Id'}}}}}}
+      responses:
+        '200': {$ref: '#/components/responses/Usuario'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  # --- Admin: personas ---------------------------------------------------------
+
+  /api/v1/admin/personas:
+    get:
+      tags: [Admin – Personas]
+      summary: Listar personas
+      x-jira: PICA-123
+      x-owner: Laura
+      x-permiso: PERSONA_VER
+      description: '`q` busca por apellido o número de documento. Lo usa el buscador del alta de usuario: por eso cada fila trae `tieneUsuario`.'
+      parameters:
+        - {$ref: '#/components/parameters/q'}
+        - {name: estado, in: query, schema: {$ref: '#/components/schemas/Estado'}}
+        - {$ref: '#/components/parameters/incluirEliminados'}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+        - {$ref: '#/components/parameters/sort'}
+      responses:
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PagePersonaResumen'}}}}
+    post:
+      tags: [Admin – Personas]
+      summary: Alta de persona
+      x-jira: PICA-123
+      x-owner: Laura
+      x-permiso: PERSONA_CREAR
+      description: >-
+        Persona sin usuario (ej. un jugador cargado por un organizador). Si después se registra con
+        ese documento, el registro la vincula. 409 `DOCUMENTO_DUPLICADO`. Fecha futura es 400 con
+        `FECHA_FUTURA` en el campo.
+      requestBody: {$ref: '#/components/requestBodies/Persona'}
+      responses:
+        '201': {$ref: '#/components/responses/Persona'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/admin/personas/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Admin – Personas]
+      summary: Ver una persona
+      x-jira: PICA-123
+      x-owner: Laura
+      x-permiso: PERSONA_VER
+      description: Incluye el usuario vinculado si tiene.
+      responses:
+        '200': {$ref: '#/components/responses/Persona'}
+    put:
+      tags: [Admin – Personas]
+      summary: Modificar una persona
+      x-jira: PICA-123
+      x-owner: Laura
+      x-permiso: PERSONA_EDITAR
+      description: Todos los campos de la LBR. 409 `DOCUMENTO_DUPLICADO`.
+      requestBody: {$ref: '#/components/requestBodies/Persona'}
+      responses:
+        '200': {$ref: '#/components/responses/Persona'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Admin – Personas]
+      summary: Baja lógica
+      x-jira: PICA-123
+      x-owner: Laura
+      x-permiso: PERSONA_ELIMINAR
+      description: 409 `PERSONA_CON_USUARIO` si su usuario está activo (primero se da de baja el usuario).
+      responses:
+        '204': {description: Dada de baja}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/admin/personas/{id}/reactivar:
+    post:
+      tags: [Admin – Personas]
+      summary: Reactivar
+      x-jira: PICA-123
+      x-owner: Laura
+      x-permiso: PERSONA_ELIMINAR
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200': {$ref: '#/components/responses/Persona'}
+
+  # --- Admin: roles y permisos -------------------------------------------------
+
+  /api/v1/admin/roles:
+    get:
+      tags: [Admin – Roles y permisos]
+      summary: Listar roles
+      x-jira: PICA-125
+      x-owner: Tomás
+      x-permiso: ROL_VER
+      description: Paginado igual que los otros listados para reusar la tabla genérica. `cantidadUsuarios` cuenta no eliminados.
+      parameters:
+        - {$ref: '#/components/parameters/q'}
+        - {name: estado, in: query, schema: {$ref: '#/components/schemas/Estado'}}
+        - {$ref: '#/components/parameters/incluirEliminados'}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+        - {$ref: '#/components/parameters/sort'}
+      responses:
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageRolResumen'}}}}
+    post:
+      tags: [Admin – Roles y permisos]
+      summary: Crear un rol
+      x-jira: PICA-125
+      x-owner: Tomás
+      x-permiso: ROL_CREAR
+      description: Nace sin permisos; se cargan con `PUT /admin/roles/{id}/permisos`. 409 `ROL_DUPLICADO`.
+      requestBody: {$ref: '#/components/requestBodies/Rol'}
+      responses:
+        '201': {$ref: '#/components/responses/Rol'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/admin/roles/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Admin – Roles y permisos]
+      summary: Ver un rol (con permisos)
+      x-jira: PICA-125
+      x-owner: Tomás
+      x-permiso: ROL_VER
+      responses:
+        '200': {$ref: '#/components/responses/Rol'}
+    put:
+      tags: [Admin – Roles y permisos]
+      summary: Modificar un rol
+      x-jira: PICA-125
+      x-owner: Tomás
+      x-permiso: ROL_EDITAR
+      description: 403 `ROL_PROTEGIDO` (SUPER_USUARIO). 409 `ROL_DUPLICADO`.
+      requestBody: {$ref: '#/components/requestBodies/Rol'}
+      responses:
+        '200': {$ref: '#/components/responses/Rol'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Admin – Roles y permisos]
+      summary: Baja lógica
+      x-jira: PICA-125
+      x-owner: Tomás
+      x-permiso: ROL_ELIMINAR
+      description: >-
+        Un rol eliminado no se puede asignar y deja de sumar permisos (solo cuentan roles activos).
+        403 `ROL_PROTEGIDO`.
+      responses:
+        '204': {description: Dado de baja}
+        '403': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/roles/{id}/reactivar:
+    post:
+      tags: [Admin – Roles y permisos]
+      summary: Reactivar
+      x-jira: PICA-125
+      x-owner: Tomás
+      x-permiso: ROL_ELIMINAR
+      description: No está en la subtarea; se agrega para que roles se comporte igual que usuarios y personas en la tabla.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200': {$ref: '#/components/responses/Rol'}
+
+  /api/v1/admin/roles/{id}/permisos:
+    put:
+      tags: [Admin – Roles y permisos]
+      summary: Reemplazar los permisos de un rol
+      x-jira: PICA-126
+      x-owner: Tomás
+      x-permiso: ROL_EDITAR
+      description: >-
+        Lista completa, reemplaza. Los usuarios lo ven en su próximo token (los permisos se calculan
+        al emitir el JWT). 403 `ROL_PROTEGIDO`. 404 `PERMISO_NO_ENCONTRADO`. 409 `ROL_INACTIVO`.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [permisos], properties: {permisos: {type: array, items: {$ref: '#/components/schemas/CodigoPermiso'}}}}}}
+      responses:
+        '200': {$ref: '#/components/responses/Rol'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/admin/permisos:
+    get:
+      tags: [Admin – Roles y permisos]
+      summary: Catálogo de permisos por módulo
+      x-jira: PICA-126
+      x-owner: Tomás
+      x-permiso: ROL_VER
+      description: Fijo, viene del seed de V3. Para armar los checkboxes de la pantalla de roles.
+      responses:
+        '200': {description: Permisos agrupados, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ModuloPermisos'}}}}}
+
+# =============================================================================
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        RS256, 15 min. Claims: `sub` (id de usuario), `username`, `roles` (nombres técnicos activos),
+        `permisos` (unión de los permisos de sus roles activos), `jti`, `iat`, `exp`.
+        El filtro carga las authorities desde `permisos`; los `@PreAuthorize` usan `hasAuthority('USUARIO_VER')`.
+
+  parameters:
+    id: {name: id, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+    q: {name: q, in: query, schema: {type: string, maxLength: 100}}
+    incluirEliminados: {name: incluirEliminados, in: query, schema: {type: boolean, default: false}}
+    page: {name: page, in: query, description: Desde 0, schema: {type: integer, minimum: 0, default: 0}}
+    size: {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+    sort:
+      name: sort
+      in: query
+      description: '`campo,asc` o `campo,desc`; se puede repetir. Ej: `sort=apellidos,asc&sort=nombres,asc`'
+      schema: {type: array, items: {type: string}}
+      style: form
+      explode: true
+
+  requestBodies:
+    Registro: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RegistroRequest'}}}}
+    Refresh: {required: true, content: {application/json: {schema: {type: object, required: [refreshToken], properties: {refreshToken: {type: string}}}}}}
+    Persona: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PersonaRequest'}}}}
+    Rol: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RolRequest'}}}}
+
+  responses:
+    Tokens: {description: Sesión iniciada, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
+    Me: {description: Usuario logueado, content: {application/json: {schema: {$ref: '#/components/schemas/Me'}}}}
+    Usuario: {description: Usuario, content: {application/json: {schema: {$ref: '#/components/schemas/UsuarioDetalle'}}}}
+    Persona: {description: Persona, content: {application/json: {schema: {$ref: '#/components/schemas/PersonaDetalle'}}}}
+    Rol: {description: Rol con permisos, content: {application/json: {schema: {$ref: '#/components/schemas/RolDetalle'}}}}
+    Error: {description: Ver códigos en la descripción de la operación, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetail'}}}}
+    Conflicto: {description: Regla de negocio que no se cumple; el código dice cuál, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetail'}}}}
+
+  schemas:
+
+    # --- básicos -------------------------------------------------------------
+    Id: {type: integer, format: int64, minimum: 1}
+    Email: {type: string, format: email, maxLength: 254}
+    Username: {type: string, minLength: 3, maxLength: 30, pattern: '^[a-zA-Z0-9._-]+$'}
+    Nombre: {type: string, minLength: 1, maxLength: 100}
+    NroDoc: {type: string, minLength: 5, maxLength: 20, pattern: '^[0-9A-Za-z]+$', description: Sin puntos ni guiones}
+    Password:
+      type: string
+      format: password
+      minLength: 8
+      maxLength: 72   # tope de BCrypt
+      description: Mínimo 8, una mayúscula y un número. Misma regla en registro, reset y cambio.
+    TipoDoc: {type: string, enum: [DNI, LC, LE, CI, PASAPORTE]}
+    TipoDocOpcional: {oneOf: [{$ref: '#/components/schemas/TipoDoc'}, {type: 'null'}]}
+    Estado: {type: string, enum: [ACTIVO, INACTIVO], description: Persona y rol. La baja lógica es aparte (`eliminado`).}
+    EstadoUsuario:
+      type: string
+      enum: [PENDIENTE_VERIFICACION, ACTIVO, BLOQUEADO]
+      description: PENDIENTE hasta el clic en el mail; BLOQUEADO lo pone un admin. La baja lógica no es un estado.
+    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES]}
+    CodigoPermiso:
+      type: string
+      description: Seed de V3 (PICA-124). Si aparece uno nuevo se agrega acá.
+      enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
+             PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
+             ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR]
+
+    # --- errores -------------------------------------------------------------
+    CodigoError:
+      type: string
+      description: |
+        Todos los códigos de la API; el front mapea cada uno a un mensaje. Quien agrega uno en el
+        backend lo agrega acá.
+        Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404.
+        Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 ·
+        REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400.
+        Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
+        PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO.
+        Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO) · ULTIMO_ASIGNADOR.
+      enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SIN_PERMISO, ERROR_INTERNO,
+             USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO,
+             CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
+             TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
+             USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
+             PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
+             USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR]
+    ErrorCampo:
+      type: object
+      required: [campo, codigo]
+      description: >-
+        Un ítem de `errores` en los 400. `codigo` sale de la anotación que falló: @NotBlank/@NotNull →
+        REQUERIDO, @Email/@Pattern → FORMATO_INVALIDO, @Size → LONGITUD, @PastOrPresent → FECHA_FUTURA,
+        política de clave → PASSWORD_DEBIL, otra → VALOR_INVALIDO.
+      properties:
+        campo: {type: string, description: Nombre del campo tal como viene en el JSON}
+        codigo: {type: string, enum: [REQUERIDO, FORMATO_INVALIDO, LONGITUD, FECHA_FUTURA, PASSWORD_DEBIL, VALOR_INVALIDO]}
+        mensaje: {type: string, description: Orientativo; el front muestra el suyo según `codigo`}
+    ProblemDetail:
+      type: object
+      required: [status, codigo]
+      description: >-
+        El ProblemDetail de Spring (RFC 9457) más `codigo` (siempre) y `errores` (solo en VALIDACION).
+        Lo arma un @RestControllerAdvice en common/error; ningún controller devuelve errores a mano.
+      properties:
+        type: {type: string, default: 'about:blank'}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string}
+        codigo: {$ref: '#/components/schemas/CodigoError'}
+        errores: {type: array, items: {$ref: '#/components/schemas/ErrorCampo'}}
+      examples:
+        - {type: 'about:blank', title: Bad Request, status: 400, detail: Hay campos inválidos, instance: /api/v1/auth/registro,
+         codigo: VALIDACION, errores: [{campo: password, codigo: PASSWORD_DEBIL, mensaje: 'Mínimo 8, una mayúscula y un número'}]}
+
+    # --- paginación (forma de Spring con serialization-mode=via_dto) ---------
+    PageInfo:
+      type: object
+      required: [size, number, totalElements, totalPages]
+      properties:
+        size: {type: integer}
+        number: {type: integer, description: 'Página actual, desde 0'}
+        totalElements: {type: integer, format: int64}
+        totalPages: {type: integer}
+    # OpenAPI no tiene genéricos, así que hay un Page por tipo; todos tienen la misma forma.
+    PageUsuarioResumen:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/UsuarioResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PagePersonaResumen:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/PersonaResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageRolResumen:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/RolResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+
+    # --- auth ----------------------------------------------------------------
+    RegistroRequest:
+      type: object
+      required: [username, email, password, nombres, apellidos, tipoDoc, nroDoc, fechaNacimiento]
+      properties:
+        username: {$ref: '#/components/schemas/Username'}
+        email: {$ref: '#/components/schemas/Email'}
+        password: {$ref: '#/components/schemas/Password'}
+        nombres: {$ref: '#/components/schemas/Nombre'}
+        apellidos: {$ref: '#/components/schemas/Nombre'}
+        tipoDoc: {$ref: '#/components/schemas/TipoDoc'}
+        nroDoc: {$ref: '#/components/schemas/NroDoc'}
+        fechaNacimiento: {type: string, format: date}
+      examples:
+        - {username: jperez, email: juan.perez@example.com, password: Pica2026, nombres: Juan, apellidos: Pérez,
+                tipoDoc: DNI, nroDoc: '30123456', fechaNacimiento: '1990-05-17'}
+    IdResponse: {type: object, required: [id], properties: {id: {$ref: '#/components/schemas/Id'}}}
+    LoginRequest:
+      type: object
+      required: [identificador, password]
+      properties:
+        identificador: {type: string, description: Username o email; el backend se fija cuál es}
+        password: {type: string, format: password}
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken, tokenType, expiresIn]
+      properties:
+        accessToken: {type: string, description: 'JWT. En memoria en el front, nunca en localStorage'}
+        refreshToken: {type: string, description: Opaco. El front lo guarda en localStorage}
+        tokenType: {type: string, const: Bearer}
+        expiresIn: {type: integer, description: Segundos de vida del access, examples: [900]}
+
+    # --- perfil --------------------------------------------------------------
+    Me:
+      type: object
+      required: [usuario, persona, roles, permisos, datosCompletos]
+      properties:
+        usuario:
+          type: object
+          required: [id, username, email, estado, tieneContrasena]
+          properties:
+            id: {$ref: '#/components/schemas/Id'}
+            username: {type: string}
+            email: {type: string}
+            estado: {$ref: '#/components/schemas/EstadoUsuario'}
+            tieneContrasena: {type: boolean, description: false si entró por Google y nunca definió una}
+        persona: {$ref: '#/components/schemas/PersonaDatos'}
+        roles: {type: array, items: {$ref: '#/components/schemas/RolMinimo'}}
+        permisos: {type: array, items: {$ref: '#/components/schemas/CodigoPermiso'}}
+        datosCompletos: {type: boolean}
+    MeUpdateRequest:
+      type: object
+      required: [nombres, apellidos]
+      description: Documento (tipo + número) solo se acepta si la persona no tenía; van los dos juntos o ninguno.
+      properties:
+        nombres: {$ref: '#/components/schemas/Nombre'}
+        apellidos: {$ref: '#/components/schemas/Nombre'}
+        fechaNacimiento: {type: [string, 'null'], format: date}
+        domicilioPostal: {type: [string, 'null'], maxLength: 200}
+        telefono: {type: [string, 'null'], maxLength: 30}
+        tipoDoc: {$ref: '#/components/schemas/TipoDocOpcional'}
+        nroDoc: {type: [string, 'null'], minLength: 5, maxLength: 20, pattern: '^[0-9A-Za-z]+$'}
+
+    # --- personas (campos de la LBR_001 RF002) -------------------------------
+    PersonaDatos:
+      type: object
+      required: [id, nombres, apellidos, estado]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombres: {type: string}
+        apellidos: {type: string}
+        tipoDoc: {$ref: '#/components/schemas/TipoDocOpcional'}
+        nroDoc: {type: [string, 'null']}
+        fechaNacimiento: {type: [string, 'null'], format: date}
+        domicilioPostal: {type: [string, 'null']}
+        telefono: {type: [string, 'null']}
+        descripcion: {type: [string, 'null']}
+        estado: {$ref: '#/components/schemas/Estado'}
+    PersonaResumen:
+      type: object
+      required: [id, nombres, apellidos, estado, eliminado, tieneUsuario]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombres: {type: string}
+        apellidos: {type: string}
+        tipoDoc: {$ref: '#/components/schemas/TipoDocOpcional'}
+        nroDoc: {type: [string, 'null']}
+        estado: {$ref: '#/components/schemas/Estado'}
+        eliminado: {type: boolean}
+        tieneUsuario: {type: boolean, description: 'Si ya tiene, no se le puede vincular otro usuario'}
+    PersonaDetalle:
+      allOf:
+        - {$ref: '#/components/schemas/PersonaDatos'}
+        - type: object
+          required: [eliminado, creadoEn]
+          properties:
+            eliminado: {type: boolean}
+            eliminadoEn: {type: [string, 'null'], format: date-time}
+            creadoEn: {type: string, format: date-time}
+            actualizadoEn: {type: [string, 'null'], format: date-time}
+            usuario: {oneOf: [{$ref: '#/components/schemas/UsuarioMinimo'}, {type: 'null'}], description: 'Vinculado, o null'}
+    PersonaRequest:
+      type: object
+      required: [nombres, apellidos, tipoDoc, nroDoc]
+      description: Alta y modificación. Documento obligatorio cuando la carga un admin; la única persona sin documento es la que crea Google.
+      properties:
+        nombres: {$ref: '#/components/schemas/Nombre'}
+        apellidos: {$ref: '#/components/schemas/Nombre'}
+        tipoDoc: {$ref: '#/components/schemas/TipoDoc'}
+        nroDoc: {$ref: '#/components/schemas/NroDoc'}
+        fechaNacimiento: {type: [string, 'null'], format: date, description: No futura}
+        domicilioPostal: {type: [string, 'null'], maxLength: 200}
+        telefono: {type: [string, 'null'], maxLength: 30}
+        descripcion: {type: [string, 'null'], maxLength: 500}
+        estado: {$ref: '#/components/schemas/Estado'}
+
+    # --- usuarios ------------------------------------------------------------
+    UsuarioMinimo:
+      type: object
+      required: [id, username, email, estado, eliminado]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        email: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoUsuario'}
+        eliminado: {type: boolean}
+    UsuarioResumen:
+      type: object
+      required: [id, username, email, estado, eliminado, protegido, persona, roles, creadoEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        email: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoUsuario'}
+        eliminado: {type: boolean}
+        protegido: {type: boolean, description: true solo para el Admin del sistema; la pantalla lo muestra en solo lectura}
+        persona:
+          type: object
+          required: [id, nombreCompleto]
+          properties:
+            id: {$ref: '#/components/schemas/Id'}
+            nombreCompleto: {type: string, examples: ['Pérez, Juan']}
+            tipoDoc: {$ref: '#/components/schemas/TipoDocOpcional'}
+            nroDoc: {type: [string, 'null']}
+        roles: {type: array, items: {$ref: '#/components/schemas/RolMinimo'}}
+        creadoEn: {type: string, format: date-time}
+    UsuarioDetalle:
+      type: object
+      required: [id, username, email, estado, emailVerificado, eliminado, protegido, tieneContrasena, conGoogle, persona, roles, creadoEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        email: {type: string}
+        descripcion: {type: [string, 'null']}
+        estado: {$ref: '#/components/schemas/EstadoUsuario'}
+        emailVerificado: {type: boolean}
+        eliminado: {type: boolean}
+        eliminadoEn: {type: [string, 'null'], format: date-time}
+        protegido: {type: boolean}
+        tieneContrasena: {type: boolean}
+        conGoogle: {type: boolean, description: Tiene google_sub}
+        persona: {$ref: '#/components/schemas/PersonaDatos'}
+        roles: {type: array, items: {$ref: '#/components/schemas/RolMinimo'}}
+        creadoEn: {type: string, format: date-time}
+        actualizadoEn: {type: [string, 'null'], format: date-time}
+    UsuarioCreateRequest:
+      type: object
+      required: [username, email, passwordTemporal, personaId, roles]
+      properties:
+        username: {$ref: '#/components/schemas/Username'}
+        email: {$ref: '#/components/schemas/Email'}
+        passwordTemporal: {$ref: '#/components/schemas/Password'}
+        descripcion: {type: [string, 'null'], maxLength: 500}
+        estado: {type: string, enum: [ACTIVO, BLOQUEADO], default: ACTIVO}
+        personaId: {$ref: '#/components/schemas/Id'}
+        roles: {type: array, items: {$ref: '#/components/schemas/Id'}, description: Ids de roles; puede ir vacía}
+    UsuarioUpdateRequest:
+      type: object
+      required: [username, email, estado, personaId]
+      properties:
+        username: {$ref: '#/components/schemas/Username'}
+        email: {$ref: '#/components/schemas/Email'}
+        descripcion: {type: [string, 'null'], maxLength: 500}
+        estado: {type: string, enum: [ACTIVO, BLOQUEADO]}
+        personaId: {$ref: '#/components/schemas/Id'}
+
+    # --- roles y permisos ----------------------------------------------------
+    RolMinimo:
+      type: object
+      required: [id, nombre, nombreAmigable]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string, examples: [ADMINISTRADOR]}
+        nombreAmigable: {type: string, examples: [Administrador]}
+    RolResumen:
+      type: object
+      required: [id, nombre, nombreAmigable, estado, esSistema, eliminado, cantidadUsuarios]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string}
+        nombreAmigable: {type: string}
+        descripcion: {type: [string, 'null']}
+        estado: {$ref: '#/components/schemas/Estado'}
+        esSistema: {type: boolean, description: true solo para SUPER_USUARIO; solo lectura en la pantalla}
+        eliminado: {type: boolean}
+        cantidadUsuarios: {type: integer}
+    RolDetalle:
+      allOf:
+        - {$ref: '#/components/schemas/RolResumen'}
+        - type: object
+          required: [permisos, creadoEn]
+          properties:
+            permisos: {type: array, items: {$ref: '#/components/schemas/CodigoPermiso'}}
+            eliminadoEn: {type: [string, 'null'], format: date-time}
+            creadoEn: {type: string, format: date-time}
+            actualizadoEn: {type: [string, 'null'], format: date-time}
+    RolRequest:
+      type: object
+      required: [nombre, nombreAmigable]
+      properties:
+        nombre:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]{2,49}$'
+          examples: [VEEDOR]
+          description: Técnico, mayúsculas y guión bajo. Es lo que va en el claim `roles`; no se renombra sin avisar.
+        nombreAmigable: {$ref: '#/components/schemas/Nombre'}
+        descripcion: {type: [string, 'null'], maxLength: 500}
+        estado: {$ref: '#/components/schemas/Estado'}
+    ModuloPermisos:
+      type: object
+      required: [modulo, permisos]
+      properties:
+        modulo: {$ref: '#/components/schemas/Modulo'}
+        permisos:
+          type: array
+          items: {type: object, required: [codigo, descripcion], properties: {codigo: {$ref: '#/components/schemas/CodigoPermiso'}, descripcion: {type: string}}}
