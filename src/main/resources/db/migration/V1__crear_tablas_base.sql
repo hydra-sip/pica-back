@@ -1,4 +1,4 @@
--- Tabla base de datos personales; el documento solo es único mientras la persona siga activa.
+-- Tabla base de datos personales; el documento conserva su unicidad aun después de una baja lógica.
 CREATE TABLE persona (
     id BIGINT GENERATED ALWAYS AS IDENTITY,
     nombres VARCHAR(100) NOT NULL,
@@ -20,18 +20,21 @@ CREATE TABLE persona (
 );
 
 -- No se restringe tipo_doc porque la validación de tipos documentales pertenece a la aplicación.
--- Este índice parcial permite reutilizar un documento luego de la baja lógica de su persona anterior.
-CREATE UNIQUE INDEX uq_persona_tipo_doc_nro_doc_activa
+-- El índice parcial excluye únicamente personas sin documento; una baja lógica no libera el documento.
+CREATE UNIQUE INDEX uq_persona_tipo_doc_nro_doc
     ON persona (tipo_doc, nro_doc)
-    WHERE nro_doc IS NOT NULL AND eliminado_en IS NULL;
+    WHERE nro_doc IS NOT NULL;
 
 -- Tabla de cuentas; los usuarios autenticados por Google pueden no tener password_hash.
+-- El token se invalida al consumirse y expira según token_verificacion_expira_en.
 CREATE TABLE usuario (
     id BIGINT GENERATED ALWAYS AS IDENTITY,
     username VARCHAR(50) NOT NULL,
     email VARCHAR(255) NOT NULL,
     password_hash VARCHAR(255),
     google_sub VARCHAR(255),
+    token_verificacion VARCHAR(255),
+    token_verificacion_expira_en TIMESTAMPTZ,
     descripcion TEXT,
     estado VARCHAR(30) NOT NULL DEFAULT 'PENDIENTE_VERIFICACION',
     email_verificado BOOLEAN NOT NULL DEFAULT FALSE,
