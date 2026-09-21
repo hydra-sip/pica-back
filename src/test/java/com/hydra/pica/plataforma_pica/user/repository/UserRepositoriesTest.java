@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 
 import jakarta.persistence.EntityManager;
 
@@ -111,23 +110,27 @@ class UserRepositoriesTest {
     void personaMantieneAuditoriaAlCrearYModificar() throws InterruptedException {
         Persona persona = personaRepository.saveAndFlush(nuevaPersona("persona-auditoria"));
         Long id = persona.getId();
-        Instant creadoEn = persona.getCreadoEn();
-        Instant modificadoEn = persona.getModificadoEn();
+        entityManager.clear();
 
-        assertThat(persona.getCreadoPor()).isEqualTo(AuditConstants.SISTEMA);
-        assertThat(persona.getModificadoPor()).isEqualTo(AuditConstants.SISTEMA);
+        Persona personaCreada = personaRepository.findById(id).orElseThrow();
+        Instant creadoEn = personaCreada.getCreadoEn();
+        Instant modificadoEn = personaCreada.getModificadoEn();
+
+        assertThat(personaCreada.getCreadoPor()).isEqualTo(AuditConstants.SISTEMA);
+        assertThat(personaCreada.getModificadoPor()).isEqualTo(AuditConstants.SISTEMA);
         assertThat(creadoEn).isNotNull();
         assertThat(modificadoEn).isNotNull();
+        entityManager.clear();
 
         Thread.sleep(10);
-        persona.setNombres("Nombre actualizado");
-        personaRepository.saveAndFlush(persona);
+        Persona personaAModificar = personaRepository.findById(id).orElseThrow();
+        personaAModificar.setNombres("Nombre actualizado");
+        personaRepository.saveAndFlush(personaAModificar);
         entityManager.clear();
 
         Persona personaRecargada = personaRepository.findById(id).orElseThrow();
         assertThat(personaRecargada.getNombres()).isEqualTo("Nombre actualizado");
-        assertThat(personaRecargada.getCreadoEn().truncatedTo(ChronoUnit.MICROS))
-                .isEqualTo(creadoEn.truncatedTo(ChronoUnit.MICROS));
+        assertThat(personaRecargada.getCreadoEn()).isEqualTo(creadoEn);
         assertThat(personaRecargada.getModificadoEn()).isAfter(modificadoEn);
     }
 
