@@ -26,14 +26,15 @@ CREATE UNIQUE INDEX uq_persona_tipo_doc_nro_doc
     WHERE nro_doc IS NOT NULL;
 
 -- Tabla de cuentas; los usuarios autenticados por Google pueden no tener password_hash.
--- El token se invalida al consumirse y expira según token_verificacion_expira_en.
+-- Se almacena el hash SHA-256 del token; el valor original se invalida al consumirse
+-- y expira según token_verificacion_expira_en.
 CREATE TABLE usuario (
     id BIGINT GENERATED ALWAYS AS IDENTITY,
     username VARCHAR(50) NOT NULL,
     email VARCHAR(255) NOT NULL,
     password_hash VARCHAR(255),
     google_sub VARCHAR(255),
-    token_verificacion VARCHAR(255),
+    token_verificacion_hash VARCHAR(64),
     token_verificacion_expira_en TIMESTAMPTZ,
     descripcion TEXT,
     estado VARCHAR(30) NOT NULL DEFAULT 'PENDIENTE_VERIFICACION',
@@ -57,6 +58,11 @@ CREATE UNIQUE INDEX uq_usuario_username_lower
 
 CREATE UNIQUE INDEX uq_usuario_email_lower
     ON usuario (lower(email));
+
+-- La búsqueda del hash durante la verificación debe usar un índice y no recorrer toda la tabla.
+CREATE UNIQUE INDEX uq_usuario_token_verificacion
+    ON usuario (token_verificacion_hash)
+    WHERE token_verificacion_hash IS NOT NULL;
 
 -- Tabla de roles del sistema; es_sistema distingue roles protegidos de roles administrables.
 CREATE TABLE rol (
