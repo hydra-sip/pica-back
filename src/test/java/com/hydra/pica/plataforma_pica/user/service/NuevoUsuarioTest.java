@@ -142,4 +142,17 @@ class NuevoUsuarioTest {
         assertThat(NuevoUsuario.porAdmin("jperez", "juan@example.com", "Temporal1", null, null, 7L, Set.of())
                 .rolIds()).isEmpty();
     }
+
+    @Test
+    @DisplayName("Username vacío o en blanco: solo Google puede no traerlo")
+    void usernameObligatorioSalvoEnGoogle() {
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> NuevoUsuario.autoRegistro(null, "juan@example.com", "Pica2026", PERSONA));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> NuevoUsuario.autoRegistro("  ", "juan@example.com", "Pica2026", PERSONA));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> NuevoUsuario.porAdmin("  ", "juan@example.com", "Temporal1", null, null, 7L, Set.of()));
+
+        assertThat(NuevoUsuario.desdeGoogle("juan@gmail.com", "sub-123", "Juan", "Pérez").username()).isNull();
+    }
 }

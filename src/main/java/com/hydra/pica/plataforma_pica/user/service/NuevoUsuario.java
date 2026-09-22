@@ -69,6 +69,7 @@ public record NuevoUsuario(
                                            DatosPersona datosPersona, Set<Long> rolIds) {
         switch (origen) {
             case AUTO_REGISTRO -> {
+                exigir(tieneTexto(username), "El registro elige su username");
                 exigir(datosPersona != null, "El registro busca o crea la persona por documento, no lleva personaId");
                 exigir(tieneTexto(password), "El registro necesita contraseña");
                 exigir(googleSub == null, "El registro no lleva googleSub");
@@ -77,6 +78,7 @@ public record NuevoUsuario(
                 exigir(sinRoles(rolIds), "El registro no elige roles: el servicio le pone PARTICIPANTE");
             }
             case ADMIN -> {
+                exigir(tieneTexto(username), "El alta por admin elige el username");
                 exigir(datosPersona == null, "El alta por admin es sobre una persona que ya existe: lleva personaId");
                 exigir(tieneTexto(password), "El alta por admin necesita una contraseña temporal");
                 exigir(googleSub == null, "El alta por admin no lleva googleSub");
