@@ -125,4 +125,21 @@ class NuevoUsuarioTest {
                 NuevoUsuario.Origen.ADMIN, "jperez", "juan@example.com", "Temporal1", null, null,
                 EstadoUsuario.PENDIENTE_VERIFICACION, true, null, 7L, Set.of()));
     }
+
+    @Test
+    @DisplayName("Solo el admin elige roles: registro y Google no pueden traer rolIds")
+    void soloElAdminEligeRoles() {
+        assertThatIllegalArgumentException().isThrownBy(() -> new NuevoUsuario(
+                NuevoUsuario.Origen.AUTO_REGISTRO, "jperez", "juan@example.com", "Pica2026", null, null,
+                EstadoUsuario.PENDIENTE_VERIFICACION, false, PERSONA, null, Set.of(1L)));
+        assertThatIllegalArgumentException().isThrownBy(() -> new NuevoUsuario(
+                NuevoUsuario.Origen.GOOGLE, null, "juan@gmail.com", null, "sub-123", null,
+                EstadoUsuario.ACTIVO, true, PERSONA, null, Set.of(1L)));
+
+        // El alta por admin sí, y la lista vacía es válida (el contrato dice que puede ir vacía)
+        assertThat(NuevoUsuario.porAdmin("jperez", "juan@example.com", "Temporal1", null, null, 7L, Set.of(1L))
+                .rolIds()).containsExactly(1L);
+        assertThat(NuevoUsuario.porAdmin("jperez", "juan@example.com", "Temporal1", null, null, 7L, Set.of())
+                .rolIds()).isEmpty();
+    }
 }
