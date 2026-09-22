@@ -34,6 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * El alta de punta a punta contra Postgres: persona + usuario + usuario_rol en una transacción,
  * con el seed de roles de V2 y los índices únicos reales. Cada test hace rollback al terminar.
+ *
+ * Es también la suite de integración del núcleo que pide PICA-111: username y email duplicados,
+ * documento existente que vincula (no duplica) la persona, rol por defecto y persona inactiva.
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
@@ -99,13 +102,7 @@ class UsuarioServiceIntegracionTest {
 
     @Test
     void altaPorAdminConPersonaExistenteYRolesPorId() {
-        Persona persona = new Persona();
-        persona.setNombres("Ana");
-        persona.setApellidos("García");
-        persona.setTipoDoc("DNI");
-        persona.setNroDoc("40111222");
-        persona.setEstado(EstadoGeneral.ACTIVO);
-        persona = personaRepository.saveAndFlush(persona);
+        Persona persona = personaRepository.saveAndFlush(persona("40111222"));
         Long organizador = rolRepository.findByNombre("ORGANIZADOR").orElseThrow().getId();
         Long arbitro = rolRepository.findByNombre("ARBITRO").orElseThrow().getId();
 
@@ -139,5 +136,60 @@ class UsuarioServiceIntegracionTest {
         assertThat(leido.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
         assertThat(leido.getPersona().getTipoDoc()).isNull();
         assertThat(leido.getPersona().getNroDoc()).isNull();
+    }
+
+    @Test
+    void emailDuplicadoDa409SinDistinguirMayusculas() {
+        usuarioService.crear(NuevoUsuario.autoRegistro("jperez", "juan@example.com", "Pica2026",
+                new DatosPersona(TipoDoc.DNI, "30123456", "Juan", "Pérez", null, null, null)));
+
+        assertThatThrownBy(() -> usuarioService.crear(NuevoUsuario.autoRegistro("otro", "Juan@Example.com",
+                "Pica2026", new DatosPersona(TipoDoc.DNI, "40111222", "Ana", "García", null, null, null))))
+                .extracting("codigo").isEqualTo(CodigoError.EMAIL_DUPLICADO);
+    }
+
+    @Test
+    void documentoExistenteVinculaLaPersonaEnVezDeDuplicarla() {
+        // la persona ya estaba (la cargó un admin, o vino de otro torneo) pero nunca tuvo usuario
+        Persona existente = personaRepository.saveAndFlush(persona("30123456"));
+        long personasAntes = personaRepository.count();
+
+        Usuario creado = usuarioService.crear(NuevoUsuario.autoRegistro("jperez", "juan@example.com", "Pica2026",
+                new DatosPersona(TipoDoc.DNI, "30123456", "Juan", "Pérez", null, null, null)));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(personaRepository.count()).isEqualTo(personasAntes);
+        assertThat(usuarioRepository.findById(creado.getId()).orElseThrow().getPersona().getId())
+                .isEqualTo(existente.getId());
+    }
+
+    @Test
+    void personaInactivaOEliminadaRechazaElRegistro() {
+        Persona inactiva = persona("30123456");
+        inactiva.setEstado(EstadoGeneral.INACTIVO);
+        personaRepository.saveAndFlush(inactiva);
+
+        Persona eliminada = persona("40111222");
+        eliminada.setEliminadoEn(Instant.now());
+        personaRepository.saveAndFlush(eliminada);
+
+        assertThatThrownBy(() -> usuarioService.crear(NuevoUsuario.autoRegistro("jperez", "juan@example.com",
+                "Pica2026", new DatosPersona(TipoDoc.DNI, "30123456", "Juan", "Pérez", null, null, null))))
+                .extracting("codigo").isEqualTo(CodigoError.PERSONA_INACTIVA);
+        assertThatThrownBy(() -> usuarioService.crear(NuevoUsuario.autoRegistro("agarcia", "ana@example.com",
+                "Pica2026", new DatosPersona(TipoDoc.DNI, "40111222", "Ana", "García", null, null, null))))
+                .extracting("codigo").isEqualTo(CodigoError.PERSONA_INACTIVA);
+        assertThat(usuarioRepository.count()).isZero();
+    }
+
+    private static Persona persona(String nroDoc) {
+        Persona persona = new Persona();
+        persona.setNombres("Juan");
+        persona.setApellidos("Pérez");
+        persona.setTipoDoc("DNI");
+        persona.setNroDoc(nroDoc);
+        persona.setEstado(EstadoGeneral.ACTIVO);
+        return persona;
     }
 }
