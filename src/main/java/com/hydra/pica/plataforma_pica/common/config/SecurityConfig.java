@@ -31,6 +31,7 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        // Fuerza 12: lo pide T101-4; 10 (el default) queda corto para 2026
+        return new BCryptPasswordEncoder(12);
     }
 }

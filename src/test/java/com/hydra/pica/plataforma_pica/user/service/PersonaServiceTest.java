@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -20,16 +21,19 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
+import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -67,12 +71,12 @@ class PersonaServiceTest {
     @DisplayName("No existe persona con ese documento: la crea con los datos recibidos y la devuelve")
     void noExisteLaCrea() {
         when(personaRepository.findByDocumentoIncluyendoEliminadas("DNI", "30123456")).thenReturn(Optional.empty());
-        when(personaRepository.save(any(Persona.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(personaRepository.saveAndFlush(any(Persona.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Persona resultado = personaService.buscarOCrear(JUAN);
 
         ArgumentCaptor<Persona> guardada = ArgumentCaptor.forClass(Persona.class);
-        verify(personaRepository).save(guardada.capture());
+        verify(personaRepository).saveAndFlush(guardada.capture());
         assertThat(resultado).isSameAs(guardada.getValue());
         assertThat(guardada.getValue().getTipoDoc()).isEqualTo("DNI");
         assertThat(guardada.getValue().getNroDoc()).isEqualTo("30123456");
@@ -94,7 +98,7 @@ class PersonaServiceTest {
         Persona resultado = personaService.buscarOCrear(JUAN);
 
         assertThat(resultado).isSameAs(existente);
-        verify(personaRepository, never()).save(any());
+        verify(personaRepository, never()).saveAndFlush(any());
         assertThat(logs.list).noneMatch(e -> e.getLevel() == Level.WARN);
     }
 
@@ -112,7 +116,7 @@ class PersonaServiceTest {
         assertThat(resultado).isSameAs(existente);
         assertThat(existente.getApellidos()).isEqualTo("Pérez");
         assertThat(existente.getFechaNacimiento()).isEqualTo(LocalDate.of(1990, 5, 20));
-        verify(personaRepository, never()).save(any());
+        verify(personaRepository, never()).saveAndFlush(any());
         assertThat(logs.list)
                 .filteredOn(e -> e.getLevel() == Level.WARN)
                 .singleElement()
@@ -133,7 +137,7 @@ class PersonaServiceTest {
         assertThatThrownBy(() -> personaService.buscarOCrear(JUAN))
                 .isInstanceOf(PersonaInactivaException.class)
                 .extracting("codigo").isEqualTo(CodigoError.PERSONA_INACTIVA);
-        verify(personaRepository, never()).save(any());
+        verify(personaRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -146,13 +150,13 @@ class PersonaServiceTest {
 
         assertThatThrownBy(() -> personaService.buscarOCrear(JUAN))
                 .isInstanceOf(PersonaInactivaException.class);
-        verify(personaRepository, never()).save(any());
+        verify(personaRepository, never()).saveAndFlush(any());
     }
 
     @Test
     @DisplayName("Sin documento (caso Google): siempre crea una persona nueva")
     void sinDocumentoSiempreCrea() {
-        when(personaRepository.save(any(Persona.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(personaRepository.saveAndFlush(any(Persona.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Persona resultado = personaService.buscarOCrear(DatosPersona.sinDocumento("Juan", "Pérez"));
 
@@ -162,6 +166,32 @@ class PersonaServiceTest {
         assertThat(resultado.getNombres()).isEqualTo("Juan");
         assertThat(resultado.getApellidos()).isEqualTo("Pérez");
         assertThat(resultado.getEstado()).isEqualTo(EstadoGeneral.ACTIVO);
+    }
+
+    @Test
+    @DisplayName("Carrera con el mismo documento: el choque con el índice único da 409, no un 500")
+    void documentoCreadoEnParaleloDa409() {
+        when(personaRepository.findByDocumentoIncluyendoEliminadas("DNI", "30123456"))
+                .thenReturn(Optional.empty());
+        when(personaRepository.saveAndFlush(any(Persona.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key",
+                        new ConstraintViolationException("dup", new SQLException(),
+                                "uq_persona_tipo_doc_nro_doc")));
+
+        assertThatThrownBy(() -> personaService.buscarOCrear(
+                new DatosPersona(TipoDoc.DNI, "30123456", "Juan", "Pérez", null, null, null)))
+                .isInstanceOf(ConflictoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.DOCUMENTO_DUPLICADO);
+    }
+
+    @Test
+    @DisplayName("Otra violación de integridad se propaga tal cual: no es cosa del documento")
+    void otraViolacionSePropaga() {
+        DataIntegrityViolationException otra = new DataIntegrityViolationException("nombres not null");
+        when(personaRepository.saveAndFlush(any(Persona.class))).thenThrow(otra);
+
+        assertThatThrownBy(() -> personaService.buscarOCrear(DatosPersona.sinDocumento("Juan", "Pérez")))
+                .isSameAs(otra);
     }
 
     private static Persona personaActiva(String nombres, String apellidos) {

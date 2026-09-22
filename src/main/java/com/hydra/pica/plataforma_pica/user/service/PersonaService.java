@@ -4,12 +4,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,12 +34,14 @@ public class PersonaService {
 
     private static final Logger log = LoggerFactory.getLogger(PersonaService.class);
 
+    private static final String UQ_DOCUMENTO = "uq_persona_tipo_doc_nro_doc";
+
     private final PersonaRepository personaRepository;
 
     @Transactional
     public Persona buscarOCrear(DatosPersona datos) {
         if (!datos.tieneDocumento()) {
-            return personaRepository.save(nueva(datos));
+            return crear(datos);
         }
 
         return personaRepository
@@ -47,7 +53,37 @@ public class PersonaService {
                     avisarSiDifieren(existente, datos);
                     return existente;
                 })
-                .orElseGet(() -> personaRepository.save(nueva(datos)));
+                .orElseGet(() -> crear(datos));
+    }
+
+    /**
+     * Dos registros simultáneos con el mismo documento pasan los dos por el SELECT de arriba sin
+     * encontrar nada y uno pierde contra uq_persona_tipo_doc_nro_doc. Sin esto la
+     * DataIntegrityViolationException llega al handler genérico y el cliente ve un 500.
+     *
+     * No se puede releer la persona acá: después de la violación Postgres deja la transacción
+     * abortada. El 409 es la respuesta honesta y en el reintento la persona ya está creada.
+     */
+    private Persona crear(DatosPersona datos) {
+        try {
+            // flush ahora para que el choque salte acá y no al cerrar la transacción
+            return personaRepository.saveAndFlush(nueva(datos));
+        } catch (DataIntegrityViolationException e) {
+            if (!UQ_DOCUMENTO.equals(nombreDeConstraint(e))) {
+                throw e;
+            }
+            throw new ConflictoException(CodigoError.DOCUMENTO_DUPLICADO,
+                    "El documento " + datos.tipoDoc() + " " + datos.nroDoc()
+                            + " se registró al mismo tiempo desde otra solicitud, reintentá");
+        }
+    }
+
+    private static String nombreDeConstraint(DataIntegrityViolationException e) {
+        Throwable causa = e;
+        while (causa != null && !(causa instanceof ConstraintViolationException)) {
+            causa = causa.getCause();
+        }
+        return causa == null ? null : ((ConstraintViolationException) causa).getConstraintName();
     }
 
     private Persona nueva(DatosPersona datos) {
