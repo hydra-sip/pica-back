@@ -51,7 +51,8 @@ public record NuevoUsuario(
         if ((datosPersona == null) == (personaId == null)) {
             throw new IllegalArgumentException("Va datosPersona o personaId, uno de los dos");
         }
-        validarSegunOrigen(origen, username, password, googleSub, estadoInicial, emailVerificado, datosPersona);
+        validarSegunOrigen(origen, username, password, googleSub, estadoInicial, emailVerificado, datosPersona,
+                rolIds);
         email = email.strip();
         username = username == null ? null : username.strip();
         rolIds = rolIds == null ? Set.of() : Set.copyOf(rolIds);
@@ -65,7 +66,7 @@ public record NuevoUsuario(
      */
     private static void validarSegunOrigen(Origen origen, String username, String password, String googleSub,
                                            EstadoUsuario estadoInicial, boolean emailVerificado,
-                                           DatosPersona datosPersona) {
+                                           DatosPersona datosPersona, Set<Long> rolIds) {
         switch (origen) {
             case AUTO_REGISTRO -> {
                 exigir(datosPersona != null, "El registro busca o crea la persona por documento, no lleva personaId");
@@ -73,6 +74,7 @@ public record NuevoUsuario(
                 exigir(googleSub == null, "El registro no lleva googleSub");
                 exigir(estadoInicial == EstadoUsuario.PENDIENTE_VERIFICACION && !emailVerificado,
                         "El registro nace PENDIENTE_VERIFICACION y con el mail sin verificar");
+                exigir(sinRoles(rolIds), "El registro no elige roles: el servicio le pone PARTICIPANTE");
             }
             case ADMIN -> {
                 exigir(datosPersona == null, "El alta por admin es sobre una persona que ya existe: lleva personaId");
@@ -88,6 +90,7 @@ public record NuevoUsuario(
                 exigir(username == null, "El username de un usuario de Google lo genera el servicio");
                 exigir(estadoInicial == EstadoUsuario.ACTIVO && emailVerificado,
                         "Google ya verificó el mail: el usuario nace ACTIVO y verificado");
+                exigir(sinRoles(rolIds), "Google no elige roles: el servicio le pone PARTICIPANTE");
             }
         }
     }
@@ -100,6 +103,16 @@ public record NuevoUsuario(
 
     private static boolean tieneTexto(String valor) {
         return valor != null && !valor.isBlank();
+    }
+
+    /**
+     * Los roles solo los elige el admin. El servicio le suma PARTICIPANTE a todo lo que no sea
+     * ADMIN, así que si un registro pudiera traer rolIds saldría con PARTICIPANTE más lo que
+     * mandó: el día que el controller de la 119 mapee el body del request directo, eso es una
+     * escalada de privilegios.
+     */
+    private static boolean sinRoles(Set<Long> rolIds) {
+        return rolIds == null || rolIds.isEmpty();
     }
 
     public static NuevoUsuario autoRegistro(String username, String email, String password, DatosPersona persona) {
