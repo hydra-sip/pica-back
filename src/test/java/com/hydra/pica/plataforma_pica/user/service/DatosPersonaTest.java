@@ -1,4 +1,6 @@
-package com.hydra.pica.plataforma_pica.persona;
+package com.hydra.pica.plataforma_pica.user.service;
+
+import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

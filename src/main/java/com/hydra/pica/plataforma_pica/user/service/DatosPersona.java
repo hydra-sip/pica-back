@@ -1,6 +1,8 @@
-package com.hydra.pica.plataforma_pica.persona;
+package com.hydra.pica.plataforma_pica.user.service;
 
 import java.time.LocalDate;
+
+import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 
 /**
  * Lo que llega de afuera para buscar o crear una persona: el registro manda documento y datos,

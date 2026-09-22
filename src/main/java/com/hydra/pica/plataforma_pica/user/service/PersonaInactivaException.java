@@ -1,7 +1,8 @@
-package com.hydra.pica.plataforma_pica.persona;
+package com.hydra.pica.plataforma_pica.user.service;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
+import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 
 /**
  * 409 PERSONA_INACTIVA: existe una persona con ese documento pero está inactiva o dada de baja.
