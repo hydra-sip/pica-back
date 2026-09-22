@@ -18,7 +18,8 @@ import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
  * </ul>
  *
  * La persona viene de una de dos formas: {@code datosPersona} (registro y Google) o
- * {@code personaId} (admin). Nunca las dos.
+ * {@code personaId} (admin). Nunca las dos. El constructor rechaza cualquier combinación que no
+ * sea una de esas tres, así el servicio no tiene que desconfiar de lo que recibe.
  */
 public record NuevoUsuario(
         Origen origen,
@@ -50,16 +51,55 @@ public record NuevoUsuario(
         if ((datosPersona == null) == (personaId == null)) {
             throw new IllegalArgumentException("Va datosPersona o personaId, uno de los dos");
         }
-        if (origen == Origen.GOOGLE) {
-            if (googleSub == null || googleSub.isBlank()) {
-                throw new IllegalArgumentException("Un usuario de Google necesita googleSub");
-            }
-        } else if (password == null || password.isBlank()) {
-            throw new IllegalArgumentException("Registro y alta por admin necesitan contraseña");
-        }
+        validarSegunOrigen(origen, username, password, googleSub, estadoInicial, emailVerificado, datosPersona);
         email = email.strip();
         username = username == null ? null : username.strip();
         rolIds = rolIds == null ? Set.of() : Set.copyOf(rolIds);
+    }
+
+    /**
+     * Cada origen tiene una sola forma válida y el servicio confía en eso: se fija en
+     * {@code datosPersona != null} para saber si tiene que buscar o crear la persona, y en el
+     * origen para saber si pone el rol PARTICIPANTE. Una mezcla (un alta por admin con
+     * datosPersona, un usuario de Google con contraseña) no la detectaría nadie más abajo.
+     */
+    private static void validarSegunOrigen(Origen origen, String username, String password, String googleSub,
+                                           EstadoUsuario estadoInicial, boolean emailVerificado,
+                                           DatosPersona datosPersona) {
+        switch (origen) {
+            case AUTO_REGISTRO -> {
+                exigir(datosPersona != null, "El registro busca o crea la persona por documento, no lleva personaId");
+                exigir(tieneTexto(password), "El registro necesita contraseña");
+                exigir(googleSub == null, "El registro no lleva googleSub");
+                exigir(estadoInicial == EstadoUsuario.PENDIENTE_VERIFICACION && !emailVerificado,
+                        "El registro nace PENDIENTE_VERIFICACION y con el mail sin verificar");
+            }
+            case ADMIN -> {
+                exigir(datosPersona == null, "El alta por admin es sobre una persona que ya existe: lleva personaId");
+                exigir(tieneTexto(password), "El alta por admin necesita una contraseña temporal");
+                exigir(googleSub == null, "El alta por admin no lleva googleSub");
+                exigir(estadoInicial != EstadoUsuario.PENDIENTE_VERIFICACION && emailVerificado,
+                        "El alta por admin nace ACTIVO o BLOQUEADO y con el mail verificado");
+            }
+            case GOOGLE -> {
+                exigir(datosPersona != null, "Google trae nombre y apellido, no un personaId");
+                exigir(tieneTexto(googleSub), "Un usuario de Google necesita googleSub");
+                exigir(password == null, "Un usuario de Google no tiene contraseña");
+                exigir(username == null, "El username de un usuario de Google lo genera el servicio");
+                exigir(estadoInicial == EstadoUsuario.ACTIVO && emailVerificado,
+                        "Google ya verificó el mail: el usuario nace ACTIVO y verificado");
+            }
+        }
+    }
+
+    private static void exigir(boolean condicion, String mensaje) {
+        if (!condicion) {
+            throw new IllegalArgumentException(mensaje);
+        }
+    }
+
+    private static boolean tieneTexto(String valor) {
+        return valor != null && !valor.isBlank();
     }
 
     public static NuevoUsuario autoRegistro(String username, String email, String password, DatosPersona persona) {
