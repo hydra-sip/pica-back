@@ -552,7 +552,7 @@ paths:
       x-jira: PICA-126
       x-owner: Tomás
       x-permiso: ROL_VER
-      description: Fijo, viene del seed de V3. Para armar los checkboxes de la pantalla de roles.
+      description: Fijo, viene del seed de V4. Para armar los checkboxes de la pantalla de roles.
       responses:
         '200': {description: Permisos agrupados, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ModuloPermisos'}}}}}
 
@@ -623,7 +623,7 @@ components:
     Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES]}
     CodigoPermiso:
       type: string
-      description: Seed de V3 (PICA-124). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR]

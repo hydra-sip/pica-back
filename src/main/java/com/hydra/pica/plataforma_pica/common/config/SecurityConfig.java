@@ -2,13 +2,18 @@ package com.hydra.pica.plataforma_pica.common.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 @Configuration
+// Habilita @PreAuthorize en los controllers; cada endpoint /admin/** declara su permiso (ver x-permiso en el contrato)
+@EnableMethodSecurity
 public class SecurityConfig {
 
     private final CorsConfigurationSource corsConfigurationSource;
@@ -24,7 +29,10 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/api/v1/health", "/actuator/health").permitAll()
-                        .anyRequest().authenticated());
+                        .anyRequest().authenticated())
+                // Sin token es 401, no 403 (el 403 queda para "autenticado pero sin permiso").
+                // PICA-117 lo reemplaza por el entry point del JWT que además escribe el ProblemDetail.
+                .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
 
         return http.build();
     }
