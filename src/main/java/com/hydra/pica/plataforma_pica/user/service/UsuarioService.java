@@ -58,6 +58,7 @@ public class UsuarioService {
 
     @Transactional
     public Usuario crear(NuevoUsuario nuevo) {
+        // solo Google llega sin username: el registro y el admin lo eligen y el record los obliga
         String username = nuevo.username() != null ? nuevo.username() : generarUsername(nuevo.email());
 
         if (usuarioRepository.existsByUsernameIncluyendoEliminados(username)) {
