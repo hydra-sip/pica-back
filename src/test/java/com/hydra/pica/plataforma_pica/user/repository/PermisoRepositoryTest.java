@@ -118,6 +118,31 @@ class PermisoRepositoryTest {
         assertThat(permisoRepository.findCodigosByUsuarioId(usuario.getId())).isEmpty();
     }
 
+    @Test
+    void unUsuarioBloqueadoNoTienePermisos() {
+        Usuario usuario = usuarioCon("ADMINISTRADOR");
+        assertThat(permisoRepository.findCodigosByUsuarioId(usuario.getId())).isNotEmpty();
+
+        Usuario bloqueado = usuarioRepository.findById(usuario.getId()).orElseThrow();
+        bloqueado.setEstado(EstadoUsuario.BLOQUEADO);
+        usuarioRepository.saveAndFlush(bloqueado);
+        entityManager.clear();
+
+        assertThat(permisoRepository.findCodigosByUsuarioId(usuario.getId())).isEmpty();
+    }
+
+    @Test
+    void unUsuarioEliminadoNoTienePermisos() {
+        Usuario usuario = usuarioCon("ADMINISTRADOR");
+
+        Usuario eliminado = usuarioRepository.findById(usuario.getId()).orElseThrow();
+        eliminado.setEliminadoEn(Instant.now());
+        usuarioRepository.saveAndFlush(eliminado);
+        entityManager.clear();
+
+        assertThat(permisoRepository.findCodigosByUsuarioId(usuario.getId())).isEmpty();
+    }
+
     private Usuario usuarioCon(String... roles) {
         Persona persona = new Persona();
         persona.setNombres("Test");
