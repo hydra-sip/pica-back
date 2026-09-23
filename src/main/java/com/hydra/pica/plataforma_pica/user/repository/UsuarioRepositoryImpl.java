@@ -34,7 +34,9 @@ public class UsuarioRepositoryImpl implements UsuarioAdminRepositoryCustom {
                   AND (CAST(:estado AS varchar) IS NULL OR u.estado = :estado)
                   AND (CAST(:rolId AS bigint) IS NULL OR EXISTS (
                     SELECT 1 FROM usuario_rol urf
-                    WHERE urf.usuario_id = u.id AND urf.rol_id = :rolId))
+                    JOIN rol rf ON rf.id = urf.rol_id AND rf.eliminado_en IS NULL
+                    WHERE urf.usuario_id = u.id AND urf.rol_id = :rolId
+                      AND urf.eliminado_en IS NULL))
                 """;
         String from = """
                 FROM usuario u
@@ -47,8 +49,8 @@ public class UsuarioRepositoryImpl implements UsuarioAdminRepositoryCustom {
                            'id', r.id, 'nombre', r.nombre, 'nombreAmigable', r.nombre_amigable)
                            ORDER BY r.nombre) FILTER (WHERE r.id IS NOT NULL), '[]')::text
                 """ + from + """
-                LEFT JOIN usuario_rol ur ON ur.usuario_id = u.id
-                LEFT JOIN rol r ON r.id = ur.rol_id
+                LEFT JOIN usuario_rol ur ON ur.usuario_id = u.id AND ur.eliminado_en IS NULL
+                LEFT JOIN rol r ON r.id = ur.rol_id AND r.eliminado_en IS NULL
                 """ + filters + """
                 GROUP BY u.id, p.id
                 """ + orderBy(pageable) + " LIMIT :limit OFFSET :offset";

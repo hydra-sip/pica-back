@@ -158,6 +158,31 @@ class UsuarioSpecificationsTest {
                 });
     }
 
+    @Test
+    void buscarIncluyendoEliminadosIgnoraLosRolesDadosDeBaja() {
+        Rol veedor = new Rol();
+        veedor.setNombre("VEEDOR");
+        veedor.setNombreAmigable("Veedor");
+        veedor.setEstado(EstadoGeneral.ACTIVO);
+        rolRepository.saveAndFlush(veedor);
+        Usuario agomez = usuarioRepository.findByUsernameIgnoreCase("agomez").orElseThrow();
+        UsuarioRol usuarioRol = new UsuarioRol(agomez, veedor);
+        usuarioRol.setAsignadoEn(Instant.now());
+        usuarioRol.setAsignadoPor(AuditConstants.SISTEMA);
+        usuarioRolRepository.saveAndFlush(usuarioRol);
+        veedor.setEliminadoEn(Instant.now());
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(usuarioRepository.buscarIncluyendoEliminados("agomez", null, null, PageRequest.of(0, 10)))
+                .singleElement()
+                .satisfies(row -> assertThat(row.rolesJson())
+                        .contains("PARTICIPANTE")
+                        .doesNotContain("VEEDOR"));
+        assertThat(usuarioRepository.buscarIncluyendoEliminados(
+                null, null, veedor.getId(), PageRequest.of(0, 10))).isEmpty();
+    }
+
     private List<Usuario> buscar(Specification<Usuario> specification) {
         Page<Usuario> pagina = usuarioRepository.findAll(specification, PageRequest.of(0, 10));
         return pagina.getContent();
