@@ -352,9 +352,12 @@ class RolServiceIntegracionTest {
         assertThatThrownBy(() -> rolService.reemplazarPermisos(id,
                         List.of("USUARIO_VER", "PROYECTO_VER", "CONVOCATORIA_VER")))
                 .isInstanceOf(ApiException.class)
-                .hasMessageContaining("PROYECTO_VER")
-                .hasMessageContaining("CONVOCATORIA_VER")
-                .extracting("codigo").isEqualTo(CodigoError.PERMISO_NO_ENCONTRADO);
+                .satisfies(e -> {
+                    assertThat(((ApiException) e).getCodigo()).isEqualTo(CodigoError.PERMISO_NO_ENCONTRADO);
+                    // aparte del detail, para que la pantalla marque esos checkboxes sin parsear texto
+                    assertThat(((ApiException) e).getPropiedades())
+                            .containsEntry("invalidos", List.of("PROYECTO_VER", "CONVOCATORIA_VER"));
+                });
 
         entityManager.clear();
         assertThat(rolService.detalle(id).permisos()).isEmpty();

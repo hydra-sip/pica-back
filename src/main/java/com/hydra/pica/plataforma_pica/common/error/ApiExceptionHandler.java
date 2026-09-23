@@ -36,7 +36,9 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(ApiException.class)
     ProblemDetail manejarApiException(ApiException ex) {
         log.debug("{} {}: {}", ex.getStatus().value(), ex.getCodigo(), ex.getMessage());
-        return problema(ex.getStatus(), ex.getCodigo(), ex.getMessage(), null);
+        ProblemDetail pd = problema(ex.getStatus(), ex.getCodigo(), ex.getMessage(), null);
+        ex.getPropiedades().forEach(pd::setProperty);
+        return pd;
     }
 
     /** @PreAuthorize sin el permiso necesario. Sin esto caería en el 500 genérico de abajo. */

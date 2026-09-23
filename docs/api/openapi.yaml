@@ -550,7 +550,7 @@ paths:
         Lista completa, reemplaza (vacía = sin permisos; los repetidos cuentan una vez). Los usuarios
         lo ven en su próximo token (los permisos se calculan al emitir el JWT).
         403 `ROL_PROTEGIDO` (SUPER_USUARIO; a PARTICIPANTE sí se le cambian). 404 si el rol está dado
-        de baja, y `PERMISO_NO_ENCONTRADO` con los códigos que no existen (no se guarda nada).
+        de baja, y `PERMISO_NO_ENCONTRADO` con los códigos que no existen en `invalidos` (no se guarda nada).
         409 `ROL_INACTIVO`.
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
@@ -690,6 +690,7 @@ components:
         instance: {type: string}
         codigo: {$ref: '#/components/schemas/CodigoError'}
         errores: {type: array, items: {$ref: '#/components/schemas/ErrorCampo'}}
+        invalidos: {type: array, items: {type: string}, description: 'Solo en PERMISO_NO_ENCONTRADO: los códigos que no existen'}
       examples:
         - {type: 'about:blank', title: Bad Request, status: 400, detail: Hay campos inválidos, instance: /api/v1/auth/registro,
          codigo: VALIDACION, errores: [{campo: password, codigo: PASSWORD_DEBIL, mensaje: 'Mínimo 8, una mayúscula y un número'}]}

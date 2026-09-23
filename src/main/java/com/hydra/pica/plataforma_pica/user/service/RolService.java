@@ -177,7 +177,10 @@ public class RolService {
         return detalle(rolRepository.saveAndFlush(rol));
     }
 
-    /** Todos o ninguno: si falta alguno se corta antes de tocar el rol, con la lista de los que faltan. */
+    /**
+     * Todos o ninguno: si falta alguno se corta antes de tocar el rol. Los que faltan van en
+     * {@code invalidos} del ProblemDetail para que la pantalla marque esos checkboxes.
+     */
     private Set<Permiso> buscarPermisos(Collection<String> codigos) {
         Set<String> pedidos = new LinkedHashSet<>(codigos);
         if (pedidos.isEmpty()) {
@@ -187,7 +190,8 @@ public class RolService {
         if (encontrados.size() < pedidos.size()) {
             Set<String> existentes = encontrados.stream().map(Permiso::getCodigo).collect(Collectors.toSet());
             List<String> faltantes = pedidos.stream().filter(codigo -> !existentes.contains(codigo)).toList();
-            throw new NoEncontradoException(CodigoError.PERMISO_NO_ENCONTRADO, "No existen los permisos " + faltantes);
+            throw new NoEncontradoException(CodigoError.PERMISO_NO_ENCONTRADO, "No existen los permisos " + faltantes)
+                    .con("invalidos", faltantes);
         }
         return encontrados;
     }

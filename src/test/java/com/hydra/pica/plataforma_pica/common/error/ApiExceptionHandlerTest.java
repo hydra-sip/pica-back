@@ -2,6 +2,8 @@ package com.hydra.pica.plataforma_pica.common.error;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import java.util.List;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -57,6 +59,15 @@ class ApiExceptionHandlerTest {
                 .andExpect(jsonPath("$.codigo").value("EMAIL_DUPLICADO"))
                 .andExpect(jsonPath("$.detail").value("ya existe"))
                 .andExpect(jsonPath("$.instance").value("/prueba/conflicto"));
+    }
+
+    @Test
+    @DisplayName("Las propiedades extra de la excepción salen como campos del ProblemDetail")
+    void propiedadesExtra() throws Exception {
+        mockMvc.perform(get("/prueba/con-propiedad"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("PERMISO_NO_ENCONTRADO"))
+                .andExpect(jsonPath("$.invalidos[0]").value("PROYECTO_VER"));
     }
 
     @Test
@@ -124,6 +135,12 @@ class ApiExceptionHandlerTest {
         @GetMapping("/conflicto")
         void conflicto() {
             throw new ConflictoException(CodigoError.EMAIL_DUPLICADO, "ya existe");
+        }
+
+        @GetMapping("/con-propiedad")
+        void conPropiedad() {
+            throw new NoEncontradoException(CodigoError.PERMISO_NO_ENCONTRADO, "no existen")
+                    .con("invalidos", List.of("PROYECTO_VER"));
         }
 
         @GetMapping("/param")
