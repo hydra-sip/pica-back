@@ -1,6 +1,8 @@
 package com.hydra.pica.plataforma_pica.user.domain;
 
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.common.domain.AuditableEntity;
 
@@ -8,9 +10,13 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
@@ -51,6 +57,13 @@ public class Rol extends AuditableEntity {
 
     @Column(name = "eliminado_en")
     private Instant eliminadoEn;
+
+    // rol_permiso no tiene columnas propias, por eso alcanza con @ManyToMany y no una entidad aparte
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "rol_permiso",
+            joinColumns = @JoinColumn(name = "rol_id"),
+            inverseJoinColumns = @JoinColumn(name = "permiso_id"))
+    private Set<Permiso> permisos = new HashSet<>();
 
     @Override
     public String toString() {
