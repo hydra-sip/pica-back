@@ -43,16 +43,22 @@ class AdminUsuarioControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/admin/usuarios sin autenticación responde 403")
-    void sinAutenticacionResponde403() throws Exception {
-        // El contrato pide 401 NO_AUTENTICADO; hoy responde 403 porque todavía no hay
-        // filtro JWT ni AuthenticationEntryPoint configurado (queda para el módulo de Auth).
+    @DisplayName("GET /api/v1/admin/usuarios sin autenticación responde 401")
+    void sinAutenticacionResponde401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/usuarios"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/admin/usuarios autenticado sin el permiso USUARIO_VER responde 403")
+    @WithMockUser(authorities = {"PERSONA_VER"})
+    void sinElPermisoResponde403() throws Exception {
         mockMvc.perform(get("/api/v1/admin/usuarios"))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(authorities = "USUARIO_VER")
     @DisplayName("GET /api/v1/admin/usuarios devuelve una página de usuarios")
     void listaUsuariosPaginados() throws Exception {
         UsuarioResumen resumen = new UsuarioResumen(
@@ -80,7 +86,7 @@ class AdminUsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(authorities = "USUARIO_VER")
     @DisplayName("GET /api/v1/admin/usuarios rechaza size fuera de rango")
     void sizeInvalidoResponde400() throws Exception {
         mockMvc.perform(get("/api/v1/admin/usuarios").param("size", "500"))
