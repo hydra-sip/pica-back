@@ -4,10 +4,12 @@ import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import org.springframework.data.jpa.repository.JpaRepository;
+
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
+public interface UsuarioRepository extends JpaRepository<Usuario, Long>, JpaSpecificationExecutor<Usuario> {
 
     Optional<Usuario> findByEmailIgnoreCase(String email);
 
