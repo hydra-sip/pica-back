@@ -9,7 +9,8 @@ import org.springframework.data.repository.query.Param;
 
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 
-public interface UsuarioRepository extends JpaRepository<Usuario, Long>, JpaSpecificationExecutor<Usuario> {
+public interface UsuarioRepository extends
+        JpaRepository<Usuario, Long>, JpaSpecificationExecutor<Usuario>, UsuarioAdminRepositoryCustom {
 
     Optional<Usuario> findByEmailIgnoreCase(String email);
 

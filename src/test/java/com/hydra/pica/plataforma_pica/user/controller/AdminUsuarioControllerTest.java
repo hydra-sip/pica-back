@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.user.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -73,7 +74,7 @@ class AdminUsuarioControllerTest {
                 Instant.parse("2026-01-01T00:00:00Z"));
         Page<UsuarioResumen> pagina = new PageImpl<>(List.of(resumen), PageRequest.of(0, 20), 1);
 
-        when(usuarioAdminService.listar(any(), any(), any(), any())).thenReturn(pagina);
+        when(usuarioAdminService.listar(any(), any(), any(), anyBoolean(), any())).thenReturn(pagina);
 
         mockMvc.perform(get("/api/v1/admin/usuarios").param("q", "perez"))
                 .andExpect(status().isOk())

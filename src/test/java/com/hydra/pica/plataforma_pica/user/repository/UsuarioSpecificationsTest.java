@@ -136,6 +136,28 @@ class UsuarioSpecificationsTest {
         assertThat(buscar(sinFiltros)).hasSize(3);
     }
 
+    @Test
+    void buscarIncluyendoEliminadosDevuelveUsuariosDadosDeBaja() {
+        Usuario eliminado = usuarioRepository.findByUsernameIgnoreCase("lperez").orElseThrow();
+        eliminado.setEliminadoEn(Instant.now());
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<UsuarioAdminRepositoryCustom.UsuarioAdminRow> pagina =
+                usuarioRepository.buscarIncluyendoEliminados(null, null, null, PageRequest.of(0, 10));
+
+        assertThat(pagina.getContent())
+                .extracting(UsuarioAdminRepositoryCustom.UsuarioAdminRow::username)
+                .contains("lperez");
+        assertThat(pagina.getContent())
+                .filteredOn(row -> row.username().equals("lperez"))
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.eliminadoEn()).isNotNull();
+                    assertThat(row.rolesJson()).contains("ADMINISTRADOR");
+                });
+    }
+
     private List<Usuario> buscar(Specification<Usuario> specification) {
         Page<Usuario> pagina = usuarioRepository.findAll(specification, PageRequest.of(0, 10));
         return pagina.getContent();

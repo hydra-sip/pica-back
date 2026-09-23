@@ -46,15 +46,13 @@ public class AdminUsuarioController {
             @RequestParam(required = false) String q,
             @RequestParam(required = false) EstadoUsuario estado,
             @RequestParam(required = false) Long rol,
-            // TODO(PICA-114 seguimiento): sin efecto hasta reemplazar @SQLRestriction por un
-            // @Filter conmutable en Usuario/Persona/Rol/UsuarioRol (decidido con el equipo).
             @RequestParam(required = false, defaultValue = "false") boolean incluirEliminados,
             @RequestParam(required = false, defaultValue = "0") @Min(0) int page,
             @RequestParam(required = false, defaultValue = "20") @Min(1) @Max(100) int size,
             @RequestParam(required = false) List<String> sort) {
 
         Page<UsuarioResumen> pagina = usuarioAdminService.listar(
-                q, estado, rol, PageRequest.of(page, size, construirOrden(sort)));
+                q, estado, rol, incluirEliminados, PageRequest.of(page, size, construirOrden(sort)));
         return PaginaResponse.desde(pagina);
     }
 
