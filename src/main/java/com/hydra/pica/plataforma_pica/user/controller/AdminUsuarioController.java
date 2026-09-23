@@ -6,18 +6,26 @@ import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.common.dto.PaginaResponse;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
+import com.hydra.pica.plataforma_pica.user.dto.UsuarioCreateRequest;
+import com.hydra.pica.plataforma_pica.user.dto.UsuarioDetalle;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioResumen;
 import com.hydra.pica.plataforma_pica.user.service.UsuarioAdminService;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -55,6 +63,19 @@ public class AdminUsuarioController {
         Page<UsuarioResumen> pagina = usuarioAdminService.listar(
                 q, estado, rol, incluirEliminados, PageRequest.of(page, size, construirOrden(sort)));
         return PaginaResponse.desde(pagina);
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('USUARIO_VER')")
+    public UsuarioDetalle verDetalle(@PathVariable Long id) {
+        return usuarioAdminService.obtenerDetalle(id);
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAuthority('USUARIO_CREAR')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public UsuarioDetalle crear(@Valid @RequestBody UsuarioCreateRequest request) {
+        return usuarioAdminService.crear(request);
     }
 
     private Sort construirOrden(List<String> sort) {

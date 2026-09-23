@@ -1,15 +1,20 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
 import java.util.List;
+import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hydra.pica.plataforma_pica.common.config.AdminConfig.AdminProperties;
+import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.dto.PersonaUsuario;
 import com.hydra.pica.plataforma_pica.user.dto.RolMinimo;
+import com.hydra.pica.plataforma_pica.user.dto.UsuarioCreateRequest;
+import com.hydra.pica.plataforma_pica.user.dto.UsuarioDetalle;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioResumen;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioAdminRepositoryCustom;
@@ -24,12 +29,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class UsuarioAdminService {
 
     private final UsuarioRepository usuarioRepository;
+    private final UsuarioService usuarioService;
     private final AdminProperties adminProperties;
     private final ObjectMapper objectMapper;
 
     public UsuarioAdminService(
-            UsuarioRepository usuarioRepository, AdminProperties adminProperties, ObjectMapper objectMapper) {
+            UsuarioRepository usuarioRepository, UsuarioService usuarioService, AdminProperties adminProperties,
+            ObjectMapper objectMapper) {
         this.usuarioRepository = usuarioRepository;
+        this.usuarioService = usuarioService;
         this.adminProperties = adminProperties;
         this.objectMapper = objectMapper;
     }
@@ -74,8 +82,31 @@ public class UsuarioAdminService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public UsuarioDetalle obtenerDetalle(Long id) {
+        Usuario usuario = usuarioRepository.findByIdIncluyendoEliminados(id)
+                .orElseThrow(() -> new NoEncontradoException(
+                        CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + id));
+        return UsuarioDetalle.desde(usuario, esProtegido(usuario));
+    }
+
+    @Transactional
+    public UsuarioDetalle crear(UsuarioCreateRequest request) {
+        EstadoUsuario estado = request.estado() == null ? null : EstadoUsuario.valueOf(request.estado().name());
+        Set<Long> roles = request.roles() == null ? Set.of() : Set.copyOf(request.roles());
+
+        Usuario usuario = usuarioService.crear(NuevoUsuario.porAdmin(
+                request.username(), request.email(), request.passwordTemporal(), request.descripcion(),
+                estado, request.personaId(), roles));
+
+        return UsuarioDetalle.desde(usuario, esProtegido(usuario));
+    }
+
     private UsuarioResumen aResumen(Usuario usuario) {
-        boolean protegido = usuario.getUsername().equalsIgnoreCase(adminProperties.username());
-        return UsuarioResumen.desde(usuario, protegido);
+        return UsuarioResumen.desde(usuario, esProtegido(usuario));
+    }
+
+    private boolean esProtegido(Usuario usuario) {
+        return usuario.getUsername().equalsIgnoreCase(adminProperties.username());
     }
 }
