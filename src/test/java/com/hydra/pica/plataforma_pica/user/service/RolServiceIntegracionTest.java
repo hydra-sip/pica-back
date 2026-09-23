@@ -301,6 +301,24 @@ class RolServiceIntegracionTest {
     }
 
     @Test
+    void losRolesDeUnUsuarioNoIncluyenLosDadosDeBajaHastaQueSeReactivan() {
+        Usuario usuario = usuarioCon("arbitro1", "ARBITRO");
+        Long id = idDe("ARBITRO");
+        rolService.eliminar(id);
+        entityManager.flush();
+        entityManager.clear();
+
+        // antes tiraba EntityNotFoundException al leer el rol dado de baja
+        assertThat(usuarioRepository.findById(usuario.getId()).orElseThrow().getRoles()).isEmpty();
+
+        rolService.reactivar(id);
+        entityManager.clear();
+        assertThat(usuarioRepository.findById(usuario.getId()).orElseThrow().getRoles())
+                .extracting(asignacion -> asignacion.getRol().getNombre())
+                .containsExactly("ARBITRO");
+    }
+
+    @Test
     void reactivarUnRolQueNoEstabaDadoDeBajaLoDevuelveIgual() {
         Long id = idDe("ARBITRO");
 

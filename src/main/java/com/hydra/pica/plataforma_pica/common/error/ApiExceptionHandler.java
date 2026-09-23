@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.common.error;
 
 import jakarta.validation.ConstraintViolationException;
 import java.util.List;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -9,14 +10,20 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.context.MessageSourceResolvable;
+import org.springframework.core.MethodParameter;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
@@ -92,6 +99,39 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(ex, pd, headers, HttpStatus.BAD_REQUEST, request);
     }
 
+    /**
+     * Anotaciones de Bean Validation sobre un @RequestParam o @PathVariable suelto (por ejemplo
+     * {@code @Max(100) int size}). Spring las valida solo y sin esto el 400 salía sin {@code codigo}.
+     */
+    @Override
+    protected ResponseEntity<Object> handleHandlerMethodValidationException(HandlerMethodValidationException ex,
+                                                                            HttpHeaders headers,
+                                                                            HttpStatusCode status,
+                                                                            WebRequest request) {
+        List<ErrorCampo> errores = ex.getParameterValidationResults().stream()
+                .flatMap(resultado -> resultado.getResolvableErrors().stream()
+                        .map(error -> new ErrorCampo(
+                                nombreDeParametro(resultado.getMethodParameter()),
+                                ErrorCampo.Codigo.desdeAnotacion(anotacion(error)),
+                                error.getDefaultMessage())))
+                .toList();
+        ProblemDetail pd = problema(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay parámetros inválidos", errores);
+        return handleExceptionInternal(ex, pd, headers, HttpStatus.BAD_REQUEST, request);
+    }
+
+    /** Un parámetro que no se puede convertir: {@code estado=FOO}, {@code /roles/abc}. */
+    @Override
+    protected ResponseEntity<Object> handleTypeMismatch(TypeMismatchException ex,
+                                                        HttpHeaders headers,
+                                                        HttpStatusCode status,
+                                                        WebRequest request) {
+        String campo = ex instanceof MethodArgumentTypeMismatchException m ? m.getName() : ex.getPropertyName();
+        List<ErrorCampo> errores = List.of(new ErrorCampo(
+                campo, ErrorCampo.Codigo.VALOR_INVALIDO, "Valor inválido: " + ex.getValue()));
+        ProblemDetail pd = problema(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay parámetros inválidos", errores);
+        return handleExceptionInternal(ex, pd, headers, HttpStatus.BAD_REQUEST, request);
+    }
+
     /** Falta un query param obligatorio, como el {@code token} de /auth/verificar. */
     @Override
     protected ResponseEntity<Object> handleMissingServletRequestParameter(MissingServletRequestParameterException ex,
@@ -118,6 +158,21 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             pd.setProperty("errores", errores);
         }
         return pd;
+    }
+
+    /** El nombre con el que viaja en la URL: el de @RequestParam si lo tiene, si no el del parámetro. */
+    private static String nombreDeParametro(MethodParameter parametro) {
+        RequestParam requestParam = parametro.getParameterAnnotation(RequestParam.class);
+        if (requestParam != null && !requestParam.name().isEmpty()) {
+            return requestParam.name();
+        }
+        return Objects.requireNonNullElse(parametro.getParameterName(), "parametro");
+    }
+
+    /** El último código de un error de Bean Validation es el nombre simple de la anotación ("Max"). */
+    private static String anotacion(MessageSourceResolvable error) {
+        String[] codigos = error.getCodes();
+        return codigos == null || codigos.length == 0 ? null : codigos[codigos.length - 1];
     }
 
     /** De "crear.request.nroDoc" se queda con "nroDoc". */
