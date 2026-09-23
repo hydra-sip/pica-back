@@ -14,10 +14,12 @@ import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
+import com.hydra.pica.plataforma_pica.user.domain.Modulo;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.domain.UsuarioRol;
 import com.hydra.pica.plataforma_pica.user.dto.FiltroRoles;
+import com.hydra.pica.plataforma_pica.user.dto.ModuloPermisos;
 import com.hydra.pica.plataforma_pica.user.dto.RolDetalle;
 import com.hydra.pica.plataforma_pica.user.dto.RolRequest;
 import com.hydra.pica.plataforma_pica.user.dto.RolResumen;
@@ -37,7 +39,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * ABM de roles contra Postgres, con el seed de V2 y V4. Lo que más interesa acá es lo que un mock
+ * ABM de roles y sus permisos contra Postgres, con el seed de V2 y V4. Lo que más interesa acá es lo que un mock
  * no muestra: las consultas nativas que saltan el @SQLRestriction (listado, detalle y reactivación
  * de eliminados, nombre único contando eliminados) y que la baja de un rol se note en los permisos.
  * Cada test hace rollback al terminar.
@@ -299,6 +301,24 @@ class RolServiceIntegracionTest {
     }
 
     @Test
+    void losRolesDeUnUsuarioNoIncluyenLosDadosDeBajaHastaQueSeReactivan() {
+        Usuario usuario = usuarioCon("arbitro1", "ARBITRO");
+        Long id = idDe("ARBITRO");
+        rolService.eliminar(id);
+        entityManager.flush();
+        entityManager.clear();
+
+        // antes tiraba EntityNotFoundException al leer el rol dado de baja
+        assertThat(usuarioRepository.findById(usuario.getId()).orElseThrow().getRoles()).isEmpty();
+
+        rolService.reactivar(id);
+        entityManager.clear();
+        assertThat(usuarioRepository.findById(usuario.getId()).orElseThrow().getRoles())
+                .extracting(asignacion -> asignacion.getRol().getNombre())
+                .containsExactly("ARBITRO");
+    }
+
+    @Test
     void reactivarUnRolQueNoEstabaDadoDeBajaLoDevuelveIgual() {
         Long id = idDe("ARBITRO");
 
@@ -311,6 +331,111 @@ class RolServiceIntegracionTest {
     @Test
     void reactivarUnRolQueNoExisteDa404() {
         assertCodigo(() -> rolService.reactivar(999_999L), HttpStatus.NOT_FOUND, CodigoError.ROL_NO_ENCONTRADO);
+    }
+
+    // --- permisos (PICA-126) -------------------------------------------------
+
+    @Test
+    void cambiarLosPermisosDeUnRolCambiaLoQuePuedenHacerSusUsuarios() {
+        Usuario usuario = usuarioCon("soporte1", "SOPORTE");
+        Long id = idDe("SOPORTE");
+        assertThat(permisoService.permisosDe(usuario.getId())).isEmpty();
+
+        RolDetalle soporte = rolService.reemplazarPermisos(id, List.of("PERSONA_VER", "USUARIO_VER"));
+        entityManager.clear();
+
+        // en el orden del catálogo, no en el que llegaron
+        assertThat(soporte.permisos()).containsExactly("USUARIO_VER", "PERSONA_VER");
+        assertThat(permisoService.permisosDe(usuario.getId())).containsExactlyInAnyOrder("USUARIO_VER", "PERSONA_VER");
+
+        // reemplaza, no suma
+        rolService.reemplazarPermisos(id, List.of("ROL_VER"));
+        entityManager.clear();
+        assertThat(permisoService.permisosDe(usuario.getId())).containsExactly("ROL_VER");
+    }
+
+    @Test
+    void unaListaVaciaDejaAlRolSinPermisosYLosRepetidosCuentanUnaVez() {
+        Long id = idDe("ADMINISTRADOR");
+
+        assertThat(rolService.reemplazarPermisos(id, List.of()).permisos()).isEmpty();
+        assertThat(rolService.reemplazarPermisos(id, List.of("USUARIO_VER", "USUARIO_VER")).permisos())
+                .containsExactly("USUARIO_VER");
+    }
+
+    @Test
+    void unPermisoQueNoExisteDa404ConLosQueFaltanYNoCambiaNada() {
+        Long id = idDe("SOPORTE");
+
+        assertThatThrownBy(() -> rolService.reemplazarPermisos(id,
+                        List.of("USUARIO_VER", "PROYECTO_VER", "CONVOCATORIA_VER")))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> {
+                    assertThat(((ApiException) e).getCodigo()).isEqualTo(CodigoError.PERMISO_NO_ENCONTRADO);
+                    // aparte del detail, para que la pantalla marque esos checkboxes sin parsear texto
+                    assertThat(((ApiException) e).getPropiedades())
+                            .containsEntry("invalidos", List.of("PROYECTO_VER", "CONVOCATORIA_VER"));
+                });
+
+        entityManager.clear();
+        assertThat(rolService.detalle(id).permisos()).isEmpty();
+    }
+
+    @Test
+    void aSuperUsuarioNoSeLeCambianLosPermisos() {
+        assertCodigo(() -> rolService.reemplazarPermisos(idDe("SUPER_USUARIO"), List.of("USUARIO_VER")),
+                HttpStatus.FORBIDDEN, CodigoError.ROL_PROTEGIDO);
+    }
+
+    @Test
+    void aUnRolInactivoNoSeLeCambianLosPermisos() {
+        RolDetalle veedor = rolService.crear(new RolRequest("VEEDOR", "Veedor", null, EstadoGeneral.INACTIVO));
+
+        assertCodigo(() -> rolService.reemplazarPermisos(veedor.id(), List.of("USUARIO_VER")),
+                HttpStatus.CONFLICT, CodigoError.ROL_INACTIVO);
+    }
+
+    @Test
+    void aUnRolDadoDeBajaNoSeLeCambianLosPermisos() {
+        Long id = idDe("SOPORTE");
+        rolService.eliminar(id);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertCodigo(() -> rolService.reemplazarPermisos(id, List.of("USUARIO_VER")),
+                HttpStatus.NOT_FOUND, CodigoError.ROL_NO_ENCONTRADO);
+    }
+
+    @Test
+    void aParticipanteSeLePuedenCambiarLosPermisos() {
+        assertThat(rolService.reemplazarPermisos(idDe("PARTICIPANTE"), List.of("PERSONA_VER")).permisos())
+                .containsExactly("PERSONA_VER");
+    }
+
+    @Test
+    void cambiarLosPermisosQuedaEnLaAuditoriaDelRol() {
+        Long id = idDe("SOPORTE");
+        Instant antes = rolService.detalle(id).modificadoEn();
+        entityManager.clear();
+
+        rolService.reemplazarPermisos(id, List.of("USUARIO_VER"));
+        entityManager.clear();
+
+        // se lee de la base: la colección sola no marca al rol como modificado
+        assertThat(rolService.detalle(id).modificadoEn()).isAfter(antes);
+    }
+
+    @Test
+    void elCatalogoAgrupaPorModuloEnElOrdenDelSeed() {
+        List<ModuloPermisos> catalogo = permisoService.catalogo();
+
+        assertThat(catalogo).extracting(ModuloPermisos::modulo)
+                .containsExactly(Modulo.USUARIOS, Modulo.PERSONAS, Modulo.ROLES);
+        assertThat(catalogo.getLast().permisos()).extracting(ModuloPermisos.Item::codigo)
+                .containsExactly("ROL_VER", "ROL_CREAR", "ROL_EDITAR", "ROL_ELIMINAR", "ROL_ASIGNAR");
+        assertThat(catalogo).flatExtracting(ModuloPermisos::permisos)
+                .hasSize(13)
+                .allSatisfy(item -> assertThat(item.descripcion()).isNotBlank());
     }
 
     // --- ayudas -------------------------------------------------------------

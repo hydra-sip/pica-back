@@ -2,8 +2,11 @@ package com.hydra.pica.plataforma_pica.common.error;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import java.util.List;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,6 +18,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -57,6 +61,35 @@ class ApiExceptionHandlerTest {
                 .andExpect(jsonPath("$.codigo").value("EMAIL_DUPLICADO"))
                 .andExpect(jsonPath("$.detail").value("ya existe"))
                 .andExpect(jsonPath("$.instance").value("/prueba/conflicto"));
+    }
+
+    @Test
+    @DisplayName("Un @RequestParam que no cumple su anotación: 400 VALIDACION con el campo")
+    void requestParamInvalido() throws Exception {
+        mockMvc.perform(get("/prueba/tamano").param("size", "500"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"))
+                .andExpect(jsonPath("$.errores[0].campo").value("size"))
+                .andExpect(jsonPath("$.errores[0].codigo").value("LONGITUD"));
+    }
+
+    @Test
+    @DisplayName("Un parámetro que no se puede convertir: 400 VALIDACION con el campo")
+    void parametroQueNoConvierte() throws Exception {
+        mockMvc.perform(get("/prueba/numero/abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"))
+                .andExpect(jsonPath("$.errores[0].campo").value("id"))
+                .andExpect(jsonPath("$.errores[0].codigo").value("VALOR_INVALIDO"));
+    }
+
+    @Test
+    @DisplayName("Las propiedades extra de la excepción salen como campos del ProblemDetail")
+    void propiedadesExtra() throws Exception {
+        mockMvc.perform(get("/prueba/con-propiedad"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("PERMISO_NO_ENCONTRADO"))
+                .andExpect(jsonPath("$.invalidos[0]").value("PROYECTO_VER"));
     }
 
     @Test
@@ -124,6 +157,18 @@ class ApiExceptionHandlerTest {
         @GetMapping("/conflicto")
         void conflicto() {
             throw new ConflictoException(CodigoError.EMAIL_DUPLICADO, "ya existe");
+        }
+
+        @GetMapping("/tamano")
+        void tamano(@RequestParam @Max(100) int size) {}
+
+        @GetMapping("/numero/{id}")
+        void numero(@PathVariable Long id) {}
+
+        @GetMapping("/con-propiedad")
+        void conPropiedad() {
+            throw new NoEncontradoException(CodigoError.PERMISO_NO_ENCONTRADO, "no existen")
+                    .con("invalidos", List.of("PROYECTO_VER"));
         }
 
         @GetMapping("/param")

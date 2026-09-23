@@ -3,8 +3,10 @@ package com.hydra.pica.plataforma_pica.user.service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
@@ -13,17 +15,20 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
+import com.hydra.pica.plataforma_pica.user.domain.Permiso;
 import com.hydra.pica.plataforma_pica.user.domain.Rol;
 import com.hydra.pica.plataforma_pica.user.dto.FiltroRoles;
 import com.hydra.pica.plataforma_pica.user.dto.RolDetalle;
 import com.hydra.pica.plataforma_pica.user.dto.RolRequest;
 import com.hydra.pica.plataforma_pica.user.dto.RolResumen;
+import com.hydra.pica.plataforma_pica.user.repository.PermisoRepository;
 import com.hydra.pica.plataforma_pica.user.repository.RolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository.CantidadPorRol;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.auditing.AuditingHandler;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -33,7 +38,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * ABM de roles del backoffice (PICA-125). Los permisos de cada rol van aparte (PICA-126).
+ * ABM de roles del backoffice (PICA-125) y sus permisos (PICA-126).
  *
  * Dos roles están protegidos. SUPER_USUARIO (es_sistema) no se modifica ni se da de baja.
  * PARTICIPANTE es el que el registro le pone a todo usuario nuevo buscándolo por nombre
@@ -65,6 +70,8 @@ public class RolService {
 
     private final RolRepository rolRepository;
     private final UsuarioRolRepository usuarioRolRepository;
+    private final PermisoRepository permisoRepository;
+    private final AuditingHandler auditingHandler;
 
     @Transactional(readOnly = true)
     public Page<RolResumen> listar(FiltroRoles filtro, Pageable pageable) {
@@ -142,6 +149,51 @@ public class RolService {
         rol.setEliminadoEn(null);
         // el flush es para que modificadoEn salga actualizado en la respuesta
         return detalle(rolRepository.saveAndFlush(rol));
+    }
+
+    /**
+     * Reemplaza los permisos del rol por {@code codigos} (PICA-126). Sus usuarios lo notan en el
+     * próximo token, porque los permisos se calculan al emitirlo. A PARTICIPANTE sí se le pueden
+     * cambiar: la protección es sobre nombre, estado y baja, que es de lo que depende el registro.
+     */
+    @Transactional
+    public RolDetalle reemplazarPermisos(Long id, Collection<String> codigos) {
+        Rol rol = buscarVivo(id);
+        if (rol.isEsSistema()) {
+            throw new ProhibidoException(CodigoError.ROL_PROTEGIDO,
+                    "El rol " + rol.getNombre() + " es del sistema: tiene todos los permisos y no se cambian");
+        }
+        if (rol.getEstado() != EstadoGeneral.ACTIVO) {
+            throw new ConflictoException(CodigoError.ROL_INACTIVO,
+                    "El rol " + rol.getNombre() + " está inactivo: activalo antes de cambiarle los permisos");
+        }
+
+        Set<Permiso> permisos = buscarPermisos(codigos);
+        rol.getPermisos().clear();
+        rol.getPermisos().addAll(permisos);
+        // Cambiar solo la colección no marca al rol como modificado y no dispara la auditoría; V4
+        // promete que quién cambió los permisos queda en modificado_por/modificado_en del rol.
+        auditingHandler.markModified(rol);
+        return detalle(rolRepository.saveAndFlush(rol));
+    }
+
+    /**
+     * Todos o ninguno: si falta alguno se corta antes de tocar el rol. Los que faltan van en
+     * {@code invalidos} del ProblemDetail para que la pantalla marque esos checkboxes.
+     */
+    private Set<Permiso> buscarPermisos(Collection<String> codigos) {
+        Set<String> pedidos = new LinkedHashSet<>(codigos);
+        if (pedidos.isEmpty()) {
+            return Set.of();
+        }
+        Set<Permiso> encontrados = Set.copyOf(permisoRepository.findByCodigoIn(pedidos));
+        if (encontrados.size() < pedidos.size()) {
+            Set<String> existentes = encontrados.stream().map(Permiso::getCodigo).collect(Collectors.toSet());
+            List<String> faltantes = pedidos.stream().filter(codigo -> !existentes.contains(codigo)).toList();
+            throw new NoEncontradoException(CodigoError.PERMISO_NO_ENCONTRADO, "No existen los permisos " + faltantes)
+                    .con("invalidos", faltantes);
+        }
+        return encontrados;
     }
 
     private Rol buscarIncluyendoEliminados(Long id) {

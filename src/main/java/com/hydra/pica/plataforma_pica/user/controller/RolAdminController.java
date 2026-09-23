@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.user.controller;
 import java.net.URI;
 
 import com.hydra.pica.plataforma_pica.user.dto.FiltroRoles;
+import com.hydra.pica.plataforma_pica.user.dto.PermisosRequest;
 import com.hydra.pica.plataforma_pica.user.dto.RolDetalle;
 import com.hydra.pica.plataforma_pica.user.dto.RolRequest;
 import com.hydra.pica.plataforma_pica.user.dto.RolResumen;
@@ -27,8 +28,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
- * ABM de roles del backoffice (PICA-125). Cada endpoint exige el permiso de x-permiso en
- * docs/api/openapi.yaml; las reglas están en {@link RolService}.
+ * ABM de roles del backoffice (PICA-125) y sus permisos (PICA-126). Cada endpoint exige el
+ * permiso de x-permiso en docs/api/openapi.yaml; las reglas están en {@link RolService}.
  */
 @RestController
 @RequestMapping("/api/v1/admin/roles")
@@ -77,5 +78,11 @@ public class RolAdminController {
     @PreAuthorize("hasAuthority('ROL_ELIMINAR')")
     public RolDetalle reactivar(@PathVariable Long id) {
         return rolService.reactivar(id);
+    }
+
+    @PutMapping("/{id}/permisos")
+    @PreAuthorize("hasAuthority('ROL_EDITAR')")
+    public RolDetalle reemplazarPermisos(@PathVariable Long id, @Valid @RequestBody PermisosRequest request) {
+        return rolService.reemplazarPermisos(id, request.permisos());
     }
 }

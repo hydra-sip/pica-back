@@ -71,7 +71,11 @@ public class Usuario extends AuditableEntity {
     @JoinColumn(name = "persona_id", nullable = false)
     private Persona persona;
 
+    // Solo asignaciones a roles vivos. Un rol dado de baja conserva sus asignaciones (para que al
+    // reactivarlo sus usuarios lo recuperen), pero su @SQLRestriction lo esconde: sin esto,
+    // usuarioRol.getRol() de esas asignaciones tira EntityNotFoundException.
     @OneToMany(mappedBy = "usuario", fetch = FetchType.LAZY)
+    @SQLRestriction("rol_id IN (SELECT r.id FROM rol r WHERE r.eliminado_en IS NULL)")
     private Set<UsuarioRol> roles = new HashSet<>();
 
     @Column(name = "eliminado_en")

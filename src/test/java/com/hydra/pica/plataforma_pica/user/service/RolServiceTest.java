@@ -11,6 +11,7 @@ import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.user.domain.Rol;
 import com.hydra.pica.plataforma_pica.user.dto.RolRequest;
+import com.hydra.pica.plataforma_pica.user.repository.PermisoRepository;
 import com.hydra.pica.plataforma_pica.user.repository.RolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository;
 import org.hibernate.exception.ConstraintViolationException;
@@ -21,6 +22,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.auditing.AuditingHandler;
 
 /**
  * Lo único de {@link RolService} que no se puede armar contra Postgres en un test: dos altas con el
@@ -33,6 +35,8 @@ class RolServiceTest {
 
     @Mock private RolRepository rolRepository;
     @Mock private UsuarioRolRepository usuarioRolRepository;
+    @Mock private PermisoRepository permisoRepository;
+    @Mock private AuditingHandler auditingHandler;
 
     @InjectMocks
     private RolService rolService;
