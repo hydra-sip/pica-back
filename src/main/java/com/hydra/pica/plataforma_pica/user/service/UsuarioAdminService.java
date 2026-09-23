@@ -47,7 +47,12 @@ public class UsuarioAdminService {
                     .map(this::aResumen);
         }
 
-        return usuarioRepository.findAll(filtro, pageable).map(this::aResumen);
+        Page<Usuario> pagina = usuarioRepository.findAll(filtro, pageable);
+        if (!pagina.isEmpty()) {
+            // inicializa usuario.getRoles() de toda la página de una vez; el resultado no se usa
+            usuarioRepository.findConRolesByIdIn(pagina.getContent().stream().map(Usuario::getId).toList());
+        }
+        return pagina.map(this::aResumen);
     }
 
     private UsuarioResumen aResumen(UsuarioAdminRepositoryCustom.UsuarioAdminRow fila) {

@@ -1,7 +1,13 @@
 package com.hydra.pica.plataforma_pica.user.repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +17,19 @@ import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 
 public interface UsuarioRepository extends
         JpaRepository<Usuario, Long>, JpaSpecificationExecutor<Usuario>, UsuarioAdminRepositoryCustom {
+
+    /** La persona viaja en la misma consulta (relación a uno: no rompe la paginación). */
+    @Override
+    @EntityGraph(attributePaths = "persona")
+    Page<Usuario> findAll(Specification<Usuario> spec, Pageable pageable);
+
+    /**
+     * Carga los roles (con su rol) de los usuarios ya traídos. Va aparte del listado porque un fetch
+     * de colección junto con paginación hace que Hibernate pagine en memoria; con los ids de la
+     * página son 2 consultas fijas en vez de una por usuario.
+     */
+    @Query("select distinct u from Usuario u left join fetch u.roles ur left join fetch ur.rol where u.id in :ids")
+    List<Usuario> findConRolesByIdIn(@Param("ids") Collection<Long> ids);
 
     Optional<Usuario> findByEmailIgnoreCase(String email);
 

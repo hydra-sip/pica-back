@@ -10,6 +10,7 @@ import com.hydra.pica.plataforma_pica.user.dto.UsuarioResumen;
 import com.hydra.pica.plataforma_pica.user.service.UsuarioAdminService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -43,7 +44,7 @@ public class AdminUsuarioController {
     @GetMapping
     @PreAuthorize("hasAuthority('USUARIO_VER')")
     public PaginaResponse<UsuarioResumen> listar(
-            @RequestParam(required = false) String q,
+            @RequestParam(required = false) @Size(max = 100) String q,
             @RequestParam(required = false) EstadoUsuario estado,
             @RequestParam(required = false) Long rol,
             @RequestParam(required = false, defaultValue = "false") boolean incluirEliminados,

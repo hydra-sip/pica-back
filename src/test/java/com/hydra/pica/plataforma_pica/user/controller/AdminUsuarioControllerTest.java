@@ -130,4 +130,23 @@ class AdminUsuarioControllerTest {
         mockMvc.perform(get("/api/v1/admin/usuarios").param("size", "500"))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_VER")
+    @DisplayName("GET /api/v1/admin/usuarios rechaza una búsqueda q de más de 100 caracteres")
+    void qDemasiadoLargaResponde400() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/usuarios").param("q", "a".repeat(101)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_VER")
+    @DisplayName("GET /api/v1/admin/usuarios acepta una búsqueda q de exactamente 100 caracteres")
+    void qDeCienCaracteresEsValida() throws Exception {
+        when(usuarioAdminService.listar(any(), any(), any(), anyBoolean(), any()))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/api/v1/admin/usuarios").param("q", "a".repeat(100)))
+                .andExpect(status().isOk());
+    }
 }
