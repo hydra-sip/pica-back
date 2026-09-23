@@ -24,8 +24,8 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  * el mecanismo pero no obliga a nadie a usarlo, así que sin esto alcanza con que alguien se olvide
  * de la anotación para que el endpoint quede abierto a cualquier usuario autenticado.
  *
- * Hoy pasa en vacío porque los controllers de admin los van escribiendo las subtareas 114, 115,
- * 116, 123, 125, 126 y 127. Empieza a fallar con el primero que llegue sin anotar.
+ * Los controllers de admin los van escribiendo las subtareas 114, 115, 116, 123, 125, 126 y 127;
+ * el primero fue el de roles (125). Falla con el primero que llegue sin anotar.
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest

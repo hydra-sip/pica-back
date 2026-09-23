@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.repository;
 
+import java.util.Collection;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.user.domain.UsuarioRol;
@@ -21,4 +22,30 @@ public interface UsuarioRolRepository extends JpaRepository<UsuarioRol, UsuarioR
               and usuarioRol.id.rolId = :rolId
             """)
     boolean existsByUsuarioIdAndRolId(@Param("usuarioId") Long usuarioId, @Param("rolId") Long rolId);
+
+    /**
+     * Cuántos usuarios tiene cada rol, para el listado de roles. Cuenta asignaciones vigentes de
+     * usuarios no eliminados, en cualquier estado.
+     *
+     * El {@code eliminadoEn is null} del usuario va escrito a propósito: si la consulta no usa
+     * ninguna columna de Usuario, Hibernate saca el join (la relación es obligatoria) y con él se
+     * va el {@code @SQLRestriction}, así que contaba también a los eliminados. Filtra por
+     * {@code id.rolId} y no por {@code rol} para no sumar el join con Rol, que dejaría sin contar a
+     * los roles dados de baja.
+     */
+    @Query("""
+            select usuarioRol.id.rolId as rolId, count(usuarioRol) as cantidad
+            from UsuarioRol usuarioRol
+              join usuarioRol.usuario usuario
+            where usuarioRol.id.rolId in :rolIds
+              and usuario.eliminadoEn is null
+            group by usuarioRol.id.rolId
+            """)
+    List<CantidadPorRol> contarUsuariosPorRol(@Param("rolIds") Collection<Long> rolIds);
+
+    interface CantidadPorRol {
+        Long getRolId();
+
+        long getCantidad();
+    }
 }

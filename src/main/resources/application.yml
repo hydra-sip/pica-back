@@ -30,6 +30,13 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: false
 
+  # Forma de página del contrato ({content, page: {size, number, totalElements, totalPages}}) y tope de size
+  data:
+    web:
+      pageable:
+        serialization-mode: via_dto
+        max-page-size: 100
+
 management:
   endpoints:
     web:
