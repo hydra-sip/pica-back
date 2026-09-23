@@ -457,7 +457,10 @@ paths:
       x-jira: PICA-125
       x-owner: Tomás
       x-permiso: ROL_VER
-      description: Paginado igual que los otros listados para reusar la tabla genérica. `cantidadUsuarios` cuenta no eliminados.
+      description: >-
+        Paginado igual que los otros listados para reusar la tabla genérica. `cantidadUsuarios` cuenta
+        usuarios no eliminados. `q` busca en `nombre` y `nombreAmigable`. Se puede ordenar por `id`
+        (default), `nombre`, `nombreAmigable`, `estado` y `creadoEn`; otro campo da 400 `VALIDACION`.
       parameters:
         - {$ref: '#/components/parameters/q'}
         - {name: estado, in: query, schema: {$ref: '#/components/schemas/Estado'}}
@@ -487,6 +490,9 @@ paths:
       x-jira: PICA-125
       x-owner: Tomás
       x-permiso: ROL_VER
+      description: >-
+        Incluye los dados de baja (vienen con `eliminado: true`) para poder abrirlos desde el listado
+        y reactivarlos.
       responses:
         '200': {$ref: '#/components/responses/Rol'}
     put:
@@ -495,7 +501,11 @@ paths:
       x-jira: PICA-125
       x-owner: Tomás
       x-permiso: ROL_EDITAR
-      description: 403 `ROL_PROTEGIDO` (SUPER_USUARIO). 409 `ROL_DUPLICADO`.
+      description: >-
+        Si no viene `estado` se mantiene el que tenía. 403 `ROL_PROTEGIDO`: SUPER_USUARIO siempre;
+        PARTICIPANTE si cambia `nombre` o `estado` (el registro se lo asigna a todo usuario nuevo),
+        el nombre amigable y la descripción sí se cambian. 404 si está dado de baja (primero se reactiva).
+        409 `ROL_DUPLICADO`, también contra roles dados de baja.
       requestBody: {$ref: '#/components/requestBodies/Rol'}
       responses:
         '200': {$ref: '#/components/responses/Rol'}
@@ -509,7 +519,8 @@ paths:
       x-permiso: ROL_ELIMINAR
       description: >-
         Un rol eliminado no se puede asignar y deja de sumar permisos (solo cuentan roles activos).
-        403 `ROL_PROTEGIDO`.
+        Las asignaciones se conservan: al reactivarlo sus usuarios lo recuperan.
+        403 `ROL_PROTEGIDO` (SUPER_USUARIO y PARTICIPANTE). 404 si ya estaba dado de baja.
       responses:
         '204': {description: Dado de baja}
         '403': {$ref: '#/components/responses/Error'}
@@ -521,7 +532,9 @@ paths:
       x-jira: PICA-125
       x-owner: Tomás
       x-permiso: ROL_ELIMINAR
-      description: No está en la subtarea; se agrega para que roles se comporte igual que usuarios y personas en la tabla.
+      description: >-
+        No está en la subtarea; se agrega para que roles se comporte igual que usuarios y personas en la tabla.
+        Sobre un rol que no estaba dado de baja no hace nada y lo devuelve.
       parameters: [{$ref: '#/components/parameters/id'}]
       responses:
         '200': {$ref: '#/components/responses/Rol'}
@@ -639,7 +652,7 @@ components:
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400.
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO.
-        Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO) · ULTIMO_ASIGNADOR.
+        Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR.
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SIN_PERMISO, ERROR_INTERNO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
@@ -926,7 +939,9 @@ components:
           description: Técnico, mayúsculas y guión bajo. Es lo que va en el claim `roles`; no se renombra sin avisar.
         nombreAmigable: {$ref: '#/components/schemas/Nombre'}
         descripcion: {type: [string, 'null'], maxLength: 500}
-        estado: {$ref: '#/components/schemas/Estado'}
+        estado:
+          allOf: [{$ref: '#/components/schemas/Estado'}]
+          description: En el alta, ACTIVO si no viene; en la modificación, si no viene se mantiene.
     ModuloPermisos:
       type: object
       required: [modulo, permisos]
