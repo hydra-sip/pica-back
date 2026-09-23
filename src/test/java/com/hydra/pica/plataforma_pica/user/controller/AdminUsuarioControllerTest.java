@@ -88,6 +88,43 @@ class AdminUsuarioControllerTest {
 
     @Test
     @WithMockUser(authorities = "USUARIO_VER")
+    @DisplayName("GET /api/v1/admin/usuarios incluye usuarios eliminados con su payload completo")
+    void listaUsuariosIncluyendoEliminadosDevuelvePayloadCompleto() throws Exception {
+        UsuarioResumen resumen = new UsuarioResumen(
+                2L,
+                "usuario-eliminado",
+                "eliminado@example.com",
+                EstadoUsuario.BLOQUEADO,
+                true,
+                false,
+                new PersonaUsuario(20L, "Gómez, Ana", "DNI", "87654321"),
+                List.of(new RolMinimo(3L, "ADMINISTRADOR", "Administrador")),
+                Instant.parse("2026-01-02T00:00:00Z"));
+        Page<UsuarioResumen> pagina = new PageImpl<>(List.of(resumen), PageRequest.of(0, 20), 1);
+
+        when(usuarioAdminService.listar(any(), any(), any(), anyBoolean(), any())).thenReturn(pagina);
+
+        mockMvc.perform(get("/api/v1/admin/usuarios")
+                        .param("incluirEliminados", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(2))
+                .andExpect(jsonPath("$.content[0].username").value("usuario-eliminado"))
+                .andExpect(jsonPath("$.content[0].email").value("eliminado@example.com"))
+                .andExpect(jsonPath("$.content[0].estado").value("BLOQUEADO"))
+                .andExpect(jsonPath("$.content[0].eliminado").value(true))
+                .andExpect(jsonPath("$.content[0].persona.id").value(20))
+                .andExpect(jsonPath("$.content[0].persona.nombreCompleto").value("Gómez, Ana"))
+                .andExpect(jsonPath("$.content[0].persona.tipoDoc").value("DNI"))
+                .andExpect(jsonPath("$.content[0].persona.nroDoc").value("87654321"))
+                .andExpect(jsonPath("$.content[0].roles[0].id").value(3))
+                .andExpect(jsonPath("$.content[0].roles[0].nombre").value("ADMINISTRADOR"))
+                .andExpect(jsonPath("$.content[0].roles[0].nombreAmigable").value("Administrador"))
+                .andExpect(jsonPath("$.page.totalElements").value(1))
+                .andExpect(jsonPath("$.page.number").value(0));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_VER")
     @DisplayName("GET /api/v1/admin/usuarios rechaza size fuera de rango")
     void sizeInvalidoResponde400() throws Exception {
         mockMvc.perform(get("/api/v1/admin/usuarios").param("size", "500"))

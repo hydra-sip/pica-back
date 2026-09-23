@@ -99,6 +99,8 @@ public class UsuarioRepositoryImpl implements UsuarioAdminRepositoryCustom {
                 "email", "u.email",
                 "estado", "u.estado",
                 "creadoEn", "u.creado_en",
+                "persona.apellidos", "p.apellidos",
+                "persona.nombres", "p.nombres",
                 "apellidos", "p.apellidos",
                 "nombres", "p.nombres");
         String order = pageable.getSort().stream()
