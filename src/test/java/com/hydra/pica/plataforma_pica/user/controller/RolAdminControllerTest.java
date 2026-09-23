@@ -228,10 +228,45 @@ class RolAdminControllerTest {
                 .andExpect(jsonPath("$.eliminado").value(false));
     }
 
+    // --- permisos de un rol (PICA-126) ---------------------------------------
+
+    @Test
+    @DisplayName("PUT /roles/{id}/permisos: pasa la lista al servicio y devuelve el rol")
+    @WithMockUser(authorities = "ROL_EDITAR")
+    void reemplazarPermisosDevuelveElRol() throws Exception {
+        when(rolService.reemplazarPermisos(eq(5L), any()))
+                .thenReturn(detalle(5L, "SOPORTE", List.of("USUARIO_VER", "PERSONA_VER")));
+
+        mockMvc.perform(put(ROLES + "/5/permisos").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"permisos\": [\"PERSONA_VER\", \"USUARIO_VER\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.permisos[0]").value("USUARIO_VER"));
+
+        verify(rolService).reemplazarPermisos(5L, List.of("PERSONA_VER", "USUARIO_VER"));
+    }
+
+    @Test
+    @DisplayName("PUT /roles/{id}/permisos sin la lista o con un código vacío: 400")
+    @WithMockUser(authorities = "ROL_EDITAR")
+    void reemplazarPermisosSinListaDa400() throws Exception {
+        mockMvc.perform(put(ROLES + "/5/permisos").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"))
+                .andExpect(jsonPath("$.errores[0].campo").value("permisos"))
+                .andExpect(jsonPath("$.errores[0].codigo").value("REQUERIDO"));
+
+        mockMvc.perform(put(ROLES + "/5/permisos").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"permisos\": [\"\"]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+
+        verifyNoInteractions(rolService);
+    }
+
     // --- permisos -----------------------------------------------------------
 
     @Test
-    @DisplayName("El Administrador del seed ve los roles pero no los crea, modifica ni da de baja")
+    @DisplayName("El Administrador del seed ve los roles pero no los crea, modifica, da de baja ni les cambia permisos")
     // los permisos que V4 le da al ADMINISTRADOR
     @WithMockUser(authorities = {
             "USUARIO_VER", "USUARIO_CREAR", "USUARIO_EDITAR", "USUARIO_ELIMINAR",
@@ -251,6 +286,9 @@ class RolAdminControllerTest {
                 .andExpect(status().isForbidden());
         mockMvc.perform(delete(ROLES + "/2")).andExpect(status().isForbidden());
         mockMvc.perform(post(ROLES + "/2/reactivar")).andExpect(status().isForbidden());
+        mockMvc.perform(put(ROLES + "/2/permisos").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"permisos\": []}"))
+                .andExpect(status().isForbidden());
 
         verify(rolService).listar(any(), any());
         verify(rolService).detalle(2L);
