@@ -82,33 +82,34 @@ class AuthControllerTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("cuerposInvalidos")
     @DisplayName("Registro inválido: 400 VALIDACION con el campo correspondiente")
-    void registroInvalido(String descripcion, String body, String campo) throws Exception {
+    void registroInvalido(String descripcion, String body, String campo, String codigo) throws Exception {
         mockMvc.perform(post("/api/v1/auth/registro")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("VALIDACION"))
-                .andExpect(jsonPath("$.errores[?(@.campo=='" + campo + "')]").isNotEmpty());
+                .andExpect(jsonPath("$.errores[0].campo").value(campo))
+                .andExpect(jsonPath("$.errores[0].codigo").value(codigo));
     }
 
     static Stream<Arguments> cuerposInvalidos() {
         return Stream.of(
                 Arguments.of("username con espacio",
-                        bodyCon("username", "juan perez"), "username"),
+                        bodyCon("username", "juan perez"), "username", "FORMATO_INVALIDO"),
                 Arguments.of("email sin arroba",
-                        bodyCon("email", "juan.example.com"), "email"),
+                        bodyCon("email", "juan.example.com"), "email", "FORMATO_INVALIDO"),
                 Arguments.of("password sin mayúscula",
-                        bodyCon("password", "pica2026"), "password"),
+                        bodyCon("password", "pica2026"), "password", "PASSWORD_DEBIL"),
                 Arguments.of("password sin dígito",
-                        bodyCon("password", "Picapica"), "password"),
+                        bodyCon("password", "Picapica"), "password", "PASSWORD_DEBIL"),
                 Arguments.of("password de siete caracteres",
-                        bodyCon("password", "Pica202"), "password"),
+                        bodyCon("password", "Pica202"), "password", "PASSWORD_DEBIL"),
                 Arguments.of("nroDoc con guion",
-                        bodyCon("nroDoc", "30-123456"), "nroDoc"),
+                        bodyCon("nroDoc", "30-123456"), "nroDoc", "FORMATO_INVALIDO"),
                 Arguments.of("fecha de nacimiento futura",
-                        bodyCon("fechaNacimiento", "2999-01-01"), "fechaNacimiento"),
+                        bodyCon("fechaNacimiento", "2999-01-01"), "fechaNacimiento", "FECHA_FUTURA"),
                 Arguments.of("tipoDoc nulo",
-                        bodyCon("tipoDoc", null), "tipoDoc"));
+                        bodyCon("tipoDoc", null), "tipoDoc", "REQUERIDO"));
     }
 
     @Test

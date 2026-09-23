@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.user.dto;
 
 import java.time.LocalDate;
 
+import com.hydra.pica.plataforma_pica.common.validation.PasswordValida;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 
 import jakarta.validation.constraints.Email;
@@ -21,8 +22,7 @@ public record RegistroRequest(
         @Size(max = 254)
         String email,
         @NotBlank
-        @Size(min = 8, max = 72)
-        @Pattern(regexp = "^(?=.*[A-Z])(?=.*\\d).{8,}$")
+        @PasswordValida
         String password,
         @NotBlank
         @Size(min = 1, max = 100)
