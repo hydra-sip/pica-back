@@ -1,0 +1,89 @@
+package com.hydra.pica.plataforma_pica.user.controller;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Instant;
+import java.util.List;
+
+import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
+import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
+import com.hydra.pica.plataforma_pica.user.dto.PersonaUsuario;
+import com.hydra.pica.plataforma_pica.user.dto.RolMinimo;
+import com.hydra.pica.plataforma_pica.user.dto.UsuarioResumen;
+import com.hydra.pica.plataforma_pica.user.service.UsuarioAdminService;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+@WebMvcTest(AdminUsuarioController.class)
+@Import({SecurityConfig.class, WebConfig.class})
+class AdminUsuarioControllerTest {
+
+    private final MockMvc mockMvc;
+
+    @MockitoBean
+    private UsuarioAdminService usuarioAdminService;
+
+    @Autowired
+    AdminUsuarioControllerTest(MockMvc mockMvc) {
+        this.mockMvc = mockMvc;
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/admin/usuarios sin autenticación responde 403")
+    void sinAutenticacionResponde403() throws Exception {
+        // El contrato pide 401 NO_AUTENTICADO; hoy responde 403 porque todavía no hay
+        // filtro JWT ni AuthenticationEntryPoint configurado (queda para el módulo de Auth).
+        mockMvc.perform(get("/api/v1/admin/usuarios"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("GET /api/v1/admin/usuarios devuelve una página de usuarios")
+    void listaUsuariosPaginados() throws Exception {
+        UsuarioResumen resumen = new UsuarioResumen(
+                1L,
+                "jperez",
+                "jperez@example.com",
+                EstadoUsuario.ACTIVO,
+                false,
+                false,
+                new PersonaUsuario(10L, "Pérez, Juan", "DNI", "12345678"),
+                List.of(new RolMinimo(2L, "PARTICIPANTE", "Participante")),
+                Instant.parse("2026-01-01T00:00:00Z"));
+        Page<UsuarioResumen> pagina = new PageImpl<>(List.of(resumen), PageRequest.of(0, 20), 1);
+
+        when(usuarioAdminService.listar(any(), any(), any(), any())).thenReturn(pagina);
+
+        mockMvc.perform(get("/api/v1/admin/usuarios").param("q", "perez"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(1))
+                .andExpect(jsonPath("$.content[0].username").value("jperez"))
+                .andExpect(jsonPath("$.content[0].persona.nombreCompleto").value("Pérez, Juan"))
+                .andExpect(jsonPath("$.content[0].roles[0].nombre").value("PARTICIPANTE"))
+                .andExpect(jsonPath("$.page.totalElements").value(1))
+                .andExpect(jsonPath("$.page.number").value(0));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("GET /api/v1/admin/usuarios rechaza size fuera de rango")
+    void sizeInvalidoResponde400() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/usuarios").param("size", "500"))
+                .andExpect(status().isBadRequest());
+    }
+}
