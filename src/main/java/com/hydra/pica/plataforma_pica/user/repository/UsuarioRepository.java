@@ -2,12 +2,12 @@ package com.hydra.pica.plataforma_pica.user.repository;
 
 import java.util.Optional;
 
-import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import org.springframework.data.jpa.repository.JpaRepository;
-
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 
 public interface UsuarioRepository extends JpaRepository<Usuario, Long>, JpaSpecificationExecutor<Usuario> {
 
