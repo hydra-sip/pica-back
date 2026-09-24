@@ -17,7 +17,10 @@ import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.event.UsuarioCreado;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.mail.MailException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +31,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class VerificacionEmailService {
 
     private static final Duration DURACION_TOKEN = Duration.ofHours(24);
+    private static final Logger log = LoggerFactory.getLogger(VerificacionEmailService.class);
 
     private final UsuarioRepository usuarioRepository;
     private final EmailService emailService;
@@ -49,7 +53,8 @@ public class VerificacionEmailService {
         if (evento.requiereVerificacion()) {
             Usuario usuario = usuarioRepository.findById(evento.usuarioId()).orElse(null);
             if (usuario != null && usuario.getEstado() == EstadoUsuario.PENDIENTE_VERIFICACION) {
-                emitirToken(usuario);
+                String url = emitirToken(usuario);
+                emailService.enviarVerificacion(usuario.getEmail(), url);
             }
         }
     }
@@ -58,6 +63,10 @@ public class VerificacionEmailService {
     public void verificar(String token) {
         Usuario usuario = usuarioRepository.findByTokenVerificacionHash(hash(token))
                 .orElseThrow(() -> error(CodigoError.TOKEN_INVALIDO, "El token no es válido"));
+
+        if (usuario.getEstado() == EstadoUsuario.ACTIVO) {
+            throw error(CodigoError.TOKEN_USADO, "El token ya fue utilizado");
+        }
 
         Instant ahora = Instant.now();
         if (usuario.getTokenVerificacionExpiraEn() == null
@@ -70,8 +79,6 @@ public class VerificacionEmailService {
 
         usuario.setEstado(EstadoUsuario.ACTIVO);
         usuario.setEmailVerificado(true);
-        usuario.setTokenVerificacionHash(null);
-        usuario.setTokenVerificacionExpiraEn(null);
         usuarioRepository.save(usuario);
     }
 
@@ -79,7 +86,15 @@ public class VerificacionEmailService {
     public void reenviar(String email) {
         usuarioRepository.findByEmailIgnoreCase(email).ifPresent(usuario -> {
             if (usuario.getEstado() == EstadoUsuario.PENDIENTE_VERIFICACION) {
-                emitirToken(usuario);
+                String url = emitirToken(usuario);
+                try {
+                    emailService.enviarVerificacion(usuario.getEmail(), url);
+                } catch (MailException ex) {
+                    log.warn("No se pudo reenviar el correo de verificación a {}", usuario.getEmail(), ex);
+                } catch (RuntimeException ex) {
+                    log.error("Falla inesperada al reenviar el correo de verificación a {}",
+                            usuario.getEmail(), ex);
+                }
             }
         });
     }
@@ -94,12 +109,12 @@ public class VerificacionEmailService {
         }
     }
 
-    private void emitirToken(Usuario usuario) {
+    private String emitirToken(Usuario usuario) {
         String token = UUID.randomUUID().toString();
         usuario.setTokenVerificacionHash(hash(token));
         usuario.setTokenVerificacionExpiraEn(Instant.now().plus(DURACION_TOKEN));
         usuarioRepository.saveAndFlush(usuario);
-        emailService.enviarVerificacion(usuario.getEmail(), baseUrl + "?token=" + token);
+        return baseUrl + "?token=" + token;
     }
 
     private static String hash(String token) {

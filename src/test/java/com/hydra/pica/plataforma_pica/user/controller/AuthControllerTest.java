@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.user.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -16,6 +17,7 @@ import java.util.stream.Stream;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
@@ -32,9 +34,10 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AuthController.class)
@@ -43,10 +46,10 @@ class AuthControllerTest {
 
     private final MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private UsuarioService usuarioService;
 
-    @MockBean
+    @MockitoBean
     private VerificacionEmailService verificacionEmailService;
 
     @Autowired
@@ -150,6 +153,24 @@ class AuthControllerTest {
                 .andExpect(status().isNoContent());
 
         verify(verificacionEmailService).verificar("token-plano");
+    }
+
+    @Test
+    @DisplayName("Verificación repetida con el mismo token: 400 TOKEN_USADO")
+    void verificarMismoTokenDosVeces() throws Exception {
+        doNothing().doThrow(new ApiException(
+                HttpStatus.BAD_REQUEST,
+                CodigoError.TOKEN_USADO,
+                "El token ya fue utilizado"))
+                .when(verificacionEmailService)
+                .verificar("token-plano");
+
+        mockMvc.perform(get("/api/v1/auth/verificar").param("token", "token-plano"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/auth/verificar").param("token", "token-plano"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("TOKEN_USADO"));
     }
 
     @Test
