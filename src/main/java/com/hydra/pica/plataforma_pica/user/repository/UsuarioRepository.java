@@ -61,6 +61,13 @@ public interface UsuarioRepository extends
     @Query(value = "SELECT EXISTS (SELECT 1 FROM usuario WHERE persona_id = :personaId)", nativeQuery = true)
     boolean existsByPersonaIdIncluyendoEliminados(@Param("personaId") Long personaId);
 
+    /**
+     * El usuario de una persona, esté o no dado de baja: persona_id es único contando a los
+     * eliminados. Para la ficha de la persona y para saber si se la puede dar de baja.
+     */
+    @Query(value = "SELECT * FROM usuario WHERE persona_id = :personaId", nativeQuery = true)
+    Optional<Usuario> findByPersonaIdIncluyendoEliminados(@Param("personaId") Long personaId);
+
     /** Para la ficha de un usuario (GET /admin/usuarios/{id}): hay que poder verlo para reactivarlo. */
     @Query(value = "SELECT * FROM usuario WHERE id = :id", nativeQuery = true)
     Optional<Usuario> findByIdIncluyendoEliminados(@Param("id") Long id);

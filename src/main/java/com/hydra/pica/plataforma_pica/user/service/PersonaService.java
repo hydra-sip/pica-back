@@ -36,7 +36,7 @@ public class PersonaService {
 
     private static final Logger log = LoggerFactory.getLogger(PersonaService.class);
 
-    private static final String UQ_DOCUMENTO = "uq_persona_tipo_doc_nro_doc";
+    static final String UQ_DOCUMENTO = "uq_persona_tipo_doc_nro_doc";
 
     private final PersonaRepository personaRepository;
 
@@ -115,7 +115,7 @@ public class PersonaService {
         return nroDoc == null ? null : nroDoc.toUpperCase(Locale.ROOT);
     }
 
-    private static String nombreDeConstraint(DataIntegrityViolationException e) {
+    static String nombreDeConstraint(DataIntegrityViolationException e) {
         Throwable causa = e;
         while (causa != null && !(causa instanceof ConstraintViolationException)) {
             causa = causa.getCause();

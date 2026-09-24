@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface PersonaRepository extends JpaRepository<Persona, Long> {
+public interface PersonaRepository extends JpaRepository<Persona, Long>, PersonaAdminRepositoryCustom {
 
     Optional<Persona> findByTipoDocAndNroDoc(String tipoDoc, String nroDoc);
 
@@ -23,6 +23,10 @@ public interface PersonaRepository extends JpaRepository<Persona, Long> {
     @Query(value = "SELECT * FROM persona WHERE tipo_doc = :tipoDoc AND nro_doc = :nroDoc", nativeQuery = true)
     Optional<Persona> findByDocumentoIncluyendoEliminadas(@Param("tipoDoc") String tipoDoc,
                                                           @Param("nroDoc") String nroDoc);
+
+    /** Para la ficha de una persona y para reactivarla: findById no ve a las eliminadas. */
+    @Query(value = "SELECT * FROM persona WHERE id = :id", nativeQuery = true)
+    Optional<Persona> findByIdIncluyendoEliminadas(@Param("id") Long id);
 
     /**
      * La persona de un usuario aunque esté dada de baja. Para la ficha de un usuario eliminado
