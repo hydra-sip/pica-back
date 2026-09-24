@@ -627,7 +627,16 @@ components:
     Email: {type: string, format: email, maxLength: 254}
     Username: {type: string, minLength: 3, maxLength: 30, pattern: '^[a-zA-Z0-9._-]+$'}
     Nombre: {type: string, minLength: 1, maxLength: 100}
-    NroDoc: {type: string, minLength: 5, maxLength: 20, pattern: '^[0-9A-Za-z]+$', description: Sin puntos ni guiones}
+    NroDoc:
+      type: string
+      minLength: 5
+      maxLength: 20
+      pattern: '^[0-9A-Za-z]+$'
+      description: >-
+        Sin puntos ni guiones. Depende del `tipoDoc`: DNI, LC y LE llevan 7 u 8 dígitos; PASAPORTE y CI
+        son alfanuméricos y llevan al menos un dígito. Si no cumple, 400 `VALIDACION` con
+        `FORMATO_INVALIDO` en el campo `nroDoc`. Se guarda y se compara siempre en mayúsculas:
+        "ab123456" y "AB123456" son el mismo documento.
     Password:
       type: string
       format: password

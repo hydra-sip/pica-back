@@ -35,6 +35,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.slf4j.LoggerFactory;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * Casos de {@link PersonaService#buscarOCrear(DatosPersona)} según PICA-109, con el repositorio
@@ -192,6 +193,72 @@ class PersonaServiceTest {
 
         assertThatThrownBy(() -> personaService.buscarOCrear(DatosPersona.sinDocumento("Juan", "Pérez")))
                 .isSameAs(otra);
+    }
+
+    @Test
+    @DisplayName("asignarDocumento: si nadie lo tiene, lo carga y guarda")
+    void asignarDocumentoLibre() {
+        Persona google = sinDocumento(7L);
+        when(personaRepository.findByDocumentoIncluyendoEliminadas("DNI", "30123456")).thenReturn(Optional.empty());
+
+        personaService.asignarDocumento(google, TipoDoc.DNI, "30123456");
+
+        assertThat(google.getTipoDoc()).isEqualTo("DNI");
+        assertThat(google.getNroDoc()).isEqualTo("30123456");
+        verify(personaRepository).saveAndFlush(google);
+    }
+
+    @Test
+    @DisplayName("asignarDocumento: busca y guarda el número en mayúsculas")
+    void asignarDocumentoEnMayusculas() {
+        Persona google = sinDocumento(7L);
+        when(personaRepository.findByDocumentoIncluyendoEliminadas("PASAPORTE", "AAB123456"))
+                .thenReturn(Optional.empty());
+
+        personaService.asignarDocumento(google, TipoDoc.PASAPORTE, "aab123456");
+
+        assertThat(google.getNroDoc()).isEqualTo("AAB123456");
+        verify(personaRepository).saveAndFlush(google);
+    }
+
+    @Test
+    @DisplayName("asignarDocumento: si es de otra persona (aunque esté eliminada) da 409 DOCUMENTO_DUPLICADO")
+    void asignarDocumentoDeOtra() {
+        Persona google = sinDocumento(7L);
+        Persona otra = personaActiva("Juan", "Pérez");
+        otra.setEliminadoEn(Instant.parse("2026-01-01T00:00:00Z"));
+        ReflectionTestUtils.setField(otra, "id", 99L);
+        when(personaRepository.findByDocumentoIncluyendoEliminadas("DNI", "30123456")).thenReturn(Optional.of(otra));
+
+        assertThatThrownBy(() -> personaService.asignarDocumento(google, TipoDoc.DNI, "30123456"))
+                .isInstanceOf(ConflictoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.DOCUMENTO_DUPLICADO);
+        assertThat(google.getTipoDoc()).isNull();
+        verify(personaRepository, never()).saveAndFlush(any(Persona.class));
+    }
+
+    @Test
+    @DisplayName("asignarDocumento: el choque con el índice único por una carga en paralelo da 409")
+    void asignarDocumentoEnParalelo() {
+        Persona google = sinDocumento(7L);
+        when(personaRepository.findByDocumentoIncluyendoEliminadas("DNI", "30123456")).thenReturn(Optional.empty());
+        when(personaRepository.saveAndFlush(any(Persona.class)))
+                .thenThrow(new DataIntegrityViolationException("dup",
+                        new ConstraintViolationException("dup", new SQLException(),
+                                "uq_persona_tipo_doc_nro_doc")));
+
+        assertThatThrownBy(() -> personaService.asignarDocumento(google, TipoDoc.DNI, "30123456"))
+                .isInstanceOf(ConflictoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.DOCUMENTO_DUPLICADO);
+    }
+
+    private static Persona sinDocumento(Long id) {
+        Persona persona = new Persona();
+        ReflectionTestUtils.setField(persona, "id", id);
+        persona.setNombres("Ana");
+        persona.setApellidos("Gómez");
+        persona.setEstado(EstadoGeneral.ACTIVO);
+        return persona;
     }
 
     private static Persona personaActiva(String nombres, String apellidos) {
