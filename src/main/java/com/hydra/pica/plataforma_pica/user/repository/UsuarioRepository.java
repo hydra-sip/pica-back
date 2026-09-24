@@ -37,6 +37,8 @@ public interface UsuarioRepository extends
 
     Optional<Usuario> findByGoogleSub(String googleSub);
 
+    Optional<Usuario> findByTokenVerificacionHash(String tokenVerificacionHash);
+
     /** No ve registros con baja lógica; la BD sigue rechazando duplicados */
     boolean existsByEmailIgnoreCase(String email);
 

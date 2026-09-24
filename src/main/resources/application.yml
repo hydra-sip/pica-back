@@ -2,6 +2,12 @@ spring:
   application:
     name: plataforma-pica
 
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/tournament_db}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
@@ -54,6 +60,8 @@ logging:
     console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n%wEx"
 
 app:
+  auth:
+    verification-base-url: ${APP_AUTH_VERIFICATION_BASE_URL:http://localhost:8080/api/v1/auth/verificar}
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   admin:
