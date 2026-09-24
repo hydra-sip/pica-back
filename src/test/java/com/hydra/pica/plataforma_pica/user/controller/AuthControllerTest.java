@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -22,6 +23,7 @@ import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.service.DatosPersona;
 import com.hydra.pica.plataforma_pica.user.service.NuevoUsuario;
 import com.hydra.pica.plataforma_pica.user.service.UsuarioService;
+import com.hydra.pica.plataforma_pica.user.service.VerificacionEmailService;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,9 +32,9 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AuthController.class)
@@ -41,8 +43,11 @@ class AuthControllerTest {
 
     private final MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private UsuarioService usuarioService;
+
+    @MockitoBean
+    private VerificacionEmailService verificacionEmailService;
 
     @Autowired
     AuthControllerTest(MockMvc mockMvc) {
@@ -136,6 +141,40 @@ class AuthControllerTest {
                         .content(bodyValido()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.codigo").value("USERNAME_DUPLICADO"));
+    }
+
+    @Test
+    @DisplayName("Verificación válida: 204 y delega el token")
+    void verificarValido() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/verificar").param("token", "token-plano"))
+                .andExpect(status().isNoContent());
+
+        verify(verificacionEmailService).verificar("token-plano");
+    }
+
+    @Test
+    @DisplayName("Reenvío: 202 y delega el email")
+    void reenviarVerificacion() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/reenviar-verificacion")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"juan.perez@example.com"}
+                                """))
+                .andExpect(status().isAccepted());
+
+        verify(verificacionEmailService).reenviar("juan.perez@example.com");
+    }
+
+    @Test
+    @DisplayName("Reenvío inválido: 400 VALIDACION")
+    void reenviarVerificacionInvalido() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/reenviar-verificacion")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"no-es-un-email"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
     }
 
     private static String bodyValido() {
