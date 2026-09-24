@@ -33,6 +33,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @DataJpaTest(properties = {
         "spring.jpa.properties.hibernate.generate_statistics=true",
@@ -50,6 +51,9 @@ import org.springframework.data.domain.PageRequest;
 class UsuarioAdminServiceListadoTest {
 
     private static final int USUARIOS = 8;
+
+    @MockitoBean
+    private UsuarioService usuarioService;
 
     private final UsuarioAdminService servicio;
     private final PersonaRepository personaRepository;

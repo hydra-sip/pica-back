@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -12,9 +13,14 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
+import com.hydra.pica.plataforma_pica.user.dto.PersonaDatos;
 import com.hydra.pica.plataforma_pica.user.dto.PersonaUsuario;
 import com.hydra.pica.plataforma_pica.user.dto.RolMinimo;
+import com.hydra.pica.plataforma_pica.user.dto.UsuarioDetalle;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioResumen;
 import com.hydra.pica.plataforma_pica.user.service.UsuarioAdminService;
 import org.junit.jupiter.api.DisplayName;
@@ -25,6 +31,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -141,6 +148,84 @@ class AdminUsuarioControllerTest {
 
     @Test
     @WithMockUser(authorities = "USUARIO_VER")
+    @DisplayName("GET /api/v1/admin/usuarios/{id} devuelve el detalle del usuario")
+    void verDetalleDevuelveElUsuario() throws Exception {
+        UsuarioDetalle detalle = new UsuarioDetalle(
+                1L, "jperez", "jperez@example.com", null, EstadoUsuario.ACTIVO,
+                true, false, null, false, true, false,
+                new PersonaDatos(10L, "Juan", "Pérez", "DNI", "12345678", null, null, null, null,
+                        EstadoGeneral.ACTIVO),
+                List.of(new RolMinimo(2L, "PARTICIPANTE", "Participante")),
+                Instant.parse("2026-01-01T00:00:00Z"), null);
+
+        when(usuarioAdminService.obtenerDetalle(1L)).thenReturn(detalle);
+
+        mockMvc.perform(get("/api/v1/admin/usuarios/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("jperez"))
+                .andExpect(jsonPath("$.persona.nombres").value("Juan"))
+                .andExpect(jsonPath("$.roles[0].nombre").value("PARTICIPANTE"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_VER")
+    @DisplayName("GET /api/v1/admin/usuarios/{id} con un id inexistente responde 404")
+    void verDetalleInexistenteResponde404() throws Exception {
+        when(usuarioAdminService.obtenerDetalle(99L))
+                .thenThrow(new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario 99"));
+
+        mockMvc.perform(get("/api/v1/admin/usuarios/99"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("USUARIO_NO_ENCONTRADO"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_CREAR")
+    @DisplayName("POST /api/v1/admin/usuarios crea un usuario y responde 201")
+    void crearUsuarioResponde201() throws Exception {
+        UsuarioDetalle creado = new UsuarioDetalle(
+                5L, "nuevo", "nuevo@example.com", null, EstadoUsuario.ACTIVO,
+                true, false, null, false, true, false,
+                new PersonaDatos(10L, "Ana", "Gomez", "DNI", "111", null, null, null, null, EstadoGeneral.ACTIVO),
+                List.of(), Instant.parse("2026-01-01T00:00:00Z"), null);
+
+        when(usuarioAdminService.crear(any())).thenReturn(creado);
+
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "username": "nuevo",
+                                  "email": "nuevo@example.com",
+                                  "passwordTemporal": "Password1",
+                                  "personaId": 10,
+                                  "roles": []
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(5))
+                .andExpect(jsonPath("$.username").value("nuevo"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_CREAR")
+    @DisplayName("POST /api/v1/admin/usuarios sin personaId responde 400")
+    void crearSinPersonaIdResponde400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "username": "nuevo",
+                                  "email": "nuevo@example.com",
+                                  "passwordTemporal": "Password1",
+                                  "roles": []
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_VER")
     @DisplayName("GET /api/v1/admin/usuarios acepta una búsqueda q de exactamente 100 caracteres")
     void qDeCienCaracteresEsValida() throws Exception {
         when(usuarioAdminService.listar(any(), any(), any(), anyBoolean(), any()))
@@ -148,5 +233,66 @@ class AdminUsuarioControllerTest {
 
         mockMvc.perform(get("/api/v1/admin/usuarios").param("q", "a".repeat(100)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_CREAR")
+    @DisplayName("POST /api/v1/admin/usuarios con una contraseña sin mayúscula ni número responde 400 PASSWORD_DEBIL")
+    void crearConContrasenaDebilResponde400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(altaCon("\"passwordTemporal\": \"password\"", "\"personaId\": 10", "\"roles\": []")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"))
+                .andExpect(jsonPath("$.errores[0].campo").value("passwordTemporal"))
+                .andExpect(jsonPath("$.errores[0].codigo").value("PASSWORD_DEBIL"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_CREAR")
+    @DisplayName("POST /api/v1/admin/usuarios con un id de rol null responde 400")
+    void crearConRolNullResponde400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(altaCon("\"passwordTemporal\": \"Password1\"", "\"personaId\": 10", "\"roles\": [null]")))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_CREAR")
+    @DisplayName("POST /api/v1/admin/usuarios con ids no positivos (persona o rol) responde 400")
+    void crearConIdsNoPositivosResponde400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(altaCon("\"passwordTemporal\": \"Password1\"", "\"personaId\": 0", "\"roles\": []")))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(altaCon("\"passwordTemporal\": \"Password1\"", "\"personaId\": 10", "\"roles\": [-1]")))
+                .andExpect(status().isBadRequest());
+    }
+
+    private static String altaCon(String password, String personaId, String roles) {
+        return "{\"username\": \"nuevo\", \"email\": \"nuevo@example.com\", " + password + ", "
+                + personaId + ", " + roles + "}";
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_VER")
+    @DisplayName("POST /api/v1/admin/usuarios sin el permiso USUARIO_CREAR responde 403")
+    void crearSinElPermisoResponde403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "username": "nuevo",
+                                  "email": "nuevo@example.com",
+                                  "passwordTemporal": "Password1",
+                                  "personaId": 10,
+                                  "roles": []
+                                }
+                                """))
+                .andExpect(status().isForbidden());
     }
 }
