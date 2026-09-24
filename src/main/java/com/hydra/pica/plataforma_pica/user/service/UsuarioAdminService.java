@@ -33,15 +33,17 @@ public class UsuarioAdminService {
     private final UsuarioRepository usuarioRepository;
     private final PersonaRepository personaRepository;
     private final UsuarioService usuarioService;
+    private final UsuarioRolService usuarioRolService;
     private final AdminProperties adminProperties;
     private final ObjectMapper objectMapper;
 
     public UsuarioAdminService(
             UsuarioRepository usuarioRepository, PersonaRepository personaRepository, UsuarioService usuarioService,
-            AdminProperties adminProperties, ObjectMapper objectMapper) {
+            UsuarioRolService usuarioRolService, AdminProperties adminProperties, ObjectMapper objectMapper) {
         this.usuarioRepository = usuarioRepository;
         this.personaRepository = personaRepository;
         this.usuarioService = usuarioService;
+        this.usuarioRolService = usuarioRolService;
         this.adminProperties = adminProperties;
         this.objectMapper = objectMapper;
     }
@@ -106,6 +108,12 @@ public class UsuarioAdminService {
                 request.username(), request.email(), request.passwordTemporal(), request.descripcion(),
                 estado, request.personaId(), roles));
 
+        return UsuarioDetalle.desde(usuario, usuario.getPersona(), esProtegido(usuario));
+    }
+
+    @Transactional
+    public UsuarioDetalle reemplazarRoles(Long id, List<Long> rolIds) {
+        Usuario usuario = usuarioRolService.reemplazarRoles(id, rolIds);
         return UsuarioDetalle.desde(usuario, usuario.getPersona(), esProtegido(usuario));
     }
 

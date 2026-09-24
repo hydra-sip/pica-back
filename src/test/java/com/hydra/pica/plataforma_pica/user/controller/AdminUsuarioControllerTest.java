@@ -2,9 +2,11 @@ package com.hydra.pica.plataforma_pica.user.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -15,6 +17,7 @@ import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.dto.PersonaDatos;
@@ -35,6 +38,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.RequestBuilder;
 
 @WebMvcTest(AdminUsuarioController.class)
 @Import({SecurityConfig.class, WebConfig.class})
@@ -294,5 +298,74 @@ class AdminUsuarioControllerTest {
                                 }
                                 """))
                 .andExpect(status().isForbidden());
+    }
+
+    // --- PUT /{id}/roles (PICA-127) -------------------------------------------
+
+    @Test
+    @DisplayName("PUT /api/v1/admin/usuarios/{id}/roles sin autenticación responde 401")
+    void reemplazarRolesSinAutenticacionResponde401() throws Exception {
+        mockMvc.perform(putRoles(3L, "{\"roles\": [2]}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(authorities = {"USUARIO_VER", "USUARIO_EDITAR", "ROL_VER"})
+    @DisplayName("PUT /api/v1/admin/usuarios/{id}/roles sin ROL_ASIGNAR responde 403")
+    void reemplazarRolesSinElPermisoResponde403() throws Exception {
+        mockMvc.perform(putRoles(3L, "{\"roles\": [2]}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "ROL_ASIGNAR")
+    @DisplayName("PUT /api/v1/admin/usuarios/{id}/roles con ROL_ASIGNAR devuelve el usuario con sus roles")
+    void reemplazarRolesDevuelveElDetalle() throws Exception {
+        UsuarioDetalle detalle = new UsuarioDetalle(
+                3L, "juan", "juan@example.com", null, EstadoUsuario.ACTIVO,
+                true, false, null, false, true, false,
+                new PersonaDatos(10L, "Juan", "Pérez", "DNI", "12345678", null, null, null, null, EstadoGeneral.ACTIVO),
+                List.of(new RolMinimo(5L, "SOPORTE", "Soporte")), Instant.parse("2026-01-01T00:00:00Z"), null);
+        when(usuarioAdminService.reemplazarRoles(eq(3L), eq(List.of(5L, 5L)))).thenReturn(detalle);
+
+        mockMvc.perform(putRoles(3L, "{\"roles\": [5, 5]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(3))
+                .andExpect(jsonPath("$.roles[0].nombre").value("SOPORTE"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "ROL_ASIGNAR")
+    @DisplayName("PUT /api/v1/admin/usuarios/{id}/roles sin la lista o con un id nulo o no positivo responde 400")
+    void reemplazarRolesSinListaResponde400() throws Exception {
+        mockMvc.perform(putRoles(3L, "{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"))
+                .andExpect(jsonPath("$.errores[0].campo").value("roles"));
+        mockMvc.perform(putRoles(3L, "{\"roles\": [null]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+        mockMvc.perform(putRoles(3L, "{\"roles\": [0]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "ROL_ASIGNAR")
+    @DisplayName("PUT /api/v1/admin/usuarios/{id}/roles: una protección del servicio sale como 403 con su código")
+    void reemplazarRolesProtegidoResponde403() throws Exception {
+        when(usuarioAdminService.reemplazarRoles(eq(3L), any()))
+                .thenThrow(new ProhibidoException(CodigoError.ULTIMO_ASIGNADOR, "No podés"));
+
+        mockMvc.perform(putRoles(3L, "{\"roles\": []}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("ULTIMO_ASIGNADOR"));
+    }
+
+    private static RequestBuilder putRoles(Long id, String body) {
+        return put("/api/v1/admin/usuarios/{id}/roles", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body);
     }
 }
