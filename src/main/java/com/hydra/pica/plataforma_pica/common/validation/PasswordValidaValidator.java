@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.common.validation;
 
+import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 import jakarta.validation.ConstraintValidator;
@@ -11,6 +12,8 @@ public class PasswordValidaValidator implements ConstraintValidator<PasswordVali
 
     @Override
     public boolean isValid(String value, ConstraintValidatorContext context) {
-        return value == null || PASSWORD_PATTERN.matcher(value).matches();
+        return value == null
+                || (value.getBytes(StandardCharsets.UTF_8).length <= 72
+                        && PASSWORD_PATTERN.matcher(value).matches());
     }
 }

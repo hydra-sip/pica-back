@@ -92,6 +92,19 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.errores[0].codigo").value(codigo));
     }
 
+    @Test
+    @DisplayName("Password de más de 72 bytes: 400 PASSWORD_DEBIL")
+    void passwordSuperaLimiteDe72Bytes() throws Exception {
+        String password = "A" + "a".repeat(71) + "1";
+
+        mockMvc.perform(post("/api/v1/auth/registro")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bodyCon("password", password)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[0].campo").value("password"))
+                .andExpect(jsonPath("$.errores[0].codigo").value("PASSWORD_DEBIL"));
+    }
+
     static Stream<Arguments> cuerposInvalidos() {
         return Stream.of(
                 Arguments.of("username con espacio",
