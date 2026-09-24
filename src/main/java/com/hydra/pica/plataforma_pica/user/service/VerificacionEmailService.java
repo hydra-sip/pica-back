@@ -19,6 +19,7 @@ import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -43,7 +44,7 @@ public class VerificacionEmailService {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void alCrearUsuario(UsuarioCreado evento) {
         if (evento.requiereVerificacion()) {
             Usuario usuario = usuarioRepository.findById(evento.usuarioId()).orElse(null);
