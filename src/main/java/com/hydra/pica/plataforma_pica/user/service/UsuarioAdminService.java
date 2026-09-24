@@ -10,12 +10,14 @@ import com.hydra.pica.plataforma_pica.common.config.AdminConfig.AdminProperties;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
+import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.dto.PersonaUsuario;
 import com.hydra.pica.plataforma_pica.user.dto.RolMinimo;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioCreateRequest;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioDetalle;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioResumen;
+import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioAdminRepositoryCustom;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioSpecifications;
@@ -29,14 +31,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class UsuarioAdminService {
 
     private final UsuarioRepository usuarioRepository;
+    private final PersonaRepository personaRepository;
     private final UsuarioService usuarioService;
     private final AdminProperties adminProperties;
     private final ObjectMapper objectMapper;
 
     public UsuarioAdminService(
-            UsuarioRepository usuarioRepository, UsuarioService usuarioService, AdminProperties adminProperties,
-            ObjectMapper objectMapper) {
+            UsuarioRepository usuarioRepository, PersonaRepository personaRepository, UsuarioService usuarioService,
+            AdminProperties adminProperties, ObjectMapper objectMapper) {
         this.usuarioRepository = usuarioRepository;
+        this.personaRepository = personaRepository;
         this.usuarioService = usuarioService;
         this.adminProperties = adminProperties;
         this.objectMapper = objectMapper;
@@ -87,7 +91,10 @@ public class UsuarioAdminService {
         Usuario usuario = usuarioRepository.findByIdIncluyendoEliminados(id)
                 .orElseThrow(() -> new NoEncontradoException(
                         CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + id));
-        return UsuarioDetalle.desde(usuario, esProtegido(usuario));
+        // la persona puede estar dada de baja junto con el usuario: no se la pide por usuario.getPersona()
+        Persona persona = personaRepository.findByUsuarioIdIncluyendoEliminadas(id)
+                .orElseThrow(() -> new IllegalStateException("El usuario " + id + " no tiene persona"));
+        return UsuarioDetalle.desde(usuario, persona, esProtegido(usuario));
     }
 
     @Transactional
@@ -99,7 +106,7 @@ public class UsuarioAdminService {
                 request.username(), request.email(), request.passwordTemporal(), request.descripcion(),
                 estado, request.personaId(), roles));
 
-        return UsuarioDetalle.desde(usuario, esProtegido(usuario));
+        return UsuarioDetalle.desde(usuario, usuario.getPersona(), esProtegido(usuario));
     }
 
     private UsuarioResumen aResumen(Usuario usuario) {

@@ -236,6 +236,49 @@ class AdminUsuarioControllerTest {
     }
 
     @Test
+    @WithMockUser(authorities = "USUARIO_CREAR")
+    @DisplayName("POST /api/v1/admin/usuarios con una contraseña sin mayúscula ni número responde 400 PASSWORD_DEBIL")
+    void crearConContrasenaDebilResponde400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(altaCon("\"passwordTemporal\": \"password\"", "\"personaId\": 10", "\"roles\": []")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"))
+                .andExpect(jsonPath("$.errores[0].campo").value("passwordTemporal"))
+                .andExpect(jsonPath("$.errores[0].codigo").value("PASSWORD_DEBIL"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_CREAR")
+    @DisplayName("POST /api/v1/admin/usuarios con un id de rol null responde 400")
+    void crearConRolNullResponde400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(altaCon("\"passwordTemporal\": \"Password1\"", "\"personaId\": 10", "\"roles\": [null]")))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_CREAR")
+    @DisplayName("POST /api/v1/admin/usuarios con ids no positivos (persona o rol) responde 400")
+    void crearConIdsNoPositivosResponde400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(altaCon("\"passwordTemporal\": \"Password1\"", "\"personaId\": 0", "\"roles\": []")))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(altaCon("\"passwordTemporal\": \"Password1\"", "\"personaId\": 10", "\"roles\": [-1]")))
+                .andExpect(status().isBadRequest());
+    }
+
+    private static String altaCon(String password, String personaId, String roles) {
+        return "{\"username\": \"nuevo\", \"email\": \"nuevo@example.com\", " + password + ", "
+                + personaId + ", " + roles + "}";
+    }
+
+    @Test
     @WithMockUser(authorities = "USUARIO_VER")
     @DisplayName("POST /api/v1/admin/usuarios sin el permiso USUARIO_CREAR responde 403")
     void crearSinElPermisoResponde403() throws Exception {

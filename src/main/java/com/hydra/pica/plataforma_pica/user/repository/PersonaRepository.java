@@ -23,4 +23,13 @@ public interface PersonaRepository extends JpaRepository<Persona, Long> {
     @Query(value = "SELECT * FROM persona WHERE tipo_doc = :tipoDoc AND nro_doc = :nroDoc", nativeQuery = true)
     Optional<Persona> findByDocumentoIncluyendoEliminadas(@Param("tipoDoc") String tipoDoc,
                                                           @Param("nroDoc") String nroDoc);
+
+    /**
+     * La persona de un usuario aunque esté dada de baja. Para la ficha de un usuario eliminado
+     * (GET /admin/usuarios/{id}): {@code usuario.getPersona()} pasa por el {@code @SQLRestriction}
+     * de Persona y da EntityNotFoundException si también se la dio de baja.
+     */
+    @Query(value = "SELECT p.* FROM persona p JOIN usuario u ON u.persona_id = p.id WHERE u.id = :usuarioId",
+            nativeQuery = true)
+    Optional<Persona> findByUsuarioIdIncluyendoEliminadas(@Param("usuarioId") Long usuarioId);
 }

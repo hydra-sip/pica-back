@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
+import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 
 public record UsuarioDetalle(
@@ -24,7 +25,7 @@ public record UsuarioDetalle(
         Instant creadoEn,
         Instant modificadoEn) {
 
-    public static UsuarioDetalle desde(Usuario usuario, boolean protegido) {
+    public static UsuarioDetalle desde(Usuario usuario, Persona persona, boolean protegido) {
         List<RolMinimo> roles = usuario.getRoles().stream()
                 .map(usuarioRol -> RolMinimo.desde(usuarioRol.getRol()))
                 .sorted(Comparator.comparing(RolMinimo::nombre))
@@ -42,7 +43,7 @@ public record UsuarioDetalle(
                 protegido,
                 usuario.getPasswordHash() != null,
                 usuario.getGoogleSub() != null,
-                PersonaDatos.desde(usuario.getPersona()),
+                PersonaDatos.desde(persona),
                 roles,
                 usuario.getCreadoEn(),
                 usuario.getModificadoEn());
