@@ -28,7 +28,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/api/v1/health", "/actuator/health").permitAll()
+                        // Todos los endpoints /auth/** son públicos por contrato; PICA-117 podrá
+                        // angostar o quitar este permiso cuando se implemente el filtro JWT.
+                        .requestMatchers("/api/v1/health", "/actuator/health", "/api/v1/auth/**").permitAll()
                         .anyRequest().authenticated())
                 // Sin token es 401, no 403 (el 403 queda para "autenticado pero sin permiso").
                 // PICA-117 lo reemplaza por el entry point del JWT que además escribe el ProblemDetail.
