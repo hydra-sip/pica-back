@@ -5,6 +5,8 @@ import java.util.Collection;
 import java.util.List;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,6 +49,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(claims.getSubject(), null, authorities);
             SecurityContextHolder.getContext().setAuthentication(authentication);
+        } catch (ExpiredJwtException exception) {
+            request.setAttribute("jwt-error", "TOKEN_VENCIDO");
+            SecurityContextHolder.clearContext();
+        } catch (JwtException exception) {
+            request.setAttribute("jwt-error", "TOKEN_INVALIDO");
+            SecurityContextHolder.clearContext();
         } catch (RuntimeException exception) {
             SecurityContextHolder.getContext().setAuthentication(null);
         }
