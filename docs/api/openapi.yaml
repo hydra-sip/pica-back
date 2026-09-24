@@ -270,6 +270,7 @@ paths:
         La persona tiene que existir: se manda `personaId` (la pantalla la busca en
         `GET /admin/personas?q=` y si no está la crea). Nace ACTIVO con el mail verificado.
         Por dentro: `UsuarioService.crear(NuevoUsuario.porAdmin(...))`.
+        403 `SIN_PERMISO` si algún rol tiene permisos que quien llama no tiene (los nombres van en `roles`).
         404 `PERSONA_NO_ENCONTRADA`, `ROL_NO_ENCONTRADO`.
         409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`, `ROL_INACTIVO`.
       requestBody:
@@ -693,7 +694,7 @@ components:
         codigo: {$ref: '#/components/schemas/CodigoError'}
         errores: {type: array, items: {$ref: '#/components/schemas/ErrorCampo'}}
         invalidos: {type: array, items: {type: string}, description: 'Solo en PERMISO_NO_ENCONTRADO: los códigos que no existen'}
-        roles: {type: array, items: {type: string}, description: 'Solo en SIN_PERMISO al asignar roles: los que tienen permisos que quien llama no tiene'}
+        roles: {type: array, items: {type: string}, description: 'Solo en SIN_PERMISO al asignar roles (alta o PUT de roles): los que tienen permisos que quien llama no tiene'}
       examples:
         - {type: 'about:blank', title: Bad Request, status: 400, detail: Hay campos inválidos, instance: /api/v1/auth/registro,
          codigo: VALIDACION, errores: [{campo: password, codigo: PASSWORD_DEBIL, mensaje: 'Mínimo 8, una mayúscula y un número'}]}

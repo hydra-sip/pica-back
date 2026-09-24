@@ -139,6 +139,10 @@ public class UsuarioService {
                         "El rol " + rol.getNombre() + " está inactivo y no se puede asignar");
             }
         }
+        // solo los que eligió el admin: el PARTICIPANTE automático no depende de quién llama (el
+        // registro es anónimo) y puede tener permisos si se los agregan desde la pantalla de roles
+        UsuarioRolService.validarQuePuedeAsignar(currentUserProvider.getPermisos(),
+                roles.stream().filter(rol -> nuevo.rolIds().contains(rol.getId())));
         return roles;
     }
 

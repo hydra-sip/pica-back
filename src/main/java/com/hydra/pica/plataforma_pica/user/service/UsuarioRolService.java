@@ -143,13 +143,18 @@ public class UsuarioRolService {
         return usuarioRolRepository.save(nueva);
     }
 
+    private void validarPermisosDeQuienAsigna(List<Rol> agregados, List<UsuarioRol> quitados) {
+        validarQuePuedeAsignar(currentUserProvider.getPermisos(),
+                Stream.concat(agregados.stream(), quitados.stream().map(UsuarioRol::getRol)));
+    }
+
     /**
      * Nadie puede dar ni quitar un rol con permisos que no tiene. Sin esto, un Administrador (que
-     * tiene ROL_ASIGNAR pero no ROL_CREAR/EDITAR/ELIMINAR) se daría SUPER_USUARIO a sí mismo.
+     * tiene ROL_ASIGNAR pero no ROL_CREAR/EDITAR/ELIMINAR) se daría SUPER_USUARIO a sí mismo, acá o
+     * creando un usuario con ese rol ({@link UsuarioService#crear}).
      */
-    private void validarPermisosDeQuienAsigna(List<Rol> agregados, List<UsuarioRol> quitados) {
-        Set<String> propios = currentUserProvider.getPermisos();
-        List<String> ajenos = Stream.concat(agregados.stream(), quitados.stream().map(UsuarioRol::getRol))
+    static void validarQuePuedeAsignar(Set<String> propios, Stream<Rol> roles) {
+        List<String> ajenos = roles
                 .filter(rol -> !propios.containsAll(codigos(rol)))
                 .map(Rol::getNombre)
                 .sorted()
