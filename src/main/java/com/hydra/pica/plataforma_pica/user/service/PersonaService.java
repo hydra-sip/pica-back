@@ -8,6 +8,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
+import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
@@ -75,6 +76,35 @@ public class PersonaService {
             throw new ConflictoException(CodigoError.DOCUMENTO_DUPLICADO,
                     "El documento " + datos.tipoDoc() + " " + datos.nroDoc()
                             + " se registró al mismo tiempo desde otra solicitud, reintentá");
+        }
+    }
+
+    /**
+     * Carga el documento de una persona que no tenía (el usuario de Google completando Mi perfil,
+     * PICA-121). Si ya es de otra persona, viva o eliminada, 409 DOCUMENTO_DUPLICADO: el índice
+     * único cuenta a las eliminadas. Quién puede cambiar un documento ya cargado lo decide quien llama.
+     */
+    @Transactional
+    public void asignarDocumento(Persona persona, TipoDoc tipoDoc, String nroDoc) {
+        boolean deOtra = personaRepository.findByDocumentoIncluyendoEliminadas(tipoDoc.name(), nroDoc)
+                .filter(existente -> !existente.getId().equals(persona.getId()))
+                .isPresent();
+        if (deOtra) {
+            throw new ConflictoException(CodigoError.DOCUMENTO_DUPLICADO,
+                    "El documento " + tipoDoc + " " + nroDoc + " ya pertenece a otra persona");
+        }
+
+        persona.setTipoDoc(tipoDoc.name());
+        persona.setNroDoc(nroDoc);
+        try {
+            // mismo caso que en crear: dos pedidos a la vez con el mismo documento
+            personaRepository.saveAndFlush(persona);
+        } catch (DataIntegrityViolationException e) {
+            if (!UQ_DOCUMENTO.equals(nombreDeConstraint(e))) {
+                throw e;
+            }
+            throw new ConflictoException(CodigoError.DOCUMENTO_DUPLICADO,
+                    "El documento " + tipoDoc + " " + nroDoc + " se registró al mismo tiempo desde otra solicitud");
         }
     }
 

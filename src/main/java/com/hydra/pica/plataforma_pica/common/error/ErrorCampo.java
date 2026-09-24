@@ -28,7 +28,7 @@ public record ErrorCampo(String campo, Codigo codigo, String mensaje) {
             }
             return switch (anotacion) {
                 case "NotNull", "NotBlank", "NotEmpty" -> REQUERIDO;
-                case "Email", "Pattern" -> FORMATO_INVALIDO;
+                case "Email", "Pattern", "DocumentoValido" -> FORMATO_INVALIDO;
                 case "Size", "Length", "Min", "Max" -> LONGITUD;
                 case "Past", "PastOrPresent" -> FECHA_FUTURA;
                 case "PasswordValida" -> PASSWORD_DEBIL;
