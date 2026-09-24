@@ -55,6 +55,9 @@ class UsuarioAdminServiceListadoTest {
     @MockitoBean
     private UsuarioService usuarioService;
 
+    @MockitoBean
+    private UsuarioRolService usuarioRolService;
+
     private final UsuarioAdminService servicio;
     private final PersonaRepository personaRepository;
     private final UsuarioRepository usuarioRepository;

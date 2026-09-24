@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.common.dto.PaginaResponse;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
+import com.hydra.pica.plataforma_pica.user.dto.RolesRequest;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioCreateRequest;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioDetalle;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioResumen;
@@ -22,6 +23,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -76,6 +78,12 @@ public class AdminUsuarioController {
     @ResponseStatus(HttpStatus.CREATED)
     public UsuarioDetalle crear(@Valid @RequestBody UsuarioCreateRequest request) {
         return usuarioAdminService.crear(request);
+    }
+
+    @PutMapping("/{id}/roles")
+    @PreAuthorize("hasAuthority('ROL_ASIGNAR')")
+    public UsuarioDetalle reemplazarRoles(@PathVariable Long id, @Valid @RequestBody RolesRequest request) {
+        return usuarioAdminService.reemplazarRoles(id, request.roles());
     }
 
     private Sort construirOrden(List<String> sort) {

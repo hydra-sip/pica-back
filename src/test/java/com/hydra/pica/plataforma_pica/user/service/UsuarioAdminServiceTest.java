@@ -44,11 +44,14 @@ class UsuarioAdminServiceTest {
     @Mock
     private UsuarioService usuarioService;
 
+    @Mock
+    private UsuarioRolService usuarioRolService;
+
     private UsuarioAdminService servicio;
 
     @BeforeEach
     void crearServicio() {
-        servicio = new UsuarioAdminService(usuarioRepository, personaRepository, usuarioService,
+        servicio = new UsuarioAdminService(usuarioRepository, personaRepository, usuarioService, usuarioRolService,
                 new AdminProperties("admin", "admin@pica.local", "x"), new ObjectMapper());
     }
 

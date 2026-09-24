@@ -5,7 +5,8 @@ import org.springframework.http.HttpStatus;
 /**
  * 403 por una protección del negocio, no por falta de permiso: quien llama tiene el permiso, pero
  * ese recurso no se puede tocar así (el rol Super Usuario, el admin del sistema, ...). El código
- * dice cuál. La falta de permiso es otra cosa y sale como SIN_PERMISO desde {@code @PreAuthorize}.
+ * dice cuál. La falta de permiso es otra cosa y sale como SIN_PERMISO desde {@code @PreAuthorize};
+ * la única vez que se lanza con SIN_PERMISO es al asignar un rol con permisos que uno no tiene.
  */
 public class ProhibidoException extends ApiException {
 

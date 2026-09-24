@@ -27,6 +27,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.transaction.annotation.Transactional;
@@ -120,6 +121,41 @@ class UsuarioServiceIntegracionTest {
                 .containsExactlyInAnyOrder("ORGANIZADOR", "ARBITRO");
         assertThat(eventos.stream(UsuarioCreado.class))
                 .singleElement().extracting(UsuarioCreado::requiereVerificacion).isEqualTo(false);
+    }
+
+    @Test
+    @WithMockUser(authorities = {"USUARIO_VER", "USUARIO_CREAR", "USUARIO_EDITAR", "USUARIO_ELIMINAR",
+            "PERSONA_VER", "PERSONA_CREAR", "PERSONA_EDITAR", "PERSONA_ELIMINAR", "ROL_VER", "ROL_ASIGNAR"})
+    void altaPorAdminNoDaRolesConPermisosQueQuienLlamaNoTiene() {
+        Persona persona = personaRepository.saveAndFlush(persona("40111222"));
+        Long superUsuario = rolRepository.findByNombre("SUPER_USUARIO").orElseThrow().getId();
+        Long administrador = rolRepository.findByNombre("ADMINISTRADOR").orElseThrow().getId();
+
+        // con los permisos del Administrador: SUPER_USUARIO no, ADMINISTRADOR sí
+        assertThatThrownBy(() -> usuarioService.crear(NuevoUsuario.porAdmin("colado", "colado@example.com",
+                "Temporal1", null, null, persona.getId(), Set.of(superUsuario))))
+                .extracting("codigo").isEqualTo(CodigoError.SIN_PERMISO);
+        assertThat(usuarioRepository.existsByUsernameIgnoreCase("colado")).isFalse();
+
+        Usuario creado = usuarioService.crear(NuevoUsuario.porAdmin("agarcia", "ana@example.com", "Temporal1",
+                null, null, persona.getId(), Set.of(administrador)));
+        assertThat(creado.getRoles()).extracting(asignacion -> asignacion.getRol().getNombre())
+                .containsExactly("ADMINISTRADOR");
+    }
+
+    @Test
+    void elRegistroNoDependeDeLosPermisosDeParticipante() {
+        // PARTICIPANTE se puede editar desde la pantalla de roles; el registro es anónimo y lo asigna igual
+        entityManager.createNativeQuery("""
+                INSERT INTO rol_permiso (rol_id, permiso_id)
+                SELECT r.id, p.id FROM rol r, permiso p WHERE r.nombre = 'PARTICIPANTE' AND p.codigo = 'PERSONA_VER'
+                """).executeUpdate();
+
+        Usuario creado = usuarioService.crear(NuevoUsuario.autoRegistro("jperez", "juan@example.com", "Pica2026",
+                new DatosPersona(TipoDoc.DNI, "40111222", "Juan", "Pérez", null, null, null)));
+
+        assertThat(creado.getRoles()).extracting(asignacion -> asignacion.getRol().getNombre())
+                .containsExactly("PARTICIPANTE");
     }
 
     @Test
