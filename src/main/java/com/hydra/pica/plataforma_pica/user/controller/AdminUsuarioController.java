@@ -6,11 +6,14 @@ import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.common.dto.PaginaResponse;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
+import com.hydra.pica.plataforma_pica.user.dto.ResetPasswordRequest;
 import com.hydra.pica.plataforma_pica.user.dto.RolesRequest;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioCreateRequest;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioDetalle;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioResumen;
+import com.hydra.pica.plataforma_pica.user.dto.UsuarioUpdateRequest;
 import com.hydra.pica.plataforma_pica.user.service.UsuarioAdminService;
+import com.hydra.pica.plataforma_pica.user.service.UsuarioEdicionService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -20,6 +23,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,9 +50,12 @@ public class AdminUsuarioController {
     private static final Sort ORDEN_POR_DEFECTO = Sort.by(Sort.Direction.DESC, "creadoEn");
 
     private final UsuarioAdminService usuarioAdminService;
+    private final UsuarioEdicionService usuarioEdicionService;
 
-    public AdminUsuarioController(UsuarioAdminService usuarioAdminService) {
+    public AdminUsuarioController(
+            UsuarioAdminService usuarioAdminService, UsuarioEdicionService usuarioEdicionService) {
         this.usuarioAdminService = usuarioAdminService;
+        this.usuarioEdicionService = usuarioEdicionService;
     }
 
     @GetMapping
@@ -78,6 +85,32 @@ public class AdminUsuarioController {
     @ResponseStatus(HttpStatus.CREATED)
     public UsuarioDetalle crear(@Valid @RequestBody UsuarioCreateRequest request) {
         return usuarioAdminService.crear(request);
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('USUARIO_EDITAR')")
+    public UsuarioDetalle modificar(@PathVariable Long id, @Valid @RequestBody UsuarioUpdateRequest request) {
+        return usuarioEdicionService.modificar(id, request);
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('USUARIO_ELIMINAR')")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void eliminar(@PathVariable Long id) {
+        usuarioEdicionService.eliminar(id);
+    }
+
+    @PostMapping("/{id}/reactivar")
+    @PreAuthorize("hasAuthority('USUARIO_ELIMINAR')")
+    public UsuarioDetalle reactivar(@PathVariable Long id) {
+        return usuarioEdicionService.reactivar(id);
+    }
+
+    @PutMapping("/{id}/password")
+    @PreAuthorize("hasAuthority('USUARIO_EDITAR')")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resetearPassword(@PathVariable Long id, @Valid @RequestBody ResetPasswordRequest request) {
+        usuarioEdicionService.resetearPassword(id, request.password());
     }
 
     @PutMapping("/{id}/roles")

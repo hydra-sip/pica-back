@@ -3,7 +3,11 @@ package com.hydra.pica.plataforma_pica.user.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -16,6 +20,7 @@ import java.util.List;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
@@ -26,6 +31,7 @@ import com.hydra.pica.plataforma_pica.user.dto.RolMinimo;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioDetalle;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioResumen;
 import com.hydra.pica.plataforma_pica.user.service.UsuarioAdminService;
+import com.hydra.pica.plataforma_pica.user.service.UsuarioEdicionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +54,9 @@ class AdminUsuarioControllerTest {
 
     @MockitoBean
     private UsuarioAdminService usuarioAdminService;
+
+    @MockitoBean
+    private UsuarioEdicionService usuarioEdicionService;
 
     @Autowired
     AdminUsuarioControllerTest(MockMvc mockMvc) {
@@ -367,5 +376,180 @@ class AdminUsuarioControllerTest {
         return put("/api/v1/admin/usuarios/{id}/roles", id)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body);
+    }
+
+    // --- PUT/DELETE /{id}, reactivar y password (PICA-116) -----------------------
+
+    private static final String MODIFICACION = """
+            {"username": "juan", "email": "juan@example.com", "estado": "ACTIVO", "personaId": 10}
+            """;
+
+    private static UsuarioDetalle detalleDe(Long id) {
+        return new UsuarioDetalle(
+                id, "juan", "juan@example.com", null, EstadoUsuario.ACTIVO,
+                true, false, null, false, true, false,
+                new PersonaDatos(10L, "Juan", "Pérez", "DNI", "12345678", null, null, null, null, EstadoGeneral.ACTIVO),
+                List.of(), Instant.parse("2026-01-01T00:00:00Z"), null);
+    }
+
+    @Test
+    @DisplayName("Las cuatro operaciones sin autenticación responden 401")
+    void edicionSinAutenticacionResponde401() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/usuarios/3").contentType(MediaType.APPLICATION_JSON).content(MODIFICACION))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(delete("/api/v1/admin/usuarios/3")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/admin/usuarios/3/reactivar")).andExpect(status().isUnauthorized());
+        mockMvc.perform(put("/api/v1/admin/usuarios/3/password")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"password\": \"Temporal1\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(authorities = {"USUARIO_VER", "USUARIO_CREAR"})
+    @DisplayName("Sin USUARIO_EDITAR ni USUARIO_ELIMINAR las cuatro operaciones responden 403")
+    void edicionSinElPermisoResponde403() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/usuarios/3").contentType(MediaType.APPLICATION_JSON).content(MODIFICACION))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/v1/admin/usuarios/3")).andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/admin/usuarios/3/reactivar")).andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/v1/admin/usuarios/3/password")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"password\": \"Temporal1\"}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(usuarioEdicionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("PUT /admin/usuarios/{id} modifica y devuelve el usuario")
+    void modificarDevuelveElDetalle() throws Exception {
+        when(usuarioEdicionService.modificar(eq(3L), any())).thenReturn(detalleDe(3L));
+
+        mockMvc.perform(put("/api/v1/admin/usuarios/3").contentType(MediaType.APPLICATION_JSON).content(MODIFICACION))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(3))
+                .andExpect(jsonPath("$.username").value("juan"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("PUT /admin/usuarios/{id} con campos inválidos responde 400 VALIDACION")
+    void modificarConDatosInvalidosResponde400() throws Exception {
+        String[] invalidos = {
+                "{\"email\": \"juan@example.com\", \"estado\": \"ACTIVO\", \"personaId\": 10}",
+                "{\"username\": \"ju\", \"email\": \"juan@example.com\", \"estado\": \"ACTIVO\", \"personaId\": 10}",
+                "{\"username\": \"juan\", \"email\": \"no-es-mail\", \"estado\": \"ACTIVO\", \"personaId\": 10}",
+                "{\"username\": \"juan\", \"email\": \"juan@example.com\", \"estado\": \"PENDIENTE_VERIFICACION\", \"personaId\": 10}",
+                "{\"username\": \"juan\", \"email\": \"juan@example.com\", \"personaId\": 10}",
+                "{\"username\": \"juan\", \"email\": \"juan@example.com\", \"estado\": \"ACTIVO\"}",
+        };
+        for (String body : invalidos) {
+            mockMvc.perform(put("/api/v1/admin/usuarios/3").contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+        }
+        verifyNoInteractions(usuarioEdicionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("PUT /admin/usuarios/{id}: el Admin del sistema responde 403 USUARIO_PROTEGIDO")
+    void modificarProtegidoResponde403() throws Exception {
+        when(usuarioEdicionService.modificar(eq(1L), any()))
+                .thenThrow(new ProhibidoException(CodigoError.USUARIO_PROTEGIDO, "protegido"));
+
+        mockMvc.perform(put("/api/v1/admin/usuarios/1").contentType(MediaType.APPLICATION_JSON).content(MODIFICACION))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("USUARIO_PROTEGIDO"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("PUT /admin/usuarios/{id}: un email repetido responde 409 EMAIL_DUPLICADO")
+    void modificarConEmailRepetidoResponde409() throws Exception {
+        when(usuarioEdicionService.modificar(eq(3L), any()))
+                .thenThrow(new ConflictoException(CodigoError.EMAIL_DUPLICADO, "ya está en uso"));
+
+        mockMvc.perform(put("/api/v1/admin/usuarios/3").contentType(MediaType.APPLICATION_JSON).content(MODIFICACION))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("EMAIL_DUPLICADO"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_ELIMINAR")
+    @DisplayName("DELETE /admin/usuarios/{id} responde 204")
+    void eliminarResponde204() throws Exception {
+        mockMvc.perform(delete("/api/v1/admin/usuarios/3")).andExpect(status().isNoContent());
+
+        verify(usuarioEdicionService).eliminar(3L);
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_ELIMINAR")
+    @DisplayName("DELETE /admin/usuarios/{id}: uno ya dado de baja responde 404 y el Admin del sistema 403")
+    void eliminarInexistenteOProtegido() throws Exception {
+        doThrow(new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "no existe"))
+                .when(usuarioEdicionService).eliminar(99L);
+        doThrow(new ProhibidoException(CodigoError.USUARIO_PROTEGIDO, "protegido"))
+                .when(usuarioEdicionService).eliminar(1L);
+
+        mockMvc.perform(delete("/api/v1/admin/usuarios/99"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("USUARIO_NO_ENCONTRADO"));
+        mockMvc.perform(delete("/api/v1/admin/usuarios/1"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("USUARIO_PROTEGIDO"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_ELIMINAR")
+    @DisplayName("POST /admin/usuarios/{id}/reactivar devuelve el usuario y responde 404 si no existe")
+    void reactivar() throws Exception {
+        when(usuarioEdicionService.reactivar(3L)).thenReturn(detalleDe(3L));
+        when(usuarioEdicionService.reactivar(99L))
+                .thenThrow(new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "no existe"));
+
+        mockMvc.perform(post("/api/v1/admin/usuarios/3/reactivar"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(3));
+        mockMvc.perform(post("/api/v1/admin/usuarios/99/reactivar"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("PUT /admin/usuarios/{id}/password responde 204 con una contraseña válida")
+    void resetearPasswordResponde204() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/usuarios/3/password")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"password\": \"Temporal1\"}"))
+                .andExpect(status().isNoContent());
+
+        verify(usuarioEdicionService).resetearPassword(3L, "Temporal1");
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("PUT /admin/usuarios/{id}/password con una contraseña débil, en blanco o ausente responde 400")
+    void resetearPasswordInvalidaResponde400() throws Exception {
+        for (String body : new String[] {"{\"password\": \"corta\"}", "{\"password\": \"sinnumeroni\"}",
+                "{\"password\": \"   \"}", "{}"}) {
+            mockMvc.perform(put("/api/v1/admin/usuarios/3/password")
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+        }
+        verifyNoInteractions(usuarioEdicionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("PUT /admin/usuarios/{id}/password: el Admin del sistema responde 403 USUARIO_PROTEGIDO")
+    void resetearPasswordProtegidoResponde403() throws Exception {
+        doThrow(new ProhibidoException(CodigoError.USUARIO_PROTEGIDO, "protegido"))
+                .when(usuarioEdicionService).resetearPassword(eq(1L), any());
+
+        mockMvc.perform(put("/api/v1/admin/usuarios/1/password")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"password\": \"Temporal1\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("USUARIO_PROTEGIDO"));
     }
 }

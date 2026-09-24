@@ -299,7 +299,9 @@ paths:
       x-permiso: USUARIO_EDITAR
       description: >-
         Se mandan todos los campos. Los roles van por su propio endpoint porque exigen otro permiso.
-        403 `USUARIO_PROTEGIDO` (el Admin del sistema).
+        Si cambia el `email`, el usuario queda con `emailVerificado: false` y se le manda el mail de
+        verificación al email nuevo. Un usuario dado de baja no se modifica: 404, primero hay que reactivarlo.
+        403 `USUARIO_PROTEGIDO` (el Admin del sistema). 404 `USUARIO_NO_ENCONTRADO`, `PERSONA_NO_ENCONTRADA`.
         409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`.
       requestBody:
         required: true
@@ -316,7 +318,8 @@ paths:
       x-permiso: USUARIO_ELIMINAR
       description: >-
         Marca `eliminado_en` y revoca sus refresh tokens: no puede loguearse ni renovar.
-        Idempotente. 403 `USUARIO_PROTEGIDO`.
+        No es idempotente: si ya estaba dado de baja es 404 `USUARIO_NO_ENCONTRADO`.
+        403 `USUARIO_PROTEGIDO`.
       responses:
         '204': {description: Dado de baja}
         '403': {$ref: '#/components/responses/Error'}
@@ -328,7 +331,9 @@ paths:
       x-jira: PICA-116
       x-owner: Laura
       x-permiso: USUARIO_ELIMINAR
-      description: Limpia `eliminado_en`; conserva roles y estado.
+      description: >-
+        Limpia `eliminado_en` del usuario y también el de su persona, si estaba dada de baja; conserva
+        roles y estado. Si no estaba dado de baja lo devuelve igual. 404 `USUARIO_NO_ENCONTRADO`.
       parameters: [{$ref: '#/components/parameters/id'}]
       responses:
         '200': {$ref: '#/components/responses/Usuario'}
@@ -340,7 +345,9 @@ paths:
       x-jira: PICA-116
       x-owner: Laura
       x-permiso: USUARIO_EDITAR
-      description: El admin define una temporal y se la pasa por fuera. Revoca los refresh tokens. 403 `USUARIO_PROTEGIDO`.
+      description: >-
+        El admin define una temporal y se la pasa por fuera. Revoca los refresh tokens.
+        403 `USUARIO_PROTEGIDO`. 404 `USUARIO_NO_ENCONTRADO` (también si está dado de baja).
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
         required: true
