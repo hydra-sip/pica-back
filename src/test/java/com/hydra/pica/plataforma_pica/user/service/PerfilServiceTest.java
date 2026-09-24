@@ -114,6 +114,66 @@ class PerfilServiceTest {
     }
 
     @Test
+    @DisplayName("obtener y actualizar: un usuario BLOQUEADO con token vigente da 403 USUARIO_BLOQUEADO")
+    void usuarioBloqueado() {
+        Usuario usuario = usuario(personaCompleta());
+        usuario.setEstado(EstadoUsuario.BLOQUEADO);
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+
+        assertProhibido(() -> perfilService.obtener(ID), CodigoError.USUARIO_BLOQUEADO);
+        assertProhibido(() -> perfilService.actualizar(ID, pedido(null, null)), CodigoError.USUARIO_BLOQUEADO);
+        assertThat(usuario.getPersona().getNombres()).isEqualTo("Juan");
+    }
+
+    @Test
+    @DisplayName("obtener y actualizar: un usuario PENDIENTE_VERIFICACION da 403 EMAIL_NO_VERIFICADO")
+    void usuarioPendiente() {
+        Usuario usuario = usuario(personaCompleta());
+        usuario.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+
+        assertProhibido(() -> perfilService.obtener(ID), CodigoError.EMAIL_NO_VERIFICADO);
+        assertProhibido(() -> perfilService.actualizar(ID, pedido(null, null)), CodigoError.EMAIL_NO_VERIFICADO);
+    }
+
+    @Test
+    @DisplayName("actualizar: el documento se pasa a mayúsculas antes de cargarlo")
+    void documentoEnMayusculas() {
+        Persona persona = personaSinDocumento();
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario(persona)));
+        when(permisoService.permisosDe(ID)).thenReturn(Set.of());
+
+        perfilService.actualizar(ID, pedido(TipoDoc.PASAPORTE, "aab123456"));
+
+        verify(personaService).asignarDocumento(persona, TipoDoc.PASAPORTE, "AAB123456");
+    }
+
+    @Test
+    @DisplayName("actualizar: reenviar el mismo documento en minúsculas cuenta como el mismo")
+    void mismoDocumentoEnMinusculas() {
+        Persona persona = personaCompleta();
+        persona.setTipoDoc("PASAPORTE");
+        persona.setNroDoc("AAB123456");
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario(persona)));
+        when(permisoService.permisosDe(ID)).thenReturn(Set.of());
+
+        perfilService.actualizar(ID, pedido(TipoDoc.PASAPORTE, "aab123456"));
+
+        assertThat(persona.getNroDoc()).isEqualTo("AAB123456");
+        verify(personaService, never()).asignarDocumento(any(), any(), any());
+    }
+
+    private static void assertProhibido(org.assertj.core.api.ThrowableAssert.ThrowingCallable accion,
+                                        CodigoError codigo) {
+        assertThatThrownBy(accion)
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> {
+                    assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                    assertThat(((ApiException) e).getCodigo()).isEqualTo(codigo);
+                });
+    }
+
+    @Test
     @DisplayName("actualizar: reemplaza los datos, recorta espacios y un opcional vacío o null se borra")
     void actualizaDatos() {
         Persona persona = personaCompleta();

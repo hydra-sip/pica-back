@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.user.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -46,7 +47,7 @@ public class PersonaService {
         }
 
         return personaRepository
-                .findByDocumentoIncluyendoEliminadas(datos.tipoDoc().name(), datos.nroDoc())
+                .findByDocumentoIncluyendoEliminadas(datos.tipoDoc().name(), mayusculas(datos.nroDoc()))
                 .map(existente -> {
                     if (existente.getEliminadoEn() != null || existente.getEstado() != EstadoGeneral.ACTIVO) {
                         throw new PersonaInactivaException(datos.tipoDoc(), datos.nroDoc());
@@ -85,7 +86,8 @@ public class PersonaService {
      * único cuenta a las eliminadas. Quién puede cambiar un documento ya cargado lo decide quien llama.
      */
     @Transactional
-    public void asignarDocumento(Persona persona, TipoDoc tipoDoc, String nroDoc) {
+    public void asignarDocumento(Persona persona, TipoDoc tipoDoc, String nroDocRecibido) {
+        String nroDoc = mayusculas(nroDocRecibido);
         boolean deOtra = personaRepository.findByDocumentoIncluyendoEliminadas(tipoDoc.name(), nroDoc)
                 .filter(existente -> !existente.getId().equals(persona.getId()))
                 .isPresent();
@@ -108,6 +110,11 @@ public class PersonaService {
         }
     }
 
+    /** El documento se guarda y se compara siempre en mayúsculas ("ab123" y "AB123" son el mismo). */
+    private static String mayusculas(String nroDoc) {
+        return nroDoc == null ? null : nroDoc.toUpperCase(Locale.ROOT);
+    }
+
     private static String nombreDeConstraint(DataIntegrityViolationException e) {
         Throwable causa = e;
         while (causa != null && !(causa instanceof ConstraintViolationException)) {
@@ -121,7 +128,7 @@ public class PersonaService {
         persona.setNombres(datos.nombres());
         persona.setApellidos(datos.apellidos());
         persona.setTipoDoc(datos.tipoDoc() != null ? datos.tipoDoc().name() : null);
-        persona.setNroDoc(datos.nroDoc());
+        persona.setNroDoc(mayusculas(datos.nroDoc()));
         persona.setFechaNacimiento(datos.fechaNacimiento());
         persona.setDomicilioPostal(datos.domicilioPostal());
         persona.setTelefono(datos.telefono());

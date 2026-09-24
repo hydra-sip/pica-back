@@ -209,6 +209,19 @@ class PersonaServiceTest {
     }
 
     @Test
+    @DisplayName("asignarDocumento: busca y guarda el número en mayúsculas")
+    void asignarDocumentoEnMayusculas() {
+        Persona google = sinDocumento(7L);
+        when(personaRepository.findByDocumentoIncluyendoEliminadas("PASAPORTE", "AAB123456"))
+                .thenReturn(Optional.empty());
+
+        personaService.asignarDocumento(google, TipoDoc.PASAPORTE, "aab123456");
+
+        assertThat(google.getNroDoc()).isEqualTo("AAB123456");
+        verify(personaRepository).saveAndFlush(google);
+    }
+
+    @Test
     @DisplayName("asignarDocumento: si es de otra persona (aunque esté eliminada) da 409 DOCUMENTO_DUPLICADO")
     void asignarDocumentoDeOtra() {
         Persona google = sinDocumento(7L);

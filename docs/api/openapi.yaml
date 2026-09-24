@@ -630,9 +630,10 @@ components:
       maxLength: 20
       pattern: '^[0-9A-Za-z]+$'
       description: >-
-        Sin puntos ni guiones. Depende del `tipoDoc`: DNI, LC y LE llevan solo dígitos; PASAPORTE y CI
+        Sin puntos ni guiones. Depende del `tipoDoc`: DNI, LC y LE llevan 7 u 8 dígitos; PASAPORTE y CI
         son alfanuméricos y llevan al menos un dígito. Si no cumple, 400 `VALIDACION` con
-        `FORMATO_INVALIDO` en el campo `nroDoc`.
+        `FORMATO_INVALIDO` en el campo `nroDoc`. Se guarda y se compara siempre en mayúsculas:
+        "ab123456" y "AB123456" son el mismo documento.
     Password:
       type: string
       format: password

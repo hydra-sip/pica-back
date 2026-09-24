@@ -1,7 +1,7 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
 import java.util.List;
-import java.util.Objects;
+import java.util.Locale;
 
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -52,7 +52,8 @@ public class PerfilService {
         persona.setDomicilioPostal(textoONull(request.domicilioPostal()));
         persona.setTelefono(textoONull(request.telefono()));
 
-        actualizarDocumento(persona, request.tipoDoc(), textoONull(request.nroDoc()));
+        String nroDoc = textoONull(request.nroDoc());
+        actualizarDocumento(persona, request.tipoDoc(), nroDoc == null ? null : nroDoc.toUpperCase(Locale.ROOT));
 
         return Me.desde(usuario, permisoService.permisosDe(usuarioId));
     }
@@ -73,7 +74,7 @@ public class PerfilService {
             return;
         }
 
-        boolean mismo = tipoDoc.name().equals(persona.getTipoDoc()) && Objects.equals(nroDoc, persona.getNroDoc());
+        boolean mismo = tipoDoc.name().equals(persona.getTipoDoc()) && nroDoc.equalsIgnoreCase(persona.getNroDoc());
         if (!mismo) {
             throw new ConflictoException(CodigoError.DOCUMENTO_NO_EDITABLE,
                     "El documento ya está cargado; para corregirlo hay que pedírselo a un administrador");
@@ -85,9 +86,19 @@ public class PerfilService {
      * emitido el token: para /me eso es "no hay sesión", no un 404.
      */
     private Usuario buscar(Long usuarioId) {
-        return usuarioRepository.findById(usuarioId)
+        Usuario usuario = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, CodigoError.NO_AUTENTICADO,
                         "El usuario de la sesión ya no existe"));
+        // el token puede seguir vigente aunque el estado haya cambiado desde que se emitió: mismos
+        // códigos que el login
+        switch (usuario.getEstado()) {
+            case BLOQUEADO -> throw new ApiException(HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO,
+                    "El usuario está bloqueado");
+            case PENDIENTE_VERIFICACION -> throw new ApiException(HttpStatus.FORBIDDEN,
+                    CodigoError.EMAIL_NO_VERIFICADO, "El email todavía no fue verificado");
+            case ACTIVO -> { }
+        }
+        return usuario;
     }
 
     private static String textoONull(String valor) {

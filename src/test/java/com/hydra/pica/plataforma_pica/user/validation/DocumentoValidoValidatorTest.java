@@ -24,10 +24,13 @@ class DocumentoValidoValidatorTest {
     }
 
     @Test
-    @DisplayName("DNI, LC y LE aceptan solo dígitos")
+    @DisplayName("DNI, LC y LE aceptan solo dígitos, 7 u 8")
     void documentosNumericos() {
         for (TipoDoc tipo : new TipoDoc[] {TipoDoc.DNI, TipoDoc.LC, TipoDoc.LE}) {
-            assertThat(esValido(tipo, "30123456")).as(tipo + " con dígitos").isTrue();
+            assertThat(esValido(tipo, "30123456")).as(tipo + " con 8 dígitos").isTrue();
+            assertThat(esValido(tipo, "3012345")).as(tipo + " con 7 dígitos").isTrue();
+            assertThat(esValido(tipo, "301234")).as(tipo + " con 6 dígitos").isFalse();
+            assertThat(esValido(tipo, "301234567")).as(tipo + " con 9 dígitos").isFalse();
             assertThat(esValido(tipo, "ABCDE")).as(tipo + " con letras").isFalse();
             assertThat(esValido(tipo, "3012345A")).as(tipo + " con una letra al final").isFalse();
             assertThat(esValido(tipo, "A3012345")).as(tipo + " con una letra al principio").isFalse();
