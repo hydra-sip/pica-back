@@ -10,6 +10,7 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.user.domain.Modulo;
 import com.hydra.pica.plataforma_pica.user.dto.ModuloPermisos;
 import com.hydra.pica.plataforma_pica.user.service.PermisoService;
@@ -27,7 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * contrato). El agrupado contra el seed real está en {@code RolServiceIntegracionTest}.
  */
 @WebMvcTest(PermisoAdminController.class)
-@Import({SecurityConfig.class, WebConfig.class})
+@Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
 class PermisoAdminControllerTest {
 
     private final MockMvc mockMvc;

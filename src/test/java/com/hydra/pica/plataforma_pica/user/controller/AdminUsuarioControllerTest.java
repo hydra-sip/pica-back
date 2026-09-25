@@ -19,6 +19,7 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
@@ -47,7 +48,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.RequestBuilder;
 
 @WebMvcTest(AdminUsuarioController.class)
-@Import({SecurityConfig.class, WebConfig.class})
+@Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
 class AdminUsuarioControllerTest {
 
     private final MockMvc mockMvc;

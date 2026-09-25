@@ -16,6 +16,7 @@ import java.util.stream.Stream;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
@@ -38,7 +39,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AuthController.class)
-@Import({SecurityConfig.class, WebConfig.class})
+@Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
 class AuthControllerTest {
 
     private final MockMvc mockMvc;
