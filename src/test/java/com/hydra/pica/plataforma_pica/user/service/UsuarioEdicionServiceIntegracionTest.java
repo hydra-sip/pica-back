@@ -109,6 +109,8 @@ class UsuarioEdicionServiceIntegracionTest {
         assertThat(usuarioRepository.findById(usuario.getId())).isEmpty();
         assertThat(usuarioRepository.findByIdIncluyendoEliminados(usuario.getId()))
                 .get().extracting(Usuario::getEliminadoEn).isNotNull();
+        // la consulta nativa de arriba también lo dejó cargado en la sesión: el PUT lo vería como vivo
+        entityManager.clear();
         assertThatThrownBy(() -> servicio.modificar(usuario.getId(), pedido("edicion.baja", "edicion.baja@example.com",
                 usuario.getPersona().getId())))
                 .hasMessageContaining("No existe el usuario");
