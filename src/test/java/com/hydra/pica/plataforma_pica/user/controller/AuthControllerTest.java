@@ -214,6 +214,15 @@ class AuthControllerTest {
         verify(authService).logout("refresh");
     }
 
+    @Test
+    @DisplayName("Obtener clave pública: responde 200 text/plain con formato PEM")
+    void obtenerClavePublica() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/public-key"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN))
+                .andExpect(content().string(org.hamcrest.Matchers.startsWith("-----BEGIN PUBLIC KEY-----")));
+    }
+
     private static String bodyValido() {
         return """
                 {
