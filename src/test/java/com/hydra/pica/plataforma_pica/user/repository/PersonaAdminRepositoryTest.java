@@ -13,6 +13,7 @@ import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaAdminRepositoryCustom.PersonaAdminRow;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,9 @@ class PersonaAdminRepositoryTest {
 
     @Autowired
     private UsuarioRepository usuarioRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     private Persona perez;
     private Persona gomez;
@@ -122,6 +126,9 @@ class PersonaAdminRepositoryTest {
     @Test
     @DisplayName("Las consultas de la ficha ven a la persona eliminada y a su usuario eliminado")
     void consultasDeLaFicha() {
+        // la persona se guardó en esta misma sesión: sin limpiar, findById la devuelve de memoria aunque
+        // esté dada de baja, en vez de consultar la base con el @SQLRestriction
+        entityManager.clear();
         assertThat(personaRepository.findById(eliminada.getId())).isEmpty();
         assertThat(personaRepository.findByIdIncluyendoEliminadas(eliminada.getId())).isPresent();
         assertThat(usuarioRepository.findByPersonaIdIncluyendoEliminados(eliminada.getId()))

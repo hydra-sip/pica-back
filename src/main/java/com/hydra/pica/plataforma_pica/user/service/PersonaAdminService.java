@@ -27,8 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link PersonaService}.
  *
  * El documento es único contando a las personas dadas de baja (el índice es total), así que el chequeo
- * de duplicados las incluye. Igual que con los usuarios, una persona dada de baja no se modifica ni se
- * vuelve a dar de baja (404): para traerla de vuelta está {@link #reactivar}. Y no se puede dar de
+ * de duplicados las incluye. Igual que con los usuarios, una persona dada de baja no se modifica (404):
+ * para traerla de vuelta está {@link #reactivar}. Darla de baja otra vez no hace nada. Y no se puede dar de
  * baja a una persona cuyo usuario sigue vivo: primero se da de baja el usuario.
  */
 @Service
@@ -76,9 +76,16 @@ public class PersonaAdminService {
         return detalle(guardar(persona, tipoDoc, nroDoc));
     }
 
+    /**
+     * Baja lógica. Idempotente, como la de usuarios: si ya estaba dada de baja no hace nada. Un id que no
+     * existe es 404.
+     */
     @Transactional
     public void eliminar(Long id) {
-        Persona persona = buscarViva(id);
+        Persona persona = buscarIncluyendoEliminadas(id);
+        if (persona.getEliminadoEn() != null) {
+            return;
+        }
         boolean conUsuarioVivo = usuarioRepository.findByPersonaIdIncluyendoEliminados(id)
                 .filter(usuario -> usuario.getEliminadoEn() == null)
                 .isPresent();

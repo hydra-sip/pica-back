@@ -440,7 +440,7 @@ paths:
       x-permiso: PERSONA_ELIMINAR
       description: >-
         409 `PERSONA_CON_USUARIO` si su usuario no está dado de baja (primero se da de baja el usuario).
-        No es idempotente: si ya estaba dada de baja es 404 `PERSONA_NO_ENCONTRADA`.
+        Idempotente: si ya estaba dada de baja responde 204 sin hacer nada.
       responses:
         '204': {description: Dada de baja}
         '409': {$ref: '#/components/responses/Conflicto'}

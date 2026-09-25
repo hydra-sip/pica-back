@@ -247,8 +247,8 @@ class PersonaAdminServiceTest {
     void eliminaSinUsuarioVivo() {
         Persona sinUsuario = persona(ID, "30123456");
         Persona conUsuarioEliminado = persona(11L, "40111222");
-        when(personaRepository.findById(ID)).thenReturn(Optional.of(sinUsuario));
-        when(personaRepository.findById(11L)).thenReturn(Optional.of(conUsuarioEliminado));
+        when(personaRepository.findByIdIncluyendoEliminadas(ID)).thenReturn(Optional.of(sinUsuario));
+        when(personaRepository.findByIdIncluyendoEliminadas(11L)).thenReturn(Optional.of(conUsuarioEliminado));
         when(usuarioRepository.findByPersonaIdIncluyendoEliminados(ID)).thenReturn(Optional.empty());
         when(usuarioRepository.findByPersonaIdIncluyendoEliminados(11L))
                 .thenReturn(Optional.of(usuario(6L, "ana", Instant.now())));
@@ -266,7 +266,7 @@ class PersonaAdminServiceTest {
     @DisplayName("eliminar: con un usuario activo (o bloqueado, sin baja) da 409 PERSONA_CON_USUARIO y no toca nada")
     void eliminarConUsuarioVivo() {
         Persona persona = persona(ID, "30123456");
-        when(personaRepository.findById(ID)).thenReturn(Optional.of(persona));
+        when(personaRepository.findByIdIncluyendoEliminadas(ID)).thenReturn(Optional.of(persona));
         when(usuarioRepository.findByPersonaIdIncluyendoEliminados(ID))
                 .thenReturn(Optional.of(usuario(5L, "juan", null)));
 
@@ -278,13 +278,28 @@ class PersonaAdminServiceTest {
     }
 
     @Test
-    @DisplayName("eliminar: una persona inexistente o ya dada de baja es 404")
+    @DisplayName("eliminar: una persona inexistente es 404")
     void eliminarInexistente() {
-        when(personaRepository.findById(99L)).thenReturn(Optional.empty());
+        when(personaRepository.findByIdIncluyendoEliminadas(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> servicio.eliminar(99L))
                 .isInstanceOf(NoEncontradoException.class)
                 .extracting("codigo").isEqualTo(CodigoError.PERSONA_NO_ENCONTRADA);
+    }
+
+    @Test
+    @DisplayName("eliminar: es idempotente, una persona ya dada de baja no se toca y no se consulta su usuario")
+    void eliminarUnaYaDadaDeBaja() {
+        Persona persona = persona(ID, "30123456");
+        Instant baja = Instant.parse("2026-01-01T00:00:00Z");
+        persona.setEliminadoEn(baja);
+        when(personaRepository.findByIdIncluyendoEliminadas(ID)).thenReturn(Optional.of(persona));
+
+        servicio.eliminar(ID);
+
+        assertThat(persona.getEliminadoEn()).isEqualTo(baja);
+        verify(personaRepository, never()).saveAndFlush(any());
+        verify(usuarioRepository, never()).findByPersonaIdIncluyendoEliminados(any());
     }
 
     // --- reactivar ---------------------------------------------------------------
