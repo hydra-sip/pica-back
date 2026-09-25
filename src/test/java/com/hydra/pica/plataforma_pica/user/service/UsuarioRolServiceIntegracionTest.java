@@ -41,6 +41,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
@@ -52,6 +53,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Los {@code clear()} separan "requests": en la app cada una es su propia transacción.
  */
 @SpringBootTest
+@ActiveProfiles("dev")
 @Import(TestcontainersConfiguration.class)
 @Transactional
 @RecordApplicationEvents

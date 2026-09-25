@@ -13,6 +13,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 
 public interface UsuarioRepository extends
@@ -38,6 +39,13 @@ public interface UsuarioRepository extends
     Optional<Usuario> findByGoogleSub(String googleSub);
 
     Optional<Usuario> findByTokenVerificacionHash(String tokenVerificacionHash);
+
+    /**
+     * Para el refresh: una consulta y no {@code findById}, porque el usuario ya está en la sesión como
+     * proxy del refresh token y, si lo dieron de baja, {@code find} tira EntityNotFoundException en vez
+     * de devolver vacío.
+     */
+    boolean existsByIdAndEstado(Long id, EstadoUsuario estado);
 
     /** No ve registros con baja lógica; la BD sigue rechazando duplicados */
     boolean existsByEmailIgnoreCase(String email);

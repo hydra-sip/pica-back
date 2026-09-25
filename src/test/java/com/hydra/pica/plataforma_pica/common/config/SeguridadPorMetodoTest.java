@@ -10,6 +10,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * authorities, que es donde el filtro JWT (PICA-117) va a poner los códigos del token.
  */
 @WebMvcTest(controllers = SeguridadPorMetodoTest.ControllerDePrueba.class)
+@ActiveProfiles("dev")
 @Import({
         SecurityConfig.class,
         WebConfig.class,

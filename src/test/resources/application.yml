@@ -19,4 +19,5 @@ app:
   admin:
     username: admin
     email: admin@pica.local
-    initial-password: test-initial-password
+    # Sin initial-password: AdminInicial no crea el Admin y cada test arma sus usuarios. El que lo
+    # prueba (AdminInicialIntegracionTest) la pasa por properties.

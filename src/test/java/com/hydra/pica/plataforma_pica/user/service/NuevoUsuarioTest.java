@@ -63,6 +63,28 @@ class NuevoUsuarioTest {
     }
 
     @Test
+    @DisplayName("adminDelSistema: activo y verificado, persona sin documento, SUPER_USUARIO y no PARTICIPANTE")
+    void adminDelSistema() {
+        NuevoUsuario nuevo = NuevoUsuario.adminDelSistema("admin", "admin@pica.local", "inicial");
+
+        assertThat(nuevo.origen()).isEqualTo(NuevoUsuario.Origen.SISTEMA);
+        assertThat(nuevo.estadoInicial()).isEqualTo(EstadoUsuario.ACTIVO);
+        assertThat(nuevo.emailVerificado()).isTrue();
+        assertThat(nuevo.datosPersona().tieneDocumento()).isFalse();
+        assertThat(nuevo.personaId()).isNull();
+        assertThat(nuevo.rolIds()).isEmpty();
+        assertThat(nuevo.llevaRolSuperUsuario()).isTrue();
+        assertThat(nuevo.llevaRolParticipante()).isFalse();
+
+        // sin ADMIN_INITIAL_PASSWORD no hay Admin, y no elige roles por id
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> NuevoUsuario.adminDelSistema("admin", "admin@pica.local", " "));
+        assertThatIllegalArgumentException().isThrownBy(() -> new NuevoUsuario(
+                NuevoUsuario.Origen.SISTEMA, "admin", "admin@pica.local", "inicial", null, null,
+                EstadoUsuario.ACTIVO, true, PERSONA, null, Set.of(1L)));
+    }
+
+    @Test
     @DisplayName("Combinaciones inválidas: sin contraseña, sin googleSub, persona por las dos vías")
     void combinacionesInvalidas() {
         assertThatIllegalArgumentException()

@@ -2,8 +2,12 @@ package com.hydra.pica.plataforma_pica.user.controller;
 
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.dto.IdResponse;
+import com.hydra.pica.plataforma_pica.user.dto.LoginRequest;
 import com.hydra.pica.plataforma_pica.user.dto.ReenviarVerificacionRequest;
 import com.hydra.pica.plataforma_pica.user.dto.RegistroRequest;
+import com.hydra.pica.plataforma_pica.user.dto.RefreshTokenRequest;
+import com.hydra.pica.plataforma_pica.user.dto.TokenPair;
+import com.hydra.pica.plataforma_pica.user.service.AuthService;
 import com.hydra.pica.plataforma_pica.user.service.DatosPersona;
 import com.hydra.pica.plataforma_pica.user.service.NuevoUsuario;
 import com.hydra.pica.plataforma_pica.user.service.UsuarioService;
@@ -19,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -26,10 +31,15 @@ public class AuthController {
 
     private final UsuarioService usuarioService;
     private final VerificacionEmailService verificacionEmailService;
+    private final AuthService authService;
 
-    public AuthController(UsuarioService usuarioService, VerificacionEmailService verificacionEmailService) {
+    public AuthController(
+            UsuarioService usuarioService,
+            VerificacionEmailService verificacionEmailService,
+            AuthService authService) {
         this.usuarioService = usuarioService;
         this.verificacionEmailService = verificacionEmailService;
+        this.authService = authService;
     }
 
     @PostMapping("/registro")
@@ -60,5 +70,21 @@ public class AuthController {
     public ResponseEntity<Void> reenviar(@Valid @RequestBody ReenviarVerificacionRequest request) {
         verificacionEmailService.reenviar(request.email());
         return ResponseEntity.accepted().build();
+    }
+
+    @PostMapping("/login")
+    public TokenPair login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+        return authService.login(request, httpRequest.getHeader("User-Agent"));
+    }
+
+    @PostMapping("/refresh")
+    public TokenPair refresh(@Valid @RequestBody RefreshTokenRequest request, HttpServletRequest httpRequest) {
+        return authService.refresh(request.refreshToken(), httpRequest.getHeader("User-Agent"));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenRequest request) {
+        authService.logout(request.refreshToken());
+        return ResponseEntity.noContent().build();
     }
 }
