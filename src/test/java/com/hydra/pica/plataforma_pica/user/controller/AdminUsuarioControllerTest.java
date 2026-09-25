@@ -475,6 +475,18 @@ class AdminUsuarioControllerTest {
     }
 
     @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("PUT /admin/usuarios/{id}: ACTIVO sobre un usuario con el mail sin verificar responde 409 EMAIL_NO_VERIFICADO")
+    void modificarActivoSinEmailVerificadoResponde409() throws Exception {
+        when(usuarioEdicionService.modificar(eq(3L), any()))
+                .thenThrow(new ConflictoException(CodigoError.EMAIL_NO_VERIFICADO, "sin verificar"));
+
+        mockMvc.perform(put("/api/v1/admin/usuarios/3").contentType(MediaType.APPLICATION_JSON).content(MODIFICACION))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("EMAIL_NO_VERIFICADO"));
+    }
+
+    @Test
     @WithMockUser(authorities = "USUARIO_ELIMINAR")
     @DisplayName("DELETE /admin/usuarios/{id} responde 204")
     void eliminarResponde204() throws Exception {

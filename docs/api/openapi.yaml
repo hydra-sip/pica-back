@@ -299,10 +299,16 @@ paths:
       x-permiso: USUARIO_EDITAR
       description: >-
         Se mandan todos los campos. Los roles van por su propio endpoint porque exigen otro permiso.
-        Si cambia el `email`, el usuario queda con `emailVerificado: false` y se le manda el mail de
-        verificación al email nuevo. Un usuario dado de baja no se modifica: 404, primero hay que reactivarlo.
+        Si cambia el `email`, el usuario queda con `emailVerificado: false` en `PENDIENTE_VERIFICACION` y
+        se le manda el mail de verificación al email nuevo (si a la vez se lo bloquea, queda `BLOQUEADO`).
+        Pasarlo a `BLOQUEADO` le revoca los refresh tokens.
+        Un usuario con el mail sin verificar (`PENDIENTE_VERIFICACION`) no se puede pasar a `ACTIVO` a mano:
+        se activa solo cuando verifica. Pasarlo a `BLOQUEADO` sí se puede.
+        Un usuario dado de baja no se modifica: 404, primero hay que reactivarlo.
         403 `USUARIO_PROTEGIDO` (el Admin del sistema). 404 `USUARIO_NO_ENCONTRADO`, `PERSONA_NO_ENCONTRADA`.
-        409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`.
+        409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`,
+        `EMAIL_NO_VERIFICADO` (se manda `estado: ACTIVO` y el mail no está verificado; en el login el mismo
+        código es 403).
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/UsuarioUpdateRequest'}}}
@@ -318,8 +324,7 @@ paths:
       x-permiso: USUARIO_ELIMINAR
       description: >-
         Marca `eliminado_en` y revoca sus refresh tokens: no puede loguearse ni renovar.
-        No es idempotente: si ya estaba dado de baja es 404 `USUARIO_NO_ENCONTRADO`.
-        403 `USUARIO_PROTEGIDO`.
+        Idempotente: si ya estaba dado de baja responde 204 sin hacer nada. 403 `USUARIO_PROTEGIDO`.
       responses:
         '204': {description: Dado de baja}
         '403': {$ref: '#/components/responses/Error'}
@@ -672,7 +677,7 @@ components:
         Todos los códigos de la API; el front mapea cada uno a un mensaje. Quien agrega uno en el
         backend lo agrega acá.
         Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404.
-        Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 ·
+        Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400.
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO.

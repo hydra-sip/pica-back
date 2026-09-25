@@ -79,7 +79,7 @@ public class UsuarioAdminService {
                     fila.email(),
                     fila.estado(),
                     fila.eliminadoEn() != null,
-                    fila.username().equalsIgnoreCase(adminProperties.username()),
+                    adminProperties.esAdmin(fila.username()),
                     new PersonaUsuario(fila.personaId(), fila.nombreCompleto(), fila.tipoDoc(), fila.nroDoc()),
                     roles,
                     fila.creadoEn());
@@ -122,6 +122,6 @@ public class UsuarioAdminService {
     }
 
     private boolean esProtegido(Usuario usuario) {
-        return usuario.getUsername().equalsIgnoreCase(adminProperties.username());
+        return adminProperties.esAdmin(usuario.getUsername());
     }
 }

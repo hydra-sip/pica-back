@@ -51,6 +51,12 @@ public class UsuarioEdicionService {
     public UsuarioDetalle modificar(Long id, UsuarioUpdateRequest request) {
         Usuario usuario = buscarVivo(id);
         exigirNoProtegido(usuario, "modificar");
+        // el formulario solo puede mandar ACTIVO o BLOQUEADO: a uno con el mail sin verificar no se lo
+        // activa a mano, se activa solo cuando verifica
+        if (request.estado() == UsuarioUpdateRequest.EstadoEditable.ACTIVO && !usuario.isEmailVerificado()) {
+            throw new ConflictoException(CodigoError.EMAIL_NO_VERIFICADO,
+                    "El email de " + usuario.getUsername() + " todavía no fue verificado: no se lo puede pasar a ACTIVO");
+        }
 
         // cambiar solo mayúsculas/minúsculas del propio valor no es un choque: el índice único es sobre lower()
         if (!request.username().equalsIgnoreCase(usuario.getUsername())
@@ -65,14 +71,15 @@ public class UsuarioEdicionService {
         }
         Persona persona = resolverPersona(usuario, request.personaId());
 
+        EstadoUsuario estadoAnterior = usuario.getEstado();
         usuario.setUsername(request.username());
         usuario.setEmail(request.email());
         usuario.setDescripcion(textoONull(request.descripcion()));
-        usuario.setEstado(EstadoUsuario.valueOf(request.estado().name()));
         usuario.setPersona(persona);
         if (cambiaEmail) {
             usuario.setEmailVerificado(false);
         }
+        usuario.setEstado(estadoResultante(request.estado(), usuario.isEmailVerificado()));
 
         try {
             // flush acá para que un choque con los índices únicos (dos pedidos a la vez) salte ahora
@@ -84,14 +91,35 @@ public class UsuarioEdicionService {
         if (cambiaEmail) {
             eventos.publishEvent(new EmailDeUsuarioCambiado(usuario.getId(), usuario.getEmail()));
         }
+        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO && estadoAnterior != EstadoUsuario.BLOQUEADO) {
+            eventos.publishEvent(new SesionesDeUsuarioInvalidadas(usuario.getId()));
+        }
         return UsuarioDetalle.desde(usuario, persona, false);
     }
 
-    /** Baja lógica. Si ya estaba dado de baja es 404, igual que cualquier otro usuario que no existe. */
+    /**
+     * Bloquear siempre bloquea. ACTIVO solo llega acá con el mail verificado (si no, ya dio 409), pero
+     * si el mismo pedido cambió el email, el usuario queda PENDIENTE_VERIFICACION hasta que verifique el
+     * nuevo: lo activa el link del mail (o un reenvío si se perdió).
+     */
+    private static EstadoUsuario estadoResultante(UsuarioUpdateRequest.EstadoEditable pedido, boolean emailVerificado) {
+        if (pedido == UsuarioUpdateRequest.EstadoEditable.BLOQUEADO) {
+            return EstadoUsuario.BLOQUEADO;
+        }
+        return emailVerificado ? EstadoUsuario.ACTIVO : EstadoUsuario.PENDIENTE_VERIFICACION;
+    }
+
+    /**
+     * Baja lógica. Idempotente: si ya estaba dado de baja no hace nada. Un id que no existe es 404.
+     * El Admin del sistema no se da de baja, ni siquiera "otra vez".
+     */
     @Transactional
     public void eliminar(Long id) {
-        Usuario usuario = buscarVivo(id);
+        Usuario usuario = usuarioRepository.findByIdIncluyendoEliminados(id).orElseThrow(() -> noExiste(id));
         exigirNoProtegido(usuario, "dar de baja");
+        if (usuario.getEliminadoEn() != null) {
+            return;
+        }
 
         usuario.setEliminadoEn(Instant.now());
         usuarioRepository.saveAndFlush(usuario);
@@ -164,7 +192,7 @@ public class UsuarioEdicionService {
     }
 
     private boolean esProtegido(Usuario usuario) {
-        return usuario.getUsername().equalsIgnoreCase(adminProperties.username());
+        return adminProperties.esAdmin(usuario.getUsername());
     }
 
     private static String textoONull(String valor) {

@@ -14,6 +14,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
+import com.hydra.pica.plataforma_pica.user.event.EmailDeUsuarioCambiado;
 import com.hydra.pica.plataforma_pica.user.event.UsuarioCreado;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 
@@ -56,6 +57,22 @@ public class VerificacionEmailService {
                 String url = emitirToken(usuario);
                 emailService.enviarVerificacion(usuario.getEmail(), url);
             }
+        }
+    }
+
+    /**
+     * Un admin le cambió el email a un usuario (PICA-116): si quedó PENDIENTE_VERIFICACION se le
+     * manda el link al email nuevo, igual que en el registro. Si está bloqueado no se manda nada;
+     * cuando lo desbloqueen queda pendiente y puede pedir el reenvío. {@code emitirToken} pisa el
+     * token anterior, así que el link del email viejo deja de servir.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void alCambiarEmail(EmailDeUsuarioCambiado evento) {
+        Usuario usuario = usuarioRepository.findById(evento.usuarioId()).orElse(null);
+        if (usuario != null && usuario.getEstado() == EstadoUsuario.PENDIENTE_VERIFICACION) {
+            String url = emitirToken(usuario);
+            emailService.enviarVerificacion(usuario.getEmail(), url);
         }
     }
 

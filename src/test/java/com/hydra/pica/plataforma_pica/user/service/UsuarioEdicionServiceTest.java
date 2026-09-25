@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.sql.SQLException;
@@ -86,12 +87,14 @@ class UsuarioEdicionServiceTest {
         assertThat(usuario.isEmailVerificado()).isTrue();
         assertThat(detalle.username()).isEqualTo("juan.perez");
         verify(usuarioRepository, never()).existsByEmailIncluyendoEliminados(anyString());
-        verifyNoInteractions(eventos);
+        // bloquearlo cierra sus sesiones; el email no cambió, así que no hay mail de verificación
+        verify(eventos).publishEvent(new SesionesDeUsuarioInvalidadas(ID));
+        verifyNoMoreInteractions(eventos);
     }
 
     @Test
-    @DisplayName("modificar: si cambia el email el usuario queda sin verificar y se publica el evento")
-    void cambiarElEmailLoDejaSinVerificar() {
+    @DisplayName("modificar: si cambia el email el usuario queda sin verificar, PENDIENTE_VERIFICACION, y se publica el evento")
+    void cambiarElEmailLoDejaPendiente() {
         Usuario usuario = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
         when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
         when(usuarioRepository.existsByEmailIncluyendoEliminados("nuevo@example.com")).thenReturn(false);
@@ -101,8 +104,83 @@ class UsuarioEdicionServiceTest {
 
         assertThat(usuario.getEmail()).isEqualTo("nuevo@example.com");
         assertThat(usuario.isEmailVerificado()).isFalse();
+        assertThat(usuario.getEstado()).isEqualTo(EstadoUsuario.PENDIENTE_VERIFICACION);
         assertThat(detalle.emailVerificado()).isFalse();
+        assertThat(detalle.estado()).isEqualTo(EstadoUsuario.PENDIENTE_VERIFICACION);
         verify(eventos).publishEvent(new EmailDeUsuarioCambiado(ID, "nuevo@example.com"));
+        verifyNoMoreInteractions(eventos);
+    }
+
+    @Test
+    @DisplayName("modificar: cambiar el email y bloquear a la vez deja BLOQUEADO, sin verificar, y cierra sus sesiones")
+    void cambiarElEmailYBloquear() {
+        Usuario usuario = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+        when(usuarioRepository.existsByEmailIncluyendoEliminados("nuevo@example.com")).thenReturn(false);
+
+        servicio.modificar(ID, pedido("juan", "nuevo@example.com", null, EstadoEditable.BLOQUEADO, PERSONA_ID));
+
+        assertThat(usuario.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
+        assertThat(usuario.isEmailVerificado()).isFalse();
+        verify(eventos).publishEvent(new EmailDeUsuarioCambiado(ID, "nuevo@example.com"));
+        verify(eventos).publishEvent(new SesionesDeUsuarioInvalidadas(ID));
+    }
+
+    @Test
+    @DisplayName("modificar: mandar ACTIVO a un usuario con el mail sin verificar da 409 EMAIL_NO_VERIFICADO y no cambia nada")
+    void activoNoSaltaLaVerificacion() {
+        Usuario pendiente = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        pendiente.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
+        pendiente.setEmailVerificado(false);
+        Usuario bloqueadoSinVerificar = usuario(4L, "ana", "ana@example.com", persona(PERSONA_ID));
+        bloqueadoSinVerificar.setEstado(EstadoUsuario.BLOQUEADO);
+        bloqueadoSinVerificar.setEmailVerificado(false);
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(pendiente));
+        when(usuarioRepository.findById(4L)).thenReturn(Optional.of(bloqueadoSinVerificar));
+
+        assertThatThrownBy(() -> servicio.modificar(ID, pedido("juan", "juan@example.com", "nueva nota",
+                EstadoEditable.ACTIVO, PERSONA_ID)))
+                .isInstanceOf(ConflictoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.EMAIL_NO_VERIFICADO);
+        assertThatThrownBy(() -> servicio.modificar(4L, pedido("ana", "ana@example.com", null,
+                EstadoEditable.ACTIVO, PERSONA_ID)))
+                .isInstanceOf(ConflictoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.EMAIL_NO_VERIFICADO);
+
+        assertThat(pendiente.getEstado()).isEqualTo(EstadoUsuario.PENDIENTE_VERIFICACION);
+        assertThat(pendiente.getDescripcion()).isNull();
+        assertThat(bloqueadoSinVerificar.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
+        verify(usuarioRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(eventos);
+    }
+
+    @Test
+    @DisplayName("modificar: a un usuario con el mail sin verificar sí se lo puede bloquear")
+    void pendienteSePuedeBloquear() {
+        Usuario pendiente = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        pendiente.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
+        pendiente.setEmailVerificado(false);
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(pendiente));
+
+        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.BLOQUEADO, PERSONA_ID));
+
+        assertThat(pendiente.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
+        verify(eventos).publishEvent(new SesionesDeUsuarioInvalidadas(ID));
+    }
+
+    @Test
+    @DisplayName("modificar: desbloquear a uno con el mail verificado lo deja ACTIVO; bloquear a uno ya bloqueado no cierra sesiones de nuevo")
+    void desbloquearYBloquearDeNuevo() {
+        Usuario bloqueado = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        bloqueado.setEstado(EstadoUsuario.BLOQUEADO);
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(bloqueado));
+
+        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.BLOQUEADO, PERSONA_ID));
+        verifyNoInteractions(eventos);
+
+        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.ACTIVO, PERSONA_ID));
+        assertThat(bloqueado.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
+        verifyNoInteractions(eventos);
     }
 
     @Test
@@ -233,7 +311,7 @@ class UsuarioEdicionServiceTest {
     @DisplayName("eliminar: marca la baja y avisa que hay que cerrar sus sesiones")
     void eliminaYAvisa() {
         Usuario usuario = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
-        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+        when(usuarioRepository.findByIdIncluyendoEliminados(ID)).thenReturn(Optional.of(usuario));
 
         servicio.eliminar(ID);
 
@@ -243,11 +321,11 @@ class UsuarioEdicionServiceTest {
     }
 
     @Test
-    @DisplayName("eliminar: uno ya dado de baja es 404 y el Admin del sistema 403, sin tocar nada")
+    @DisplayName("eliminar: un id que no existe es 404 y el Admin del sistema 403, sin tocar nada")
     void eliminarInexistenteOProtegido() {
         Usuario admin = usuario(1L, "Admin", "admin@pica.local", persona(PERSONA_ID));
-        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(admin));
-        when(usuarioRepository.findById(99L)).thenReturn(Optional.empty());
+        when(usuarioRepository.findByIdIncluyendoEliminados(1L)).thenReturn(Optional.of(admin));
+        when(usuarioRepository.findByIdIncluyendoEliminados(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> servicio.eliminar(99L))
                 .isInstanceOf(NoEncontradoException.class)
@@ -256,6 +334,21 @@ class UsuarioEdicionServiceTest {
                 .isInstanceOf(ProhibidoException.class)
                 .extracting("codigo").isEqualTo(CodigoError.USUARIO_PROTEGIDO);
         assertThat(admin.getEliminadoEn()).isNull();
+        verifyNoInteractions(eventos);
+    }
+
+    @Test
+    @DisplayName("eliminar: es idempotente, uno ya dado de baja no se toca ni cierra sesiones de nuevo")
+    void eliminarUnoYaDadoDeBaja() {
+        Usuario usuario = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        Instant baja = Instant.parse("2026-01-01T00:00:00Z");
+        usuario.setEliminadoEn(baja);
+        when(usuarioRepository.findByIdIncluyendoEliminados(ID)).thenReturn(Optional.of(usuario));
+
+        servicio.eliminar(ID);
+
+        assertThat(usuario.getEliminadoEn()).isEqualTo(baja);
+        verify(usuarioRepository, never()).saveAndFlush(any());
         verifyNoInteractions(eventos);
     }
 
