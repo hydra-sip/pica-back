@@ -30,8 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Alta de usuarios (PICA-110). Es el único lugar por donde se crea un {@link Usuario}: el registro
- * público, el ABM de admin y el login con Google arman un {@link NuevoUsuario} con la fábrica que
- * les corresponde y llaman a {@link #crear}.
+ * público, el ABM de admin, el login con Google y el Admin del sistema al arrancar arman un
+ * {@link NuevoUsuario} con la fábrica que les corresponde y llaman a {@link #crear}.
  *
  * Orden de las validaciones, pensado para que el error que ve el usuario sea el que puede arreglar:
  * primero username y email (409 USERNAME_DUPLICADO / EMAIL_DUPLICADO), después la persona
@@ -44,6 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UsuarioService {
 
     static final String ROL_PARTICIPANTE = "PARTICIPANTE";
+    static final String ROL_SUPER_USUARIO = "SUPER_USUARIO";
 
     private static final int USERNAME_MAX = 30;
 
@@ -125,8 +126,10 @@ public class UsuarioService {
     private List<Rol> resolverRoles(NuevoUsuario nuevo) {
         List<Rol> roles = new ArrayList<>();
         if (nuevo.llevaRolParticipante()) {
-            roles.add(rolRepository.findByNombre(ROL_PARTICIPANTE)
-                    .orElseThrow(() -> new IllegalStateException("Falta el rol " + ROL_PARTICIPANTE + " del seed V2")));
+            roles.add(rolDelSeed(ROL_PARTICIPANTE));
+        }
+        if (nuevo.llevaRolSuperUsuario()) {
+            roles.add(rolDelSeed(ROL_SUPER_USUARIO));
         }
         for (Long rolId : nuevo.rolIds()) {
             roles.add(rolRepository.findById(rolId)
@@ -139,11 +142,16 @@ public class UsuarioService {
                         "El rol " + rol.getNombre() + " está inactivo y no se puede asignar");
             }
         }
-        // solo los que eligió el admin: el PARTICIPANTE automático no depende de quién llama (el
-        // registro es anónimo) y puede tener permisos si se los agregan desde la pantalla de roles
+        // solo los que eligió el admin: los automáticos no dependen de quién llama (el registro es
+        // anónimo y el Admin del sistema se crea al arrancar, sin nadie logueado)
         UsuarioRolService.validarQuePuedeAsignar(currentUserProvider.getPermisos(),
                 roles.stream().filter(rol -> nuevo.rolIds().contains(rol.getId())));
         return roles;
+    }
+
+    private Rol rolDelSeed(String nombre) {
+        return rolRepository.findByNombre(nombre)
+                .orElseThrow(() -> new IllegalStateException("Falta el rol " + nombre + " del seed V2"));
     }
 
     /**

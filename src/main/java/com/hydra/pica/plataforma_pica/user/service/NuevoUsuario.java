@@ -5,7 +5,7 @@ import java.util.Set;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 
 /**
- * Entrada de {@link UsuarioService#crear}. Hay tres formas de que aparezca un usuario y cada una
+ * Entrada de {@link UsuarioService#crear}. Hay cuatro formas de que aparezca un usuario y cada una
  * tiene sus defaults, por eso no se construye a mano sino con una de las fábricas:
  *
  * <ul>
@@ -15,11 +15,13 @@ import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
  *       mail ya verificado; la persona tiene que existir y los roles van por id.</li>
  *   <li>{@link #desdeGoogle}: primer login con Google. ACTIVO y verificado, sin contraseña y sin
  *       documento; el username se genera a partir del mail. También PARTICIPANTE.</li>
+ *   <li>{@link #adminDelSistema}: el Admin que crea {@link AdminInicial} al arrancar. ACTIVO y
+ *       verificado, persona sin documento y el rol SUPER_USUARIO.</li>
  * </ul>
  *
- * La persona viene de una de dos formas: {@code datosPersona} (registro y Google) o
- * {@code personaId} (admin). Nunca las dos. El constructor rechaza cualquier combinación que no
- * sea una de esas tres, así el servicio no tiene que desconfiar de lo que recibe.
+ * La persona viene de una de dos formas: {@code datosPersona} (registro, Google y Admin del sistema)
+ * o {@code personaId} (admin). Nunca las dos. El constructor rechaza cualquier combinación que no
+ * sea una de esas cuatro, así el servicio no tiene que desconfiar de lo que recibe.
  */
 public record NuevoUsuario(
         Origen origen,
@@ -38,7 +40,8 @@ public record NuevoUsuario(
     public enum Origen {
         AUTO_REGISTRO,
         ADMIN,
-        GOOGLE
+        GOOGLE,
+        SISTEMA
     }
 
     public NuevoUsuario {
@@ -94,6 +97,15 @@ public record NuevoUsuario(
                         "Google ya verificó el mail: el usuario nace ACTIVO y verificado");
                 exigir(sinRoles(rolIds), "Google no elige roles: el servicio le pone PARTICIPANTE");
             }
+            case SISTEMA -> {
+                exigir(tieneTexto(username), "El Admin del sistema usa app.admin.username");
+                exigir(datosPersona != null, "El Admin del sistema crea su persona, no lleva personaId");
+                exigir(tieneTexto(password), "El Admin del sistema necesita ADMIN_INITIAL_PASSWORD");
+                exigir(googleSub == null, "El Admin del sistema no lleva googleSub");
+                exigir(estadoInicial == EstadoUsuario.ACTIVO && emailVerificado,
+                        "El Admin del sistema nace ACTIVO y con el mail verificado");
+                exigir(sinRoles(rolIds), "El Admin del sistema no elige roles: el servicio le pone SUPER_USUARIO");
+            }
         }
     }
 
@@ -133,8 +145,18 @@ public record NuevoUsuario(
                 EstadoUsuario.ACTIVO, true, DatosPersona.sinDocumento(nombres, apellidos), null, Set.of());
     }
 
+    public static NuevoUsuario adminDelSistema(String username, String email, String password) {
+        return new NuevoUsuario(Origen.SISTEMA, username, email, password, null, "Admin del sistema",
+                EstadoUsuario.ACTIVO, true, DatosPersona.sinDocumento("Admin", "del Sistema"), null, Set.of());
+    }
+
     /** Registro y Google no eligen roles: el servicio les pone PARTICIPANTE. */
     public boolean llevaRolParticipante() {
-        return origen != Origen.ADMIN;
+        return origen == Origen.AUTO_REGISTRO || origen == Origen.GOOGLE;
+    }
+
+    /** El Admin del sistema tampoco elige: sale con SUPER_USUARIO y nada más. */
+    public boolean llevaRolSuperUsuario() {
+        return origen == Origen.SISTEMA;
     }
 }

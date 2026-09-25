@@ -67,4 +67,4 @@ app:
   admin:
     username: ${ADMIN_USERNAME:admin}
     email: ${ADMIN_EMAIL:admin@pica.local}
-    initial-password: ${ADMIN_INITIAL_PASSWORD}
+    initial-password: ${ADMIN_INITIAL_PASSWORD:}
