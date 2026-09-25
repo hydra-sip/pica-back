@@ -103,6 +103,8 @@ class UsuarioEdicionServiceIntegracionTest {
         entityManager.flush();
         entityManager.clear();
         servicio.eliminar(usuario.getId());
+        // el segundo eliminar lo cargó (con su baja) en la sesión: sin limpiar, findById devolvería esa copia
+        entityManager.clear();
 
         assertThat(usuarioRepository.findById(usuario.getId())).isEmpty();
         assertThat(usuarioRepository.findByIdIncluyendoEliminados(usuario.getId()))
@@ -159,6 +161,9 @@ class UsuarioEdicionServiceIntegracionTest {
     void indiceDeUsername() {
         usuario("edicion.dup", persona("Uno", "Uno", "70000006"), EstadoUsuario.ACTIVO);
         Usuario otro = nuevoUsuario("EDICION.DUP", persona("Dos", "Dos", "70000007"), EstadoUsuario.ACTIVO);
+        // el email que arma el helper coincidiría con el del primero: con dos violaciones a la vez, cuál
+        // reporta Postgres dependería del orden de los índices
+        otro.setEmail("otro.distinto@example.com");
 
         assertThat(constraintDe(otro)).isEqualTo("uq_usuario_username_lower");
     }
