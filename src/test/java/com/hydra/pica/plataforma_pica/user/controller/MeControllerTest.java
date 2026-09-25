@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.user.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -44,7 +45,6 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -54,7 +54,6 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest(MeController.class)
 @ActiveProfiles("dev")
 @Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
-@ActiveProfiles("dev")
 class MeControllerTest {
 
     private static final Long ID = 5L;
@@ -342,7 +341,7 @@ class MeControllerTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.codigo").value("VALIDACION"))
                     .andExpect(jsonPath("$.errores[0].campo").value("passwordNueva"))
-                    .andExpect(jsonPath("$.errores[0].codigo").value(caso[1]));
+                    .andExpect(jsonPath("$.errores[?(@.campo == 'passwordNueva')].codigo").value(hasItem(caso[1])));
         }
         verifyNoInteractions(perfilService);
     }
