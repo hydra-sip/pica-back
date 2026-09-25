@@ -118,8 +118,7 @@ class UsuarioSpecificationsTest {
 
     @Test
     void losFiltrosSeCombinanConAnd() {
-        Specification<Usuario> filtro = Specification
-                .where(UsuarioSpecifications.conTexto("diaz"))
+        Specification<Usuario> filtro = UsuarioSpecifications.conTexto("diaz")
                 .and(UsuarioSpecifications.conEstado(EstadoUsuario.ACTIVO))
                 .and(UsuarioSpecifications.conRol(administradorId));
 
@@ -128,8 +127,7 @@ class UsuarioSpecificationsTest {
 
     @Test
     void sinFiltrosDevuelveTodosLosUsuariosDePrueba() {
-        Specification<Usuario> sinFiltros = Specification
-                .where(UsuarioSpecifications.<Usuario>conTexto(null))
+        Specification<Usuario> sinFiltros = UsuarioSpecifications.<Usuario>conTexto(null)
                 .and(UsuarioSpecifications.conEstado(null))
                 .and(UsuarioSpecifications.conRol(null));
 
