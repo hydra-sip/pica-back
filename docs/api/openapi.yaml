@@ -424,7 +424,10 @@ paths:
       x-jira: PICA-123
       x-owner: Laura
       x-permiso: PERSONA_EDITAR
-      description: Todos los campos de la LBR. 409 `DOCUMENTO_DUPLICADO`.
+      description: >-
+        Todos los campos de la LBR; `estado` es opcional y, si no viene, se conserva el que tenía.
+        Una persona dada de baja no se modifica: 404, primero hay que reactivarla.
+        409 `DOCUMENTO_DUPLICADO` (también contra personas dadas de baja).
       requestBody: {$ref: '#/components/requestBodies/Persona'}
       responses:
         '200': {$ref: '#/components/responses/Persona'}
@@ -435,7 +438,9 @@ paths:
       x-jira: PICA-123
       x-owner: Laura
       x-permiso: PERSONA_ELIMINAR
-      description: 409 `PERSONA_CON_USUARIO` si su usuario está activo (primero se da de baja el usuario).
+      description: >-
+        409 `PERSONA_CON_USUARIO` si su usuario no está dado de baja (primero se da de baja el usuario).
+        Idempotente: si ya estaba dada de baja responde 204 sin hacer nada.
       responses:
         '204': {description: Dada de baja}
         '409': {$ref: '#/components/responses/Conflicto'}
@@ -447,6 +452,7 @@ paths:
       x-jira: PICA-123
       x-owner: Laura
       x-permiso: PERSONA_ELIMINAR
+      description: Limpia `eliminado_en`. Si no estaba dada de baja la devuelve igual. 404 `PERSONA_NO_ENCONTRADA`.
       parameters: [{$ref: '#/components/parameters/id'}]
       responses:
         '200': {$ref: '#/components/responses/Persona'}
