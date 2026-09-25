@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.common.error;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import java.util.List;
 
 import jakarta.validation.Valid;
@@ -38,7 +39,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // El controller de prueba va en @Import además de en controllers=: al estar anidado en una clase de
 // test, el escaneo de componentes lo saltea y sin el import responde 404.
 @WebMvcTest(controllers = ApiExceptionHandlerTest.PruebaController.class)
-@Import({SecurityConfig.class, WebConfig.class, ApiExceptionHandlerTest.PruebaController.class})
+@Import({
+        SecurityConfig.class,
+        WebConfig.class,
+        JwtTestSupportConfiguration.class,
+        ApiExceptionHandlerTest.PruebaController.class
+})
 @WithMockUser
 class ApiExceptionHandlerTest {
 

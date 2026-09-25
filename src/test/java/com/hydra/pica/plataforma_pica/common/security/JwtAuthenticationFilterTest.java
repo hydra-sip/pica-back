@@ -10,6 +10,7 @@ import java.util.List;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
+import io.jsonwebtoken.security.SignatureException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -66,8 +67,8 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
-    void bearerInvalidoPasaLaCadenaSinAutenticar() throws Exception {
-        when(jwtService.validar("vencido")).thenThrow(new IllegalArgumentException("token inválido"));
+    void bearerConFirmaInvalidaPasaLaCadenaSinAutenticar() throws Exception {
+        when(jwtService.validar("vencido")).thenThrow(new SignatureException("firma inválida"));
 
         mockMvc.perform(get("/prueba").header("Authorization", "Bearer vencido"))
                 .andExpect(status().isOk());

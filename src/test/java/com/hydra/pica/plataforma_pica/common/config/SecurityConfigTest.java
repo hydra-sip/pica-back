@@ -10,14 +10,10 @@ import java.security.KeyPairGenerator;
 import java.time.Instant;
 import java.util.Date;
 
-import com.hydra.pica.plataforma_pica.common.security.JwtAuthenticationFilter;
-import com.hydra.pica.plataforma_pica.common.security.JwtService;
 import io.jsonwebtoken.Jwts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -30,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
         SecurityConfig.class,
         WebConfig.class,
         SecurityConfigTest.ControllerDePrueba.class,
-        SecurityConfigTest.JwtTestConfiguration.class
+        JwtTestSupportConfiguration.class
 })
 class SecurityConfigTest {
 
@@ -87,27 +83,6 @@ class SecurityConfigTest {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
         generator.initialize(2048);
         return generator.generateKeyPair();
-    }
-
-    @TestConfiguration
-    static class JwtTestConfiguration {
-
-        @Bean
-        KeyPair jwtTestKeyPair() throws Exception {
-            KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-            generator.initialize(2048);
-            return generator.generateKeyPair();
-        }
-
-        @Bean
-        JwtService jwtService(KeyPair keyPair) {
-            return new JwtService(keyPair);
-        }
-
-        @Bean
-        JwtAuthenticationFilter jwtAuthenticationFilter(JwtService jwtService) {
-            return new JwtAuthenticationFilter(jwtService);
-        }
     }
 
     @RestController

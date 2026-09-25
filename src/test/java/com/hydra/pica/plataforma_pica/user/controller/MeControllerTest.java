@@ -19,6 +19,7 @@ import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
@@ -42,6 +43,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -49,7 +51,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * un {@link CurrentUserProvider} mockeado; {@code @WithMockUser} solo cubre el "está autenticado".
  */
 @WebMvcTest(MeController.class)
-@Import({SecurityConfig.class, WebConfig.class})
+@Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
+@ActiveProfiles("dev")
 class MeControllerTest {
 
     private static final Long ID = 5L;

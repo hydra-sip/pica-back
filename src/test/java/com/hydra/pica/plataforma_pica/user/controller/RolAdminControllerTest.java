@@ -21,6 +21,7 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
@@ -50,7 +51,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * Postgres en {@code RolServiceIntegracionTest}.
  */
 @WebMvcTest(RolAdminController.class)
-@Import({SecurityConfig.class, WebConfig.class})
+@Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
 class RolAdminControllerTest {
 
     private static final String ROLES = "/api/v1/admin/roles";

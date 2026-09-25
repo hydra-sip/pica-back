@@ -21,7 +21,12 @@ import org.springframework.web.bind.annotation.RestController;
  * authorities, que es donde el filtro JWT (PICA-117) va a poner los códigos del token.
  */
 @WebMvcTest(controllers = SeguridadPorMetodoTest.ControllerDePrueba.class)
-@Import({SecurityConfig.class, WebConfig.class, SeguridadPorMetodoTest.ControllerDePrueba.class})
+@Import({
+        SecurityConfig.class,
+        WebConfig.class,
+        JwtTestSupportConfiguration.class,
+        SeguridadPorMetodoTest.ControllerDePrueba.class
+})
 class SeguridadPorMetodoTest {
 
     @Autowired
