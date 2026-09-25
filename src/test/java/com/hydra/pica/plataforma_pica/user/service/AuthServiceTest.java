@@ -8,17 +8,23 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
+import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.RefreshToken;
+import com.hydra.pica.plataforma_pica.user.domain.Rol;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
+import com.hydra.pica.plataforma_pica.user.domain.UsuarioRol;
 import com.hydra.pica.plataforma_pica.user.dto.LoginRequest;
 import com.hydra.pica.plataforma_pica.user.dto.TokenPair;
+import com.hydra.pica.plataforma_pica.user.event.RolesDeUsuarioCambiados;
+import com.hydra.pica.plataforma_pica.user.event.SesionesDeUsuarioInvalidadas;
 import com.hydra.pica.plataforma_pica.user.repository.RefreshTokenRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 
@@ -39,13 +45,15 @@ class AuthServiceTest {
     @Mock private RefreshTokenRepository refreshTokenRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private JwtService jwtService;
+    @Mock private PermisoService permisoService;
 
     private AuthService authService;
     private Usuario usuario;
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(usuarioRepository, refreshTokenRepository, passwordEncoder, jwtService);
+        authService = new AuthService(usuarioRepository, refreshTokenRepository, passwordEncoder, jwtService,
+                permisoService);
         usuario = new Usuario();
         ReflectionTestUtils.setField(usuario, "id", 42L);
         usuario.setUsername("jperez");
@@ -107,6 +115,7 @@ class AuthServiceTest {
         actual.setTokenHash("hash");
         actual.setExpiraEn(Instant.now().plusSeconds(60));
         when(refreshTokenRepository.findByTokenHash(any(String.class))).thenReturn(Optional.of(actual));
+        when(usuarioRepository.existsByIdAndEstado(42L, EstadoUsuario.ACTIVO)).thenReturn(true);
         when(jwtService.generarAccessToken(42L, "jperez", java.util.List.<String>of(), java.util.List.<String>of()))
                 .thenReturn("access-new");
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -127,6 +136,7 @@ class AuthServiceTest {
         token.setTokenHash("hash");
         token.setExpiraEn(Instant.now().plusSeconds(60));
         token.setRevocadoEn(Instant.now().minusSeconds(1));
+        token.setReemplazadoPor("hash-del-siguiente");
         when(refreshTokenRepository.findByTokenHash(any(String.class))).thenReturn(Optional.of(token));
 
         assertThatThrownBy(() -> authService.refresh("refresh", null))
@@ -147,5 +157,63 @@ class AuthServiceTest {
 
         assertThat(token.getRevocadoEn()).isNotNull();
         verify(refreshTokenRepository).save(token);
+    }
+
+    @Test
+    void refreshCerradoSinRotarVencidoODeUsuarioNoActivoEsInvalidoYNoRevocaNada() {
+        RefreshToken cerrado = token(Instant.now().plusSeconds(60));
+        cerrado.setRevocadoEn(Instant.now().minusSeconds(1));
+        RefreshToken vencido = token(Instant.now().minusSeconds(1));
+        RefreshToken deBloqueado = token(Instant.now().plusSeconds(60));
+        when(refreshTokenRepository.findByTokenHash(any(String.class)))
+                .thenReturn(Optional.of(cerrado), Optional.of(vencido), Optional.of(deBloqueado));
+        when(usuarioRepository.existsByIdAndEstado(42L, EstadoUsuario.ACTIVO)).thenReturn(false);
+
+        for (int i = 0; i < 3; i++) {
+            assertThatThrownBy(() -> authService.refresh("refresh", null))
+                    .extracting("codigo").isEqualTo(CodigoError.REFRESH_INVALIDO);
+        }
+        verify(refreshTokenRepository, never()).revocarActivosPorUsuario(any(), any());
+        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
+    }
+
+    @Test
+    void elTokenLlevaSoloLosRolesActivosYLosPermisosDePermisoService() {
+        usuario.setRoles(Set.of(
+                new UsuarioRol(usuario, rol(1L, "ORGANIZADOR", EstadoGeneral.ACTIVO)),
+                new UsuarioRol(usuario, rol(2L, "SOPORTE", EstadoGeneral.INACTIVO))));
+        when(usuarioRepository.findByUsernameIgnoreCase("jperez")).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("Pica2026", "hash")).thenReturn(true);
+        when(permisoService.permisosDe(42L)).thenReturn(Set.of("USUARIO_VER", "PERSONA_VER"));
+
+        authService.login(new LoginRequest("jperez", "Pica2026"), null);
+
+        verify(jwtService).generarAccessToken(42L, "jperez", List.of("ORGANIZADOR"),
+                List.of("PERSONA_VER", "USUARIO_VER"));
+    }
+
+    @Test
+    void cerrarSesionesYCambiarRolesRevocanLosRefreshDelUsuario() {
+        authService.alInvalidarSesiones(new SesionesDeUsuarioInvalidadas(42L));
+        authService.alCambiarRoles(new RolesDeUsuarioCambiados(7L));
+
+        verify(refreshTokenRepository).revocarActivosPorUsuario(org.mockito.ArgumentMatchers.eq(42L), any(Instant.class));
+        verify(refreshTokenRepository).revocarActivosPorUsuario(org.mockito.ArgumentMatchers.eq(7L), any(Instant.class));
+    }
+
+    private RefreshToken token(Instant expiraEn) {
+        RefreshToken token = new RefreshToken();
+        token.setUsuario(usuario);
+        token.setTokenHash("hash");
+        token.setExpiraEn(expiraEn);
+        return token;
+    }
+
+    private static Rol rol(Long id, String nombre, EstadoGeneral estado) {
+        Rol rol = new Rol();
+        ReflectionTestUtils.setField(rol, "id", id);
+        ReflectionTestUtils.setField(rol, "nombre", nombre);
+        rol.setEstado(estado);
+        return rol;
     }
 }

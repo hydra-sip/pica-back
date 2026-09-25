@@ -12,19 +12,23 @@ import java.util.UUID;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
+import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.RefreshToken;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.dto.LoginRequest;
 import com.hydra.pica.plataforma_pica.user.dto.TokenPair;
+import com.hydra.pica.plataforma_pica.user.event.RolesDeUsuarioCambiados;
+import com.hydra.pica.plataforma_pica.user.event.SesionesDeUsuarioInvalidadas;
 import com.hydra.pica.plataforma_pica.user.repository.RefreshTokenRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +41,7 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final PermisoService permisoService;
 
     @Transactional
     public TokenPair login(LoginRequest request, String userAgent) {
@@ -51,19 +56,27 @@ public class AuthService {
         return emitirPar(usuario, userAgent);
     }
 
-    @Transactional
+    // noRollbackFor: al detectar un refresh reutilizado se revoca la familia y además se responde 401;
+    // sin esto la excepción deshacía la revocación
+    @Transactional(noRollbackFor = ApiException.class)
     public TokenPair refresh(String refreshToken, String userAgent) {
-        String hash = hash(refreshToken);
-        RefreshToken actual = refreshTokenRepository.findByTokenHash(hash)
-                .orElseThrow(() -> refreshException(CodigoError.REFRESH_INVALIDO, "El refresh token no es válido"));
+        RefreshToken actual = refreshTokenRepository.findByTokenHash(hash(refreshToken))
+                .orElseThrow(AuthService::refreshInvalido);
+        Long usuarioId = actual.getUsuario().getId();
 
-        if (actual.getRevocadoEn() != null) {
-            refreshTokenRepository.revocarActivosPorUsuario(actual.getUsuario().getId(), Instant.now());
+        // ya rotado: lo está usando alguien más que el dueño de la sesión
+        if (actual.getReemplazadoPor() != null) {
+            refreshTokenRepository.revocarActivosPorUsuario(usuarioId, Instant.now());
             throw refreshException(CodigoError.REFRESH_REUTILIZADO,
                     "El refresh token ya fue utilizado y la sesión fue invalidada");
         }
-        if (!actual.getExpiraEn().isAfter(Instant.now())) {
-            throw refreshException(CodigoError.TOKEN_EXPIRADO, "El refresh token expiró");
+        // cerrado por logout, por una baja/bloqueo/cambio de clave o de roles, o vencido
+        if (actual.getRevocadoEn() != null || !actual.getExpiraEn().isAfter(Instant.now())) {
+            throw refreshInvalido();
+        }
+        // dado de baja, bloqueado o con el mail cambiado sin verificar no renueva aunque el token siga vivo
+        if (!usuarioRepository.existsByIdAndEstado(usuarioId, EstadoUsuario.ACTIVO)) {
+            throw refreshInvalido();
         }
 
         TokenPair par = emitirPar(actual.getUsuario(), userAgent);
@@ -84,6 +97,23 @@ public class AuthService {
                 refreshTokenRepository.save(token);
             }
         });
+    }
+
+    /**
+     * Baja, bloqueo, reset o cambio de clave (UsuarioEdicionService, PerfilService) y cambio de roles
+     * (UsuarioRolService): el usuario tiene que volver a entrar. Corre en la transacción de quien
+     * publica, así que si el cambio se deshace la revocación también.
+     */
+    @EventListener
+    @Transactional
+    public void alInvalidarSesiones(SesionesDeUsuarioInvalidadas evento) {
+        refreshTokenRepository.revocarActivosPorUsuario(evento.usuarioId(), Instant.now());
+    }
+
+    @EventListener
+    @Transactional
+    public void alCambiarRoles(RolesDeUsuarioCambiados evento) {
+        refreshTokenRepository.revocarActivosPorUsuario(evento.usuarioId(), Instant.now());
     }
 
     private Usuario buscarPorIdentificador(String identificador) {
@@ -108,14 +138,14 @@ public class AuthService {
     }
 
     private TokenPair emitirPar(Usuario usuario, String userAgent) {
+        // solo cuentan los roles activos; permisosDe ya filtra por estado de rol y usuario
         List<String> roles = usuario.getRoles().stream()
-                .map(asignacion -> asignacion.getRol().getNombre())
+                .map(asignacion -> asignacion.getRol())
+                .filter(rol -> rol.getEstado() == EstadoGeneral.ACTIVO)
+                .map(rol -> rol.getNombre())
                 .sorted()
                 .toList();
-        List<String> permisos = usuario.getRoles().stream()
-                .flatMap(asignacion -> asignacion.getRol().getPermisos().stream())
-                .map(permiso -> permiso.getCodigo())
-                .distinct()
+        List<String> permisos = permisoService.permisosDe(usuario.getId()).stream()
                 .sorted()
                 .toList();
 
@@ -144,6 +174,10 @@ public class AuthService {
     private static ApiException credencialesInvalidas() {
         return new ApiException(HttpStatus.UNAUTHORIZED, CodigoError.CREDENCIALES_INVALIDAS,
                 "Las credenciales no son válidas");
+    }
+
+    private static ApiException refreshInvalido() {
+        return refreshException(CodigoError.REFRESH_INVALIDO, "El refresh token no es válido");
     }
 
     private static ApiException refreshException(CodigoError codigo, String detalle) {
