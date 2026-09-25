@@ -10,5 +10,13 @@ public class AdminConfig {
 
     @ConfigurationProperties(prefix = "app.admin")
     public record AdminProperties(String username, String email, String initialPassword) {
+
+        /**
+         * Si el username es el del Admin del sistema, el usuario protegido: no se le quitan los roles de
+         * sistema, ni se lo modifica, da de baja o resetea. Es el único lugar donde se decide.
+         */
+        public boolean esAdmin(String otroUsername) {
+            return otroUsername != null && otroUsername.equalsIgnoreCase(username);
+        }
     }
 }

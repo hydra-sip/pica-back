@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.user.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -18,12 +19,14 @@ import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
+import com.hydra.pica.plataforma_pica.user.dto.CambioPasswordRequest;
 import com.hydra.pica.plataforma_pica.user.dto.Me;
 import com.hydra.pica.plataforma_pica.user.dto.MeUpdateRequest;
 import com.hydra.pica.plataforma_pica.user.dto.PersonaDatos;
@@ -35,6 +38,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -262,6 +266,111 @@ class MeControllerTest {
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.codigo").value("DOCUMENTO_NO_EDITABLE"));
+    }
+
+    // --- PUT /me/password (PICA-122) ---------------------------------------------
+
+    private static final String CAMBIO = """
+            {"passwordActual": "Actual123", "passwordNueva": "Nueva1234"}
+            """;
+
+    @Test
+    @DisplayName("PUT /api/v1/me/password sin autenticación responde 401")
+    void passwordSinAutenticacion() throws Exception {
+        mockMvc.perform(put("/api/v1/me/password").contentType(MediaType.APPLICATION_JSON).content(CAMBIO))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(perfilService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("PUT /api/v1/me/password autenticado pero sin id de usuario en la sesión responde 401 NO_AUTENTICADO")
+    void passwordSinIdDeUsuario() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.empty());
+
+        mockMvc.perform(put("/api/v1/me/password").contentType(MediaType.APPLICATION_JSON).content(CAMBIO))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+        verifyNoInteractions(perfilService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("PUT /api/v1/me/password pasa las dos contraseñas al servicio con el id de la sesión y responde 204")
+    void cambiaLaPassword() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));
+
+        mockMvc.perform(put("/api/v1/me/password").contentType(MediaType.APPLICATION_JSON).content(CAMBIO))
+                .andExpect(status().isNoContent());
+
+        verify(perfilService).cambiarPassword(ID, new CambioPasswordRequest("Actual123", "Nueva1234"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("PUT /api/v1/me/password sin passwordActual (usuario de Google) llega al servicio con null y responde 204")
+    void definePasswordSinActual() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));
+
+        mockMvc.perform(put("/api/v1/me/password").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"passwordNueva\": \"Nueva1234\"}"))
+                .andExpect(status().isNoContent());
+
+        verify(perfilService).cambiarPassword(ID, new CambioPasswordRequest(null, "Nueva1234"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("PUT /api/v1/me/password con la contraseña nueva ausente, en blanco, débil o demasiado larga responde 400 con el campo")
+    void passwordNuevaInvalida() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));
+        String[][] casos = {
+                {"{\"passwordActual\": \"Actual123\"}", "REQUERIDO"},
+                {"{\"passwordActual\": \"Actual123\", \"passwordNueva\": \"   \"}", "REQUERIDO"},
+                {"{\"passwordActual\": \"Actual123\", \"passwordNueva\": \"Corta1\"}", "PASSWORD_DEBIL"},
+                {"{\"passwordActual\": \"Actual123\", \"passwordNueva\": \"sinmayuscula1\"}", "PASSWORD_DEBIL"},
+                {"{\"passwordActual\": \"Actual123\", \"passwordNueva\": \"SinNumeroNiNada\"}", "PASSWORD_DEBIL"},
+                {"{\"passwordActual\": \"Actual123\", \"passwordNueva\": \"" + "Aa1".repeat(25) + "\"}", "LONGITUD"},
+        };
+        for (String[] caso : casos) {
+            mockMvc.perform(put("/api/v1/me/password").contentType(MediaType.APPLICATION_JSON).content(caso[0]))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.codigo").value("VALIDACION"))
+                    .andExpect(jsonPath("$.errores[0].campo").value("passwordNueva"))
+                    .andExpect(jsonPath("$.errores[0].codigo").value(caso[1]));
+        }
+        verifyNoInteractions(perfilService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("PUT /api/v1/me/password con una passwordActual de más de 72 caracteres responde 400 en ese campo")
+    void passwordActualDemasiadoLarga() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));
+
+        mockMvc.perform(put("/api/v1/me/password").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"passwordActual\": \"" + "a".repeat(73) + "\", \"passwordNueva\": \"Nueva1234\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[0].campo").value("passwordActual"))
+                .andExpect(jsonPath("$.errores[0].codigo").value("LONGITUD"));
+        verifyNoInteractions(perfilService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("PUT /api/v1/me/password: los errores del servicio salen con su código (400 actual incorrecta, 403 bloqueado)")
+    void erroresDelServicio() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));
+        doThrow(new ApiException(HttpStatus.BAD_REQUEST, CodigoError.PASSWORD_ACTUAL_INCORRECTA, "no coincide"))
+                .doThrow(new ApiException(HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO, "bloqueado"))
+                .when(perfilService).cambiarPassword(eq(ID), any());
+
+        mockMvc.perform(put("/api/v1/me/password").contentType(MediaType.APPLICATION_JSON).content(CAMBIO))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("PASSWORD_ACTUAL_INCORRECTA"));
+        mockMvc.perform(put("/api/v1/me/password").contentType(MediaType.APPLICATION_JSON).content(CAMBIO))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("USUARIO_BLOQUEADO"));
     }
 
     private static Me me() {

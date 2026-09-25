@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,9 +23,11 @@ import com.hydra.pica.plataforma_pica.user.domain.Rol;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.domain.UsuarioRol;
+import com.hydra.pica.plataforma_pica.user.dto.CambioPasswordRequest;
 import com.hydra.pica.plataforma_pica.user.dto.Me;
 import com.hydra.pica.plataforma_pica.user.dto.MeUpdateRequest;
 import com.hydra.pica.plataforma_pica.user.dto.RolMinimo;
+import com.hydra.pica.plataforma_pica.user.event.SesionesDeUsuarioInvalidadas;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,7 +35,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -51,6 +57,12 @@ class PerfilServiceTest {
 
     @Mock
     private PersonaService personaService;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private ApplicationEventPublisher eventos;
 
     @InjectMocks
     private PerfilService perfilService;
@@ -247,6 +259,118 @@ class PerfilServiceTest {
                     assertThat(api.getCodigo()).isEqualTo(CodigoError.VALIDACION);
                     assertThat(api.getPropiedades().get("errores").toString()).contains("nroDoc");
                 });
+    }
+
+    // --- cambiarPassword (PICA-122) ------------------------------------------------
+
+    @Test
+    @DisplayName("cambiarPassword: con la actual correcta guarda el hash de la nueva (no la contraseña) y cierra las sesiones")
+    void cambiaLaPassword() {
+        Usuario usuario = usuario(personaCompleta());
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("Actual123", "$2a$12$hash")).thenReturn(true);
+        when(passwordEncoder.encode("Nueva1234")).thenReturn("$2a$12$nuevo");
+
+        perfilService.cambiarPassword(ID, new CambioPasswordRequest("Actual123", "Nueva1234"));
+
+        assertThat(usuario.getPasswordHash()).isEqualTo("$2a$12$nuevo");
+        verify(usuarioRepository).saveAndFlush(usuario);
+        verify(eventos).publishEvent(new SesionesDeUsuarioInvalidadas(ID));
+    }
+
+    @Test
+    @DisplayName("cambiarPassword: con la actual incorrecta da 400 PASSWORD_ACTUAL_INCORRECTA y no cambia nada ni cierra sesiones")
+    void actualIncorrecta() {
+        Usuario usuario = usuario(personaCompleta());
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("Otra1234", "$2a$12$hash")).thenReturn(false);
+
+        assertThatThrownBy(() -> perfilService.cambiarPassword(ID, new CambioPasswordRequest("Otra1234", "Nueva1234")))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(e.getCodigo()).isEqualTo(CodigoError.PASSWORD_ACTUAL_INCORRECTA);
+                });
+        assertThat(usuario.getPasswordHash()).isEqualTo("$2a$12$hash");
+        verify(passwordEncoder, never()).encode(any());
+        verify(usuarioRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(eventos);
+    }
+
+    @Test
+    @DisplayName("cambiarPassword: si ya tiene contraseña y no manda la actual (o en blanco) da 400 VALIDACION marcando passwordActual")
+    void faltaLaActual() {
+        Usuario usuario = usuario(personaCompleta());
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+
+        for (String actual : new String[] {null, "", "   "}) {
+            assertThatThrownBy(() -> perfilService.cambiarPassword(ID, new CambioPasswordRequest(actual, "Nueva1234")))
+                    .isInstanceOfSatisfying(ApiException.class, e -> {
+                        assertThat(e.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                        assertThat(e.getCodigo()).isEqualTo(CodigoError.VALIDACION);
+                        assertThat(e.getPropiedades().get("errores").toString()).contains("passwordActual");
+                    });
+        }
+        verify(usuarioRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(eventos);
+    }
+
+    @Test
+    @DisplayName("cambiarPassword: un usuario de Google sin contraseña define la primera sin actual, aunque mande una")
+    void googleDefinePrimeraPassword() {
+        Usuario usuario = usuario(personaCompleta());
+        usuario.setPasswordHash(null);
+        usuario.setGoogleSub("google-123");
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.encode("Nueva1234")).thenReturn("$2a$12$nuevo");
+
+        perfilService.cambiarPassword(ID, new CambioPasswordRequest(null, "Nueva1234"));
+        assertThat(usuario.getPasswordHash()).isEqualTo("$2a$12$nuevo");
+        // la primera llamada ya le dejó contraseña: se la saco para simular otro usuario de Google
+        usuario.setPasswordHash(null);
+        perfilService.cambiarPassword(ID, new CambioPasswordRequest("cualquiera", "Nueva1234"));
+
+        assertThat(usuario.getPasswordHash()).isEqualTo("$2a$12$nuevo");
+        verify(passwordEncoder, never()).matches(any(), any());
+        verify(eventos, times(2)).publishEvent(new SesionesDeUsuarioInvalidadas(ID));
+    }
+
+    @Test
+    @DisplayName("cambiarPassword: poner la misma contraseña que ya tenía se acepta")
+    void mismaPassword() {
+        Usuario usuario = usuario(personaCompleta());
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("Igual1234", "$2a$12$hash")).thenReturn(true);
+        when(passwordEncoder.encode("Igual1234")).thenReturn("$2a$12$otrohash");
+
+        perfilService.cambiarPassword(ID, new CambioPasswordRequest("Igual1234", "Igual1234"));
+
+        assertThat(usuario.getPasswordHash()).isEqualTo("$2a$12$otrohash");
+    }
+
+    @Test
+    @DisplayName("cambiarPassword: un usuario bloqueado, pendiente o que ya no existe no puede: 403 / 403 / 401")
+    void usuarioNoHabilitado() {
+        Usuario bloqueado = usuario(personaCompleta());
+        bloqueado.setEstado(EstadoUsuario.BLOQUEADO);
+        Usuario pendiente = usuario(personaCompleta());
+        pendiente.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(bloqueado));
+        when(usuarioRepository.findById(2L)).thenReturn(Optional.of(pendiente));
+        when(usuarioRepository.findById(3L)).thenReturn(Optional.empty());
+        CambioPasswordRequest pedido = new CambioPasswordRequest("Actual123", "Nueva1234");
+
+        assertThatThrownBy(() -> perfilService.cambiarPassword(1L, pedido))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                    assertThat(e.getCodigo()).isEqualTo(CodigoError.USUARIO_BLOQUEADO);
+                });
+        assertThatThrownBy(() -> perfilService.cambiarPassword(2L, pedido))
+                .isInstanceOfSatisfying(ApiException.class,
+                        e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.EMAIL_NO_VERIFICADO));
+        assertThatThrownBy(() -> perfilService.cambiarPassword(3L, pedido))
+                .isInstanceOfSatisfying(ApiException.class,
+                        e -> assertThat(e.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED));
+        verifyNoInteractions(passwordEncoder, eventos);
     }
 
     private static MeUpdateRequest pedido(TipoDoc tipoDoc, String nroDoc) {

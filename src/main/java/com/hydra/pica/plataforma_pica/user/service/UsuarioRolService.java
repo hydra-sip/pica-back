@@ -167,7 +167,7 @@ public class UsuarioRolService {
     }
 
     private void validarAdminDelSistema(Usuario usuario, List<UsuarioRol> quitados) {
-        boolean esAdmin = usuario.getUsername().equalsIgnoreCase(adminProperties.username());
+        boolean esAdmin = adminProperties.esAdmin(usuario.getUsername());
         if (esAdmin && quitados.stream().anyMatch(asignacion -> asignacion.getRol().isEsSistema())) {
             throw new ProhibidoException(CodigoError.USUARIO_PROTEGIDO,
                     "Al usuario " + usuario.getUsername() + " no se le puede quitar el rol de sistema");
