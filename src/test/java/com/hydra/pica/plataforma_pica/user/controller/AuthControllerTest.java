@@ -47,7 +47,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
 class AuthControllerTest {
 
-    private final MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
     @MockitoBean
     private UsuarioService usuarioService;
@@ -57,11 +58,6 @@ class AuthControllerTest {
 
     @MockitoBean
     private AuthService authService;
-
-    @Autowired
-    AuthControllerTest(MockMvc mockMvc) {
-        this.mockMvc = mockMvc;
-    }
 
     @Test
     @DisplayName("Registro válido: 201 con el id creado y los datos esperados")

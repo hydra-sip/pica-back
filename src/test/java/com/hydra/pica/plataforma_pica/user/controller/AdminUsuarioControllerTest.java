@@ -53,18 +53,14 @@ import org.springframework.test.web.servlet.RequestBuilder;
 @Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
 class AdminUsuarioControllerTest {
 
-    private final MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
     @MockitoBean
     private UsuarioAdminService usuarioAdminService;
 
     @MockitoBean
     private UsuarioEdicionService usuarioEdicionService;
-
-    @Autowired
-    AdminUsuarioControllerTest(MockMvc mockMvc) {
-        this.mockMvc = mockMvc;
-    }
 
     @Test
     @DisplayName("GET /api/v1/admin/usuarios sin autenticación responde 401")

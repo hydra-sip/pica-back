@@ -33,15 +33,11 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
 class PermisoAdminControllerTest {
 
-    private final MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
     @MockitoBean
     private PermisoService permisoService;
-
-    @Autowired
-    PermisoAdminControllerTest(MockMvc mockMvc) {
-        this.mockMvc = mockMvc;
-    }
 
     @Test
     @DisplayName("Con ROL_VER: el catálogo agrupado por módulo")

@@ -61,15 +61,11 @@ class RolAdminControllerTest {
             {"nombre": "VEEDOR", "nombreAmigable": "Veedor", "descripcion": "Mira", "estado": "ACTIVO"}
             """;
 
-    private final MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
     @MockitoBean
     private RolService rolService;
-
-    @Autowired
-    RolAdminControllerTest(MockMvc mockMvc) {
-        this.mockMvc = mockMvc;
-    }
 
     // --- listado ------------------------------------------------------------
 

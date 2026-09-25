@@ -20,6 +20,8 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
+import com.hydra.pica.plataforma_pica.common.security.JwtService;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
@@ -38,12 +40,15 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 @WebMvcTest(AdminPersonaController.class)
-@Import({SecurityConfig.class, WebConfig.class})
+@ActiveProfiles("dev")
+@Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
 class AdminPersonaControllerTest {
 
     private static final String URL = "/api/v1/admin/personas";
@@ -53,15 +58,17 @@ class AdminPersonaControllerTest {
              "fechaNacimiento": "1990-05-20", "telefono": "1155551234"}
             """;
 
-    private final MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
-    @MockitoBean
+    @MockBean
     private PersonaAdminService personaAdminService;
 
-    @Autowired
-    AdminPersonaControllerTest(MockMvc mockMvc) {
-        this.mockMvc = mockMvc;
-    }
+    @MockBean
+    private JwtService jwtService;
+
+    @MockBean
+    private UserDetailsService userDetailsService;
 
     private static PersonaDetalle detalle(Long id, UsuarioMinimo usuario) {
         return new PersonaDetalle(id, "Juan", "Pérez", "DNI", "30123456", LocalDate.of(1990, 5, 20), null,

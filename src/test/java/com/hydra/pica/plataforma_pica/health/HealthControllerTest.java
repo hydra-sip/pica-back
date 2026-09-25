@@ -22,12 +22,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
 class HealthControllerTest {
 
-    private final MockMvc mockMvc;
-
     @Autowired
-    HealthControllerTest(MockMvc mockMvc) {
-        this.mockMvc = mockMvc;
-    }
+    private MockMvc mockMvc;
 
     @Test
     @DisplayName("GET /api/v1/health debe responder 200 OK y status UP")

@@ -58,18 +58,14 @@ class MeControllerTest {
 
     private static final Long ID = 5L;
 
-    private final MockMvc mockMvc;
+    @Autowired
+    private MockMvc mockMvc;
 
     @MockitoBean
     private PerfilService perfilService;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
-
-    @Autowired
-    MeControllerTest(MockMvc mockMvc) {
-        this.mockMvc = mockMvc;
-    }
 
     @Test
     @DisplayName("GET /api/v1/me sin autenticación responde 401")

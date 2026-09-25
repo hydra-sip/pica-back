@@ -127,7 +127,7 @@ class UsuarioSpecificationsTest {
 
     @Test
     void sinFiltrosDevuelveTodosLosUsuariosDePrueba() {
-        Specification<Usuario> sinFiltros = UsuarioSpecifications.<Usuario>conTexto(null)
+        Specification<Usuario> sinFiltros = Specification.where(UsuarioSpecifications.conTexto(null))
                 .and(UsuarioSpecifications.conEstado(null))
                 .and(UsuarioSpecifications.conRol(null));
 
