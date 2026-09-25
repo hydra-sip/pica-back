@@ -224,8 +224,10 @@ paths:
       x-owner: Laura
       description: >-
         Pide la actual salvo que el usuario no tenga (Google): el front lo sabe por
-        `usuario.tieneContrasena`. Revoca todos los refresh tokens, así que el front vuelve a
-        loguear. 400 `PASSWORD_ACTUAL_INCORRECTA`.
+        `usuario.tieneContrasena`; si tiene y no la manda, 400 `VALIDACION` con `REQUERIDO` en
+        `passwordActual`. Revoca todos los refresh tokens, así que el front vuelve a loguear.
+        400 `PASSWORD_ACTUAL_INCORRECTA`. La nueva puede ser igual a la actual.
+        403 `USUARIO_BLOQUEADO` / `EMAIL_NO_VERIFICADO` si el usuario no está activo.
       requestBody:
         required: true
         content:

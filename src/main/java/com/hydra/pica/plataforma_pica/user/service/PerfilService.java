@@ -10,11 +10,15 @@ import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
+import com.hydra.pica.plataforma_pica.user.dto.CambioPasswordRequest;
 import com.hydra.pica.plataforma_pica.user.dto.Me;
 import com.hydra.pica.plataforma_pica.user.dto.MeUpdateRequest;
+import com.hydra.pica.plataforma_pica.user.event.SesionesDeUsuarioInvalidadas;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +33,8 @@ public class PerfilService {
     private final UsuarioRepository usuarioRepository;
     private final PermisoService permisoService;
     private final PersonaService personaService;
+    private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher eventos;
 
     @Transactional(readOnly = true)
     public Me obtener(Long usuarioId) {
@@ -56,6 +62,34 @@ public class PerfilService {
         actualizarDocumento(persona, request.tipoDoc(), nroDoc == null ? null : nroDoc.toUpperCase(Locale.ROOT));
 
         return Me.desde(usuario, permisoService.permisosDe(usuarioId));
+    }
+
+    /**
+     * Cambia la contraseña del propio usuario (PICA-122). Si ya tiene, hay que confirmar la actual; si no
+     * (entró con Google) define la primera sin actual. Después se publica
+     * {@link SesionesDeUsuarioInvalidadas}: quien maneja los refresh tokens los revoca todos, así que el front
+     * tiene que volver a loguear (el contrato dice "todos", no "los demás").
+     */
+    @Transactional
+    public void cambiarPassword(Long usuarioId, CambioPasswordRequest request) {
+        Usuario usuario = buscar(usuarioId);
+
+        if (usuario.getPasswordHash() != null) {
+            String actual = request.passwordActual();
+            if (actual == null || actual.isBlank()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay campos inválidos")
+                        .con("errores", List.of(new ErrorCampo("passwordActual", ErrorCampo.Codigo.REQUERIDO,
+                                "Hay que indicar la contraseña actual")));
+            }
+            if (!passwordEncoder.matches(actual, usuario.getPasswordHash())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.PASSWORD_ACTUAL_INCORRECTA,
+                        "La contraseña actual no es correcta");
+            }
+        }
+
+        usuario.setPasswordHash(passwordEncoder.encode(request.passwordNueva()));
+        usuarioRepository.saveAndFlush(usuario);
+        eventos.publishEvent(new SesionesDeUsuarioInvalidadas(usuarioId));
     }
 
     private void actualizarDocumento(Persona persona, TipoDoc tipoDoc, String nroDoc) {
