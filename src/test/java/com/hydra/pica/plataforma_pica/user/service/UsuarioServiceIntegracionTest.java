@@ -28,6 +28,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
  * documento existente que vincula (no duplica) la persona, rol por defecto y persona inactiva.
  */
 @SpringBootTest
+@ActiveProfiles("dev")
 @Import(TestcontainersConfiguration.class)
 @RecordApplicationEvents
 @Transactional

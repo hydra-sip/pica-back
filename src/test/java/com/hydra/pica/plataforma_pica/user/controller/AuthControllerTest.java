@@ -21,7 +21,10 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
+import com.hydra.pica.plataforma_pica.user.dto.LoginRequest;
+import com.hydra.pica.plataforma_pica.user.dto.TokenPair;
 import com.hydra.pica.plataforma_pica.user.service.DatosPersona;
+import com.hydra.pica.plataforma_pica.user.service.AuthService;
 import com.hydra.pica.plataforma_pica.user.service.NuevoUsuario;
 import com.hydra.pica.plataforma_pica.user.service.UsuarioService;
 import com.hydra.pica.plataforma_pica.user.service.VerificacionEmailService;
@@ -35,10 +38,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AuthController.class)
+@ActiveProfiles("dev")
 @Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
 class AuthControllerTest {
 
@@ -49,6 +54,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private VerificacionEmailService verificacionEmailService;
+
+    @MockitoBean
+    private AuthService authService;
 
     @Autowired
     AuthControllerTest(MockMvc mockMvc) {
@@ -176,6 +184,38 @@ class AuthControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+    }
+
+    @Test
+    @DisplayName("Login válido: devuelve el par de tokens")
+    void loginValido() throws Exception {
+        when(authService.login(any(LoginRequest.class), org.mockito.ArgumentMatchers.eq("test-agent")))
+                .thenReturn(new TokenPair("access", "refresh", "Bearer", 900));
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .header("User-Agent", "test-agent")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"identificador":"jperez","password":"Pica2026"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("access"))
+                .andExpect(jsonPath("$.refreshToken").value("refresh"))
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.expiresIn").value(900));
+    }
+
+    @Test
+    @DisplayName("Logout: responde 204 y delega el refresh")
+    void logout() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"refreshToken":"refresh"}
+                                """))
+                .andExpect(status().isNoContent());
+
+        verify(authService).logout("refresh");
     }
 
     private static String bodyValido() {

@@ -17,6 +17,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -39,6 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // El controller de prueba va en @Import además de en controllers=: al estar anidado en una clase de
 // test, el escaneo de componentes lo saltea y sin el import responde 404.
 @WebMvcTest(controllers = ApiExceptionHandlerTest.PruebaController.class)
+@ActiveProfiles("dev")
 @Import({
         SecurityConfig.class,
         WebConfig.class,

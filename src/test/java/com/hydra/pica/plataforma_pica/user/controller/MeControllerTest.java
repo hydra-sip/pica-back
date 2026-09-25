@@ -42,6 +42,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -51,6 +52,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * un {@link CurrentUserProvider} mockeado; {@code @WithMockUser} solo cubre el "está autenticado".
  */
 @WebMvcTest(MeController.class)
+@ActiveProfiles("dev")
 @Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
 @ActiveProfiles("dev")
 class MeControllerTest {

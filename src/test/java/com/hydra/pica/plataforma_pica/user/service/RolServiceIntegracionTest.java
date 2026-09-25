@@ -36,6 +36,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -45,6 +46,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Cada test hace rollback al terminar.
  */
 @SpringBootTest
+@ActiveProfiles("dev")
 @Import(TestcontainersConfiguration.class)
 @Transactional
 class RolServiceIntegracionTest {
