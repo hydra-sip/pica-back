@@ -9,6 +9,7 @@ import java.time.LocalDate;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.audit.AuditConstants;
 import com.hydra.pica.plataforma_pica.common.config.JpaAuditingConfig;
+import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.security.SecurityContextCurrentUserProvider;
@@ -19,6 +20,7 @@ import com.hydra.pica.plataforma_pica.user.domain.Rol;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.domain.UsuarioRol;
+import com.hydra.pica.plataforma_pica.user.dto.CambioPasswordRequest;
 import com.hydra.pica.plataforma_pica.user.dto.Me;
 import com.hydra.pica.plataforma_pica.user.dto.MeUpdateRequest;
 import com.hydra.pica.plataforma_pica.user.dto.RolMinimo;
@@ -33,6 +35,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -42,7 +46,8 @@ import org.springframework.context.annotation.Import;
         TestcontainersConfiguration.class,
         PerfilService.class,
         PersonaService.class,
-        PermisoService.class
+        PermisoService.class,
+        BCryptPasswordEncoder.class
 })
 class PerfilServiceIntegracionTest {
 
@@ -52,6 +57,7 @@ class PerfilServiceIntegracionTest {
     private final RolRepository rolRepository;
     private final UsuarioRolRepository usuarioRolRepository;
     private final EntityManager entityManager;
+    private final PasswordEncoder passwordEncoder;
 
     @Autowired
     PerfilServiceIntegracionTest(
@@ -60,13 +66,15 @@ class PerfilServiceIntegracionTest {
             UsuarioRepository usuarioRepository,
             RolRepository rolRepository,
             UsuarioRolRepository usuarioRolRepository,
-            EntityManager entityManager) {
+            EntityManager entityManager,
+            PasswordEncoder passwordEncoder) {
         this.perfilService = perfilService;
         this.personaRepository = personaRepository;
         this.usuarioRepository = usuarioRepository;
         this.rolRepository = rolRepository;
         this.usuarioRolRepository = usuarioRolRepository;
         this.entityManager = entityManager;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Test
@@ -133,6 +141,49 @@ class PerfilServiceIntegracionTest {
 
         assertThat(me.roles()).extracting(RolMinimo::nombre).containsExactly("ADMINISTRADOR");
         assertThat(me.permisos()).contains("USUARIO_VER", "PERSONA_VER");
+    }
+
+    @Test
+    @DisplayName("Cambiar la contraseña: con la actual correcta se guarda el hash nuevo; con una incorrecta da 400 y no cambia")
+    void cambiarPasswordConLaActual() {
+        Usuario usuario = usuarioSinDocumento("perfil.clave");
+        usuario.setPasswordHash(passwordEncoder.encode("Actual123"));
+        usuarioRepository.saveAndFlush(usuario);
+        entityManager.clear();
+
+        assertThatThrownBy(() -> perfilService.cambiarPassword(usuario.getId(),
+                new CambioPasswordRequest("Equivocada1", "Nueva1234")))
+                .isInstanceOfSatisfying(ApiException.class,
+                        e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.PASSWORD_ACTUAL_INCORRECTA));
+        entityManager.clear();
+        assertThat(passwordEncoder.matches("Actual123",
+                usuarioRepository.findById(usuario.getId()).orElseThrow().getPasswordHash())).isTrue();
+        entityManager.clear();
+
+        perfilService.cambiarPassword(usuario.getId(), new CambioPasswordRequest("Actual123", "Nueva1234"));
+        entityManager.flush();
+        entityManager.clear();
+
+        String hash = usuarioRepository.findById(usuario.getId()).orElseThrow().getPasswordHash();
+        assertThat(hash).startsWith("$2").isNotEqualTo("Nueva1234");
+        assertThat(passwordEncoder.matches("Nueva1234", hash)).isTrue();
+        assertThat(passwordEncoder.matches("Actual123", hash)).isFalse();
+    }
+
+    @Test
+    @DisplayName("Un usuario de Google sin contraseña define la primera sin la actual")
+    void googleDefinePrimeraPassword() {
+        Usuario usuario = usuarioSinDocumento("perfil.google.clave");
+        assertThat(usuario.getPasswordHash()).isNull();
+        entityManager.clear();
+
+        perfilService.cambiarPassword(usuario.getId(), new CambioPasswordRequest(null, "Primera1234"));
+        entityManager.flush();
+        entityManager.clear();
+
+        Usuario guardado = usuarioRepository.findById(usuario.getId()).orElseThrow();
+        assertThat(passwordEncoder.matches("Primera1234", guardado.getPasswordHash())).isTrue();
+        assertThat(perfilService.obtener(usuario.getId()).usuario().tieneContrasena()).isTrue();
     }
 
     private static MeUpdateRequest completo(String nroDoc) {
