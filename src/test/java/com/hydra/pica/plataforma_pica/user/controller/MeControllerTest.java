@@ -1,6 +1,9 @@
 package com.hydra.pica.plataforma_pica.user.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -332,12 +335,14 @@ class MeControllerTest {
                 {"{\"passwordActual\": \"Actual123\", \"passwordNueva\": \"SinNumeroNiNada\"}", "PASSWORD_DEBIL"},
                 {"{\"passwordActual\": \"Actual123\", \"passwordNueva\": \"" + "Aa1".repeat(25) + "\"}", "LONGITUD"},
         };
+        // "   " y la de 75 caracteres rompen dos anotaciones a la vez (@NotBlank o @Size, más @PasswordValida)
+        // y Bean Validation no garantiza el orden de los errores: se busca el código entre todos, no en [0]
         for (String[] caso : casos) {
             mockMvc.perform(put("/api/v1/me/password").contentType(MediaType.APPLICATION_JSON).content(caso[0]))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.codigo").value("VALIDACION"))
-                    .andExpect(jsonPath("$.errores[0].campo").value("passwordNueva"))
-                    .andExpect(jsonPath("$.errores[0].codigo").value(caso[1]));
+                    .andExpect(jsonPath("$.errores[*].campo", everyItem(is("passwordNueva"))))
+                    .andExpect(jsonPath("$.errores[*].codigo", hasItem(caso[1])));
         }
         verifyNoInteractions(perfilService);
     }
