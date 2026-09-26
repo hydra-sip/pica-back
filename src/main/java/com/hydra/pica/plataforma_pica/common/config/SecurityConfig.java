@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.common.config;
 
 import com.hydra.pica.plataforma_pica.common.security.JwtAuthenticationFilter;
+import com.hydra.pica.plataforma_pica.common.security.OAuth2LoginSuccessHandler;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
@@ -37,7 +38,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+            JwtAuthenticationFilter jwtAuthenticationFilter,
+            OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
@@ -53,6 +55,8 @@ public class SecurityConfig {
                                 "/.well-known/**")
                         .permitAll()
                         .anyRequest().authenticated())
+                .oauth2Login(oauth2 -> oauth2
+                        .successHandler(oAuth2LoginSuccessHandler))
                 .exceptionHandling(e -> e
                         .authenticationEntryPoint(authenticationEntryPoint())
                         .accessDeniedHandler(accessDeniedHandler()));

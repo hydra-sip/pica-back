@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.user.controller;
 
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
+import com.hydra.pica.plataforma_pica.user.dto.ExchangeRequest;
 import com.hydra.pica.plataforma_pica.user.dto.IdResponse;
 import com.hydra.pica.plataforma_pica.user.dto.LoginRequest;
 import com.hydra.pica.plataforma_pica.user.dto.ReenviarVerificacionRequest;
@@ -97,5 +98,10 @@ public class AuthController {
     @GetMapping(value = "/public-key", produces = MediaType.TEXT_PLAIN_VALUE)
     public String obtenerClavePublica() {
         return jwtService.obtenerClavePublicaPem();
+    }
+
+    @PostMapping("/exchange")
+    public TokenPair exchange(@Valid @RequestBody ExchangeRequest request, HttpServletRequest httpRequest) {
+        return authService.canjearCodigoOAuth(request.code(), httpRequest.getHeader("User-Agent"));
     }
 }

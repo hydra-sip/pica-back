@@ -43,6 +43,18 @@ spring:
         serialization-mode: via_dto
         max-page-size: 100
 
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:google-client-id-placeholder}
+            client-secret: ${GOOGLE_CLIENT_SECRET:google-client-secret-placeholder}
+            scope:
+              - openid
+              - profile
+              - email
+
 management:
   endpoints:
     web:
@@ -60,6 +72,7 @@ logging:
     console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n%wEx"
 
 app:
+  web-url: ${APP_WEB_URL:http://localhost:5173}
   auth:
     verification-base-url: ${APP_AUTH_VERIFICATION_BASE_URL:http://localhost:8080/api/v1/auth/verificar}
   cors:
