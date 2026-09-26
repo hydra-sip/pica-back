@@ -17,6 +17,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -117,5 +119,11 @@ public class SecurityConfig {
     public PasswordEncoder passwordEncoder() {
         // Fuerza 12: lo pide T101-4; 10 (el default) queda corto para 2026
         return new BCryptPasswordEncoder(12);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ClientRegistrationRepository clientRegistrationRepository() {
+        return registrationId -> null;
     }
 }

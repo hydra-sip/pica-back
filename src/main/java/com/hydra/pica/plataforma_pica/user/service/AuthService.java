@@ -61,6 +61,9 @@ public class AuthService {
             if (!usuario.isEmailVerificado()) {
                 usuario.setEmailVerificado(true);
             }
+            if (usuario.getEstado() == EstadoUsuario.PENDIENTE_VERIFICACION) {
+                usuario.setEstado(EstadoUsuario.ACTIVO);
+            }
             return usuarioRepository.save(usuario);
         }
 

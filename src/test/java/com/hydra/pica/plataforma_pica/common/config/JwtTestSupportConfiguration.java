@@ -35,9 +35,4 @@ public class JwtTestSupportConfiguration {
     OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler() {
         return Mockito.mock(OAuth2LoginSuccessHandler.class);
     }
-
-    @Bean
-    ClientRegistrationRepository clientRegistrationRepository() {
-        return Mockito.mock(ClientRegistrationRepository.class);
-    }
 }
