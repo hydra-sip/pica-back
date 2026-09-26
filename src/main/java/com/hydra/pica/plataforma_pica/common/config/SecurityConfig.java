@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.common.config;
 
 import com.hydra.pica.plataforma_pica.common.security.JwtAuthenticationFilter;
+import com.hydra.pica.plataforma_pica.common.security.OAuth2LoginSuccessHandler;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +17,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -37,7 +40,9 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+            JwtAuthenticationFilter jwtAuthenticationFilter,
+            OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler,
+            @Autowired(required = false) ClientRegistrationRepository clientRegistrationRepository) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
@@ -52,8 +57,15 @@ public class SecurityConfig {
                                 "/login/oauth2/**",
                                 "/.well-known/**")
                         .permitAll()
-                        .anyRequest().authenticated())
-                .exceptionHandling(e -> e
+                        .anyRequest().authenticated());
+
+        if (clientRegistrationRepository != null) {
+            http.oauth2Login(oauth2 -> oauth2
+                    .clientRegistrationRepository(clientRegistrationRepository)
+                    .successHandler(oAuth2LoginSuccessHandler));
+        }
+
+        http.exceptionHandling(e -> e
                         .authenticationEntryPoint(authenticationEntryPoint())
                         .accessDeniedHandler(accessDeniedHandler()));
 

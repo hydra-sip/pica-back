@@ -223,6 +223,24 @@ class AuthControllerTest {
                 .andExpect(content().string(org.hamcrest.Matchers.startsWith("-----BEGIN PUBLIC KEY-----")));
     }
 
+    @Test
+    @DisplayName("Exchange válido: 200 OK con par de tokens")
+    void exchangeValido() throws Exception {
+        when(authService.canjearCodigoOAuth(org.mockito.ArgumentMatchers.eq("code-123"), any()))
+                .thenReturn(new TokenPair("access-oauth", "refresh-oauth", "Bearer", 900));
+
+        mockMvc.perform(post("/api/v1/auth/exchange")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"code-123"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("access-oauth"))
+                .andExpect(jsonPath("$.refreshToken").value("refresh-oauth"))
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.expiresIn").value(900));
+    }
+
     private static String bodyValido() {
         return """
                 {
