@@ -13,9 +13,12 @@ import com.hydra.pica.plataforma_pica.user.service.NuevoUsuario;
 import com.hydra.pica.plataforma_pica.user.service.UsuarioService;
 import com.hydra.pica.plataforma_pica.user.service.VerificacionEmailService;
 
+import com.hydra.pica.plataforma_pica.common.security.JwtService;
+
 import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,14 +35,17 @@ public class AuthController {
     private final UsuarioService usuarioService;
     private final VerificacionEmailService verificacionEmailService;
     private final AuthService authService;
+    private final JwtService jwtService;
 
     public AuthController(
             UsuarioService usuarioService,
             VerificacionEmailService verificacionEmailService,
-            AuthService authService) {
+            AuthService authService,
+            JwtService jwtService) {
         this.usuarioService = usuarioService;
         this.verificacionEmailService = verificacionEmailService;
         this.authService = authService;
+        this.jwtService = jwtService;
     }
 
     @PostMapping("/registro")
@@ -86,5 +92,10 @@ public class AuthController {
     public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenRequest request) {
         authService.logout(request.refreshToken());
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping(value = "/public-key", produces = MediaType.TEXT_PLAIN_VALUE)
+    public String obtenerClavePublica() {
+        return jwtService.obtenerClavePublicaPem();
     }
 }
