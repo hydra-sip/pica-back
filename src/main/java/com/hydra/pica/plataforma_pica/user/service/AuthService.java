@@ -27,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import com.hydra.pica.plataforma_pica.common.security.OAuthCodeStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,6 +43,45 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final PermisoService permisoService;
+    private final UsuarioService usuarioService;
+    private final OAuthCodeStore oAuthCodeStore;
+
+    @Transactional
+    public Usuario procesarLoginGoogle(String googleSub, String email, String nombres, String apellidos) {
+        Usuario usuario = usuarioRepository.findByGoogleSub(googleSub).orElse(null);
+        if (usuario != null) {
+            return usuario;
+        }
+
+        usuario = usuarioRepository.findByEmailIgnoreCase(email).orElse(null);
+        if (usuario != null) {
+            if (usuario.getGoogleSub() == null) {
+                usuario.setGoogleSub(googleSub);
+            }
+            if (!usuario.isEmailVerificado()) {
+                usuario.setEmailVerificado(true);
+            }
+            return usuarioRepository.save(usuario);
+        }
+
+        return usuarioService.crear(NuevoUsuario.desdeGoogle(email, googleSub, nombres, apellidos));
+    }
+
+    @Transactional
+    public TokenPair canjearCodigoOAuth(String code, String userAgent) {
+        Long usuarioId = oAuthCodeStore.consumirCodigo(code);
+        if (usuarioId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.CODIGO_INVALIDO,
+                    "El código de autorización expiró o no es válido");
+        }
+
+        Usuario usuario = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, CodigoError.CODIGO_INVALIDO,
+                        "El usuario asociado al código no existe"));
+
+        validarEstado(usuario);
+        return emitirPar(usuario, userAgent);
+    }
 
     @Transactional
     public TokenPair login(LoginRequest request, String userAgent) {
