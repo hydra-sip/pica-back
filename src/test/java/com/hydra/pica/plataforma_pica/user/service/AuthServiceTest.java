@@ -15,6 +15,7 @@ import java.util.Set;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
+import com.hydra.pica.plataforma_pica.common.security.OAuthCodeStore;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.RefreshToken;
@@ -46,6 +47,8 @@ class AuthServiceTest {
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private JwtService jwtService;
     @Mock private PermisoService permisoService;
+    @Mock private UsuarioService usuarioService;
+    @Mock private OAuthCodeStore oAuthCodeStore;
 
     private AuthService authService;
     private Usuario usuario;
@@ -53,7 +56,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(usuarioRepository, refreshTokenRepository, passwordEncoder, jwtService,
-                permisoService);
+                permisoService, usuarioService, oAuthCodeStore);
         usuario = new Usuario();
         ReflectionTestUtils.setField(usuario, "id", 42L);
         usuario.setUsername("jperez");

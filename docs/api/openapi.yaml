@@ -160,12 +160,19 @@ paths:
         email, si no existe crea con `NuevoUsuario.desdeGoogle()` (persona sin documento, ACTIVO,
         mail verificado) y redirige a `{APP_WEB_URL}/oauth/callback?code=`. El front canjea ese
         código acá. Dura 60 s, un solo uso. El JWT nunca va en la URL. 400 `CODIGO_INVALIDO`.
+        403 `USUARIO_BLOQUEADO`.
+        Vincular por email o crear exige que Google haya verificado el mail. Si el login falla antes
+        del canje, redirige a `{APP_WEB_URL}/oauth/callback?error=` con el código:
+        `NO_AUTENTICADO` (cancelado en Google), `EMAIL_NO_VERIFICADO` (Google no verificó el mail),
+        `CREDENCIALES_INVALIDAS` (el usuario de ese mail ya tiene otra cuenta de Google),
+        `EMAIL_DUPLICADO` (el mail es de un usuario dado de baja) o `ERROR_INTERNO`.
       requestBody:
         required: true
         content: {application/json: {schema: {type: object, required: [code], properties: {code: {type: string}}}}}
       responses:
         '200': {$ref: '#/components/responses/Tokens'}
         '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
 
   /api/v1/auth/public-key:
     get:
