@@ -5,7 +5,7 @@ import java.security.KeyPairGenerator;
 
 import com.hydra.pica.plataforma_pica.common.security.JwtAuthenticationFilter;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
-import com.hydra.pica.plataforma_pica.common.security.OAuth2LoginSuccessHandler;
+import com.hydra.pica.plataforma_pica.common.security.OAuth2LoginHandler;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -32,7 +32,7 @@ public class JwtTestSupportConfiguration {
     }
 
     @Bean
-    OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler() {
-        return Mockito.mock(OAuth2LoginSuccessHandler.class);
+    OAuth2LoginHandler oAuth2LoginHandler() {
+        return Mockito.mock(OAuth2LoginHandler.class);
     }
 }

@@ -1,7 +1,7 @@
 package com.hydra.pica.plataforma_pica.common.config;
 
 import com.hydra.pica.plataforma_pica.common.security.JwtAuthenticationFilter;
-import com.hydra.pica.plataforma_pica.common.security.OAuth2LoginSuccessHandler;
+import com.hydra.pica.plataforma_pica.common.security.OAuth2LoginHandler;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
@@ -41,7 +41,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
-            OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler,
+            OAuth2LoginHandler oAuth2LoginHandler,
             @Autowired(required = false) ClientRegistrationRepository clientRegistrationRepository) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
@@ -62,7 +62,8 @@ public class SecurityConfig {
         if (clientRegistrationRepository != null) {
             http.oauth2Login(oauth2 -> oauth2
                     .clientRegistrationRepository(clientRegistrationRepository)
-                    .successHandler(oAuth2LoginSuccessHandler));
+                    .successHandler(oAuth2LoginHandler)
+                    .failureHandler(oAuth2LoginHandler));
         }
 
         http.exceptionHandling(e -> e

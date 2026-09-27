@@ -47,17 +47,27 @@ public class AuthService {
     private final OAuthCodeStore oAuthCodeStore;
 
     @Transactional
-    public Usuario procesarLoginGoogle(String googleSub, String email, String nombres, String apellidos) {
+    public Usuario procesarLoginGoogle(
+            String googleSub, String email, boolean emailVerificado, String nombres, String apellidos) {
         Usuario usuario = usuarioRepository.findByGoogleSub(googleSub).orElse(null);
         if (usuario != null) {
             return usuario;
         }
 
+        // vincular o crear por email solo si Google lo verificó: si no, cualquiera con una cuenta de
+        // Google a nombre de ese mail entraría como su dueño
+        if (!emailVerificado) {
+            throw new ApiException(HttpStatus.FORBIDDEN, CodigoError.EMAIL_NO_VERIFICADO,
+                    "Google no verificó el email de la cuenta");
+        }
+
         usuario = usuarioRepository.findByEmailIgnoreCase(email).orElse(null);
         if (usuario != null) {
-            if (usuario.getGoogleSub() == null) {
-                usuario.setGoogleSub(googleSub);
+            // ya tiene otra cuenta de Google vinculada (con la misma no llegaría acá)
+            if (usuario.getGoogleSub() != null) {
+                throw credencialesInvalidas();
             }
+            usuario.setGoogleSub(googleSub);
             if (!usuario.isEmailVerificado()) {
                 usuario.setEmailVerificado(true);
             }
