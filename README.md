@@ -64,6 +64,31 @@ También podés verificar los endpoints de Spring Actuator:
 - `http://localhost:8080/actuator/health`
 - `http://localhost:8080/actuator/info`
 
+### Verificación Externa de Tokens JWT (Verificador Público)
+
+Para permitir que servicios externos (como verificadores públicos de sorteos o sistemas de auditoría independientes) validen la autenticidad y firma RS256 de los access tokens emitidos por la plataforma, la API expone públicamente la clave RSA pública en dos formatos estándar:
+
+1. **JWKS (JSON Web Key Set)**: `GET /.well-known/jwks.json`
+   - Retorna un conjunto de claves JSON en formato estándar RFC 7517.
+   - Ideal para librerías automáticas de validación (Spring Security Resource Server, Auth0 `jwks-rsa`, PyJWT `PyJWKClient`, Go `golang-jwt`, etc.).
+
+2. **Clave Pública PEM**: `GET /api/v1/auth/public-key`
+   - Retorna la clave pública RSA en formato PEM (X.509 / PKCS#8).
+   - Ideal para verificación manual o servicios con claves estáticas.
+
+#### Cómo validar un Token en jwt.io
+
+1. Obtener un access token emitiendo `POST /api/v1/auth/login` o registrándote en `POST /api/v1/auth/registro`.
+2. Abrir el validador interactivo en [jwt.io](https://jwt.io).
+3. Pegar el token en el campo **Encoded**.
+4. Asegurar que el algoritmo seleccionado en el encabezado sea **RS256**.
+5. Consultar la clave pública PEM invocando:
+   ```bash
+   curl -i http://localhost:8080/api/v1/auth/public-key
+   ```
+6. Copiar el bloque completo devuelto (incluyendo `-----BEGIN PUBLIC KEY-----` y `-----END PUBLIC KEY-----`) y pegarlo en el cuadro de texto **PUBLIC KEY** ("Verify Signature") en jwt.io.
+7. El portal mostrará la confirmación verde **"Signature Verified"**.
+
 Para ejecutar las pruebas unitarias y de integración:
 ```bash
 ./mvnw clean test
