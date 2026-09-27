@@ -1,4 +1,4 @@
-package com.hydra.pica.plataforma_pica.user.dto;
+package com.hydra.pica.plataforma_pica.common.security;
 
 import java.util.List;
 

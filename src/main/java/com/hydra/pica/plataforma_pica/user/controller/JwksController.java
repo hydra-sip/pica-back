@@ -1,7 +1,7 @@
 package com.hydra.pica.plataforma_pica.user.controller;
 
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
-import com.hydra.pica.plataforma_pica.user.dto.JwksResponse;
+import com.hydra.pica.plataforma_pica.common.security.JwksResponse;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

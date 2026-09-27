@@ -17,7 +17,6 @@ import java.security.spec.RSAPublicKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
-import com.hydra.pica.plataforma_pica.user.dto.JwksResponse;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.SignatureException;
@@ -137,6 +136,35 @@ class JwtServiceTest {
                 .getPayload();
 
         assertThat(claims.getSubject()).isEqualTo("1");
+    }
+
+    @Test
+    void elTokenLlevaEnElHeaderElKidDelJwks() {
+        String token = jwtService.generarAccessToken(
+                1L, "usuario", List.of("ROLE_USER"), List.of());
+
+        String kid = jwtService.obtenerJwks().keys().get(0).kid();
+
+        assertThat(kid).isNotBlank();
+        assertThat(jwtService.validar(token).getHeader().getKeyId()).isEqualTo(kid);
+    }
+
+    @Test
+    void elKidEsElThumbprintRfc7638DeLaClave() throws Exception {
+        // Clave y thumbprint del ejemplo de la RFC 7638, sección 3.1
+        String n = "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRX"
+                + "jBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8"
+                + "KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xB"
+                + "niIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw";
+        PublicKey publicKey = KeyFactory.getInstance("RSA").generatePublic(new RSAPublicKeySpec(
+                new BigInteger(1, Base64.getUrlDecoder().decode(n)),
+                new BigInteger(1, Base64.getUrlDecoder().decode("AQAB"))));
+
+        var key = new JwtService(new KeyPair(publicKey, null)).obtenerJwks().keys().get(0);
+
+        assertThat(key.n()).isEqualTo(n);
+        assertThat(key.e()).isEqualTo("AQAB");
+        assertThat(key.kid()).isEqualTo("NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs");
     }
 
     private KeyPair generarKeyPair() throws Exception {

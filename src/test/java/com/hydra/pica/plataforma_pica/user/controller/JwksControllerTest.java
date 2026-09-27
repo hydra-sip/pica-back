@@ -35,6 +35,7 @@ class JwksControllerTest {
                 .andExpect(jsonPath("$.keys[0].kty").value("RSA"))
                 .andExpect(jsonPath("$.keys[0].use").value("sig"))
                 .andExpect(jsonPath("$.keys[0].alg").value("RS256"))
+                .andExpect(jsonPath("$.keys[0].kid").isNotEmpty())
                 .andExpect(jsonPath("$.keys[0].n").isNotEmpty())
                 .andExpect(jsonPath("$.keys[0].e").isNotEmpty());
     }
