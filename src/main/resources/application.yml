@@ -55,6 +55,10 @@ spring:
               - profile
               - email
 
+# En staging el HTTPS lo atiende Caddy: sin esto, Spring arma las URLs (la vuelta de Google) con http://
+server:
+  forward-headers-strategy: framework
+
 management:
   endpoints:
     web:
@@ -63,6 +67,10 @@ management:
   endpoint:
     health:
       show-details: always
+  # El mail es opcional (sin MAIL_HOST el link va al log): que no deje la API en DOWN
+  health:
+    mail:
+      enabled: false
 
 logging:
   level:
