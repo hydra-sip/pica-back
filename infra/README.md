@@ -9,16 +9,16 @@ Internet ─ 443 ─► caddy ─┬─ /api/*, /oauth2/*, /login/oauth2/*, /.we
 
 Cada merge a `dev` corre el CI, publica la imagen en GHCR (`ghcr.io/hydra-sip/pica-back:dev`), entra por SSH, actualiza la API y pega a `/actuator/health`. pica-web hace lo mismo con la web.
 
-Costo aproximado: t3.small + 30 GB + IP pública ≈ 21 USD por mes, de los créditos.
+Costo aproximado: t3.small + 30 GB + IP pública ≈ 33 USD por mes en São Paulo, de los créditos.
 
 ## 1. La instancia (una sola vez)
 
-1. AWS, región `us-east-1` → EC2 → Launch instance:
-   - Ubuntu Server 24.04 LTS, `t3.small` (2 GB), disco de 30 GB gp3.
+1. AWS, región `sa-east-1` (São Paulo, por la latencia de los RNF) → EC2 → Launch instance:
+   - Ubuntu Server 26.04 LTS (24.04 también sirve), `t3.small` (2 GB), disco de 30 GB gp3.
    - Key pair nuevo (`pica-staging`): es para entrar vos.
    - Security group: 22, 80 y 443 desde cualquier lado. El 22 tiene que estar abierto porque el CI de GitHub no tiene IP fija; Ubuntu ya viene sin login por contraseña.
 2. Elastic IP → Allocate → Associate a la instancia. Sin esto la IP cambia cada vez que se reinicia.
-3. Billing → Budgets: alerta al llegar a 20 USD en el mes.
+3. Billing → Budgets: alerta al llegar a 40 USD en el mes.
 4. [DuckDNS](https://www.duckdns.org): un subdominio (por ejemplo `pica-hydra`) apuntando a la Elastic IP.
 
 ## 2. Preparar la máquina
