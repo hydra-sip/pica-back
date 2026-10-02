@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 public class JwtService {
 
     private static final Duration ACCESS_TOKEN_DURATION = Duration.ofMinutes(15);
+    public static final String CLAIM_VERSION_SESION = "versionSesion";
 
     private final KeyPair keyPair;
     private final JwkKeyDto jwk;
@@ -37,7 +38,8 @@ public class JwtService {
             Long usuarioId,
             String username,
             List<String> roles,
-            List<String> permisos) {
+            List<String> permisos,
+            int versionSesion) {
         Instant ahora = Instant.now();
 
         return Jwts.builder()
@@ -46,6 +48,7 @@ public class JwtService {
                 .claim("username", username)
                 .claim("roles", roles)
                 .claim("permisos", permisos)
+                .claim(CLAIM_VERSION_SESION, versionSesion)
                 .id(UUID.randomUUID().toString())
                 .issuedAt(Date.from(ahora))
                 .expiration(Date.from(ahora.plus(ACCESS_TOKEN_DURATION)))

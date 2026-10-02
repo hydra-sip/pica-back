@@ -69,6 +69,21 @@ class AuthFlujoIntegracionTest {
     }
 
     @Test
+    void alDetectarElRoboSeCortanTambienLosAccessDeLasDosSesiones() throws Exception {
+        // la prueba de la demo: B pega el refresh de A y recarga; después A recarga con el mismo
+        String username = usuarioActivo();
+        JsonNode deA = login(username);
+        JsonNode deB = renovar(deA);
+        me(deB).andExpect(status().isOk());
+
+        refreshRechazado(deA, "REFRESH_REUTILIZADO");
+
+        // sin esperar a que venzan: el próximo pedido de cualquiera de los dos ya da 401
+        meRechazado(deB);
+        meRechazado(deA);
+    }
+
+    @Test
     void conElAccessDelLoginElMeDevuelveAlUsuario() throws Exception {
         String username = usuarioActivo();
         String access = login(username).get("accessToken").asText();
@@ -86,6 +101,7 @@ class AuthFlujoIntegracionTest {
         usuarioEdicionService.eliminar(idDe(username));
 
         refreshRechazado(par, "REFRESH_INVALIDO");
+        meRechazado(par);
     }
 
     @Test
@@ -97,6 +113,18 @@ class AuthFlujoIntegracionTest {
         transaccion.executeWithoutResult(estado -> eventos.publishEvent(new RolesDeUsuarioCambiados(id)));
 
         refreshRechazado(par, "REFRESH_INVALIDO");
+        meRechazado(par);
+    }
+
+    @Test
+    void despuesDeCerrarleLasSesionesPuedeVolverAEntrarEnseguida() throws Exception {
+        // en el mismo segundo: con una fecha comparada contra el iat (en segundos) este login quedaría afuera
+        String username = usuarioActivo();
+        Long id = idDe(username);
+        login(username);
+        transaccion.executeWithoutResult(estado -> eventos.publishEvent(new RolesDeUsuarioCambiados(id)));
+
+        me(login(username)).andExpect(status().isOk());
     }
 
     @Test
@@ -112,6 +140,8 @@ class AuthFlujoIntegracionTest {
 
         refreshRechazado(parBloqueado, "REFRESH_INVALIDO");
         refreshRechazado(parEliminado, "REFRESH_INVALIDO");
+        // la versión no cambió, pero la consulta del filtro no ve a los dados de baja
+        meRechazado(parEliminado);
     }
 
     @Test
@@ -152,6 +182,16 @@ class AuthFlujoIntegracionTest {
     private JsonNode renovar(JsonNode par) throws Exception {
         String respuesta = pedirRefresh(par).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(respuesta);
+    }
+
+    private ResultActions me(JsonNode par) throws Exception {
+        return mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + par.get("accessToken").asText()));
+    }
+
+    private void meRechazado(JsonNode par) throws Exception {
+        me(par)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.codigo").value("SESION_REVOCADA"));
     }
 
     private void refreshRechazado(JsonNode par, String codigo) throws Exception {

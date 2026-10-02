@@ -27,7 +27,7 @@ info:
     - Todo bajo `/api/v1`. `Authorization: Bearer <access token>` salvo lo marcado `security: []`.
     - Errores en `application/problem+json` (RFC 9457) con un campo `codigo` (ver `ProblemDetail`).
     - Para no repetirlos en cada operación: todo endpoint autenticado puede responder
-      **401** (`NO_AUTENTICADO`, `TOKEN_INVALIDO`, `TOKEN_VENCIDO`), todo `/admin` **403**
+      **401** (`NO_AUTENTICADO`, `TOKEN_INVALIDO`, `TOKEN_VENCIDO`, `SESION_REVOCADA`), todo `/admin` **403**
       `SIN_PERMISO`, todo `{id}` **404** (`USUARIO_NO_ENCONTRADO`, `PERSONA_NO_ENCONTRADA`,
       `ROL_NO_ENCONTRADO`), y todo request con body **400** `VALIDACION`.
       Abajo solo figuran los errores con código propio de cada operación.
@@ -615,8 +615,12 @@ components:
       bearerFormat: JWT
       description: >-
         RS256, 15 min. Claims: `sub` (id de usuario), `username`, `roles` (nombres técnicos activos),
-        `permisos` (unión de los permisos de sus roles activos), `jti`, `iat`, `exp`.
+        `permisos` (unión de los permisos de sus roles activos), `versionSesion`, `jti`, `iat`, `exp`.
         El filtro carga las authorities desde `permisos`; los `@PreAuthorize` usan `hasAuthority('USUARIO_VER')`.
+        Además compara `versionSesion` con la del usuario en la base: sube al detectar un refresh reutilizado,
+        en baja, bloqueo, cambio o reset de clave y cambio de roles. Si no coincide (o el usuario fue dado
+        de baja) responde 401 `SESION_REVOCADA` aunque el token no haya vencido; el front intenta el refresh,
+        que también está revocado, y va al login.
 
   parameters:
     id: {name: id, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
@@ -691,13 +695,13 @@ components:
       description: |
         Todos los códigos de la API; el front mapea cada uno a un mensaje. Quien agrega uno en el
         backend lo agrega acá.
-        Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404.
+        Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO / SESION_REVOCADA 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404.
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400.
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR.
-      enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SIN_PERMISO, ERROR_INTERNO,
+      enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,

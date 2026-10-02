@@ -40,7 +40,8 @@ class JwtServiceTest {
                 42L,
                 "jperez",
                 List.of("ADMIN", "PARTICIPANTE"),
-                List.of("USUARIO_LEER", "USUARIO_EDITAR"));
+                List.of("USUARIO_LEER", "USUARIO_EDITAR"),
+                3);
 
         var claims = jwtService.validar(token).getPayload();
 
@@ -48,6 +49,7 @@ class JwtServiceTest {
         assertThat(claims.get("username", String.class)).isEqualTo("jperez");
         assertThat(claims.get("roles", List.class)).containsExactly("ADMIN", "PARTICIPANTE");
         assertThat(claims.get("permisos", List.class)).containsExactly("USUARIO_LEER", "USUARIO_EDITAR");
+        assertThat(claims.get("versionSesion", Integer.class)).isEqualTo(3);
         assertThat(claims.getId()).isNotBlank();
         assertThat(claims.getIssuedAt()).isNotNull();
         assertThat(claims.getExpiration()).isAfter(claims.getIssuedAt());
@@ -83,7 +85,7 @@ class JwtServiceTest {
     @Test
     void obtenerClavePublicaPemDevuelvePemValidoYValidaToken() throws Exception {
         String token = jwtService.generarAccessToken(
-                1L, "usuario", List.of("ROLE_USER"), List.of());
+                1L, "usuario", List.of("ROLE_USER"), List.of(), 0);
 
         String pem = jwtService.obtenerClavePublicaPem();
 
@@ -111,7 +113,7 @@ class JwtServiceTest {
     @Test
     void obtenerJwksDevuelveConjuntoValidoYReconstruyeClavePublica() throws Exception {
         String token = jwtService.generarAccessToken(
-                1L, "usuario", List.of("ROLE_USER"), List.of());
+                1L, "usuario", List.of("ROLE_USER"), List.of(), 0);
 
         JwksResponse jwks = jwtService.obtenerJwks();
 
@@ -141,7 +143,7 @@ class JwtServiceTest {
     @Test
     void elTokenLlevaEnElHeaderElKidDelJwks() {
         String token = jwtService.generarAccessToken(
-                1L, "usuario", List.of("ROLE_USER"), List.of());
+                1L, "usuario", List.of("ROLE_USER"), List.of(), 0);
 
         String kid = jwtService.obtenerJwks().keys().get(0).kid();
 

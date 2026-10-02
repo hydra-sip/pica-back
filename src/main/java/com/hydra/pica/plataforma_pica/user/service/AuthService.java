@@ -119,7 +119,7 @@ public class AuthService {
 
         // ya rotado: lo está usando alguien más que el dueño de la sesión
         if (actual.getReemplazadoPor() != null) {
-            refreshTokenRepository.revocarActivosPorUsuario(usuarioId, Instant.now());
+            cerrarSesiones(usuarioId);
             throw refreshException(CodigoError.REFRESH_REUTILIZADO,
                     "El refresh token ya fue utilizado y la sesión fue invalidada");
         }
@@ -160,13 +160,20 @@ public class AuthService {
     @EventListener
     @Transactional
     public void alInvalidarSesiones(SesionesDeUsuarioInvalidadas evento) {
-        refreshTokenRepository.revocarActivosPorUsuario(evento.usuarioId(), Instant.now());
+        cerrarSesiones(evento.usuarioId());
     }
 
     @EventListener
     @Transactional
     public void alCambiarRoles(RolesDeUsuarioCambiados evento) {
-        refreshTokenRepository.revocarActivosPorUsuario(evento.usuarioId(), Instant.now());
+        cerrarSesiones(evento.usuarioId());
+    }
+
+    // Revocar los refresh corta la renovación; subir la versión corta los access ya emitidos,
+    // que si no seguirían andando hasta 15 minutos (CE2-2)
+    private void cerrarSesiones(Long usuarioId) {
+        refreshTokenRepository.revocarActivosPorUsuario(usuarioId, Instant.now());
+        usuarioRepository.incrementarVersionSesion(usuarioId);
     }
 
     private Usuario buscarPorIdentificador(String identificador) {
@@ -202,7 +209,8 @@ public class AuthService {
                 .sorted()
                 .toList();
 
-        String accessToken = jwtService.generarAccessToken(usuario.getId(), usuario.getUsername(), roles, permisos);
+        String accessToken = jwtService.generarAccessToken(
+                usuario.getId(), usuario.getUsername(), roles, permisos, usuario.getVersionSesion());
         String refreshToken = UUID.randomUUID().toString();
         RefreshToken entidad = new RefreshToken();
         entidad.setUsuario(usuario);
