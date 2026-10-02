@@ -1,6 +1,7 @@
 # Corre la suite completa (unitarios + Testcontainers) en cada PR y en cada push a dev/main.
 # Docker ya viene en ubuntu-latest, así que Postgres levanta solo; no hace falta un service.
-# Al mergear a dev, además publica la imagen en GHCR y actualiza staging (infra/README.md).
+# Al mergear a dev, además publica la imagen en GHCR, actualiza staging (infra/README.md) y corre
+# la prueba de humo del contrato contra staging.
 name: CI
 
 on:
@@ -80,5 +81,27 @@ jobs:
           scp infra/docker-compose.yml infra/Caddyfile "$DESTINO:/opt/pica/"
           ssh "$DESTINO" 'cd /opt/pica && docker compose pull api && docker compose up -d --remove-orphans && docker image prune -f'
 
-      - name: Prueba de humo
+      - name: Esperar a que levante
         run: curl -fsS --retry 30 --retry-delay 5 --retry-all-errors "https://${{ vars.STAGING_HOST }}/actuator/health"
+
+  # Recorre todas las operaciones del contrato contra staging y borra lo que creó (scripts/prueba-de-humo.sh)
+  contrato:
+    needs: deploy
+    runs-on: ubuntu-latest
+    concurrency: staging
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clave SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.STAGING_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "${{ secrets.STAGING_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Prueba de humo del contrato
+        run: scripts/prueba-de-humo.sh
+        env:
+          PICA_URL: https://${{ vars.STAGING_HOST }}
+          PICA_SSH: ${{ vars.STAGING_SSH_USER }}@${{ vars.STAGING_HOST }}
