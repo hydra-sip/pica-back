@@ -81,6 +81,21 @@ class SecurityConfigTest {
                 .andExpect(jsonPath("$.codigo").value("TOKEN_INVALIDO"));
     }
 
+    @Test
+    void tokenSinVersionDeSesionResponde401SesionRevocada() throws Exception {
+        // como los emitidos antes de CE2-2: bien firmado y vigente, pero sin versionSesion
+        String token = Jwts.builder()
+                .subject("42")
+                .issuedAt(new Date())
+                .expiration(Date.from(Instant.now().plusSeconds(60)))
+                .signWith(keyPair.getPrivate(), Jwts.SIG.RS256)
+                .compact();
+
+        mockMvc.perform(get("/prueba/protegido").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.codigo").value("SESION_REVOCADA"));
+    }
+
     private KeyPair generarKeyPair() throws Exception {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
         generator.initialize(2048);

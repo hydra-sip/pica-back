@@ -24,9 +24,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtService jwtService;
+    private final VersionesDeSesion versionesDeSesion;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService, VersionesDeSesion versionesDeSesion) {
         this.jwtService = jwtService;
+        this.versionesDeSesion = versionesDeSesion;
     }
 
     @Override
@@ -43,6 +45,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = authorization.substring(BEARER_PREFIX.length());
         try {
             Claims claims = jwtService.validar(token).getPayload();
+            if (!sesionVigente(claims)) {
+                request.setAttribute("jwt-error", "SESION_REVOCADA");
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
             List<SimpleGrantedAuthority> authorities = authoritiesFrom(claims);
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(claims.getSubject(), null, authorities);
@@ -56,6 +64,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * La firma sola no alcanza: un token bien firmado sigue valiendo después de un robo, una baja o un
+     * cambio de roles. Vale si trae la versión de sesión actual del usuario; una consulta por PK y sin
+     * caché, para que el corte sea inmediato y valga igual con varias réplicas. Los tokens sin el
+     * claim (emitidos antes de CE2-2) también se rechazan: el front refresca y sigue.
+     */
+    private boolean sesionVigente(Claims claims) {
+        Integer version = claims.get(JwtService.CLAIM_VERSION_SESION, Integer.class);
+        if (version == null) {
+            return false;
+        }
+        return versionesDeSesion.versionDeSesion(Long.valueOf(claims.getSubject()))
+                .map(version::equals)
+                .orElse(false);
     }
 
     private List<SimpleGrantedAuthority> authoritiesFrom(Claims claims) {

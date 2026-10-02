@@ -12,6 +12,7 @@ public enum CodigoError {
     NO_AUTENTICADO,
     TOKEN_INVALIDO,
     TOKEN_VENCIDO,
+    SESION_REVOCADA,
     SIN_PERMISO,
     ERROR_INTERNO,
 
