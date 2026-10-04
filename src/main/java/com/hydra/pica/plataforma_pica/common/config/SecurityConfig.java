@@ -24,6 +24,9 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import org.springframework.security.config.http.SessionCreationPolicy;
+import com.hydra.pica.plataforma_pica.common.security.HttpCookieOAuth2AuthorizationRequestRepository;
+
 @Configuration
 // Habilita @PreAuthorize en los controllers; cada endpoint /admin/** declara su permiso (ver x-permiso en el contrato)
 @EnableMethodSecurity
@@ -42,10 +45,12 @@ public class SecurityConfig {
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
             OAuth2LoginHandler oAuth2LoginHandler,
+            HttpCookieOAuth2AuthorizationRequestRepository cookieAuthorizationRequestRepository,
             @Autowired(required = false) ClientRegistrationRepository clientRegistrationRepository) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         // Todos los endpoints /auth/** son públicos por contrato; PICA-117 podrá
                         // angostar o quitar este permiso cuando corresponda.
@@ -61,6 +66,8 @@ public class SecurityConfig {
         if (clientRegistrationRepository != null) {
             http.oauth2Login(oauth2 -> oauth2
                     .clientRegistrationRepository(clientRegistrationRepository)
+                    .authorizationEndpoint(authorization -> authorization
+                            .authorizationRequestRepository(cookieAuthorizationRequestRepository))
                     .successHandler(oAuth2LoginHandler)
                     .failureHandler(oAuth2LoginHandler));
         }

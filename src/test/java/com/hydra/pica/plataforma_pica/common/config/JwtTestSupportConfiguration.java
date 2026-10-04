@@ -37,4 +37,9 @@ public class JwtTestSupportConfiguration {
     OAuth2LoginHandler oAuth2LoginHandler() {
         return Mockito.mock(OAuth2LoginHandler.class);
     }
+
+    @Bean
+    com.hydra.pica.plataforma_pica.common.security.HttpCookieOAuth2AuthorizationRequestRepository cookieOAuth2AuthorizationRequestRepository() {
+        return new com.hydra.pica.plataforma_pica.common.security.HttpCookieOAuth2AuthorizationRequestRepository();
+    }
 }
