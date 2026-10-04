@@ -213,3 +213,31 @@ En lugar de agrupar todo el código horizontalmente en carpetas gigantescas (`co
 - **Alta cohesión**: Todo lo relativo a torneos vive en el módulo `tournament`. Modificar una regla de torneos no requiere navegar por 5 extremos del árbol del proyecto.
 - **Encapsulamiento**: Permite usar modificadores de acceso de paquete (*package-private*) para componentes internos que no deban ser visibles fuera de la feature.
 - **Evolución a microservicios**: Si en el futuro un módulo como `payment` o `tournament` necesita escalarse independientemente, su extracción a un servicio separado es trivial.
+
+---
+
+## Escalado Horizontal sin Session Affinity (CE2-9)
+
+La API es completamente **stateless**, lo que permite ejecutar múltiples réplicas detrás de un balanceador de carga en **Round Robin puro** sin requerir afinidad de sesión (*sticky sessions*).
+
+Para más detalles sobre las decisiones de arquitectura, consultar el documento de Confluence:
+[Escalado horizontal y session affinity](docs/confluence/escalado-horizontal-y-session-affinity.md).
+
+### Demostración con 2 réplicas y Nginx
+
+Disponemos de una configuración de Docker Compose con dos instancias del backend (`api1` y `api2`) balanceadas por Nginx en Round Robin:
+
+```bash
+# 1. Copiar archivo de variables de entorno para réplicas (con claves RSA compartidas)
+cp .env.replicas.example .env.replicas
+
+# 2. Levantar el stack de réplicas
+docker compose -f docker-compose.replicas.yml up --build -d
+
+# 3. Ejecutar la suite de pruebas de réplicas (login, OAuth, refresh y revocación)
+./scripts/probar-replicas.sh
+
+# 4. Bajar el stack
+docker compose -f docker-compose.replicas.yml down -v
+```
+
