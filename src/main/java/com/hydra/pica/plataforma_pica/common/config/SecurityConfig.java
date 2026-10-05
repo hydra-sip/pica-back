@@ -50,7 +50,6 @@ public class SecurityConfig {
                         // Todos los endpoints /auth/** son públicos por contrato; PICA-117 podrá
                         // angostar o quitar este permiso cuando corresponda.
                         .requestMatchers(
-                                "/api/v1/health",
                                 "/actuator/health",
                                 "/api/v1/auth/**",
                                 "/oauth2/**",

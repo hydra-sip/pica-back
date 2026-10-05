@@ -37,7 +37,7 @@ info:
 
 servers:
   - {url: 'http://localhost:8080', description: Local}
-  - {url: 'https://PENDIENTE.up.railway.app', description: Staging (completar cuando esté T3)}
+  - {url: 'https://pica-hydra.duckdns.org', description: Staging (EC2 en São Paulo, ver infra/README.md)}
 
 tags:
   - {name: Auth, description: 'Registro, verificación, login, refresh, Google. HU-101/102, Mateo.'}

@@ -43,26 +43,33 @@ docker compose up -d
 ./mvnw spring-boot:run
 ```
 
-### Probar el Endpoint de Health
+### Probar que levantó
 
 Una vez levantada la aplicación en `http://localhost:8080`:
 
 ```bash
-curl -i http://localhost:8080/api/v1/health
+curl -i http://localhost:8080/actuator/health
 ```
 
-**Respuesta esperada (HTTP 200 OK):**
-```json
-{
-  "status": "UP",
-  "service": "plataforma-pica",
-  "timestamp": "2026-09-19T18:30:00.123456Z"
-}
+Responde 200 con `"status": "UP"` si la app y la base andan, y 503 con `DOWN` si la base no responde. Es el mismo chequeo que usan el `HEALTHCHECK` de la imagen y el deploy a staging.
+
+### Prueba de humo del contrato
+
+`scripts/prueba-de-humo.sh` recorre todas las operaciones de `docs/api/openapi.yaml` contra una API levantada y compara cada código HTTP con el del contrato. Termina con `Contrato: 34/34 operaciones` y falla si alguna operación quedó sin probar, así que un endpoint nuevo en el contrato obliga a sumarlo al script.
+
+Crea un rol, una persona y dos usuarios marcados con el id de la corrida (`humo-…`). Al final los borra de la base por SQL, porque la API solo hace bajas lógicas. La limpieza corre aunque un paso falle o se corte con Ctrl+C, y al final verifica que no quedó nada de la corrida. Si no puede llegar a la base, no arranca. Lo único que queda son las líneas de log de la API.
+
+```bash
+# Local: la app en localhost:8080 y el Postgres de docker-compose.yml. Pide la clave del admin.
+scripts/prueba-de-humo.sh
+
+# Staging: la limpieza va por SSH y la clave del admin se lee del .env de la instancia
+PICA_URL=https://pica-hydra.duckdns.org \
+PICA_SSH="-i $HOME/.ssh/pica-staging.pem ubuntu@pica-hydra.duckdns.org" \
+scripts/prueba-de-humo.sh
 ```
 
-También podés verificar los endpoints de Spring Actuator:
-- `http://localhost:8080/actuator/health`
-- `http://localhost:8080/actuator/info`
+Necesita `curl`, `jq` y `openssl`. En el CI corre sola contra staging después de cada deploy (job `contrato`).
 
 ### Verificación Externa de Tokens JWT (Verificador Público)
 
@@ -109,8 +116,6 @@ src/main/java/com/hydra/pica/plataforma_pica/
 │   ├── dto/
 │   ├── exception/
 │   └── util/
-├── health/
-│   └── HealthController.java
 ├── payment/
 │   ├── controller/
 │   ├── domain/
@@ -160,8 +165,6 @@ src/main/java/com/hydra/pica/plataforma_pica/
 - **`docker-compose.yml`**: Define el contenedor PostgreSQL 16 para desarrollo local con volumen persistente (`postgres_data`), base `tournament_db`, credenciales por defecto y un `healthcheck` basado en `pg_isready` para garantizar que la base acepte conexiones antes de inicializar la app.
 - **`src/main/resources/application.yml`**: Configuración centralizada de Spring Boot. Define conexión JDBC flexible, hibernate DDL validate, zona horaria UTC, endpoints de Actuator, niveles de log detallados y orígenes CORS.
 - **`common/config/WebConfig.java`**: Configura CORS globalmente a nivel Spring MVC (`WebMvcConfigurer`) sobre rutas `/api/**`. Lee dinámicamente los dominios autorizados de `app.cors.allowed-origins` y habilita métodos estándar (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`) con credenciales activadas.
-- **`health/HealthController.java`**: Expone `GET /api/v1/health`. Retorna un objeto JSON con el estado de la aplicación (`status: UP`), el nombre del servicio obtenido de `spring.application.name` y la marca de tiempo actual en formato ISO-8601 (`Instant.now()`).
-- **`src/test/.../health/HealthControllerTest.java`**: Prueba unitaria de capa web usando `@WebMvcTest`. Valida de forma aislada y rápida que `/api/v1/health` responda HTTP 200 OK con el cuerpo JSON esperado mediante `MockMvc` inyectado por constructor.
 
 ---
 
