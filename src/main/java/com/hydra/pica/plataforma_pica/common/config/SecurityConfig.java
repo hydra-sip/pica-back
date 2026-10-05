@@ -99,6 +99,9 @@ public class SecurityConfig {
         if ("TOKEN_INVALIDO".equals(jwtError)) {
             return CodigoError.TOKEN_INVALIDO;
         }
+        if ("SESION_REVOCADA".equals(jwtError)) {
+            return CodigoError.SESION_REVOCADA;
+        }
         return CodigoError.NO_AUTENTICADO;
     }
 
@@ -106,6 +109,7 @@ public class SecurityConfig {
         return switch (codigoAutenticacion(request)) {
             case TOKEN_VENCIDO -> "El token de acceso venció";
             case TOKEN_INVALIDO -> "El token de acceso no es válido";
+            case SESION_REVOCADA -> "La sesión fue cerrada; hay que volver a iniciarla";
             default -> "Hace falta iniciar sesión";
         };
     }

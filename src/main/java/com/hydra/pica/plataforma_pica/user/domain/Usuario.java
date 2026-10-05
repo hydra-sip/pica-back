@@ -67,6 +67,12 @@ public class Usuario extends AuditableEntity {
     @Column(name = "email_verificado", nullable = false)
     private boolean emailVerificado;
 
+    // Solo lectura: la sube UsuarioRepository.incrementarVersionSesion. Si Hibernate la escribiera,
+    // un save posterior del mismo usuario pisaría el incremento con el valor viejo.
+    @Column(name = "version_sesion", nullable = false, insertable = false, updatable = false)
+    @Setter(AccessLevel.NONE)
+    private int versionSesion;
+
     @OneToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "persona_id", nullable = false)
     private Persona persona;

@@ -71,7 +71,7 @@ class AuthServiceTest {
     void loginExitosoEmiteParYGuardaRefreshHasheado() {
         when(usuarioRepository.findByUsernameIgnoreCase("jperez")).thenReturn(Optional.of(usuario));
         when(passwordEncoder.matches("Pica2026", "hash")).thenReturn(true);
-        when(jwtService.generarAccessToken(42L, "jperez", java.util.List.<String>of(), java.util.List.<String>of()))
+        when(jwtService.generarAccessToken(42L, "jperez", java.util.List.<String>of(), java.util.List.<String>of(), 0))
                 .thenReturn("access");
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -119,7 +119,7 @@ class AuthServiceTest {
         actual.setExpiraEn(Instant.now().plusSeconds(60));
         when(refreshTokenRepository.findByTokenHash(any(String.class))).thenReturn(Optional.of(actual));
         when(usuarioRepository.existsByIdAndEstado(42L, EstadoUsuario.ACTIVO)).thenReturn(true);
-        when(jwtService.generarAccessToken(42L, "jperez", java.util.List.<String>of(), java.util.List.<String>of()))
+        when(jwtService.generarAccessToken(42L, "jperez", java.util.List.<String>of(), java.util.List.<String>of(), 0))
                 .thenReturn("access-new");
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -133,7 +133,7 @@ class AuthServiceTest {
     }
 
     @Test
-    void refreshReutilizadoRevocaFamiliaDelUsuario() {
+    void refreshReutilizadoRevocaFamiliaDelUsuarioYCortaSusAccess() {
         RefreshToken token = new RefreshToken();
         token.setUsuario(usuario);
         token.setTokenHash("hash");
@@ -146,6 +146,7 @@ class AuthServiceTest {
                 .extracting("codigo").isEqualTo(CodigoError.REFRESH_REUTILIZADO);
 
         verify(refreshTokenRepository).revocarActivosPorUsuario(org.mockito.ArgumentMatchers.eq(42L), any(Instant.class));
+        verify(usuarioRepository).incrementarVersionSesion(42L);
         verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
     }
 
@@ -177,6 +178,7 @@ class AuthServiceTest {
                     .extracting("codigo").isEqualTo(CodigoError.REFRESH_INVALIDO);
         }
         verify(refreshTokenRepository, never()).revocarActivosPorUsuario(any(), any());
+        verify(usuarioRepository, never()).incrementarVersionSesion(any());
         verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
     }
 
@@ -192,16 +194,18 @@ class AuthServiceTest {
         authService.login(new LoginRequest("jperez", "Pica2026"), null);
 
         verify(jwtService).generarAccessToken(42L, "jperez", List.of("ORGANIZADOR"),
-                List.of("PERSONA_VER", "USUARIO_VER"));
+                List.of("PERSONA_VER", "USUARIO_VER"), 0);
     }
 
     @Test
-    void cerrarSesionesYCambiarRolesRevocanLosRefreshDelUsuario() {
+    void cerrarSesionesYCambiarRolesRevocanLosRefreshYCortanLosAccessDelUsuario() {
         authService.alInvalidarSesiones(new SesionesDeUsuarioInvalidadas(42L));
         authService.alCambiarRoles(new RolesDeUsuarioCambiados(7L));
 
         verify(refreshTokenRepository).revocarActivosPorUsuario(org.mockito.ArgumentMatchers.eq(42L), any(Instant.class));
         verify(refreshTokenRepository).revocarActivosPorUsuario(org.mockito.ArgumentMatchers.eq(7L), any(Instant.class));
+        verify(usuarioRepository).incrementarVersionSesion(42L);
+        verify(usuarioRepository).incrementarVersionSesion(7L);
     }
 
     private RefreshToken token(Instant expiraEn) {

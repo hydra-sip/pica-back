@@ -6,6 +6,7 @@ import java.security.KeyPairGenerator;
 import com.hydra.pica.plataforma_pica.common.security.JwtAuthenticationFilter;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
 import com.hydra.pica.plataforma_pica.common.security.OAuth2LoginHandler;
+import com.hydra.pica.plataforma_pica.common.security.VersionesDeSesion;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -28,7 +29,8 @@ public class JwtTestSupportConfiguration {
 
     @Bean
     JwtAuthenticationFilter jwtAuthenticationFilter(JwtService jwtService) {
-        return new JwtAuthenticationFilter(jwtService);
+        // Los tests web autentican con @WithMockUser: ninguno llega a consultar la versión de sesión
+        return new JwtAuthenticationFilter(jwtService, Mockito.mock(VersionesDeSesion.class));
     }
 
     @Bean

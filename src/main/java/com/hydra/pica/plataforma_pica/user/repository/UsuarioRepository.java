@@ -10,14 +10,17 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import com.hydra.pica.plataforma_pica.common.security.VersionesDeSesion;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 
 public interface UsuarioRepository extends
-        JpaRepository<Usuario, Long>, JpaSpecificationExecutor<Usuario>, UsuarioAdminRepositoryCustom {
+        JpaRepository<Usuario, Long>, JpaSpecificationExecutor<Usuario>, UsuarioAdminRepositoryCustom,
+        VersionesDeSesion {
 
     /** La persona viaja en la misma consulta (relación a uno: no rompe la paginación). */
     @Override
@@ -46,6 +49,16 @@ public interface UsuarioRepository extends
      * de devolver vacío.
      */
     boolean existsByIdAndEstado(Long id, EstadoUsuario estado);
+
+    /** Para el filtro JWT, en cada request. El @SQLRestriction deja afuera a los dados de baja. */
+    @Override
+    @Query("select u.versionSesion from Usuario u where u.id = :id")
+    Optional<Integer> versionDeSesion(@Param("id") Long usuarioId);
+
+    /** Invalida todos los access tokens ya emitidos del usuario (CE2-2). */
+    @Modifying
+    @Query(value = "UPDATE usuario SET version_sesion = version_sesion + 1 WHERE id = :id", nativeQuery = true)
+    int incrementarVersionSesion(@Param("id") Long id);
 
     /** No ve registros con baja lógica; la BD sigue rechazando duplicados */
     boolean existsByEmailIgnoreCase(String email);
