@@ -169,6 +169,29 @@ class MeControllerTest {
 
     @Test
     @WithMockUser
+    @DisplayName("PUT /api/v1/me con un nombre con números o una edad fuera de 18 a 120 años responde 400 (CE2-3)")
+    void nombreYEdadInvalidos() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));
+        String[][] casos = {
+                {"{\"nombres\": \"Juan2\", \"apellidos\": \"Pérez\"}", "nombres", "NOMBRE_INVALIDO"},
+                {"{\"nombres\": \"Juan\", \"apellidos\": \"Pérez_\"}", "apellidos", "NOMBRE_INVALIDO"},
+                {"{\"nombres\": \"Juan\", \"apellidos\": \"Pérez\", \"fechaNacimiento\": \""
+                        + LocalDate.now().minusYears(5) + "\"}", "fechaNacimiento", "EDAD_FUERA_DE_RANGO"},
+                {"{\"nombres\": \"Juan\", \"apellidos\": \"Pérez\", \"fechaNacimiento\": \"1850-01-01\"}",
+                        "fechaNacimiento", "EDAD_FUERA_DE_RANGO"},
+        };
+        for (String[] caso : casos) {
+            mockMvc.perform(put("/api/v1/me").contentType(MediaType.APPLICATION_JSON).content(caso[0]))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.codigo").value("VALIDACION"))
+                    .andExpect(jsonPath("$.errores[0].campo").value(caso[1]))
+                    .andExpect(jsonPath("$.errores[0].codigo").value(caso[2]));
+        }
+        verify(perfilService, never()).actualizar(any(), any());
+    }
+
+    @Test
+    @WithMockUser
     @DisplayName("PUT /api/v1/me con nroDoc con guiones responde 400 FORMATO_INVALIDO")
     void nroDocConGuiones() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));

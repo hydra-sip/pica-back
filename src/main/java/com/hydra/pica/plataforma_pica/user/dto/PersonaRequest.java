@@ -2,6 +2,8 @@ package com.hydra.pica.plataforma_pica.user.dto;
 
 import java.time.LocalDate;
 
+import com.hydra.pica.plataforma_pica.common.validation.EdadEntre;
+import com.hydra.pica.plataforma_pica.common.validation.NombrePersona;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 import com.hydra.pica.plataforma_pica.user.validation.ConDocumento;
@@ -19,11 +21,12 @@ import jakarta.validation.constraints.Size;
  */
 @DocumentoValido
 public record PersonaRequest(
-        @NotBlank @Size(max = 100) String nombres,
-        @NotBlank @Size(max = 100) String apellidos,
+        @NotBlank @Size(max = 100) @NombrePersona String nombres,
+        @NotBlank @Size(max = 100) @NombrePersona String apellidos,
         @NotNull TipoDoc tipoDoc,
         @NotBlank @Size(min = 5, max = 20) @Pattern(regexp = "^[0-9A-Za-z]+$") String nroDoc,
-        @PastOrPresent LocalDate fechaNacimiento,
+        @PastOrPresent @EdadEntre(min = EdadEntre.MINIMA_PERSONA, max = EdadEntre.MAXIMA_PERSONA)
+        LocalDate fechaNacimiento,
         @Size(max = 200) String domicilioPostal,
         @Size(max = 30) String telefono,
         @Size(max = 500) String descripcion,

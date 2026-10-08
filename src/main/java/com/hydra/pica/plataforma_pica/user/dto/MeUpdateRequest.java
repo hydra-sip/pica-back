@@ -2,6 +2,8 @@ package com.hydra.pica.plataforma_pica.user.dto;
 
 import java.time.LocalDate;
 
+import com.hydra.pica.plataforma_pica.common.validation.EdadEntre;
+import com.hydra.pica.plataforma_pica.common.validation.NombrePersona;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 import com.hydra.pica.plataforma_pica.user.validation.ConDocumento;
 import com.hydra.pica.plataforma_pica.user.validation.DocumentoValido;
@@ -20,11 +22,14 @@ import jakarta.validation.constraints.Size;
 public record MeUpdateRequest(
         @NotBlank
         @Size(max = 100)
+        @NombrePersona
         String nombres,
         @NotBlank
         @Size(max = 100)
+        @NombrePersona
         String apellidos,
         @PastOrPresent
+        @EdadEntre(min = EdadEntre.MINIMA_PERSONA, max = EdadEntre.MAXIMA_PERSONA)
         LocalDate fechaNacimiento,
         @Size(max = 200)
         String domicilioPostal,

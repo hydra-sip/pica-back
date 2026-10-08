@@ -657,7 +657,21 @@ components:
     Id: {type: integer, format: int64, minimum: 1}
     Email: {type: string, format: email, maxLength: 254}
     Username: {type: string, minLength: 3, maxLength: 30, pattern: '^[a-zA-Z0-9._-]+$'}
-    Nombre: {type: string, minLength: 1, maxLength: 100}
+    Nombre:
+      type: string
+      minLength: 1
+      maxLength: 100
+      pattern: "^\\p{L}+([ '\\-]\\p{L}+)*$"
+      description: >-
+        Nombres o apellidos: letras (con tildes y ñ) y palabras separadas por un espacio, apóstrofo o guion
+        ("María José", "O'Connor", "Pérez-Gómez"). Sin números ni otros símbolos. Si no cumple, 400
+        `VALIDACION` con `NOMBRE_INVALIDO` en el campo.
+    FechaNacimiento:
+      type: string
+      format: date
+      description: >-
+        No futura (si no, `FECHA_FUTURA`) y con una edad cumplida de entre 18 y 120 años, la cargue la
+        persona o un administrador (si no, `EDAD_FUERA_DE_RANGO`).
     NroDoc:
       type: string
       minLength: 5
@@ -713,11 +727,14 @@ components:
       required: [campo, codigo]
       description: >-
         Un ítem de `errores` en los 400. `codigo` sale de la anotación que falló: @NotBlank/@NotNull →
-        REQUERIDO, @Email/@Pattern → FORMATO_INVALIDO, @Size → LONGITUD, @PastOrPresent → FECHA_FUTURA,
-        política de clave → PASSWORD_DEBIL, otra → VALOR_INVALIDO.
+        REQUERIDO, @Email/@Pattern/documento según el tipo → FORMATO_INVALIDO, @Size → LONGITUD,
+        @PastOrPresent → FECHA_FUTURA, política de clave → PASSWORD_DEBIL, nombres o apellidos con
+        caracteres no permitidos → NOMBRE_INVALIDO, edad fuera de 18 a 120 años → EDAD_FUERA_DE_RANGO,
+        otra → VALOR_INVALIDO.
       properties:
         campo: {type: string, description: Nombre del campo tal como viene en el JSON}
-        codigo: {type: string, enum: [REQUERIDO, FORMATO_INVALIDO, LONGITUD, FECHA_FUTURA, PASSWORD_DEBIL, VALOR_INVALIDO]}
+        codigo: {type: string, enum: [REQUERIDO, FORMATO_INVALIDO, LONGITUD, FECHA_FUTURA, PASSWORD_DEBIL,
+                                      NOMBRE_INVALIDO, EDAD_FUERA_DE_RANGO, VALOR_INVALIDO]}
         mensaje: {type: string, description: Orientativo; el front muestra el suyo según `codigo`}
     ProblemDetail:
       type: object
@@ -774,7 +791,7 @@ components:
         apellidos: {$ref: '#/components/schemas/Nombre'}
         tipoDoc: {$ref: '#/components/schemas/TipoDoc'}
         nroDoc: {$ref: '#/components/schemas/NroDoc'}
-        fechaNacimiento: {type: string, format: date}
+        fechaNacimiento: {$ref: '#/components/schemas/FechaNacimiento'}
       examples:
         - {username: jperez, email: juan.perez@example.com, password: Pica2026, nombres: Juan, apellidos: Pérez,
                 tipoDoc: DNI, nroDoc: '30123456', fechaNacimiento: '1990-05-17'}
@@ -819,7 +836,7 @@ components:
       properties:
         nombres: {$ref: '#/components/schemas/Nombre'}
         apellidos: {$ref: '#/components/schemas/Nombre'}
-        fechaNacimiento: {type: [string, 'null'], format: date}
+        fechaNacimiento: {oneOf: [{$ref: '#/components/schemas/FechaNacimiento'}, {type: 'null'}]}
         domicilioPostal: {type: [string, 'null'], maxLength: 200}
         telefono: {type: [string, 'null'], maxLength: 30}
         tipoDoc: {$ref: '#/components/schemas/TipoDocOpcional'}
@@ -872,7 +889,7 @@ components:
         apellidos: {$ref: '#/components/schemas/Nombre'}
         tipoDoc: {$ref: '#/components/schemas/TipoDoc'}
         nroDoc: {$ref: '#/components/schemas/NroDoc'}
-        fechaNacimiento: {type: [string, 'null'], format: date, description: No futura}
+        fechaNacimiento: {oneOf: [{$ref: '#/components/schemas/FechaNacimiento'}, {type: 'null'}]}
         domicilioPostal: {type: [string, 'null'], maxLength: 200}
         telefono: {type: [string, 'null'], maxLength: 30}
         descripcion: {type: [string, 'null'], maxLength: 500}
