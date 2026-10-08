@@ -563,4 +563,25 @@ class AdminUsuarioControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("USUARIO_PROTEGIDO"));
     }
+
+    @Test
+    @WithMockUser(authorities = {"USUARIO_EDITAR", "USUARIO_ELIMINAR"})
+    @DisplayName("Darse de baja, bloquearse o resetearse la clave a uno mismo responde 403 ACCION_SOBRE_SI_MISMO")
+    void accionSobreSiMismoResponde403() throws Exception {
+        ProhibidoException sobreSiMismo = new ProhibidoException(CodigoError.ACCION_SOBRE_SI_MISMO, "sobre sí mismo");
+        doThrow(sobreSiMismo).when(usuarioEdicionService).eliminar(5L);
+        when(usuarioEdicionService.modificar(eq(5L), any())).thenThrow(sobreSiMismo);
+        doThrow(sobreSiMismo).when(usuarioEdicionService).resetearPassword(eq(5L), any());
+
+        mockMvc.perform(delete("/api/v1/admin/usuarios/5"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("ACCION_SOBRE_SI_MISMO"));
+        mockMvc.perform(put("/api/v1/admin/usuarios/5").contentType(MediaType.APPLICATION_JSON).content(MODIFICACION))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("ACCION_SOBRE_SI_MISMO"));
+        mockMvc.perform(put("/api/v1/admin/usuarios/5/password")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"password\": \"Temporal1\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("ACCION_SOBRE_SI_MISMO"));
+    }
 }

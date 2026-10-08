@@ -314,7 +314,9 @@ paths:
         Un usuario con el mail sin verificar (`PENDIENTE_VERIFICACION`) no se puede pasar a `ACTIVO` a mano:
         se activa solo cuando verifica. Pasarlo a `BLOQUEADO` sí se puede.
         Un usuario dado de baja no se modifica: 404, primero hay que reactivarlo.
-        403 `USUARIO_PROTEGIDO` (el Admin del sistema). 404 `USUARIO_NO_ENCONTRADO`, `PERSONA_NO_ENCONTRADA`.
+        403 `USUARIO_PROTEGIDO` (el Admin del sistema), `ACCION_SOBRE_SI_MISMO` (pasarse uno mismo a
+        `BLOQUEADO`; el resto de los datos propios sí se pueden editar).
+        404 `USUARIO_NO_ENCONTRADO`, `PERSONA_NO_ENCONTRADA`.
         409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`,
         `EMAIL_NO_VERIFICADO` (se manda `estado: ACTIVO` y el mail no está verificado; en el login el mismo
         código es 403).
@@ -333,7 +335,8 @@ paths:
       x-permiso: USUARIO_ELIMINAR
       description: >-
         Marca `eliminado_en` y revoca sus refresh tokens: no puede loguearse ni renovar.
-        Idempotente: si ya estaba dado de baja responde 204 sin hacer nada. 403 `USUARIO_PROTEGIDO`.
+        Idempotente: si ya estaba dado de baja responde 204 sin hacer nada. 403 `USUARIO_PROTEGIDO`,
+        `ACCION_SOBRE_SI_MISMO` (darse de baja uno mismo).
       responses:
         '204': {description: Dado de baja}
         '403': {$ref: '#/components/responses/Error'}
@@ -361,7 +364,8 @@ paths:
       x-permiso: USUARIO_EDITAR
       description: >-
         El admin define una temporal y se la pasa por fuera. Revoca los refresh tokens.
-        403 `USUARIO_PROTEGIDO`. 404 `USUARIO_NO_ENCONTRADO` (también si está dado de baja).
+        403 `USUARIO_PROTEGIDO`, `ACCION_SOBRE_SI_MISMO` (la clave propia se cambia con `PUT /me/password`).
+        404 `USUARIO_NO_ENCONTRADO` (también si está dado de baja).
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
         required: true
@@ -700,14 +704,15 @@ components:
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400.
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO.
-        Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR.
+        Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
+        ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM).
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
-             USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR]
+             USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO]
     ErrorCampo:
       type: object
       required: [campo, codigo]

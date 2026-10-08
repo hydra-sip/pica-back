@@ -7,6 +7,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
+import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -32,6 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
  * Modificar, dar de baja y resetear no se pueden hacer sobre el Admin del sistema (403
  * USUARIO_PROTEGIDO). Un usuario dado de baja no se ve para esas tres operaciones: da 404, como en
  * los roles; para traerlo de vuelta está {@link #reactivar}.
+ *
+ * Nadie puede darse de baja, bloquearse ni resetearse la contraseña a sí mismo desde el ABM (403
+ * ACCION_SOBRE_SI_MISMO, CE2-1): se quedaría afuera. La clave propia se cambia por PUT /me/password.
  */
 @Service
 @RequiredArgsConstructor
@@ -42,6 +46,7 @@ public class UsuarioEdicionService {
     private final PasswordEncoder passwordEncoder;
     private final AdminProperties adminProperties;
     private final ApplicationEventPublisher eventos;
+    private final CurrentUserProvider currentUserProvider;
 
     /**
      * Reemplaza username, email, descripción, estado y persona. Si cambia el email el usuario queda
@@ -51,6 +56,9 @@ public class UsuarioEdicionService {
     public UsuarioDetalle modificar(Long id, UsuarioUpdateRequest request) {
         Usuario usuario = buscarVivo(id);
         exigirNoProtegido(usuario, "modificar");
+        if (request.estado() == UsuarioUpdateRequest.EstadoEditable.BLOQUEADO) {
+            exigirQueNoSeaElMismo(usuario, "bloquearte");
+        }
         // el formulario solo puede mandar ACTIVO o BLOQUEADO: a uno con el mail sin verificar no se lo
         // activa a mano, se activa solo cuando verifica
         if (request.estado() == UsuarioUpdateRequest.EstadoEditable.ACTIVO && !usuario.isEmailVerificado()) {
@@ -117,6 +125,7 @@ public class UsuarioEdicionService {
     public void eliminar(Long id) {
         Usuario usuario = usuarioRepository.findByIdIncluyendoEliminados(id).orElseThrow(() -> noExiste(id));
         exigirNoProtegido(usuario, "dar de baja");
+        exigirQueNoSeaElMismo(usuario, "darte de baja");
         if (usuario.getEliminadoEn() != null) {
             return;
         }
@@ -150,6 +159,7 @@ public class UsuarioEdicionService {
     public void resetearPassword(Long id, String password) {
         Usuario usuario = buscarVivo(id);
         exigirNoProtegido(usuario, "resetear la contraseña de");
+        exigirQueNoSeaElMismo(usuario, "resetear tu propia contraseña desde el ABM (usá PUT /me/password)");
 
         usuario.setPasswordHash(passwordEncoder.encode(password));
         usuarioRepository.saveAndFlush(usuario);
@@ -188,6 +198,16 @@ public class UsuarioEdicionService {
         if (esProtegido(usuario)) {
             throw new ProhibidoException(CodigoError.USUARIO_PROTEGIDO,
                     "No se puede " + accion + " al usuario " + usuario.getUsername() + ": es el Admin del sistema");
+        }
+    }
+
+    /** El id de quien hace el pedido sale del {@code sub} del token. */
+    private void exigirQueNoSeaElMismo(Usuario usuario, String accion) {
+        boolean esElMismo = currentUserProvider.getCurrentUserId()
+                .map(usuario.getId()::equals)
+                .orElse(false);
+        if (esElMismo) {
+            throw new ProhibidoException(CodigoError.ACCION_SOBRE_SI_MISMO, "No podés " + accion);
         }
     }
 

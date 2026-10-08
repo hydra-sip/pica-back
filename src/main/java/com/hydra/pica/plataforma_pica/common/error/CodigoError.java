@@ -47,5 +47,6 @@ public enum CodigoError {
     // Protecciones (403)
     USUARIO_PROTEGIDO,
     ROL_PROTEGIDO,
-    ULTIMO_ASIGNADOR
+    ULTIMO_ASIGNADOR,
+    ACCION_SOBRE_SI_MISMO
 }
