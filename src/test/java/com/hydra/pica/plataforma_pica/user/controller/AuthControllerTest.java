@@ -132,7 +132,20 @@ class AuthControllerTest {
                 Arguments.of("fecha de nacimiento futura",
                         bodyCon("fechaNacimiento", "2999-01-01"), "fechaNacimiento", "FECHA_FUTURA"),
                 Arguments.of("tipoDoc nulo",
-                        bodyCon("tipoDoc", null), "tipoDoc", "REQUERIDO"));
+                        bodyCon("tipoDoc", null), "tipoDoc", "REQUERIDO"),
+                // CE2-3
+                Arguments.of("nombre con un número",
+                        bodyCon("nombres", "Juan2"), "nombres", "NOMBRE_INVALIDO"),
+                Arguments.of("apellido con un símbolo",
+                        bodyCon("apellidos", "Pérez!"), "apellidos", "NOMBRE_INVALIDO"),
+                Arguments.of("fecha de mañana",
+                        bodyCon("fechaNacimiento", LocalDate.now().plusDays(1).toString()), "fechaNacimiento", "FECHA_FUTURA"),
+                Arguments.of("menor de edad: 5 años",
+                        bodyCon("fechaNacimiento", LocalDate.now().minusYears(5).toString()), "fechaNacimiento", "EDAD_FUERA_DE_RANGO"),
+                Arguments.of("más de 120 años",
+                        bodyCon("fechaNacimiento", "1850-01-01"), "fechaNacimiento", "EDAD_FUERA_DE_RANGO"),
+                Arguments.of("DNI con letras",
+                        bodyCon("nroDoc", "ABC12345"), "nroDoc", "FORMATO_INVALIDO"));
     }
 
     @Test
@@ -269,6 +282,8 @@ class AuthControllerTest {
             case "nroDoc" -> "30123456";
             case "fechaNacimiento" -> "1990-05-17";
             case "tipoDoc" -> "DNI";
+            case "nombres" -> "Juan";
+            case "apellidos" -> "Pérez";
             default -> throw new IllegalArgumentException("Campo no soportado: " + campo);
         };
     }

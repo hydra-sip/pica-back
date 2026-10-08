@@ -214,6 +214,16 @@ class AdminPersonaControllerTest {
                         "nroDoc", "FORMATO_INVALIDO"},
                 {"{\"nombres\": \"Juan\", \"apellidos\": \"Pérez\", \"tipoDoc\": \"DNI\", \"nroDoc\": \"30123456\","
                         + " \"fechaNacimiento\": \"2999-01-01\"}", "fechaNacimiento", "FECHA_FUTURA"},
+                // CE2-3: la misma regla aunque la cargue un administrador
+                {"{\"nombres\": \"Juan2\", \"apellidos\": \"Pérez\", \"tipoDoc\": \"DNI\", \"nroDoc\": \"30123456\"}",
+                        "nombres", "NOMBRE_INVALIDO"},
+                {"{\"nombres\": \"Juan\", \"apellidos\": \"P3rez\", \"tipoDoc\": \"DNI\", \"nroDoc\": \"30123456\"}",
+                        "apellidos", "NOMBRE_INVALIDO"},
+                {"{\"nombres\": \"Juan\", \"apellidos\": \"Pérez\", \"tipoDoc\": \"DNI\", \"nroDoc\": \"30123456\","
+                        + " \"fechaNacimiento\": \"" + LocalDate.now().minusYears(5) + "\"}",
+                        "fechaNacimiento", "EDAD_FUERA_DE_RANGO"},
+                {"{\"nombres\": \"Juan\", \"apellidos\": \"Pérez\", \"tipoDoc\": \"DNI\", \"nroDoc\": \"30123456\","
+                        + " \"fechaNacimiento\": \"1850-01-01\"}", "fechaNacimiento", "EDAD_FUERA_DE_RANGO"},
         };
         for (String[] caso : casos) {
             mockMvc.perform(json(post(URL), caso[0]))

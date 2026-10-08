@@ -19,6 +19,8 @@ public record ErrorCampo(String campo, Codigo codigo, String mensaje) {
         LONGITUD,
         FECHA_FUTURA,
         PASSWORD_DEBIL,
+        NOMBRE_INVALIDO,
+        EDAD_FUERA_DE_RANGO,
         VALOR_INVALIDO;
 
         /** {@code anotacion} es lo que devuelve {@code FieldError.getCode()}: "NotBlank", "Email", etc. */
@@ -32,6 +34,8 @@ public record ErrorCampo(String campo, Codigo codigo, String mensaje) {
                 case "Size", "Length", "Min", "Max" -> LONGITUD;
                 case "Past", "PastOrPresent" -> FECHA_FUTURA;
                 case "PasswordValida" -> PASSWORD_DEBIL;
+                case "NombrePersona" -> NOMBRE_INVALIDO;
+                case "EdadEntre" -> EDAD_FUERA_DE_RANGO;
                 default -> VALOR_INVALIDO;
             };
         }
