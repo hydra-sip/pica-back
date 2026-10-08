@@ -154,6 +154,12 @@ Para validar el comportamiento en un entorno idéntico a producción, se crearon
 # 1. Copiar variables de réplicas con claves RSA compartidas
 cp .env.replicas.example .env.replicas
 
+# Generar el par de claves RSA que comparten las dos réplicas (en una sola línea cada una)
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt.pem
+sed -i "s|^JWT_PRIVATE_KEY=.*|JWT_PRIVATE_KEY=$(tr -d '\n' < jwt.pem)|" .env.replicas
+sed -i "s|^JWT_PUBLIC_KEY=.*|JWT_PUBLIC_KEY=$(openssl pkey -in jwt.pem -pubout | tr -d '\n')|" .env.replicas
+rm jwt.pem
+
 # 2. Levantar el stack completo (2 réplicas + postgres + nginx)
 docker compose -f docker-compose.replicas.yml up --build -d
 
