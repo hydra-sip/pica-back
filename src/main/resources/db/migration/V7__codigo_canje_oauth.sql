@@ -10,5 +10,4 @@ CREATE TABLE codigo_canje_oauth (
     CONSTRAINT uq_codigo_canje_oauth_hash UNIQUE (codigo_hash)
 );
 
-CREATE INDEX idx_codigo_canje_oauth_hash ON codigo_canje_oauth (codigo_hash);
 CREATE INDEX idx_codigo_canje_oauth_usuario_id ON codigo_canje_oauth (usuario_id);
