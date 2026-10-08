@@ -2,6 +2,12 @@ package com.hydra.pica.plataforma_pica.common.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -92,6 +98,47 @@ class HttpCookieOAuth2AuthorizationRequestRepositoryTest {
     void cargarSinCookieDevuelveNull() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         assertThat(repository.loadAuthorizationRequest(request)).isNull();
+    }
+
+    @Test
+    @DisplayName("Una cookie con una clase que no es del request de OAuth se rechaza sin armarla")
+    void cookieConOtraClaseSeRechaza() throws IOException {
+        Ajena.armadas = 0;
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setCookies(cookieCon(new Ajena()));
+
+        assertThat(repository.loadAuthorizationRequest(request)).isNull();
+        assertThat(Ajena.armadas).isZero();
+    }
+
+    @Test
+    @DisplayName("También se rechaza si la clase ajena viene adentro de una colección permitida")
+    void claseAjenaAdentroDeUnMapaSeRechaza() throws IOException {
+        Ajena.armadas = 0;
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setCookies(cookieCon(new HashMap<>(Map.of("x", new Ajena()))));
+
+        assertThat(repository.loadAuthorizationRequest(request)).isNull();
+        assertThat(Ajena.armadas).isZero();
+    }
+
+    /** Cuenta cuántas veces se la deserializa: con el filtro tiene que quedar en cero. */
+    static class Ajena implements Serializable {
+        static int armadas;
+
+        private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
+            in.defaultReadObject();
+            armadas++;
+        }
+    }
+
+    private static Cookie cookieCon(Object objeto) throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ObjectOutputStream oos = new ObjectOutputStream(bytes)) {
+            oos.writeObject(objeto);
+        }
+        return new Cookie(HttpCookieOAuth2AuthorizationRequestRepository.OAUTH2_AUTHORIZATION_REQUEST_COOKIE_NAME,
+                Base64.getUrlEncoder().withoutPadding().encodeToString(bytes.toByteArray()));
     }
 
     private OAuth2AuthorizationRequest crearAuthorizationRequest() {

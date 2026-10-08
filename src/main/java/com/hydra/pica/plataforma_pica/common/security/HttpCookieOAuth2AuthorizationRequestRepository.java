@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.common.security;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.time.Duration;
@@ -37,6 +38,10 @@ public class HttpCookieOAuth2AuthorizationRequestRepository
 
     public static final String OAUTH2_AUTHORIZATION_REQUEST_COOKIE_NAME = "oauth2_auth_request";
     private static final Duration COOKIE_EXPIRE_DURATION = Duration.ofMinutes(3);
+
+    // La cookie la manda el navegador: solo se arman las clases del request de OAuth, cualquier otra se rechaza
+    private static final ObjectInputFilter CLASES_PERMITIDAS = ObjectInputFilter.Config.createFilter(
+            "org.springframework.security.oauth2.core.**;java.util.*;java.lang.*;!*");
 
     @Override
     public OAuth2AuthorizationRequest loadAuthorizationRequest(HttpServletRequest request) {
@@ -117,6 +122,7 @@ public class HttpCookieOAuth2AuthorizationRequestRepository
         }
         try (ByteArrayInputStream bais = new ByteArrayInputStream(Base64.getUrlDecoder().decode(base64));
              ObjectInputStream ois = new ObjectInputStream(bais)) {
+            ois.setObjectInputFilter(CLASES_PERMITIDAS);
             return (OAuth2AuthorizationRequest) ois.readObject();
         } catch (Exception e) {
             LOGGER.warn("No se pudo deserializar el OAuth2AuthorizationRequest desde la cookie: {}", e.getMessage());
