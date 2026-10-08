@@ -19,6 +19,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
+import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -61,12 +62,16 @@ class UsuarioEdicionServiceTest {
     @Mock
     private ApplicationEventPublisher eventos;
 
+    // sin stub devuelve Optional.empty(): para los tests de siempre no hay nadie logueado
+    @Mock
+    private CurrentUserProvider currentUserProvider;
+
     private UsuarioEdicionService servicio;
 
     @BeforeEach
     void crearServicio() {
         servicio = new UsuarioEdicionService(usuarioRepository, personaRepository, passwordEncoder,
-                new AdminProperties("admin", "admin@pica.local", "x"), eventos);
+                new AdminProperties("admin", "admin@pica.local", "x"), eventos, currentUserProvider);
     }
 
     // --- modificar ---------------------------------------------------------------
@@ -415,6 +420,101 @@ class UsuarioEdicionServiceTest {
                 .isInstanceOf(NoEncontradoException.class);
         assertThat(admin.getPasswordHash()).isEqualTo("$2a$12$hash");
         verifyNoInteractions(passwordEncoder, eventos);
+    }
+
+    // --- sobre sí mismo (CE2-1) ----------------------------------------------------
+
+    @Test
+    @DisplayName("eliminar: darse de baja a uno mismo es 403 ACCION_SOBRE_SI_MISMO y sigue activo")
+    void noSePuedeDarDeBajaASiMismo() {
+        Usuario yo = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        when(usuarioRepository.findByIdIncluyendoEliminados(ID)).thenReturn(Optional.of(yo));
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));
+
+        assertThatThrownBy(() -> servicio.eliminar(ID))
+                .isInstanceOf(ProhibidoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.ACCION_SOBRE_SI_MISMO);
+        assertThat(yo.getEliminadoEn()).isNull();
+        verify(usuarioRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(eventos);
+    }
+
+    @Test
+    @DisplayName("modificar: bloquearse a uno mismo es 403 ACCION_SOBRE_SI_MISMO y no cambia nada")
+    void noSePuedeBloquearASiMismo() {
+        Usuario yo = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(yo));
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));
+
+        assertThatThrownBy(() -> servicio.modificar(ID, pedido("otro.nombre", "juan@example.com", null,
+                EstadoEditable.BLOQUEADO, PERSONA_ID)))
+                .isInstanceOf(ProhibidoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.ACCION_SOBRE_SI_MISMO);
+        assertThat(yo.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
+        assertThat(yo.getUsername()).isEqualTo("juan");
+        verify(usuarioRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(eventos);
+    }
+
+    @Test
+    @DisplayName("modificar: editar los propios datos sin bloquearse sigue permitido")
+    void sePuedeEditarASiMismoSinBloquearse() {
+        Usuario yo = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(yo));
+
+        servicio.modificar(ID, pedido("juan.perez", "juan@example.com", "mi nota", EstadoEditable.ACTIVO, PERSONA_ID));
+
+        assertThat(yo.getUsername()).isEqualTo("juan.perez");
+        assertThat(yo.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
+        // con ACTIVO ni siquiera hace falta saber quién pide
+        verifyNoInteractions(currentUserProvider);
+    }
+
+    @Test
+    @DisplayName("resetearPassword: resetearse la propia contraseña es 403 ACCION_SOBRE_SI_MISMO")
+    void noSePuedeResetearLaPropiaContrasena() {
+        Usuario yo = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(yo));
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));
+
+        assertThatThrownBy(() -> servicio.resetearPassword(ID, "Temporal1"))
+                .isInstanceOf(ProhibidoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.ACCION_SOBRE_SI_MISMO);
+        assertThat(yo.getPasswordHash()).isEqualTo("$2a$12$hash");
+        verifyNoInteractions(passwordEncoder, eventos);
+    }
+
+    @Test
+    @DisplayName("sobre otro usuario, baja, bloqueo y reset siguen funcionando para quien está logueado")
+    void sobreOtroUsuarioSiguePermitido() {
+        Long otroId = 7L;
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(otroId));
+        Usuario aBloquear = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(aBloquear));
+        when(passwordEncoder.encode("Temporal1")).thenReturn("$2a$12$nuevo");
+
+        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.BLOQUEADO, PERSONA_ID));
+        servicio.resetearPassword(ID, "Temporal1");
+
+        assertThat(aBloquear.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
+        assertThat(aBloquear.getPasswordHash()).isEqualTo("$2a$12$nuevo");
+
+        Usuario aDarDeBaja = usuario(8L, "ana", "ana@example.com", persona(11L));
+        when(usuarioRepository.findByIdIncluyendoEliminados(8L)).thenReturn(Optional.of(aDarDeBaja));
+        servicio.eliminar(8L);
+        assertThat(aDarDeBaja.getEliminadoEn()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("el Admin del sistema sobre sí mismo sigue recibiendo USUARIO_PROTEGIDO")
+    void elAdminSobreSiMismoEsProtegido() {
+        Usuario admin = usuario(1L, "admin", "admin@pica.local", persona(PERSONA_ID));
+        when(usuarioRepository.findByIdIncluyendoEliminados(1L)).thenReturn(Optional.of(admin));
+
+        assertThatThrownBy(() -> servicio.eliminar(1L))
+                .isInstanceOf(ProhibidoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.USUARIO_PROTEGIDO);
+        verifyNoInteractions(currentUserProvider);
     }
 
     // --- helpers -----------------------------------------------------------------
