@@ -17,6 +17,7 @@ import java.security.spec.RSAPublicKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
+import com.hydra.pica.plataforma_pica.common.config.SesionConfig.SesionProperties;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.SignatureException;
@@ -31,7 +32,7 @@ class JwtServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         keyPair = generarKeyPair();
-        jwtService = new JwtService(keyPair);
+        jwtService = new JwtService(keyPair, SesionProperties.porDefecto());
     }
 
     @Test
@@ -55,6 +56,16 @@ class JwtServiceTest {
         assertThat(claims.getExpiration()).isAfter(claims.getIssuedAt());
         assertThat(claims.getExpiration().getTime() - claims.getIssuedAt().getTime())
                 .isEqualTo(15 * 60 * 1000L);
+    }
+
+    @Test
+    void laVidaDelAccessTokenSaleDeLaConfiguracion() {
+        var sesion = new SesionProperties(java.time.Duration.ofMinutes(5), null, null);
+        String token = new JwtService(keyPair, sesion).generarAccessToken(42L, "jperez", List.of(), List.of(), 0);
+
+        var claims = jwtService.validar(token).getPayload();
+
+        assertThat(claims.getExpiration().getTime() - claims.getIssuedAt().getTime()).isEqualTo(5 * 60 * 1000L);
     }
 
     @Test
@@ -162,7 +173,7 @@ class JwtServiceTest {
                 new BigInteger(1, Base64.getUrlDecoder().decode(n)),
                 new BigInteger(1, Base64.getUrlDecoder().decode("AQAB"))));
 
-        var key = new JwtService(new KeyPair(publicKey, null)).obtenerJwks().keys().get(0);
+        var key = new JwtService(new KeyPair(publicKey, null), SesionProperties.porDefecto()).obtenerJwks().keys().get(0);
 
         assertThat(key.n()).isEqualTo(n);
         assertThat(key.e()).isEqualTo("AQAB");
