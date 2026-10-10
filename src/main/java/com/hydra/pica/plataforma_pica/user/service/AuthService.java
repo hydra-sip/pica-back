@@ -3,12 +3,12 @@ package com.hydra.pica.plataforma_pica.user.service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
+import com.hydra.pica.plataforma_pica.common.config.SesionConfig.SesionProperties;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
@@ -35,9 +35,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AuthService {
 
-    private static final Duration REFRESH_TOKEN_DURATION = Duration.ofDays(7);
-    private static final long ACCESS_TOKEN_EXPIRES_IN_SECONDS = 900L;
-
     private final UsuarioRepository usuarioRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
@@ -45,6 +42,7 @@ public class AuthService {
     private final PermisoService permisoService;
     private final UsuarioService usuarioService;
     private final OAuthCodeStore oAuthCodeStore;
+    private final SesionProperties sesion;
 
     @Transactional
     public Usuario procesarLoginGoogle(
@@ -93,7 +91,7 @@ public class AuthService {
                         "El usuario asociado al código no existe"));
 
         validarEstado(usuario);
-        return emitirPar(usuario, userAgent);
+        return emitirPar(usuario, userAgent, Instant.now());
     }
 
     @Transactional
@@ -106,7 +104,7 @@ public class AuthService {
         }
 
         validarEstado(usuario);
-        return emitirPar(usuario, userAgent);
+        return emitirPar(usuario, userAgent, Instant.now());
     }
 
     // noRollbackFor: al detectar un refresh reutilizado se revoca la familia y además se responde 401;
@@ -123,8 +121,13 @@ public class AuthService {
             throw refreshException(CodigoError.REFRESH_REUTILIZADO,
                     "El refresh token ya fue utilizado y la sesión fue invalidada");
         }
-        // cerrado por logout, por una baja/bloqueo/cambio de clave o de roles, o vencido
+        // cerrado por logout, por una baja/bloqueo/cambio de clave o de roles, o vencido por inactividad
         if (actual.getRevocadoEn() != null || !actual.getExpiraEn().isAfter(Instant.now())) {
+            throw refreshInvalido();
+        }
+        // la sesión llegó a su máximo absoluto desde el login, aunque se haya usado todo el tiempo
+        Instant inicioSesion = inicioDeSesion(actual);
+        if (!inicioSesion.plus(sesion.sesionMaxima()).isAfter(Instant.now())) {
             throw refreshInvalido();
         }
         // dado de baja, bloqueado o con el mail cambiado sin verificar no renueva aunque el token siga vivo
@@ -132,7 +135,7 @@ public class AuthService {
             throw refreshInvalido();
         }
 
-        TokenPair par = emitirPar(actual.getUsuario(), userAgent);
+        TokenPair par = emitirPar(actual.getUsuario(), userAgent, inicioSesion);
         actual.setRevocadoEn(Instant.now());
         actual.setReemplazadoPor(hash(par.refreshToken()));
         refreshTokenRepository.save(actual);
@@ -197,7 +200,19 @@ public class AuthService {
         }
     }
 
-    private TokenPair emitirPar(Usuario usuario, String userAgent) {
+    // Tokens anteriores a V8 traen la columna completada con su creado_en; null solo llega de un token armado a mano
+    private static Instant inicioDeSesion(RefreshToken token) {
+        if (token.getSesionIniciadaEn() != null) {
+            return token.getSesionIniciadaEn();
+        }
+        return token.getCreadoEn() != null ? token.getCreadoEn() : Instant.now();
+    }
+
+    /**
+     * Emite access + refresh. El refresh vence por inactividad ({@code refreshTtl}) o al llegar al máximo
+     * de la sesión, lo que pase primero: así nunca se puede renovar más allá del tope (CE2-8).
+     */
+    private TokenPair emitirPar(Usuario usuario, String userAgent, Instant inicioSesion) {
         // solo cuentan los roles activos; permisosDe ya filtra por estado de rol y usuario
         List<String> roles = usuario.getRoles().stream()
                 .map(asignacion -> asignacion.getRol())
@@ -212,14 +227,18 @@ public class AuthService {
         String accessToken = jwtService.generarAccessToken(
                 usuario.getId(), usuario.getUsername(), roles, permisos, usuario.getVersionSesion());
         String refreshToken = UUID.randomUUID().toString();
+        Instant ahora = Instant.now();
+        Instant porInactividad = ahora.plus(sesion.refreshTtl());
+        Instant porMaximo = inicioSesion.plus(sesion.sesionMaxima());
         RefreshToken entidad = new RefreshToken();
         entidad.setUsuario(usuario);
         entidad.setTokenHash(hash(refreshToken));
-        entidad.setExpiraEn(Instant.now().plus(REFRESH_TOKEN_DURATION));
-        entidad.setCreadoEn(Instant.now());
+        entidad.setExpiraEn(porInactividad.isBefore(porMaximo) ? porInactividad : porMaximo);
+        entidad.setCreadoEn(ahora);
+        entidad.setSesionIniciadaEn(inicioSesion);
         entidad.setUserAgent(userAgent);
         refreshTokenRepository.save(entidad);
-        return new TokenPair(accessToken, refreshToken, "Bearer", ACCESS_TOKEN_EXPIRES_IN_SECONDS);
+        return new TokenPair(accessToken, refreshToken, "Bearer", sesion.accessTtl().toSeconds());
     }
 
     private static String hash(String token) {

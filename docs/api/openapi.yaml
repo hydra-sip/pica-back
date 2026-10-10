@@ -130,6 +130,9 @@ paths:
         Devuelve un par nuevo y revoca el refresh usado. Si se reutiliza uno ya rotado se revoca
         toda la familia. 401 `REFRESH_INVALIDO` o `REFRESH_REUTILIZADO`; el front en ambos casos
         limpia la sesión y va al login.
+        La sesión vence por inactividad (cada refresh dura `app.auth.refresh-ttl`, 24 h por defecto, y
+        rota en cada uso) o al llegar al máximo desde el login (`app.auth.sesion-maxima`, 7 días por
+        defecto), lo que pase primero; en los dos casos responde `REFRESH_INVALIDO`.
       requestBody: {$ref: '#/components/requestBodies/Refresh'}
       responses:
         '200': {$ref: '#/components/responses/Tokens'}
@@ -814,7 +817,7 @@ components:
         accessToken: {type: string, description: 'JWT. En memoria en el front, nunca en localStorage'}
         refreshToken: {type: string, description: Opaco. El front lo guarda en localStorage}
         tokenType: {type: string, const: Bearer}
-        expiresIn: {type: integer, description: Segundos de vida del access, examples: [900]}
+        expiresIn: {type: integer, description: 'Segundos de vida del access (app.auth.access-ttl, 15 min por defecto)', examples: [900]}
 
     # --- perfil --------------------------------------------------------------
     Me:
