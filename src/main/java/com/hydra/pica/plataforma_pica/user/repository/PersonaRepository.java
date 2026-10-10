@@ -4,6 +4,7 @@ import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -36,4 +37,18 @@ public interface PersonaRepository extends JpaRepository<Persona, Long>, Persona
     @Query(value = "SELECT p.* FROM persona p JOIN usuario u ON u.persona_id = p.id WHERE u.id = :usuarioId",
             nativeQuery = true)
     Optional<Persona> findByUsuarioIdIncluyendoEliminadas(@Param("usuarioId") Long usuarioId);
+
+    /**
+     * Después de borrar un registro que nunca se verificó (CE2-5), borra su persona si no tiene otro
+     * uso: que ningún usuario la tenga y que nadie logueado la haya creado ni tocado. Una persona que
+     * cargó un admin y el registro solo vinculó por documento se queda.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+            DELETE FROM persona p
+            WHERE p.id = :id
+              AND p.creado_por = 'SISTEMA' AND p.modificado_por = 'SISTEMA'
+              AND NOT EXISTS (SELECT 1 FROM usuario u WHERE u.persona_id = p.id)
+            """, nativeQuery = true)
+    int borrarSiNoTieneOtroUso(@Param("id") Long id);
 }
