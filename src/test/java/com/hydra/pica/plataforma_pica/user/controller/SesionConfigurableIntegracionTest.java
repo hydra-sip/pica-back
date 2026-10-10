@@ -31,11 +31,15 @@ import org.springframework.test.web.servlet.ResultActions;
  * CE2-8: las duraciones de la sesión salen de la configuración. Con valores cortos se ve, contra
  * Postgres y sin tocar código, que una sesión sin uso vence por inactividad y que una usada todo el
  * tiempo igual se corta al llegar al máximo desde el login.
+ *
+ * Usa el reloj real, así que los tiempos dejan 1,5 s de margen en cada paso para lo que tardan los
+ * requests en un CI cargado. A futuro conviene inyectar un Clock en AuthService y adelantarlo desde el
+ * test: sin esperas ni márgenes.
  */
 @SpringBootTest(properties = {
         "app.auth.access-ttl=1m",
-        "app.auth.refresh-ttl=2s",
-        "app.auth.sesion-maxima=4s"})
+        "app.auth.refresh-ttl=5s",
+        "app.auth.sesion-maxima=10s"})
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
 @Import(TestcontainersConfiguration.class)
@@ -58,7 +62,7 @@ class SesionConfigurableIntegracionTest {
     void unaSesionSinUsoVencePorInactividad() throws Exception {
         JsonNode par = login(usuarioActivo());
 
-        Thread.sleep(2_500);
+        Thread.sleep(6_000);
 
         refresh(par)
                 .andExpect(status().isUnauthorized())
@@ -69,12 +73,13 @@ class SesionConfigurableIntegracionTest {
     void unaSesionUsadaTodoElTiempoSeCortaAlLlegarAlMaximo() throws Exception {
         JsonNode par = login(usuarioActivo());
 
-        // se renueva antes de los 2 s de inactividad, así que solo la puede cortar el máximo de 4 s
-        Thread.sleep(1_500);
+        // se renueva cada 3,5 s, antes de los 5 s de inactividad, así que solo la puede cortar el máximo
+        // de 10 s: el último refresh llega a los 10,5 s, cuando por inactividad todavía estaría vivo
+        Thread.sleep(3_500);
         par = renovar(par);
-        Thread.sleep(1_500);
+        Thread.sleep(3_500);
         par = renovar(par);
-        Thread.sleep(1_500);
+        Thread.sleep(3_500);
 
         refresh(par)
                 .andExpect(status().isUnauthorized())
