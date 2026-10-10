@@ -97,6 +97,17 @@ class PersonaAdminRepositoryTest {
     }
 
     @Test
+    @DisplayName("q no distingue tildes: perez, PEREZ y Pérez traen lo mismo")
+    void filtraSinTildes() {
+        for (String q : List.of("perez", "PEREZ", "Pérez", "pérez")) {
+            assertThat(personaRepository.buscar(q, null, false, PAGINA).getContent())
+                    .as(q).extracting(PersonaAdminRow::id).containsExactly(perez.getId());
+        }
+        assertThat(personaRepository.buscar("gomez", null, false, PAGINA).getContent())
+                .extracting(PersonaAdminRow::id).containsExactly(gomez.getId());
+    }
+
+    @Test
     @DisplayName("estado filtra por ACTIVO o INACTIVO")
     void filtraPorEstado() {
         assertThat(personaRepository.buscar(null, EstadoGeneral.INACTIVO, false, PAGINA).getContent())

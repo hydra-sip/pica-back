@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.time.Instant;
@@ -49,9 +50,11 @@ class SecurityConfigTest {
     void sinHeaderResponde401NoAutenticado() throws Exception {
         mockMvc.perform(get("/prueba/protegido"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+                // MockMvc ya escribe en UTF-8; lo que se ve por curl es el charset que anuncia el header
+                .andExpect(content().contentType(new MediaType(PROBLEM_JSON, StandardCharsets.UTF_8)))
                 .andExpect(jsonPath("$.status").value(401))
-                .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+                .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"))
+                .andExpect(jsonPath("$.detail").value("Hace falta iniciar sesión"));
     }
 
     @Test

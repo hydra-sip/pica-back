@@ -258,7 +258,7 @@ paths:
       x-jira: PICA-114
       x-owner: Laura
       x-permiso: USUARIO_VER
-      description: '`q` busca en username, email, apellido y número de documento. Los filtros se combinan con AND.'
+      description: '`q` busca en username, email, apellido y número de documento, sin distinguir mayúsculas ni tildes. Los filtros se combinan con AND.'
       parameters:
         - {$ref: '#/components/parameters/q'}
         - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoUsuario'}}
@@ -407,7 +407,7 @@ paths:
       x-jira: PICA-123
       x-owner: Laura
       x-permiso: PERSONA_VER
-      description: '`q` busca por apellido o número de documento. Lo usa el buscador del alta de usuario: por eso cada fila trae `tieneUsuario`.'
+      description: '`q` busca por apellido o número de documento, sin distinguir mayúsculas ni tildes. Lo usa el buscador del alta de usuario: por eso cada fila trae `tieneUsuario`.'
       parameters:
         - {$ref: '#/components/parameters/q'}
         - {name: estado, in: query, schema: {$ref: '#/components/schemas/Estado'}}

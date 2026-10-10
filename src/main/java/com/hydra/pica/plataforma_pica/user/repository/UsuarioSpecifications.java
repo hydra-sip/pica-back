@@ -14,18 +14,18 @@ public final class UsuarioSpecifications {
     }
 
     public static Specification<Usuario> conTexto(String texto) {
-        if (texto == null || texto.isBlank()) {
+        String patron = BusquedaSinTildes.patron(texto);
+        if (patron == null) {
             return null;
         }
-        String patron = "%" + texto.trim().toLowerCase() + "%";
         return (root, query, cb) -> {
             query.distinct(true);
             Join<Usuario, Persona> persona = root.join("persona");
             return cb.or(
-                    cb.like(cb.lower(root.get("username")), patron),
-                    cb.like(cb.lower(root.get("email")), patron),
-                    cb.like(cb.lower(persona.get("apellidos")), patron),
-                    cb.like(cb.lower(persona.get("nroDoc")), patron));
+                    cb.like(BusquedaSinTildes.criteria(cb, root.get("username")), patron),
+                    cb.like(BusquedaSinTildes.criteria(cb, root.get("email")), patron),
+                    cb.like(BusquedaSinTildes.criteria(cb, persona.get("apellidos")), patron),
+                    cb.like(BusquedaSinTildes.criteria(cb, persona.get("nroDoc")), patron));
         };
     }
 
