@@ -178,8 +178,8 @@ class UsuarioServiceIntegracionTest {
 
     @Test
     void emailDuplicadoDa409SinDistinguirMayusculas() {
-        usuarioService.crear(NuevoUsuario.autoRegistro("jperez", "juan@example.com", "Pica2026",
-                new DatosPersona(TipoDoc.DNI, "30123456", "Juan", "Pérez", null, null, null)));
+        // verificada: un registro pendiente no reserva el email (CE2-5, EmailReservadoIntegracionTest)
+        usuarioService.crear(NuevoUsuario.desdeGoogle("juan@example.com", "google-sub-1", "Juan", "Pérez"));
 
         assertThatThrownBy(() -> usuarioService.crear(NuevoUsuario.autoRegistro("otro", "Juan@Example.com",
                 "Pica2026", new DatosPersona(TipoDoc.DNI, "40111222", "Ana", "García", null, null, null))))

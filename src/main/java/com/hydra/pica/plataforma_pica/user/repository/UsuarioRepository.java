@@ -83,6 +83,19 @@ public interface UsuarioRepository extends
     boolean existsByPersonaIdIncluyendoEliminados(@Param("personaId") Long personaId);
 
     /**
+     * Borra de verdad un registro que nunca se verificó, para que otro pueda usar su email (CE2-5).
+     * Sus asignaciones de rol van antes por la FK; refresh tokens no tiene porque nunca pudo entrar.
+     * Nativa y con clear: si dos registros lo reemplazan a la vez, el segundo borra 0 filas en vez de
+     * tirar un error de Hibernate, y pierde contra el índice único del email (409).
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+            WITH roles AS (DELETE FROM usuario_rol WHERE usuario_id = :id)
+            DELETE FROM usuario WHERE id = :id
+            """, nativeQuery = true)
+    int borrarAltaSinVerificar(@Param("id") Long id);
+
+    /**
      * El usuario de una persona, esté o no dado de baja: persona_id es único contando a los
      * eliminados. Para la ficha de la persona y para saber si se la puede dar de baja.
      */
