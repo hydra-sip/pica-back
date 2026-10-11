@@ -67,6 +67,11 @@ public class Usuario extends AuditableEntity {
     @Column(name = "email_verificado", nullable = false)
     private boolean emailVerificado;
 
+    // La primera vez que tuvo el mail verificado. Sigue puesta aunque después le cambien el email:
+    // es lo que separa una cuenta real de un registro que nunca se verificó (CE2-5)
+    @Column(name = "primera_verificacion_en")
+    private Instant primeraVerificacionEn;
+
     // Solo lectura: la sube UsuarioRepository.incrementarVersionSesion. Si Hibernate la escribiera,
     // un save posterior del mismo usuario pisaría el incremento con el valor viejo.
     @Column(name = "version_sesion", nullable = false, insertable = false, updatable = false)
@@ -86,6 +91,22 @@ public class Usuario extends AuditableEntity {
 
     @Column(name = "eliminado_en")
     private Instant eliminadoEn;
+
+    /** Deja el mail verificado y, si es la primera vez, lo anota en {@code primeraVerificacionEn}. */
+    public void marcarEmailVerificado() {
+        emailVerificado = true;
+        if (primeraVerificacionEn == null) {
+            primeraVerificacionEn = Instant.now();
+        }
+    }
+
+    /**
+     * Un registro que nunca se verificó: no reserva su email. Una cuenta a la que un admin le cambió
+     * el email queda también pendiente y sin verificar, pero ya se usó y no entra acá.
+     */
+    public boolean esAltaSinVerificar() {
+        return estado == EstadoUsuario.PENDIENTE_VERIFICACION && primeraVerificacionEn == null;
+    }
 
     @Override
     public String toString() {

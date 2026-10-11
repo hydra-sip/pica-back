@@ -91,11 +91,15 @@ class OAuthLoginIntegracionTest {
     }
 
     @Test
-    @DisplayName("Usuario existente por email vincula googleSub y canjea código")
+    @DisplayName("Usuario existente y verificado por email vincula googleSub y canjea código")
     void vinculaUsuarioExistentePorEmail() throws Exception {
         String email = "existente.registro@example.com";
         DatosPersona persona = new DatosPersona(null, null, "Laura", "Fernández", null, null, null);
         Usuario registrado = usuarioService.crear(NuevoUsuario.autoRegistro("lauraf", email, "Pica2026", persona));
+        // solo se vincula una cuenta verificada (CE2-5); el registro pendiente se descarta
+        registrado.setEstado(EstadoUsuario.ACTIVO);
+        registrado.marcarEmailVerificado();
+        usuarioRepository.save(registrado);
 
         String googleSub = "sub-google-2002";
         Usuario vinculo = authService.procesarLoginGoogle(googleSub, email, true, "Laura", "Fernández");

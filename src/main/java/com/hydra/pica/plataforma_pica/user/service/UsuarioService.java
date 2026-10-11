@@ -34,7 +34,8 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link NuevoUsuario} con la fábrica que les corresponde y llaman a {@link #crear}.
  *
  * Orden de las validaciones, pensado para que el error que ve el usuario sea el que puede arreglar:
- * primero username y email (409 USERNAME_DUPLICADO / EMAIL_DUPLICADO), después la persona
+ * primero username y email (409 USERNAME_DUPLICADO / EMAIL_DUPLICADO; un registro que nunca se
+ * verificó no reserva ninguno de los dos, ver {@link #descartarAltaSinVerificar}), después la persona
  * (404 PERSONA_NO_ENCONTRADA, 409 PERSONA_INACTIVA / PERSONA_CON_USUARIO) y por último los roles
  * (404 ROL_NO_ENCONTRADO, 409 ROL_INACTIVO). Todo dentro de una transacción: si algo falla no queda
  * ni la persona nueva ni el usuario a medias.
@@ -59,6 +60,9 @@ public class UsuarioService {
 
     @Transactional
     public Usuario crear(NuevoUsuario nuevo) {
+        // antes que todo: libera también el username del registro descartado, por si lo vuelve a elegir
+        descartarAltaSinVerificar(nuevo.email());
+
         // solo Google llega sin username: el registro y el admin lo eligen y el record los obliga
         String username = nuevo.username() != null ? nuevo.username() : generarUsername(nuevo.email());
 
@@ -79,7 +83,9 @@ public class UsuarioService {
         usuario.setGoogleSub(nuevo.googleSub());
         usuario.setDescripcion(nuevo.descripcion());
         usuario.setEstado(nuevo.estadoInicial());
-        usuario.setEmailVerificado(nuevo.emailVerificado());
+        if (nuevo.emailVerificado()) {
+            usuario.marcarEmailVerificado();
+        }
         usuario.setPersona(persona);
 
         try {
@@ -101,6 +107,23 @@ public class UsuarioService {
         eventos.publishEvent(new UsuarioCreado(usuario.getId(), username, usuario.getEmail(),
                 !usuario.isEmailVerificado()));
         return usuario;
+    }
+
+    /**
+     * El email solo lo reserva una cuenta que se verificó alguna vez (CE2-5): si es de un registro que
+     * nunca se verificó, ese registro se borra con su token y su persona si no tiene otro uso, y el
+     * alta sigue como si no existiera. Su link de verificación deja de servir. Si el alta falla más
+     * abajo, el rollback lo devuelve. Una cuenta dada de baja sigue reservando su email.
+     */
+    private void descartarAltaSinVerificar(String email) {
+        usuarioRepository.findByEmailIgnoreCase(email)
+                .filter(Usuario::esAltaSinVerificar)
+                .ifPresent(pendiente -> {
+                    // getId del proxy no va a la base
+                    Long personaId = pendiente.getPersona().getId();
+                    usuarioRepository.borrarAltaSinVerificar(pendiente.getId());
+                    personaRepository.borrarSiNoTieneOtroUso(personaId);
+                });
     }
 
     private Persona resolverPersona(NuevoUsuario nuevo) {

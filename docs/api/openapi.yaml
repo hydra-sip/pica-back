@@ -64,6 +64,9 @@ paths:
         Crea la persona (o la vincula si ya existe una activa con ese documento) y el usuario
         PARTICIPANTE en `PENDIENTE_VERIFICACION`. Manda el mail de verificación (en dev lo loguea).
         Por dentro: `UsuarioService.crear(NuevoUsuario.autoRegistro(...))`.
+        El email solo lo reserva una cuenta que se verificó alguna vez (CE2-5): si es de un registro
+        que nunca se verificó, ese registro se borra (con su persona si no tiene otro uso) y se crea
+        el nuevo; el link del primero deja de servir. Lo mismo vale para el alta por admin.
         409: `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`.
       requestBody: {$ref: '#/components/requestBodies/Registro'}
       responses:
@@ -161,9 +164,12 @@ paths:
         mail verificado) y redirige a `{APP_WEB_URL}/oauth/callback?code=`. El front canjea ese
         código acá. Dura 60 s, un solo uso. El JWT nunca va en la URL. 400 `CODIGO_INVALIDO`.
         403 `USUARIO_BLOQUEADO`.
-        Vincular por email o crear exige que Google haya verificado el mail. Si el login falla antes
+        Vincular por email o crear exige que Google haya verificado el mail. Solo se vincula a una
+        cuenta con el mail verificado: un registro que nunca se verificó se descarta y se crea la
+        cuenta de Google, así su contraseña deja de entrar (CE2-5). Si el login falla antes
         del canje, redirige a `{APP_WEB_URL}/oauth/callback?error=` con el código:
-        `NO_AUTENTICADO` (cancelado en Google), `EMAIL_NO_VERIFICADO` (Google no verificó el mail),
+        `NO_AUTENTICADO` (cancelado en Google), `EMAIL_NO_VERIFICADO` (Google no verificó el mail, o
+        la cuenta de ese mail es real pero lo tiene sin verificar porque un admin se lo cambió),
         `CREDENCIALES_INVALIDAS` (el usuario de ese mail ya tiene otra cuenta de Google),
         `EMAIL_DUPLICADO` (el mail es de un usuario dado de baja) o `ERROR_INTERNO`.
       requestBody:

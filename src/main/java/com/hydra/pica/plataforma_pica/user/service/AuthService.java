@@ -62,18 +62,20 @@ public class AuthService {
         }
 
         usuario = usuarioRepository.findByEmailIgnoreCase(email).orElse(null);
-        if (usuario != null) {
+        // un registro que nunca se verificó no se vincula: lo pudo hacer cualquiera con el mail de otro
+        // y su clave seguiría entrando. crear lo descarta y arma la cuenta de Google (CE2-5)
+        if (usuario != null && !usuario.esAltaSinVerificar()) {
             // ya tiene otra cuenta de Google vinculada (con la misma no llegaría acá)
             if (usuario.getGoogleSub() != null) {
                 throw credencialesInvalidas();
             }
-            usuario.setGoogleSub(googleSub);
+            // una cuenta real con el mail sin verificar (un admin se lo cambió): nadie probó todavía que
+            // ese mail sea de su dueño, así que tampoco se vincula. Primero tiene que usar el link
             if (!usuario.isEmailVerificado()) {
-                usuario.setEmailVerificado(true);
+                throw new ApiException(HttpStatus.FORBIDDEN, CodigoError.EMAIL_NO_VERIFICADO,
+                        "La cuenta de ese email todavía no lo verificó");
             }
-            if (usuario.getEstado() == EstadoUsuario.PENDIENTE_VERIFICACION) {
-                usuario.setEstado(EstadoUsuario.ACTIVO);
-            }
+            usuario.setGoogleSub(googleSub);
             return usuarioRepository.save(usuario);
         }
 
