@@ -122,6 +122,28 @@ class HttpCookieOAuth2AuthorizationRequestRepositoryTest {
         assertThat(Ajena.armadas).isZero();
     }
 
+    @Test
+    @DisplayName("Una cookie de más de 4 KB se rechaza aunque solo traiga clases permitidas")
+    void cookieDemasiadoGrandeSeRechaza() throws IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setCookies(cookieCon("x".repeat(5000)));
+
+        assertThat(repository.loadAuthorizationRequest(request)).isNull();
+    }
+
+    @Test
+    @DisplayName("Una cookie con colecciones anidadas de más se rechaza")
+    void cookieDemasiadoProfundaSeRechaza() throws IOException {
+        Object anidado = "fondo";
+        for (int i = 0; i < 10; i++) {
+            anidado = new java.util.ArrayList<>(java.util.List.of(anidado));
+        }
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setCookies(cookieCon(anidado));
+
+        assertThat(repository.loadAuthorizationRequest(request)).isNull();
+    }
+
     /** Cuenta cuántas veces se la deserializa: con el filtro tiene que quedar en cero. */
     static class Ajena implements Serializable {
         static int armadas;

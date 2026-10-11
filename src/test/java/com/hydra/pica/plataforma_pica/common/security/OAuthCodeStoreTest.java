@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.common.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -86,6 +87,17 @@ class OAuthCodeStoreTest {
         db.values().forEach(c -> c.setVenceEn(Instant.now().minusSeconds(10)));
 
         assertThat(store.consumirCodigo(code)).isNull();
+    }
+
+    @Test
+    @DisplayName("Al generar un código se borran los usados o vencidos")
+    void generarBorraLosUsadosOVencidos() {
+        Instant antes = Instant.now();
+
+        store.generarCodigo(42L);
+
+        verify(codigoCanjeOAuthRepository).borrarUsadosOVencidos(
+                org.mockito.ArgumentMatchers.argThat(ahora -> !ahora.isBefore(antes)));
     }
 
     @Test

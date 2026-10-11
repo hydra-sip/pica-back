@@ -39,9 +39,10 @@ public class HttpCookieOAuth2AuthorizationRequestRepository
     public static final String OAUTH2_AUTHORIZATION_REQUEST_COOKIE_NAME = "oauth2_auth_request";
     private static final Duration COOKIE_EXPIRE_DURATION = Duration.ofMinutes(3);
 
-    // La cookie la manda el navegador: solo se arman las clases del request de OAuth, cualquier otra se rechaza
+    // La cookie la manda el navegador: solo se arman las clases del request de OAuth, cualquier otra se rechaza.
+    // Un request real pesa ~2 KB con profundidad 4; los límites cortan grafos armados para gastar memoria.
     private static final ObjectInputFilter CLASES_PERMITIDAS = ObjectInputFilter.Config.createFilter(
-            "org.springframework.security.oauth2.core.**;java.util.*;java.lang.*;!*");
+            "maxdepth=8;maxbytes=4096;org.springframework.security.oauth2.core.**;java.util.*;java.lang.*;!*");
 
     @Override
     public OAuth2AuthorizationRequest loadAuthorizationRequest(HttpServletRequest request) {

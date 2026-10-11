@@ -39,6 +39,9 @@ public class OAuthCodeStore {
 
     @Transactional
     public String generarCodigo(Long usuarioId) {
+        // Sin un job programado (habría que coordinarlo entre réplicas): cada alta barre lo que ya no sirve
+        codigoCanjeOAuthRepository.borrarUsadosOVencidos(Instant.now());
+
         String code = UUID.randomUUID().toString();
         String hash = sha256Hex(code);
 
