@@ -213,3 +213,35 @@ En lugar de agrupar todo el código horizontalmente en carpetas gigantescas (`co
 - **Alta cohesión**: Todo lo relativo a torneos vive en el módulo `tournament`. Modificar una regla de torneos no requiere navegar por 5 extremos del árbol del proyecto.
 - **Encapsulamiento**: Permite usar modificadores de acceso de paquete (*package-private*) para componentes internos que no deban ser visibles fuera de la feature.
 - **Evolución a microservicios**: Si en el futuro un módulo como `payment` o `tournament` necesita escalarse independientemente, su extracción a un servicio separado es trivial.
+
+---
+
+## Escalado Horizontal sin Session Affinity (CE2-9)
+
+La API es **stateless**: el JWT lleva la sesión y lo demás vive en Postgres (refresh tokens, versión de sesión, códigos de canje de Google). El `state` del login con Google viaja en una cookie en lugar de la `HttpSession`, y fuera del perfil `dev` la API no arranca sin `JWT_PRIVATE_KEY` y `JWT_PUBLIC_KEY`, así todas las réplicas firman con la misma clave. Por eso puede correr con varias réplicas detrás de un balanceador en **Round Robin**, sin afinidad de sesión (*sticky sessions*).
+
+### Demostración con 2 réplicas y Nginx
+
+`docker-compose.replicas.yml` levanta dos instancias del backend (`api1` y `api2`) detrás de Nginx en Round Robin, en `http://localhost:8080`. Cada respuesta trae el header `X-Handled-By` con la réplica que la atendió.
+
+```bash
+# 1. Variables de las réplicas, con el par de claves RSA que comparten (en una sola línea cada una)
+cp .env.replicas.example .env.replicas
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt.pem
+sed -i "s|^JWT_PRIVATE_KEY=.*|JWT_PRIVATE_KEY=$(tr -d '\n' < jwt.pem)|" .env.replicas
+sed -i "s|^JWT_PUBLIC_KEY=.*|JWT_PUBLIC_KEY=$(openssl pkey -in jwt.pem -pubout | tr -d '\n')|" .env.replicas
+rm jwt.pem
+
+# 2. Levantar el stack
+docker compose -f docker-compose.replicas.yml up --build -d
+
+# 3. Probar login local, refresh, revocación, el state de Google en cookie y el canje del código
+./scripts/probar-replicas.sh
+
+# 4. Bajar el stack
+docker compose -f docker-compose.replicas.yml down -v
+```
+
+El script corta con error en el primer chequeo que falle, y cada paso lo tienen que atender las dos réplicas.
+
+**Login con Google (a mano).** El script no puede pasar por Google. Para probarlo completo: poner en `.env.replicas` las credenciales reales (`GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`), con `http://localhost:8080/login/oauth2/code/google` entre las URIs de redirección autorizadas del cliente; levantar el front con la API en `http://localhost:8080` y entrar con Google. La redirección a Google, la vuelta y el canje del código caen en réplicas distintas (se ve con `docker compose -f docker-compose.replicas.yml logs -f api1 api2`).

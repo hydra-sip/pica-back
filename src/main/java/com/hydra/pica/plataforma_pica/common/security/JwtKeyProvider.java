@@ -31,8 +31,8 @@ public class JwtKeyProvider {
 
     @Bean
     public KeyPair jwtKeyPair() {
-        String privateKeyPem = System.getenv(PRIVATE_KEY_VARIABLE);
-        String publicKeyPem = System.getenv(PUBLIC_KEY_VARIABLE);
+        String privateKeyPem = environment.getProperty(PRIVATE_KEY_VARIABLE);
+        String publicKeyPem = environment.getProperty(PUBLIC_KEY_VARIABLE);
         boolean privateKeyPresent = hasValue(privateKeyPem);
         boolean publicKeyPresent = hasValue(publicKeyPem);
 
