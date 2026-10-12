@@ -24,7 +24,7 @@ public class JwtTestSupportConfiguration {
 
     @Bean
     JwtService jwtService(KeyPair keyPair) {
-        return new JwtService(keyPair);
+        return new JwtService(keyPair, SesionConfig.SesionProperties.porDefecto());
     }
 
     @Bean

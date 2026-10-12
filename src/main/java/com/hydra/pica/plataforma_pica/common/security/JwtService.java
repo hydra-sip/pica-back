@@ -15,6 +15,7 @@ import java.security.PublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.Base64;
 
+import com.hydra.pica.plataforma_pica.common.config.SesionConfig.SesionProperties;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
@@ -23,15 +24,16 @@ import org.springframework.stereotype.Service;
 @Service
 public class JwtService {
 
-    private static final Duration ACCESS_TOKEN_DURATION = Duration.ofMinutes(15);
     public static final String CLAIM_VERSION_SESION = "versionSesion";
 
     private final KeyPair keyPair;
     private final JwkKeyDto jwk;
+    private final Duration accessTtl;
 
-    public JwtService(KeyPair keyPair) {
+    public JwtService(KeyPair keyPair, SesionProperties sesion) {
         this.keyPair = keyPair;
         this.jwk = armarJwk((RSAPublicKey) keyPair.getPublic());
+        this.accessTtl = sesion.accessTtl();
     }
 
     public String generarAccessToken(
@@ -51,7 +53,7 @@ public class JwtService {
                 .claim(CLAIM_VERSION_SESION, versionSesion)
                 .id(UUID.randomUUID().toString())
                 .issuedAt(Date.from(ahora))
-                .expiration(Date.from(ahora.plus(ACCESS_TOKEN_DURATION)))
+                .expiration(Date.from(ahora.plus(accessTtl)))
                 .signWith(keyPair.getPrivate(), Jwts.SIG.RS256)
                 .compact();
     }

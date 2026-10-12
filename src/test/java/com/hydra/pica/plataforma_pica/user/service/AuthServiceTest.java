@@ -7,11 +7,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import com.hydra.pica.plataforma_pica.common.config.SesionConfig.SesionProperties;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
@@ -56,7 +58,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(usuarioRepository, refreshTokenRepository, passwordEncoder, jwtService,
-                permisoService, usuarioService, oAuthCodeStore);
+                permisoService, usuarioService, oAuthCodeStore, SesionProperties.porDefecto());
         usuario = new Usuario();
         ReflectionTestUtils.setField(usuario, "id", 42L);
         usuario.setUsername("jperez");
@@ -206,6 +208,75 @@ class AuthServiceTest {
         verify(refreshTokenRepository).revocarActivosPorUsuario(org.mockito.ArgumentMatchers.eq(7L), any(Instant.class));
         verify(usuarioRepository).incrementarVersionSesion(42L);
         verify(usuarioRepository).incrementarVersionSesion(7L);
+    }
+
+    // --- duraciones configurables (CE2-8) ---------------------------------------------
+
+    private AuthService conSesion(Duration access, Duration inactividad, Duration maxima) {
+        return new AuthService(usuarioRepository, refreshTokenRepository, passwordEncoder, jwtService,
+                permisoService, usuarioService, oAuthCodeStore, new SesionProperties(access, inactividad, maxima));
+    }
+
+    @Test
+    void loginUsaLasDuracionesConfiguradasYMarcaElInicioDeLaSesion() {
+        AuthService servicio = conSesion(Duration.ofMinutes(5), Duration.ofHours(2), Duration.ofDays(1));
+        when(usuarioRepository.findByUsernameIgnoreCase("jperez")).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("Pica2026", "hash")).thenReturn(true);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Instant antes = Instant.now();
+
+        TokenPair par = servicio.login(new LoginRequest("jperez", "Pica2026"), "browser");
+
+        assertThat(par.expiresIn()).isEqualTo(300);
+        ArgumentCaptor<RefreshToken> captor = ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokenRepository).save(captor.capture());
+        RefreshToken guardado = captor.getValue();
+        // vence por inactividad: 2 horas desde ahora, que es antes que el máximo de 1 día
+        assertThat(guardado.getExpiraEn()).isBetween(antes.plus(Duration.ofHours(2)), Instant.now().plus(Duration.ofHours(2)));
+        assertThat(guardado.getSesionIniciadaEn()).isBetween(antes, Instant.now());
+    }
+
+    @Test
+    void refreshConservaElInicioDeLaSesionYNoVencePasadoElMaximo() {
+        AuthService servicio = conSesion(Duration.ofMinutes(15), Duration.ofHours(24), Duration.ofDays(7));
+        // sesión empezada hace 6 días y 23 horas: queda 1 hora de máximo, menos que las 24 de inactividad
+        Instant inicio = Instant.now().minus(Duration.ofDays(7)).plus(Duration.ofHours(1));
+        RefreshToken actual = token(Instant.now().plusSeconds(60));
+        actual.setSesionIniciadaEn(inicio);
+        when(refreshTokenRepository.findByTokenHash(any(String.class))).thenReturn(Optional.of(actual));
+        when(usuarioRepository.existsByIdAndEstado(42L, EstadoUsuario.ACTIVO)).thenReturn(true);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        servicio.refresh("refresh-old", "browser");
+
+        ArgumentCaptor<RefreshToken> captor = ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokenRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        RefreshToken nuevo = captor.getAllValues().get(0);
+        assertThat(nuevo.getSesionIniciadaEn()).isEqualTo(inicio);
+        assertThat(nuevo.getExpiraEn()).isEqualTo(inicio.plus(Duration.ofDays(7)));
+    }
+
+    @Test
+    void refreshDeUnaSesionQuePasoElMaximoRespondeRefreshInvalido() {
+        AuthService servicio = conSesion(Duration.ofMinutes(15), Duration.ofHours(24), Duration.ofDays(7));
+        RefreshToken actual = token(Instant.now().plusSeconds(60));
+        actual.setSesionIniciadaEn(Instant.now().minus(Duration.ofDays(7)).minusSeconds(1));
+        when(refreshTokenRepository.findByTokenHash(any(String.class))).thenReturn(Optional.of(actual));
+
+        assertThatThrownBy(() -> servicio.refresh("refresh-old", "browser"))
+                .extracting("codigo").isEqualTo(CodigoError.REFRESH_INVALIDO);
+        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
+    }
+
+    @Test
+    void refreshVencidoPorInactividadRespondeRefreshInvalido() {
+        RefreshToken actual = token(Instant.now().minusSeconds(1));
+        actual.setSesionIniciadaEn(Instant.now().minus(Duration.ofHours(30)));
+        when(refreshTokenRepository.findByTokenHash(any(String.class))).thenReturn(Optional.of(actual));
+
+        assertThatThrownBy(() -> authService.refresh("refresh-old", "browser"))
+                .extracting("codigo").isEqualTo(CodigoError.REFRESH_INVALIDO);
+        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
     }
 
     private RefreshToken token(Instant expiraEn) {

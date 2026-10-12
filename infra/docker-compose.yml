@@ -50,6 +50,10 @@ services:
       APP_WEB_URL: https://${DOMINIO}
       APP_CORS_ALLOWED_ORIGINS: https://${DOMINIO}
       APP_AUTH_VERIFICATION_BASE_URL: https://${DOMINIO}/api/v1/auth/verificar
+      # Sesión (CE2-8): opcionales, sin ellas valen los defaults
+      APP_AUTH_ACCESS_TTL: ${APP_AUTH_ACCESS_TTL:-15m}
+      APP_AUTH_REFRESH_TTL: ${APP_AUTH_REFRESH_TTL:-24h}
+      APP_AUTH_SESION_MAXIMA: ${APP_AUTH_SESION_MAXIMA:-7d}
     <<: *logs
 
   web:

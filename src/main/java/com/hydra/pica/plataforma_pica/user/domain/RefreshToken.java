@@ -51,10 +51,17 @@ public class RefreshToken {
     @Column(name = "creado_en", nullable = false, updatable = false)
     private Instant creadoEn;
 
+    /** Login que originó la sesión; se copia de token en token al rotar (CE2-8). */
+    @Column(name = "sesion_iniciada_en", nullable = false, updatable = false)
+    private Instant sesionIniciadaEn;
+
     @PrePersist
     void alPersistir() {
         if (creadoEn == null) {
             creadoEn = Instant.now();
+        }
+        if (sesionIniciadaEn == null) {
+            sesionIniciadaEn = creadoEn;
         }
     }
 }
