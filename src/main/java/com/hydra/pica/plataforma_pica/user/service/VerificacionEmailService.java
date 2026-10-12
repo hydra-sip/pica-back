@@ -95,7 +95,7 @@ public class VerificacionEmailService {
         }
 
         usuario.setEstado(EstadoUsuario.ACTIVO);
-        usuario.marcarEmailVerificado();
+        usuario.setEmailVerificado(true);
         usuarioRepository.save(usuario);
     }
 
