@@ -27,10 +27,15 @@ public class UsuarioRepositoryImpl implements UsuarioAdminRepositoryCustom {
             String q, EstadoUsuario estado, Long rolId, Pageable pageable) {
         String filters = """
                 WHERE (CAST(:q AS text) IS NULL OR
-                    lower(u.username) LIKE :q OR
-                    lower(u.email) LIKE :q OR
-                    lower(p.apellidos) LIKE :q OR
-                    lower(p.nro_doc) LIKE :q)
+                    %s LIKE :q OR
+                    %s LIKE :q OR
+                    %s LIKE :q OR
+                    %s LIKE :q)
+                """.formatted(
+                        BusquedaSinTildes.sql("u.username"),
+                        BusquedaSinTildes.sql("u.email"),
+                        BusquedaSinTildes.sql("p.apellidos"),
+                        BusquedaSinTildes.sql("p.nro_doc")) + """
                   AND (CAST(:estado AS varchar) IS NULL OR u.estado = :estado)
                   AND (CAST(:rolId AS bigint) IS NULL OR EXISTS (
                     SELECT 1 FROM usuario_rol urf
@@ -88,7 +93,7 @@ public class UsuarioRepositoryImpl implements UsuarioAdminRepositoryCustom {
 
     private Map<String, Object> parameters(String q, EstadoUsuario estado, Long rolId) {
         Map<String, Object> parameters = new HashMap<>();
-        parameters.put("q", q == null || q.isBlank() ? null : "%" + q.trim().toLowerCase() + "%");
+        parameters.put("q", BusquedaSinTildes.patron(q));
         parameters.put("estado", estado == null ? null : estado.name());
         parameters.put("rolId", rolId);
         return parameters;

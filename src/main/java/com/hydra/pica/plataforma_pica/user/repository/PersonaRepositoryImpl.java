@@ -36,8 +36,9 @@ public class PersonaRepositoryImpl implements PersonaAdminRepositoryCustom {
         String from = " FROM persona p ";
         String filtros = """
                 WHERE (CAST(:q AS text) IS NULL OR
-                       lower(p.apellidos) LIKE :q OR
-                       lower(p.nro_doc) LIKE :q)
+                       %s LIKE :q OR
+                       %s LIKE :q)
+                """.formatted(BusquedaSinTildes.sql("p.apellidos"), BusquedaSinTildes.sql("p.nro_doc")) + """
                   AND (CAST(:estado AS varchar) IS NULL OR p.estado = :estado)
                   AND (CAST(:incluirEliminados AS boolean) OR p.eliminado_en IS NULL)
                 """;
@@ -51,7 +52,7 @@ public class PersonaRepositoryImpl implements PersonaAdminRepositoryCustom {
         Query dataQuery = entityManager.createNativeQuery(select);
         Query countQuery = entityManager.createNativeQuery(count);
         for (Query query : List.of(dataQuery, countQuery)) {
-            query.setParameter("q", q == null || q.isBlank() ? null : "%" + q.trim().toLowerCase() + "%");
+            query.setParameter("q", BusquedaSinTildes.patron(q));
             query.setParameter("estado", estado == null ? null : estado.name());
             query.setParameter("incluirEliminados", incluirEliminados);
         }

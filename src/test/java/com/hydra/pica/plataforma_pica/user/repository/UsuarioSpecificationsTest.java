@@ -97,6 +97,24 @@ class UsuarioSpecificationsTest {
     }
 
     @Test
+    void conTextoBuscaElApellidoSinDistinguirTildes() {
+        Rol participante = rolRepository.findByNombre("PARTICIPANTE").orElseThrow();
+        crearUsuarioConRol(
+                "rnu", "rocio@example.com", EstadoUsuario.ACTIVO,
+                "Rocío", "Ibáñez", "444", List.of(participante));
+        entityManager.flush();
+        entityManager.clear();
+
+        for (String q : List.of("ibanez", "IBANEZ", "Ibáñez")) {
+            assertThat(buscar(UsuarioSpecifications.conTexto(q)))
+                    .as(q).extracting(Usuario::getUsername).containsExactly("rnu");
+            assertThat(usuarioRepository.buscarIncluyendoEliminados(q, null, null, PageRequest.of(0, 10)))
+                    .as(q).extracting(UsuarioAdminRepositoryCustom.UsuarioAdminRow::username)
+                    .containsExactly("rnu");
+        }
+    }
+
+    @Test
     void conEstadoFiltraPorEstadoExacto() {
         assertThat(buscar(UsuarioSpecifications.conEstado(EstadoUsuario.ACTIVO)))
                 .extracting(Usuario::getUsername)
