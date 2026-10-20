@@ -1,0 +1,50 @@
+package com.hydra.pica.plataforma_pica.user.dto;
+
+import java.time.LocalDate;
+
+import com.hydra.pica.plataforma_pica.common.validation.EdadEntre;
+import com.hydra.pica.plataforma_pica.common.validation.NombrePersona;
+import com.hydra.pica.plataforma_pica.common.validation.PasswordValida;
+import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
+import com.hydra.pica.plataforma_pica.user.validation.ConDocumento;
+import com.hydra.pica.plataforma_pica.user.validation.DocumentoValido;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PastOrPresent;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+
+@DocumentoValido
+public record RegistroRequest(
+        @NotBlank
+        @Size(min = 3, max = 30)
+        @Pattern(regexp = "^[a-zA-Z0-9._-]+$")
+        String username,
+        @NotBlank
+        @Email
+        @Size(max = 254)
+        String email,
+        @NotBlank
+        @PasswordValida
+        String password,
+        @NotBlank
+        @Size(min = 1, max = 100)
+        @NombrePersona
+        String nombres,
+        @NotBlank
+        @Size(min = 1, max = 100)
+        @NombrePersona
+        String apellidos,
+        @NotNull
+        TipoDoc tipoDoc,
+        @NotBlank
+        @Size(min = 5, max = 20)
+        @Pattern(regexp = "^[0-9A-Za-z]+$")
+        String nroDoc,
+        @NotNull
+        @PastOrPresent
+        @EdadEntre(min = EdadEntre.MINIMA_PERSONA, max = EdadEntre.MAXIMA_PERSONA)
+        LocalDate fechaNacimiento) implements ConDocumento {
+}

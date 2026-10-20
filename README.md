@@ -43,26 +43,58 @@ docker compose up -d
 ./mvnw spring-boot:run
 ```
 
-### Probar el Endpoint de Health
+### Probar que levantó
 
 Una vez levantada la aplicación en `http://localhost:8080`:
 
 ```bash
-curl -i http://localhost:8080/api/v1/health
+curl -i http://localhost:8080/actuator/health
 ```
 
-**Respuesta esperada (HTTP 200 OK):**
-```json
-{
-  "status": "UP",
-  "service": "plataforma-pica",
-  "timestamp": "2026-09-19T18:30:00.123456Z"
-}
+Responde 200 con `"status": "UP"` si la app y la base andan, y 503 con `DOWN` si la base no responde. Es el mismo chequeo que usan el `HEALTHCHECK` de la imagen y el deploy a staging.
+
+### Prueba de humo del contrato
+
+`scripts/prueba-de-humo.sh` recorre todas las operaciones de `docs/api/openapi.yaml` contra una API levantada y compara cada código HTTP con el del contrato. Termina con `Contrato: 34/34 operaciones` y falla si alguna operación quedó sin probar, así que un endpoint nuevo en el contrato obliga a sumarlo al script.
+
+Crea un rol, una persona y dos usuarios marcados con el id de la corrida (`humo-…`). Al final los borra de la base por SQL, porque la API solo hace bajas lógicas. La limpieza corre aunque un paso falle o se corte con Ctrl+C, y al final verifica que no quedó nada de la corrida. Si no puede llegar a la base, no arranca. Lo único que queda son las líneas de log de la API.
+
+```bash
+# Local: la app en localhost:8080 y el Postgres de docker-compose.yml. Pide la clave del admin.
+scripts/prueba-de-humo.sh
+
+# Staging: la limpieza va por SSH y la clave del admin se lee del .env de la instancia
+PICA_URL=https://pica-hydra.duckdns.org \
+PICA_SSH="-i $HOME/.ssh/pica-staging.pem ubuntu@pica-hydra.duckdns.org" \
+scripts/prueba-de-humo.sh
 ```
 
-También podés verificar los endpoints de Spring Actuator:
-- `http://localhost:8080/actuator/health`
-- `http://localhost:8080/actuator/info`
+Necesita `curl`, `jq` y `openssl`. En el CI corre sola contra staging después de cada deploy (job `contrato`).
+
+### Verificación Externa de Tokens JWT (Verificador Público)
+
+Para permitir que servicios externos (como verificadores públicos de sorteos o sistemas de auditoría independientes) validen la autenticidad y firma RS256 de los access tokens emitidos por la plataforma, la API expone públicamente la clave RSA pública en dos formatos estándar:
+
+1. **JWKS (JSON Web Key Set)**: `GET /.well-known/jwks.json`
+   - Retorna un conjunto de claves JSON en formato estándar RFC 7517.
+   - Ideal para librerías automáticas de validación (Spring Security Resource Server, Auth0 `jwks-rsa`, PyJWT `PyJWKClient`, Go `golang-jwt`, etc.).
+
+2. **Clave Pública PEM**: `GET /api/v1/auth/public-key`
+   - Retorna la clave pública RSA en formato PEM (X.509 / PKCS#8).
+   - Ideal para verificación manual o servicios con claves estáticas.
+
+#### Cómo validar un Token en jwt.io
+
+1. Obtener un access token emitiendo `POST /api/v1/auth/login` o registrándote en `POST /api/v1/auth/registro`.
+2. Abrir el validador interactivo en [jwt.io](https://jwt.io).
+3. Pegar el token en el campo **Encoded**.
+4. Asegurar que el algoritmo seleccionado en el encabezado sea **RS256**.
+5. Consultar la clave pública PEM invocando:
+   ```bash
+   curl -i http://localhost:8080/api/v1/auth/public-key
+   ```
+6. Copiar el bloque completo devuelto (incluyendo `-----BEGIN PUBLIC KEY-----` y `-----END PUBLIC KEY-----`) y pegarlo en el cuadro de texto **PUBLIC KEY** ("Verify Signature") en jwt.io.
+7. El portal mostrará la confirmación verde **"Signature Verified"**.
 
 Para ejecutar las pruebas unitarias y de integración:
 ```bash
@@ -84,8 +116,6 @@ src/main/java/com/hydra/pica/plataforma_pica/
 │   ├── dto/
 │   ├── exception/
 │   └── util/
-├── health/
-│   └── HealthController.java
 ├── payment/
 │   ├── controller/
 │   ├── domain/
@@ -135,8 +165,6 @@ src/main/java/com/hydra/pica/plataforma_pica/
 - **`docker-compose.yml`**: Define el contenedor PostgreSQL 16 para desarrollo local con volumen persistente (`postgres_data`), base `tournament_db`, credenciales por defecto y un `healthcheck` basado en `pg_isready` para garantizar que la base acepte conexiones antes de inicializar la app.
 - **`src/main/resources/application.yml`**: Configuración centralizada de Spring Boot. Define conexión JDBC flexible, hibernate DDL validate, zona horaria UTC, endpoints de Actuator, niveles de log detallados y orígenes CORS.
 - **`common/config/WebConfig.java`**: Configura CORS globalmente a nivel Spring MVC (`WebMvcConfigurer`) sobre rutas `/api/**`. Lee dinámicamente los dominios autorizados de `app.cors.allowed-origins` y habilita métodos estándar (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`) con credenciales activadas.
-- **`health/HealthController.java`**: Expone `GET /api/v1/health`. Retorna un objeto JSON con el estado de la aplicación (`status: UP`), el nombre del servicio obtenido de `spring.application.name` y la marca de tiempo actual en formato ISO-8601 (`Instant.now()`).
-- **`src/test/.../health/HealthControllerTest.java`**: Prueba unitaria de capa web usando `@WebMvcTest`. Valida de forma aislada y rápida que `/api/v1/health` responda HTTP 200 OK con el cuerpo JSON esperado mediante `MockMvc` inyectado por constructor.
 
 ---
 
@@ -185,3 +213,35 @@ En lugar de agrupar todo el código horizontalmente en carpetas gigantescas (`co
 - **Alta cohesión**: Todo lo relativo a torneos vive en el módulo `tournament`. Modificar una regla de torneos no requiere navegar por 5 extremos del árbol del proyecto.
 - **Encapsulamiento**: Permite usar modificadores de acceso de paquete (*package-private*) para componentes internos que no deban ser visibles fuera de la feature.
 - **Evolución a microservicios**: Si en el futuro un módulo como `payment` o `tournament` necesita escalarse independientemente, su extracción a un servicio separado es trivial.
+
+---
+
+## Escalado Horizontal sin Session Affinity (CE2-9)
+
+La API es **stateless**: el JWT lleva la sesión y lo demás vive en Postgres (refresh tokens, versión de sesión, códigos de canje de Google). El `state` del login con Google viaja en una cookie en lugar de la `HttpSession`, y fuera del perfil `dev` la API no arranca sin `JWT_PRIVATE_KEY` y `JWT_PUBLIC_KEY`, así todas las réplicas firman con la misma clave. Por eso puede correr con varias réplicas detrás de un balanceador en **Round Robin**, sin afinidad de sesión (*sticky sessions*).
+
+### Demostración con 2 réplicas y Nginx
+
+`docker-compose.replicas.yml` levanta dos instancias del backend (`api1` y `api2`) detrás de Nginx en Round Robin, en `http://localhost:8080`. Cada respuesta trae el header `X-Handled-By` con la réplica que la atendió.
+
+```bash
+# 1. Variables de las réplicas, con el par de claves RSA que comparten (en una sola línea cada una)
+cp .env.replicas.example .env.replicas
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt.pem
+sed -i "s|^JWT_PRIVATE_KEY=.*|JWT_PRIVATE_KEY=$(tr -d '\n' < jwt.pem)|" .env.replicas
+sed -i "s|^JWT_PUBLIC_KEY=.*|JWT_PUBLIC_KEY=$(openssl pkey -in jwt.pem -pubout | tr -d '\n')|" .env.replicas
+rm jwt.pem
+
+# 2. Levantar el stack
+docker compose -f docker-compose.replicas.yml up --build -d
+
+# 3. Probar login local, refresh, revocación, el state de Google en cookie y el canje del código
+./scripts/probar-replicas.sh
+
+# 4. Bajar el stack
+docker compose -f docker-compose.replicas.yml down -v
+```
+
+El script corta con error en el primer chequeo que falle, y cada paso lo tienen que atender las dos réplicas.
+
+**Login con Google (a mano).** El script no puede pasar por Google. Para probarlo completo: poner en `.env.replicas` las credenciales reales (`GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`), con `http://localhost:8080/login/oauth2/code/google` entre las URIs de redirección autorizadas del cliente; levantar el front con la API en `http://localhost:8080` y entrar con Google. La redirección a Google, la vuelta y el canje del código caen en réplicas distintas (se ve con `docker compose -f docker-compose.replicas.yml logs -f api1 api2`).

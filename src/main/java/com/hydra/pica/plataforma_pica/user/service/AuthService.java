@@ -1,0 +1,266 @@
+package com.hydra.pica.plataforma_pica.user.service;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.UUID;
+
+import com.hydra.pica.plataforma_pica.common.config.SesionConfig.SesionProperties;
+import com.hydra.pica.plataforma_pica.common.error.ApiException;
+import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.security.JwtService;
+import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
+import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
+import com.hydra.pica.plataforma_pica.user.domain.RefreshToken;
+import com.hydra.pica.plataforma_pica.user.domain.Usuario;
+import com.hydra.pica.plataforma_pica.user.dto.LoginRequest;
+import com.hydra.pica.plataforma_pica.user.dto.TokenPair;
+import com.hydra.pica.plataforma_pica.user.event.RolesDeUsuarioCambiados;
+import com.hydra.pica.plataforma_pica.user.event.SesionesDeUsuarioInvalidadas;
+import com.hydra.pica.plataforma_pica.user.repository.RefreshTokenRepository;
+import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.event.EventListener;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import com.hydra.pica.plataforma_pica.common.security.OAuthCodeStore;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class AuthService {
+
+    private final UsuarioRepository usuarioRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
+    private final PermisoService permisoService;
+    private final UsuarioService usuarioService;
+    private final OAuthCodeStore oAuthCodeStore;
+    private final SesionProperties sesion;
+
+    @Transactional
+    public Usuario procesarLoginGoogle(
+            String googleSub, String email, boolean emailVerificado, String nombres, String apellidos) {
+        Usuario usuario = usuarioRepository.findByGoogleSub(googleSub).orElse(null);
+        if (usuario != null) {
+            return usuario;
+        }
+
+        // vincular o crear por email solo si Google lo verificó: si no, cualquiera con una cuenta de
+        // Google a nombre de ese mail entraría como su dueño
+        if (!emailVerificado) {
+            throw new ApiException(HttpStatus.FORBIDDEN, CodigoError.EMAIL_NO_VERIFICADO,
+                    "Google no verificó el email de la cuenta");
+        }
+
+        usuario = usuarioRepository.findByEmailIgnoreCase(email).orElse(null);
+        if (usuario != null) {
+            // ya tiene otra cuenta de Google vinculada (con la misma no llegaría acá)
+            if (usuario.getGoogleSub() != null) {
+                throw credencialesInvalidas();
+            }
+            usuario.setGoogleSub(googleSub);
+            if (!usuario.isEmailVerificado()) {
+                usuario.setEmailVerificado(true);
+            }
+            if (usuario.getEstado() == EstadoUsuario.PENDIENTE_VERIFICACION) {
+                usuario.setEstado(EstadoUsuario.ACTIVO);
+            }
+            return usuarioRepository.save(usuario);
+        }
+
+        return usuarioService.crear(NuevoUsuario.desdeGoogle(email, googleSub, nombres, apellidos));
+    }
+
+    @Transactional
+    public TokenPair canjearCodigoOAuth(String code, String userAgent) {
+        Long usuarioId = oAuthCodeStore.consumirCodigo(code);
+        if (usuarioId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.CODIGO_INVALIDO,
+                    "El código de autorización expiró o no es válido");
+        }
+
+        Usuario usuario = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, CodigoError.CODIGO_INVALIDO,
+                        "El usuario asociado al código no existe"));
+
+        validarEstado(usuario);
+        return emitirPar(usuario, userAgent, Instant.now());
+    }
+
+    @Transactional
+    public TokenPair login(LoginRequest request, String userAgent) {
+        Usuario usuario = buscarPorIdentificador(request.identificador());
+        if (usuario == null
+                || usuario.getPasswordHash() == null
+                || !passwordEncoder.matches(request.password(), usuario.getPasswordHash())) {
+            throw credencialesInvalidas();
+        }
+
+        validarEstado(usuario);
+        return emitirPar(usuario, userAgent, Instant.now());
+    }
+
+    // noRollbackFor: al detectar un refresh reutilizado se revoca la familia y además se responde 401;
+    // sin esto la excepción deshacía la revocación
+    @Transactional(noRollbackFor = ApiException.class)
+    public TokenPair refresh(String refreshToken, String userAgent) {
+        RefreshToken actual = refreshTokenRepository.findByTokenHash(hash(refreshToken))
+                .orElseThrow(AuthService::refreshInvalido);
+        Long usuarioId = actual.getUsuario().getId();
+
+        // ya rotado: lo está usando alguien más que el dueño de la sesión
+        if (actual.getReemplazadoPor() != null) {
+            cerrarSesiones(usuarioId);
+            throw refreshException(CodigoError.REFRESH_REUTILIZADO,
+                    "El refresh token ya fue utilizado y la sesión fue invalidada");
+        }
+        // cerrado por logout, por una baja/bloqueo/cambio de clave o de roles, o vencido por inactividad
+        if (actual.getRevocadoEn() != null || !actual.getExpiraEn().isAfter(Instant.now())) {
+            throw refreshInvalido();
+        }
+        // la sesión llegó a su máximo absoluto desde el login, aunque se haya usado todo el tiempo
+        Instant inicioSesion = inicioDeSesion(actual);
+        if (!inicioSesion.plus(sesion.sesionMaxima()).isAfter(Instant.now())) {
+            throw refreshInvalido();
+        }
+        // dado de baja, bloqueado o con el mail cambiado sin verificar no renueva aunque el token siga vivo
+        if (!usuarioRepository.existsByIdAndEstado(usuarioId, EstadoUsuario.ACTIVO)) {
+            throw refreshInvalido();
+        }
+
+        TokenPair par = emitirPar(actual.getUsuario(), userAgent, inicioSesion);
+        actual.setRevocadoEn(Instant.now());
+        actual.setReemplazadoPor(hash(par.refreshToken()));
+        refreshTokenRepository.save(actual);
+        return par;
+    }
+
+    @Transactional
+    public void logout(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return;
+        }
+        refreshTokenRepository.findByTokenHash(hash(refreshToken)).ifPresent(token -> {
+            if (token.getRevocadoEn() == null) {
+                token.setRevocadoEn(Instant.now());
+                refreshTokenRepository.save(token);
+            }
+        });
+    }
+
+    /**
+     * Baja, bloqueo, reset o cambio de clave (UsuarioEdicionService, PerfilService) y cambio de roles
+     * (UsuarioRolService): el usuario tiene que volver a entrar. Corre en la transacción de quien
+     * publica, así que si el cambio se deshace la revocación también.
+     */
+    @EventListener
+    @Transactional
+    public void alInvalidarSesiones(SesionesDeUsuarioInvalidadas evento) {
+        cerrarSesiones(evento.usuarioId());
+    }
+
+    @EventListener
+    @Transactional
+    public void alCambiarRoles(RolesDeUsuarioCambiados evento) {
+        cerrarSesiones(evento.usuarioId());
+    }
+
+    // Revocar los refresh corta la renovación; subir la versión corta los access ya emitidos,
+    // que si no seguirían andando hasta 15 minutos (CE2-2)
+    private void cerrarSesiones(Long usuarioId) {
+        refreshTokenRepository.revocarActivosPorUsuario(usuarioId, Instant.now());
+        usuarioRepository.incrementarVersionSesion(usuarioId);
+    }
+
+    private Usuario buscarPorIdentificador(String identificador) {
+        if (identificador.contains("@")) {
+            return usuarioRepository.findByEmailIgnoreCase(identificador).orElse(null);
+        }
+        return usuarioRepository.findByUsernameIgnoreCase(identificador).orElse(null);
+    }
+
+    private void validarEstado(Usuario usuario) {
+        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO) {
+            throw new ApiException(HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO,
+                    "El usuario está bloqueado");
+        }
+        if (usuario.getEstado() == EstadoUsuario.PENDIENTE_VERIFICACION || !usuario.isEmailVerificado()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, CodigoError.EMAIL_NO_VERIFICADO,
+                    "El email del usuario no fue verificado");
+        }
+        if (usuario.getEstado() != EstadoUsuario.ACTIVO) {
+            throw credencialesInvalidas();
+        }
+    }
+
+    // Tokens anteriores a V8 traen la columna completada con su creado_en; null solo llega de un token armado a mano
+    private static Instant inicioDeSesion(RefreshToken token) {
+        if (token.getSesionIniciadaEn() != null) {
+            return token.getSesionIniciadaEn();
+        }
+        return token.getCreadoEn() != null ? token.getCreadoEn() : Instant.now();
+    }
+
+    /**
+     * Emite access + refresh. El refresh vence por inactividad ({@code refreshTtl}) o al llegar al máximo
+     * de la sesión, lo que pase primero: así nunca se puede renovar más allá del tope (CE2-8).
+     */
+    private TokenPair emitirPar(Usuario usuario, String userAgent, Instant inicioSesion) {
+        // solo cuentan los roles activos; permisosDe ya filtra por estado de rol y usuario
+        List<String> roles = usuario.getRoles().stream()
+                .map(asignacion -> asignacion.getRol())
+                .filter(rol -> rol.getEstado() == EstadoGeneral.ACTIVO)
+                .map(rol -> rol.getNombre())
+                .sorted()
+                .toList();
+        List<String> permisos = permisoService.permisosDe(usuario.getId()).stream()
+                .sorted()
+                .toList();
+
+        String accessToken = jwtService.generarAccessToken(
+                usuario.getId(), usuario.getUsername(), roles, permisos, usuario.getVersionSesion());
+        String refreshToken = UUID.randomUUID().toString();
+        Instant ahora = Instant.now();
+        Instant porInactividad = ahora.plus(sesion.refreshTtl());
+        Instant porMaximo = inicioSesion.plus(sesion.sesionMaxima());
+        RefreshToken entidad = new RefreshToken();
+        entidad.setUsuario(usuario);
+        entidad.setTokenHash(hash(refreshToken));
+        entidad.setExpiraEn(porInactividad.isBefore(porMaximo) ? porInactividad : porMaximo);
+        entidad.setCreadoEn(ahora);
+        entidad.setSesionIniciadaEn(inicioSesion);
+        entidad.setUserAgent(userAgent);
+        refreshTokenRepository.save(entidad);
+        return new TokenPair(accessToken, refreshToken, "Bearer", sesion.accessTtl().toSeconds());
+    }
+
+    private static String hash(String token) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(token.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 no disponible", exception);
+        }
+    }
+
+    private static ApiException credencialesInvalidas() {
+        return new ApiException(HttpStatus.UNAUTHORIZED, CodigoError.CREDENCIALES_INVALIDAS,
+                "Las credenciales no son válidas");
+    }
+
+    private static ApiException refreshInvalido() {
+        return refreshException(CodigoError.REFRESH_INVALIDO, "El refresh token no es válido");
+    }
+
+    private static ApiException refreshException(CodigoError codigo, String detalle) {
+        return new ApiException(HttpStatus.UNAUTHORIZED, codigo, detalle);
+    }
+}

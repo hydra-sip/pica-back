@@ -1,0 +1,15 @@
+# Caddy saca el certificado de Let's Encrypt solo y reparte por ruta.
+{$DOMINIO} {
+	encode zstd gzip
+
+	# Todo lo que atiende Spring: la API, el login con Google, el JWKS y el health
+	@api path /api/* /oauth2/* /login/oauth2/* /.well-known/jwks.json /actuator/health
+	handle @api {
+		reverse_proxy api:8080
+	}
+
+	# El resto es la web (nginx ya devuelve index.html en las rutas de React)
+	handle {
+		reverse_proxy web:80
+	}
+}

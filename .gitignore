@@ -34,3 +34,8 @@ build/
 .vscode/
 .*.kate-swp
 .*.kate-swp
+
+### Secretos ###
+.env
+.env.replicas
+!.env*.example
