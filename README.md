@@ -43,6 +43,24 @@ docker compose up -d
 ./mvnw spring-boot:run
 ```
 
+### Datos de prueba (perfil `seed`)
+
+`./mvnw spring-boot:run` arranca con los perfiles `dev` (claves JWT efímeras, Google opcional) y `seed`: además de las migraciones, Flyway corre el seed `db/seed/R__seed_desarrollo.sql`. La imagen Docker, el CI y Railway no lo usan. Para arrancar sin datos de prueba: `./mvnw spring-boot:run -Dspring-boot.run.profiles=dev`.
+
+Todos los usuarios tienen la contraseña `PicaDev2026`, también el `admin` (salvo que se pase `ADMIN_INITIAL_PASSWORD`):
+
+| Usuario | Rol |
+|---|---|
+| `dev_organizador` | Organizador |
+| `dev_arbitro` | Árbitro |
+| `dev_jugador1` a `dev_jugador6` | Participante |
+
+- **Equipos:** Los Halcones (capitán `dev_jugador1`, con 2 y 3) y Las Panteras (capitán `dev_jugador4`, con 5 y 6).
+- **Copa abierta** (`dev-copa-abierta`): por equipos, con la inscripción abierta, Los Halcones inscriptos y pagados, y la rifa en venta (números 1 a 100; 7, 13 y 42 vendidos a `dev_jugador5`).
+- **Torneo cerrado** (`dev-torneo-cerrado`): individual, con `dev_jugador1` a 4 confirmados, el árbitro designado y el bracket generado: dos semifinales con sus lados y la final vacía.
+
+El seed es repetible: si se modifica, Flyway lo vuelve a correr en el próximo arranque y solo agrega lo que falta.
+
 ### Probar que levantó
 
 Una vez levantada la aplicación en `http://localhost:8080`:
