@@ -314,7 +314,9 @@ paths:
         Se mandan todos los campos. Los roles van por su propio endpoint porque exigen otro permiso.
         Si cambia el `email`, el usuario queda con `emailVerificado: false` en `PENDIENTE_VERIFICACION` y
         se le manda el mail de verificación al email nuevo (si a la vez se lo bloquea, queda `BLOQUEADO`).
-        Pasarlo a `BLOQUEADO` le revoca los refresh tokens.
+        Pasarlo a `BLOQUEADO` le revoca los refresh tokens. Para bloquear con motivo y fecha de fin está
+        `POST /admin/usuarios/{id}/bloqueo`; desde acá queda bloqueado sin motivo propio, y volver a `ACTIVO`
+        levanta el bloqueo.
         Un usuario con el mail sin verificar (`PENDIENTE_VERIFICACION`) no se puede pasar a `ACTIVO` a mano:
         se activa solo cuando verifica. Pasarlo a `BLOQUEADO` sí se puede.
         Un usuario dado de baja no se modifica: 404, primero hay que reactivarlo.
@@ -377,6 +379,40 @@ paths:
       responses:
         '204': {description: Reemplazada}
         '403': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/usuarios/{id}/bloqueo:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Admin – Usuarios]
+      summary: Bloquear con motivo
+      x-jira: PICA-230
+      x-owner: Tomás
+      x-permiso: USUARIO_EDITAR
+      description: >-
+        Pasa el usuario a `BLOQUEADO`, guarda el motivo y la fecha de fin, y le revoca las sesiones. Sin `hasta`
+        es indefinido; con fecha, el primer login después de que vence lo levanta solo. Para cambiar el
+        motivo o la fecha se levanta y se vuelve a bloquear.
+        400 `VALIDACION` (`motivo` vacío o de más de 500, `hasta` que no es futura).
+        403 `USUARIO_PROTEGIDO`, `ACCION_SOBRE_SI_MISMO`. 404 `USUARIO_NO_ENCONTRADO`.
+        409 `USUARIO_YA_BLOQUEADO`.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/BloqueoRequest'}}}
+      responses:
+        '200': {$ref: '#/components/responses/Usuario'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Admin – Usuarios]
+      summary: Levantar el bloqueo
+      x-jira: PICA-230
+      x-owner: Tomás
+      x-permiso: USUARIO_EDITAR
+      description: >-
+        Vuelve a `ACTIVO`, o a `PENDIENTE_VERIFICACION` si el mail no está verificado. Idempotente: si no
+        estaba bloqueado lo devuelve igual. 404 `USUARIO_NO_ENCONTRADO`.
+      responses:
+        '200': {$ref: '#/components/responses/Usuario'}
 
   /api/v1/admin/usuarios/{id}/roles:
     put:
@@ -805,7 +841,7 @@ components:
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400.
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
-        RIFA_NO_EDITABLE (solo se modifica en BORRADOR).
+        USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM).
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
@@ -814,7 +850,7 @@ components:
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
-             RIFA_NO_EDITABLE,
+             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO]
     ErrorCampo:
       type: object
@@ -1044,6 +1080,22 @@ components:
         roles: {type: array, items: {$ref: '#/components/schemas/RolMinimo'}}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: [string, 'null'], format: date-time}
+        bloqueo:
+          description: 'El bloqueo vigente, solo en `GET /admin/usuarios/{id}` y en el POST de bloqueo; null si no está bloqueado'
+          oneOf: [{$ref: '#/components/schemas/BloqueoDatos'}, {type: 'null'}]
+    BloqueoDatos:
+      type: object
+      required: [motivo, desde]
+      properties:
+        motivo: {type: string}
+        desde: {type: string, format: date-time}
+        hasta: {type: [string, 'null'], format: date-time, description: null es indefinido}
+    BloqueoRequest:
+      type: object
+      required: [motivo]
+      properties:
+        motivo: {type: string, minLength: 1, maxLength: 500}
+        hasta: {type: [string, 'null'], format: date-time, description: 'Futura; sin ella el bloqueo es indefinido'}
     UsuarioCreateRequest:
       type: object
       required: [username, email, passwordTemporal, personaId, roles]
