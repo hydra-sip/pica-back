@@ -28,7 +28,8 @@ import org.hibernate.type.SqlTypes;
 /**
  * Un torneo tiene como máximo una rifa. {@code listaHash} sella los vendidos al cerrar la venta;
  * compromiso y semilla son del sorteo verificable (PICA-5). Baja lógica sin {@code @SQLRestriction},
- * como Torneo: cada consulta filtra los eliminados.
+ * como Torneo: cada consulta filtra los eliminados. En BORRADOR la ventana de venta y los términos
+ * pueden estar vacíos; fuera de BORRADOR los exige ck_rifa_completa_fuera_de_borrador (V10).
  */
 @Entity
 @Table(name = "rifa")
@@ -71,13 +72,13 @@ public class Rifa extends AuditableEntity {
     @Column(name = "moneda", length = 3, nullable = false)
     private String moneda = "ARS";
 
-    @Column(name = "venta_desde", nullable = false)
+    @Column(name = "venta_desde")
     private Instant ventaDesde;
 
-    @Column(name = "venta_hasta", nullable = false)
+    @Column(name = "venta_hasta")
     private Instant ventaHasta;
 
-    @Column(name = "terminos_aceptados_en", nullable = false)
+    @Column(name = "terminos_aceptados_en")
     private Instant terminosAceptadosEn;
 
     @Column(name = "loteria_declarada_en")

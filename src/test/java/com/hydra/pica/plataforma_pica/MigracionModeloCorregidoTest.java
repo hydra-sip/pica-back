@@ -220,12 +220,17 @@ class MigracionModeloCorregidoTest {
     @Test
     void elNumeroTieneQueEstarEnElRangoDeLaRifa() {
         long rifa = rifa(null);
-        jdbc.update("INSERT INTO numero (rifa_id, numero) VALUES (?, 1), (?, 100)", rifa, rifa);
+        long ticket = ticket(rifa, "T-1");
+        jdbc.update("INSERT INTO numero (rifa_id, numero, estado, ticket_id) VALUES (?, 1, 'VENDIDO', ?), (?, 100, 'VENDIDO', ?)",
+                rifa, ticket, rifa, ticket);
 
-        assertThatThrownBy(() -> jdbc.update("INSERT INTO numero (rifa_id, numero) VALUES (?, 101)", rifa))
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO numero (rifa_id, numero, estado, ticket_id) VALUES (?, 101, 'VENDIDO', ?)", rifa, ticket))
                 .isInstanceOf(DataAccessException.class)
                 .hasMessageContaining("fuera del rango");
     }
+
+    // V13: los números se insertan al elegirlos, reservados mientras se paga.
 
     @Test
     void unNumeroVendidoTieneTicket() {
@@ -234,7 +239,99 @@ class MigracionModeloCorregidoTest {
         assertThatThrownBy(() -> jdbc.update(
                 "INSERT INTO numero (rifa_id, numero, estado) VALUES (?, 7, 'VENDIDO')", rifa))
                 .isInstanceOf(DataAccessException.class)
-                .hasMessageContaining("ck_numero_ticket");
+                .hasMessageContaining("ck_numero_reserva");
+    }
+
+    @Test
+    void unaReservaDiceQuienLaHizo() {
+        long rifa = rifa(null);
+
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO numero (rifa_id, numero, estado) VALUES (?, 7, 'RESERVADO')", rifa))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("ck_numero_reserva");
+    }
+
+    @Test
+    void unNumeroVendidoNoRepiteQuienLoReservo() {
+        long rifa = rifa(null);
+        long ticket = ticket(rifa, "T-1");
+
+        // el comprador es el del ticket
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO numero (rifa_id, numero, estado, ticket_id, reservado_por) VALUES (?, 7, 'VENDIDO', ?, ?)",
+                rifa, ticket, jugador))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("ck_numero_reserva");
+    }
+
+    @Test
+    void unaReservaSePagaYQuedaVendida() {
+        long rifa = rifa(null);
+        jdbc.update("""
+                INSERT INTO numero (rifa_id, numero, estado, reservado_por)
+                VALUES (?, 7, 'RESERVADO', ?)
+                """, rifa, jugador);
+
+        jdbc.update("UPDATE numero SET estado = 'VENDIDO', ticket_id = ?, reservado_por = NULL WHERE rifa_id = ? AND numero = 7",
+                ticket(rifa, "T-1"), rifa);
+
+        assertThat(jdbc.queryForObject("SELECT estado FROM numero WHERE rifa_id = ? AND numero = 7", String.class, rifa))
+                .isEqualTo("VENDIDO");
+    }
+
+    @Test
+    void unNumeroReservadoNoLoPuedeElegirOtro() {
+        long rifa = rifa(null);
+        jdbc.update("""
+                INSERT INTO numero (rifa_id, numero, estado, reservado_por)
+                VALUES (?, 7, 'RESERVADO', ?)
+                """, rifa, jugador);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                INSERT INTO numero (rifa_id, numero, estado, reservado_por)
+                VALUES (?, 7, 'RESERVADO', ?)
+                """, rifa, otroJugador))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("pk_numero");
+    }
+
+    @Test
+    void elMismoNumeroNoSeVendeDosVeces() {
+        long rifa = rifa(null);
+        jdbc.update("INSERT INTO numero (rifa_id, numero, estado, ticket_id) VALUES (?, 7, 'VENDIDO', ?)", rifa, ticket(rifa, "T-1"));
+        long otroTicket = ticket(rifa, "T-2");
+
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO numero (rifa_id, numero, estado, ticket_id) VALUES (?, 7, 'VENDIDO', ?)", rifa, otroTicket))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("pk_numero");
+    }
+
+    @Test
+    void unNumeroNoGanaDosPremios() {
+        long rifa = rifa(null);
+        jdbc.update("INSERT INTO numero (rifa_id, numero, estado, ticket_id) VALUES (?, 7, 'VENDIDO', ?)", rifa, ticket(rifa, "T-1"));
+        jdbc.update("INSERT INTO premio_rifa (rifa_id, puesto, pct, numero_ganador) VALUES (?, 1, 60, 7)", rifa);
+
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO premio_rifa (rifa_id, puesto, pct, numero_ganador) VALUES (?, 2, 40, 7)", rifa))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("uq_premio_rifa_numero_ganador");
+    }
+
+    @Test
+    void elGanadorTieneQueSerUnNumeroVendidoDeLaRifa() {
+        long rifa = rifa(null);
+        long otraRifa = rifa(null);
+        jdbc.update("INSERT INTO numero (rifa_id, numero, estado, ticket_id) VALUES (?, 7, 'VENDIDO', ?)",
+                otraRifa, ticket(otraRifa, "T-1"));
+
+        // el 7 se vendió en la otra rifa: en esta no existe
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO premio_rifa (rifa_id, puesto, pct, numero_ganador) VALUES (?, 1, 100, 7)", rifa))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("fk_premio_rifa_numero");
     }
 
     @Test
@@ -307,5 +404,22 @@ class MigracionModeloCorregidoTest {
                 VALUES (?, ?, 'Rifa', 1, 100, 500, now(), now() + interval '7 days', now())
                 RETURNING id
                 """, organizador, torneo);
+    }
+
+    /** Una compra del jugador, con su movimiento; la billetera se crea la primera vez. */
+    private long ticket(long rifa, String codigo) {
+        long billetera = id("""
+                INSERT INTO billetera (usuario_id) VALUES (?)
+                ON CONFLICT ON CONSTRAINT uq_billetera_usuario_id DO UPDATE SET usuario_id = EXCLUDED.usuario_id
+                RETURNING id
+                """, jugador);
+        long movimiento = id("""
+                INSERT INTO movimiento (billetera_id, tipo, monto, saldo_resultante)
+                VALUES (?, 'COMPRA_NUMERO', 500, 0) RETURNING id
+                """, billetera);
+        return id("""
+                INSERT INTO ticket (codigo, rifa_id, comprador_id, movimiento_id, monto, comision, clave_idempotencia)
+                VALUES (?, ?, ?, ?, 500, 50, ?) RETURNING id
+                """, codigo, rifa, jugador, movimiento, codigo);
     }
 }
