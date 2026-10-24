@@ -4,5 +4,6 @@ package com.hydra.pica.plataforma_pica.user.domain;
 public enum Modulo {
     USUARIOS,
     PERSONAS,
-    ROLES
+    ROLES,
+    RIFAS
 }

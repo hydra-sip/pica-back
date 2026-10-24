@@ -21,6 +21,7 @@ public enum CodigoError {
     PERSONA_NO_ENCONTRADA,
     ROL_NO_ENCONTRADO,
     PERMISO_NO_ENCONTRADO,
+    RIFA_NO_ENCONTRADA,
 
     // Auth
     CREDENCIALES_INVALIDAS,
@@ -43,6 +44,7 @@ public enum CodigoError {
     DOCUMENTO_NO_EDITABLE,
     ROL_INACTIVO,
     USUARIO_NO_ACTIVO,
+    RIFA_NO_EDITABLE,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,

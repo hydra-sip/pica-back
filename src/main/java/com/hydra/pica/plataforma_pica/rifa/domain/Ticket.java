@@ -61,9 +61,14 @@ public class Ticket {
     @JoinColumn(name = "movimiento_id", nullable = false, unique = true)
     private Movimiento movimiento;
 
+    /** Precio de los números comprados: es lo que entra al pozo de la rifa. */
     @Column(name = "monto", precision = 14, scale = 2, nullable = false)
     private BigDecimal monto;
 
+    /**
+     * Recargo que paga el comprador aparte del monto (un número de $500 cuesta $500 + comisión); no sale
+     * del pozo. Se guarda el valor cobrado, así que cambiar la comisión después no altera compras viejas.
+     */
     @Column(name = "comision", precision = 14, scale = 2, nullable = false)
     private BigDecimal comision;
 

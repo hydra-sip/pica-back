@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -88,6 +89,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -289,7 +291,7 @@ class ModeloCorregidoRepositoriesTest {
         rifaRepository.save(rifa);
 
         PremioRifa premio = new PremioRifa(rifa, 1);
-        premio.setPct(new BigDecimal("100"));
+        premio.setPct(100);
         premio.setDescripcion("Una camiseta");
         premioRifaRepository.save(premio);
 
@@ -304,11 +306,14 @@ class ModeloCorregidoRepositoriesTest {
         ticket.setClaveIdempotencia("clave-1");
         ticketRepository.save(ticket);
 
-        numeroRepository.save(new Numero(rifa, 1));
-        Numero vendido = new Numero(rifa, 7);
-        vendido.setTicket(ticket);
-        vendido.setEstado(EstadoNumero.VENDIDO);
-        numeroRepository.save(vendido);
+        // V13: el número se inserta al elegirlo, reservado mientras se paga, y al pagar queda vendido
+        // con su ticket; el ganador queda en el premio
+        Numero elegido = numeroRepository.saveAndFlush(
+                Numero.reservado(rifa, 7, jugador));
+        elegido.vender(ticket);
+        numeroRepository.save(elegido);
+        premio.setNumeroGanador(7);
+        premioRifaRepository.save(premio);
 
         ReclamoRifa reclamo = new ReclamoRifa();
         reclamo.setRifa(rifa);
@@ -317,14 +322,24 @@ class ModeloCorregidoRepositoriesTest {
         reclamoRifaRepository.saveAndFlush(reclamo);
         entityManager.clear();
 
-        assertThat(numeroRepository.findById(new NumeroId(rifa.getId(), 1)).orElseThrow().getEstado())
-                .isEqualTo(EstadoNumero.DISPONIBLE);
-        assertThat(numeroRepository.findById(new NumeroId(rifa.getId(), 7)).orElseThrow().getTicket().getCodigo())
-                .isEqualTo("T-0001");
+        Numero vendido = numeroRepository.findById(new NumeroId(rifa.getId(), 7)).orElseThrow();
+        assertThat(vendido.getEstado()).isEqualTo(EstadoNumero.VENDIDO);
+        assertThat(vendido.getTicket().getCodigo()).isEqualTo("T-0001");
+        assertThat(vendido.getReservadoPor()).isNull();
+        assertThat(numeroRepository.findById(new NumeroId(rifa.getId(), 1))).isEmpty();
+        assertThat(premioRifaRepository.buscarPorRifa(rifa.getId()))
+                .extracting(PremioRifa::getNumeroGanador).containsExactly(7);
         assertThat(ticketRepository.findById(ticket.getId()).orElseThrow().getMovimiento().getId()).isEqualTo(pago.getId());
         assertThat(reclamoRifaRepository.findById(reclamo.getId()).orElseThrow())
                 .extracting(ReclamoRifa::getEstado, r -> r.getCreadoEn() != null)
                 .containsExactly(EstadoReclamo.PENDIENTE, true);
+
+        // Que otro reserve el 7 falla por la PK: save de un Numero nuevo hace INSERT, no merge.
+        entityManager.clear();
+        Numero repetido = Numero.reservado(rifaRepository.getReferenceById(rifa.getId()), 7,
+                usuarioRepository.getReferenceById(rival.getId()));
+        assertThatThrownBy(() -> numeroRepository.saveAndFlush(repetido))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
