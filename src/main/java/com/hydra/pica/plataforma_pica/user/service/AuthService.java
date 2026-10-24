@@ -12,6 +12,7 @@ import com.hydra.pica.plataforma_pica.common.config.SesionConfig.SesionPropertie
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.RefreshToken;
@@ -43,6 +44,7 @@ public class AuthService {
     private final UsuarioService usuarioService;
     private final OAuthCodeStore oAuthCodeStore;
     private final SesionProperties sesion;
+    private final BloqueoService bloqueoService;
 
     @Transactional
     public Usuario procesarLoginGoogle(
@@ -187,7 +189,8 @@ public class AuthService {
     }
 
     private void validarEstado(Usuario usuario) {
-        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO) {
+        // un bloqueo con fecha de fin se levanta en el primer login después de que vence
+        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO && !bloqueoService.levantarSiVencio(usuario)) {
             throw new ApiException(HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO,
                     "El usuario está bloqueado");
         }

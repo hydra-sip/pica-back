@@ -9,9 +9,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hydra.pica.plataforma_pica.common.config.AdminConfig.AdminProperties;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
+import com.hydra.pica.plataforma_pica.user.dto.BloqueoDatos;
 import com.hydra.pica.plataforma_pica.user.dto.PersonaUsuario;
 import com.hydra.pica.plataforma_pica.user.dto.RolMinimo;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioCreateRequest;
@@ -36,16 +38,19 @@ public class UsuarioAdminService {
     private final UsuarioRolService usuarioRolService;
     private final AdminProperties adminProperties;
     private final ObjectMapper objectMapper;
+    private final BloqueoService bloqueoService;
 
     public UsuarioAdminService(
             UsuarioRepository usuarioRepository, PersonaRepository personaRepository, UsuarioService usuarioService,
-            UsuarioRolService usuarioRolService, AdminProperties adminProperties, ObjectMapper objectMapper) {
+            UsuarioRolService usuarioRolService, AdminProperties adminProperties, ObjectMapper objectMapper,
+            BloqueoService bloqueoService) {
         this.usuarioRepository = usuarioRepository;
         this.personaRepository = personaRepository;
         this.usuarioService = usuarioService;
         this.usuarioRolService = usuarioRolService;
         this.adminProperties = adminProperties;
         this.objectMapper = objectMapper;
+        this.bloqueoService = bloqueoService;
     }
 
     @Transactional(readOnly = true)
@@ -96,7 +101,10 @@ public class UsuarioAdminService {
         // la persona puede estar dada de baja junto con el usuario: no se la pide por usuario.getPersona()
         Persona persona = personaRepository.findByUsuarioIdIncluyendoEliminadas(id)
                 .orElseThrow(() -> new IllegalStateException("El usuario " + id + " no tiene persona"));
-        return UsuarioDetalle.desde(usuario, persona, esProtegido(usuario));
+        BloqueoDatos bloqueo = usuario.getEstado() == EstadoUsuario.BLOQUEADO
+                ? bloqueoService.vigente(id).map(BloqueoDatos::desde).orElse(null)
+                : null;
+        return UsuarioDetalle.desde(usuario, persona, esProtegido(usuario), bloqueo);
     }
 
     @Transactional

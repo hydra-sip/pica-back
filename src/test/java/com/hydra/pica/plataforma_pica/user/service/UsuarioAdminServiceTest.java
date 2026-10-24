@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hydra.pica.plataforma_pica.common.config.AdminConfig.AdminProperties;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -47,12 +48,15 @@ class UsuarioAdminServiceTest {
     @Mock
     private UsuarioRolService usuarioRolService;
 
+    @Mock
+    private BloqueoService bloqueoService;
+
     private UsuarioAdminService servicio;
 
     @BeforeEach
     void crearServicio() {
         servicio = new UsuarioAdminService(usuarioRepository, personaRepository, usuarioService, usuarioRolService,
-                new AdminProperties("admin", "admin@pica.local", "x"), new ObjectMapper());
+                new AdminProperties("admin", "admin@pica.local", "x"), new ObjectMapper(), bloqueoService);
     }
 
     @Test

@@ -18,6 +18,7 @@ import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
 import com.hydra.pica.plataforma_pica.common.security.OAuthCodeStore;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.RefreshToken;
@@ -51,6 +52,7 @@ class AuthServiceTest {
     @Mock private PermisoService permisoService;
     @Mock private UsuarioService usuarioService;
     @Mock private OAuthCodeStore oAuthCodeStore;
+    @Mock private BloqueoService bloqueoService;
 
     private AuthService authService;
     private Usuario usuario;
@@ -58,7 +60,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(usuarioRepository, refreshTokenRepository, passwordEncoder, jwtService,
-                permisoService, usuarioService, oAuthCodeStore, SesionProperties.porDefecto());
+                permisoService, usuarioService, oAuthCodeStore, SesionProperties.porDefecto(), bloqueoService);
         usuario = new Usuario();
         ReflectionTestUtils.setField(usuario, "id", 42L);
         usuario.setUsername("jperez");
@@ -102,6 +104,25 @@ class AuthServiceTest {
                     assertThat(exception.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
                     assertThat(exception.getCodigo()).isEqualTo(CodigoError.USUARIO_BLOQUEADO);
                 });
+    }
+
+    @Test
+    void loginConElBloqueoVencidoLoLevantaYEntra() {
+        usuario.setEstado(EstadoUsuario.BLOQUEADO);
+        when(usuarioRepository.findByUsernameIgnoreCase("jperez")).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("Pica2026", "hash")).thenReturn(true);
+        when(bloqueoService.levantarSiVencio(usuario)).thenAnswer(invocacion -> {
+            usuario.setEstado(EstadoUsuario.ACTIVO);
+            return true;
+        });
+        when(jwtService.generarAccessToken(42L, "jperez", java.util.List.<String>of(), java.util.List.<String>of(), 0))
+                .thenReturn("access");
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TokenPair par = authService.login(new LoginRequest("jperez", "Pica2026"), null);
+
+        assertThat(par.accessToken()).isEqualTo("access");
+        assertThat(usuario.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
     }
 
     @Test
@@ -214,7 +235,8 @@ class AuthServiceTest {
 
     private AuthService conSesion(Duration access, Duration inactividad, Duration maxima) {
         return new AuthService(usuarioRepository, refreshTokenRepository, passwordEncoder, jwtService,
-                permisoService, usuarioService, oAuthCodeStore, new SesionProperties(access, inactividad, maxima));
+                permisoService, usuarioService, oAuthCodeStore, new SesionProperties(access, inactividad, maxima),
+                bloqueoService);
     }
 
     @Test

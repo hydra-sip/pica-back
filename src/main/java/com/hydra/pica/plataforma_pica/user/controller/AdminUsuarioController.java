@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.common.dto.PaginaResponse;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
+import com.hydra.pica.plataforma_pica.user.dto.BloqueoRequest;
 import com.hydra.pica.plataforma_pica.user.dto.ResetPasswordRequest;
 import com.hydra.pica.plataforma_pica.user.dto.RolesRequest;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioCreateRequest;
@@ -111,6 +112,18 @@ public class AdminUsuarioController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void resetearPassword(@PathVariable Long id, @Valid @RequestBody ResetPasswordRequest request) {
         usuarioEdicionService.resetearPassword(id, request.password());
+    }
+
+    @PostMapping("/{id}/bloqueo")
+    @PreAuthorize("hasAuthority('USUARIO_EDITAR')")
+    public UsuarioDetalle bloquear(@PathVariable Long id, @Valid @RequestBody BloqueoRequest request) {
+        return usuarioEdicionService.bloquear(id, request.motivo(), request.hasta());
+    }
+
+    @DeleteMapping("/{id}/bloqueo")
+    @PreAuthorize("hasAuthority('USUARIO_EDITAR')")
+    public UsuarioDetalle levantarBloqueo(@PathVariable Long id) {
+        return usuarioEdicionService.levantarBloqueo(id);
     }
 
     @PutMapping("/{id}/roles")
