@@ -43,6 +43,7 @@ public enum CodigoError {
     DOCUMENTO_NO_EDITABLE,
     ROL_INACTIVO,
     USUARIO_NO_ACTIVO,
+    USUARIO_YA_BLOQUEADO,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,
