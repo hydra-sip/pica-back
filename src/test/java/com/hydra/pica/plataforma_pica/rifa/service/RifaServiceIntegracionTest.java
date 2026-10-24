@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.rifa.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.api.Assertions.within;
 import static org.assertj.core.groups.Tuple.tuple;
 
 import java.math.BigDecimal;
@@ -18,6 +19,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.FaltantePublicacion;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
@@ -30,6 +32,7 @@ import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
+import org.assertj.core.api.ListAssert;
 import org.assertj.core.api.MapAssert;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,6 +61,7 @@ class RifaServiceIntegracionTest {
 
     private static final Instant MANIANA = Instant.now().plus(1, ChronoUnit.DAYS);
     private static final Instant EN_UNA_SEMANA = Instant.now().plus(7, ChronoUnit.DAYS);
+    private static final Instant SORTEO = EN_UNA_SEMANA.plus(1, ChronoUnit.DAYS);
 
     @Autowired private RifaService rifaService;
     @Autowired private RifaRepository rifaRepository;
@@ -137,7 +141,7 @@ class RifaServiceIntegracionTest {
         rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("60", "Primero"), premio("40", null)));
 
         RifaDetalle modificada = rifaService.modificar(organizador, creada.id(), new RifaRequest(
-                "Rifa nueva", "  Con descripción  ", 0, 49, new BigDecimal("1000"), MANIANA, EN_UNA_SEMANA));
+                "Rifa nueva", "  Con descripción  ", 0, 49, new BigDecimal("1000"), MANIANA, EN_UNA_SEMANA, null));
 
         assertThat(modificada.titulo()).isEqualTo("Rifa nueva");
         assertThat(modificada.descripcion()).isEqualTo("Con descripción");
@@ -182,6 +186,8 @@ class RifaServiceIntegracionTest {
         RifaDetalle creada = rifaService.crear(organizador, request(1, 10, MANIANA, EN_UNA_SEMANA));
         Rifa rifa = rifaRepository.findById(creada.id()).orElseThrow();
         rifa.setTerminosAceptadosEn(Instant.now());
+        rifa.setLoteriaDeclaradaEn(Instant.now());
+        rifa.setSorteadaEn(EN_UNA_SEMANA.plus(1, ChronoUnit.DAYS));
         rifa.setEstado(EstadoRifa.EN_VENTA);
         rifaRepository.saveAndFlush(rifa);
 
@@ -251,6 +257,88 @@ class RifaServiceIntegracionTest {
                 .containsEntry("premios", ErrorCampo.Codigo.PREMIOS_INVALIDOS);
     }
 
+    // --- fecha del sorteo y publicación (PICA-219) ---------------------------
+
+    @Test
+    void elSorteoEsDespuesDeQueTerminaLaVenta() {
+        assertThatValidacion(() -> rifaService.crear(organizador,
+                requestConSorteo(MANIANA, EN_UNA_SEMANA, EN_UNA_SEMANA.minus(1, ChronoUnit.HOURS))))
+                .containsEntry("fechaSorteo", ErrorCampo.Codigo.VENTANA_INVALIDA);
+    }
+
+    @Test
+    void elSorteoNoPuedeSerEnElPasado() {
+        assertThatValidacion(() -> rifaService.crear(organizador,
+                requestConSorteo(null, null, Instant.now().minus(1, ChronoUnit.DAYS))))
+                .containsEntry("fechaSorteo", ErrorCampo.Codigo.VENTANA_INVALIDA);
+    }
+
+    @Test
+    void publicaUnaRifaCompletaYQuedaEnVenta() {
+        Long id = rifaLista(premio("60", null), premio("40", null));
+
+        RifaDetalle publicada = rifaService.publicar(organizador, id);
+
+        assertThat(publicada.estado()).isEqualTo(EstadoRifa.EN_VENTA);
+        assertThat(publicada.terminosAceptadosEn()).isNotNull();
+        assertThat(publicada.loteriaDeclaradaEn()).isNotNull();
+        // Postgres guarda microsegundos
+        assertThat(publicada.fechaSorteo()).isCloseTo(SORTEO, within(1, ChronoUnit.MILLIS));
+        assertThat(publicada.premios()).hasSize(2);
+    }
+
+    @Test
+    void unaRifaIncompletaNoSePublicaYDiceTodoLoQueFalta() {
+        RifaDetalle borrador = rifaService.crear(organizador, request(1, 10, null, null));
+
+        assertThatIncompleta(() -> rifaService.publicar(organizador, borrador.id()))
+                .containsExactly(FaltantePublicacion.VENTANA, FaltantePublicacion.FECHA_SORTEO,
+                        FaltantePublicacion.SIN_PREMIOS);
+    }
+
+    @Test
+    void losPremiosTienenQueSumarCien() {
+        Long id = rifaLista(premio("60", null));
+
+        Throwable error = catchThrowable(() -> rifaService.publicar(organizador, id));
+
+        assertThat(error).isInstanceOfSatisfying(ApiException.class, e -> {
+            assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_INCOMPLETA);
+            assertThat(e.getPropiedades().get("faltantes")).isEqualTo(List.of(FaltantePublicacion.PREMIOS_NO_SUMAN_100));
+            assertThat(e.getPropiedades().get("sumaPremios")).isEqualTo(60);
+        });
+    }
+
+    @Test
+    void unaVentaQueYaEmpezoHayQueCorregirla() {
+        RifaDetalle creada = rifaService.crear(organizador,
+                requestConSorteo(Instant.now().minus(1, ChronoUnit.HOURS), EN_UNA_SEMANA, SORTEO));
+        rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("100", null)));
+
+        assertThatIncompleta(() -> rifaService.publicar(organizador, creada.id()))
+                .containsExactly(FaltantePublicacion.VENTA_YA_EMPEZO);
+        assertThat(rifaService.detalle(organizador, creada.id()).estado()).isEqualTo(EstadoRifa.BORRADOR);
+    }
+
+    @Test
+    void soloSePublicaUnBorrador() {
+        Long id = rifaLista(premio("100", null));
+        rifaService.publicar(organizador, id);
+
+        assertThatThrownBy(() -> rifaService.publicar(organizador, id))
+                .isInstanceOfSatisfying(ApiException.class,
+                        e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_NO_EDITABLE));
+    }
+
+    @Test
+    void laRifaDeOtroNoSePublica() {
+        RifaDetalle ajena = rifaService.crear(otro, request(1, 10, null, null));
+
+        assertThatThrownBy(() -> rifaService.publicar(organizador, ajena.id()))
+                .isInstanceOfSatisfying(ApiException.class,
+                        e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_NO_ENCONTRADA));
+    }
+
     // --- listado ------------------------------------------------------------
 
     @Test
@@ -279,10 +367,52 @@ class RifaServiceIntegracionTest {
                 .hasMessageContaining("ck_rifa_completa_fuera_de_borrador");
     }
 
+    @Test
+    void fueraDeBorradorLaBaseExigeLoteriaYFechaDeSorteo() {
+        RifaDetalle rifa = rifaService.crear(organizador, request(1, 10, MANIANA, EN_UNA_SEMANA));
+
+        // con ventana y términos alcanzaba en V10; V14 pide también la lotería y el sorteo
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE rifa SET estado = 'EN_VENTA', terminos_aceptados_en = now() WHERE id = ?", rifa.id()))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_rifa_completa_fuera_de_borrador");
+    }
+
+    @Test
+    void laBaseNoAceptaUnSorteoAntesDelFinDeLaVenta() {
+        RifaDetalle rifa = rifaService.crear(organizador, request(1, 10, MANIANA, EN_UNA_SEMANA));
+
+        assertThatThrownBy(() -> jdbc.update("UPDATE rifa SET sorteada_en = venta_hasta WHERE id = ?", rifa.id()))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_rifa_sorteo_despues_de_la_venta");
+    }
+
     // --- ayudas -------------------------------------------------------------
 
+    private static RifaRequest requestConSorteo(Instant ventaDesde, Instant ventaHasta, Instant fechaSorteo) {
+        return new RifaRequest("Rifa de prueba", null, 1, 100, new BigDecimal("500"), ventaDesde, ventaHasta,
+                fechaSorteo);
+    }
+
+    /** Una rifa con ventana y sorteo cargados, lista para publicar si los premios suman 100. */
+    private Long rifaLista(PremioRifaRequest... premios) {
+        RifaDetalle creada = rifaService.crear(organizador, requestConSorteo(MANIANA, EN_UNA_SEMANA, SORTEO));
+        rifaService.reemplazarPremios(organizador, creada.id(), List.of(premios));
+        return creada.id();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ListAssert<FaltantePublicacion> assertThatIncompleta(ThrowingCallable llamada) {
+        Throwable error = catchThrowable(llamada);
+        assertThat(error).isInstanceOf(ApiException.class);
+        ApiException api = (ApiException) error;
+        assertThat(api.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(api.getCodigo()).isEqualTo(CodigoError.RIFA_INCOMPLETA);
+        return assertThat((List<FaltantePublicacion>) api.getPropiedades().get("faltantes"));
+    }
+
     private static RifaRequest request(int desde, int hasta, Instant ventaDesde, Instant ventaHasta) {
-        return new RifaRequest("Rifa de prueba", null, desde, hasta, new BigDecimal("500"), ventaDesde, ventaHasta);
+        return new RifaRequest("Rifa de prueba", null, desde, hasta, new BigDecimal("500"), ventaDesde, ventaHasta, null);
     }
 
     private static PremioRifaRequest premio(String pct, String descripcion) {

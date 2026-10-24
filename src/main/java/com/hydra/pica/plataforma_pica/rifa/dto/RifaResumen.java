@@ -17,11 +17,12 @@ public record RifaResumen(
         String moneda,
         Instant ventaDesde,
         Instant ventaHasta,
+        Instant fechaSorteo,
         Instant creadoEn) {
 
     public static RifaResumen de(Rifa rifa) {
         return new RifaResumen(rifa.getId(), rifa.getTitulo(), rifa.getEstado(), rifa.getNumeroDesde(),
                 rifa.getNumeroHasta(), rifa.getPrecioNumero(), rifa.getMoneda(), rifa.getVentaDesde(),
-                rifa.getVentaHasta(), rifa.getCreadoEn());
+                rifa.getVentaHasta(), rifa.getSorteadaEn(), rifa.getCreadoEn());
     }
 }

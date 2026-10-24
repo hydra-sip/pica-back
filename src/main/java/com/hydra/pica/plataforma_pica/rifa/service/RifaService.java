@@ -12,6 +12,7 @@ import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.PremioRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.FaltantePublicacion;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
@@ -110,6 +111,50 @@ public class RifaService {
         return detalle(rifa);
     }
 
+    /**
+     * Pasa la rifa de BORRADOR a EN_VENTA (PICA-219). Que el organizador aceptó los términos y declaró la
+     * autorización de la lotería lo exige el controller; acá se registra cuándo. No crea números: se
+     * insertan al elegirlos (V13).
+     *
+     * Si le falta algo para venderse, 409 RIFA_INCOMPLETA con todo lo que falta en {@code faltantes}
+     * (y la suma en {@code sumaPremios}). Una venta que ya empezó no se ajusta sola: el organizador
+     * corrige {@code ventaDesde}.
+     */
+    @Transactional
+    public RifaDetalle publicar(Long organizadorId, Long id) {
+        Rifa rifa = buscarEditable(organizadorId, id);
+        Instant ahora = Instant.now();
+        List<PremioRifa> premios = premioRifaRepository.buscarPorRifa(rifa.getId());
+        int sumaPremios = premios.stream().mapToInt(PremioRifa::getPct).sum();
+
+        List<FaltantePublicacion> faltantes = new ArrayList<>();
+        if (rifa.getVentaDesde() == null || rifa.getVentaHasta() == null) {
+            faltantes.add(FaltantePublicacion.VENTANA);
+        } else if (rifa.getVentaDesde().isBefore(ahora)) {
+            // También cubre una venta que ya terminó: si ventaHasta pasó, ventaDesde (anterior) también.
+            faltantes.add(FaltantePublicacion.VENTA_YA_EMPEZO);
+        }
+        if (rifa.getSorteadaEn() == null) {
+            faltantes.add(FaltantePublicacion.FECHA_SORTEO);
+        }
+        if (premios.isEmpty()) {
+            faltantes.add(FaltantePublicacion.SIN_PREMIOS);
+        } else if (sumaPremios != CIEN) {
+            faltantes.add(FaltantePublicacion.PREMIOS_NO_SUMAN_100);
+        }
+        if (!faltantes.isEmpty()) {
+            throw new ConflictoException(CodigoError.RIFA_INCOMPLETA,
+                    "A la rifa " + id + " le falta " + faltantes + " para publicarse")
+                    .con("faltantes", faltantes)
+                    .con("sumaPremios", sumaPremios);
+        }
+
+        rifa.setTerminosAceptadosEn(ahora);
+        rifa.setLoteriaDeclaradaEn(ahora);
+        rifa.setEstado(EstadoRifa.EN_VENTA);
+        return RifaDetalle.de(rifaRepository.saveAndFlush(rifa), premios);
+    }
+
     private Rifa buscarPropia(Long organizadorId, Long id) {
         return rifaRepository.findByIdAndOrganizadorIdAndEliminadoEnIsNull(id, organizadorId)
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.RIFA_NO_ENCONTRADA, "No existe la rifa " + id));
@@ -132,6 +177,7 @@ public class RifaService {
         rifa.setPrecioNumero(request.precioNumero());
         rifa.setVentaDesde(request.ventaDesde());
         rifa.setVentaHasta(request.ventaHasta());
+        rifa.setSorteadaEn(request.fechaSorteo());
     }
 
     private RifaDetalle detalle(Rifa rifa) {
@@ -154,6 +200,7 @@ public class RifaService {
                     "La rifa tiene " + premiosCargados + " premios: no puede tener menos números"));
         }
         validarVentana(request.ventaDesde(), request.ventaHasta(), errores);
+        validarSorteo(request.fechaSorteo(), request.ventaHasta(), errores);
         lanzarSiHay(errores);
     }
 
@@ -173,6 +220,20 @@ public class RifaService {
         } else if (!hasta.isAfter(Instant.now())) {
             errores.add(new ErrorCampo("ventaHasta", ErrorCampo.Codigo.VENTANA_INVALIDA,
                     "La venta no puede terminar en el pasado"));
+        }
+    }
+
+    /** La fecha programada del sorteo (opcional en borrador) es futura y posterior al fin de la venta. */
+    private void validarSorteo(Instant fechaSorteo, Instant ventaHasta, List<ErrorCampo> errores) {
+        if (fechaSorteo == null) {
+            return;
+        }
+        if (!fechaSorteo.isAfter(Instant.now())) {
+            errores.add(new ErrorCampo("fechaSorteo", ErrorCampo.Codigo.VENTANA_INVALIDA,
+                    "El sorteo no puede ser en el pasado"));
+        } else if (ventaHasta != null && !fechaSorteo.isAfter(ventaHasta)) {
+            errores.add(new ErrorCampo("fechaSorteo", ErrorCampo.Codigo.VENTANA_INVALIDA,
+                    "El sorteo tiene que ser después de que termina la venta"));
         }
     }
 

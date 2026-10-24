@@ -46,6 +46,7 @@ public enum CodigoError {
     USUARIO_NO_ACTIVO,
     USUARIO_YA_BLOQUEADO,
     RIFA_NO_EDITABLE,
+    RIFA_INCOMPLETA,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,
