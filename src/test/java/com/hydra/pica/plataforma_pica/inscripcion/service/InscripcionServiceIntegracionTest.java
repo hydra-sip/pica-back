@@ -207,6 +207,18 @@ class InscripcionServiceIntegracionTest {
     }
 
     @Test
+    void elDetalleTraeElTorneoConSuNombreYSuSlug() {
+        jdbc.update("UPDATE torneo SET slug = ? WHERE id = ?", "torneo-de-prueba", torneo);
+        long id = inscripcionDe(jugador, "BORRADOR");
+
+        InscripcionDetalle vista = inscripcionService.detalle(jugador, id);
+
+        assertThat(vista.torneo().id()).isEqualTo(torneo);
+        assertThat(vista.torneo().nombre()).isEqualTo("Torneo");
+        assertThat(vista.torneo().slug()).isEqualTo("torneo-de-prueba");
+    }
+
+    @Test
     void elOrganizadorDelTorneoVeLaInscripcion() {
         long id = inscripcionDe(jugador, "BORRADOR");
 

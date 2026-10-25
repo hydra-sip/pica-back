@@ -22,6 +22,7 @@ import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle.EquipoInscripto;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionResumen;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.TorneoDeInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class InscripcionMiasControllerTest {
 
     private static final Long PARTICIPANTE = 5L;
+    private static final TorneoDeInscripcion TORNEO = new TorneoDeInscripcion(3L, "Torneo Apertura F5", "torneo-apertura-f5");
     private static final Instant CREADA = Instant.parse("2026-10-24T12:00:00Z");
 
     @Autowired
@@ -102,15 +104,17 @@ class InscripcionMiasControllerTest {
     void devuelveLaPaginaDelUsuarioDeLaSesion() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         when(inscripcionService.listarMias(eq(PARTICIPANTE), eq(null), any(Pageable.class))).thenReturn(new PageImpl<>(List.of(
-                new InscripcionResumen(7L, 3L, null, EstadoInscripcion.PENDIENTE_PAGO, CREADA, CREADA,
+                new InscripcionResumen(7L, 3L, TORNEO, null, EstadoInscripcion.PENDIENTE_PAGO, CREADA, CREADA,
                         new EquipoInscripto(9L, "Los Halcones")),
-                new InscripcionResumen(6L, 2L, PARTICIPANTE, EstadoInscripcion.BORRADOR, CREADA, CREADA, null)),
+                new InscripcionResumen(6L, 2L, TORNEO, PARTICIPANTE, EstadoInscripcion.BORRADOR, CREADA, CREADA, null)),
                 PageRequest.of(0, 20), 2));
 
         mockMvc.perform(get("/api/v1/inscripciones/mias"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(7))
                 .andExpect(jsonPath("$.content[0].torneoId").value(3))
+                .andExpect(jsonPath("$.content[0].torneo.nombre").value("Torneo Apertura F5"))
+                .andExpect(jsonPath("$.content[0].torneo.slug").value("torneo-apertura-f5"))
                 .andExpect(jsonPath("$.content[0].usuarioId").value(nullValue()))
                 .andExpect(jsonPath("$.content[0].estado").value("PENDIENTE_PAGO"))
                 .andExpect(jsonPath("$.content[0].equipo.id").value(9))

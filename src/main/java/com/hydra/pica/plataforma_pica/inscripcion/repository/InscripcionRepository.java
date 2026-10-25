@@ -36,7 +36,7 @@ public interface InscripcionRepository extends JpaRepository<Inscripcion, Long> 
      * Las que armó el usuario: la individual, o las de los equipos de los que es capitán, en todos los estados.
      * {@code torneoId} es opcional. Trae el equipo en la misma consulta.
      */
-    @Query(value = "select i from Inscripcion i left join fetch i.equipo e "
+    @Query(value = "select i from Inscripcion i join fetch i.torneo left join fetch i.equipo e "
             + "where (i.usuario.id = :usuarioId or e.capitan.id = :usuarioId) "
             + "and (:torneoId is null or i.torneo.id = :torneoId)",
             countQuery = "select count(i) from Inscripcion i left join i.equipo e "

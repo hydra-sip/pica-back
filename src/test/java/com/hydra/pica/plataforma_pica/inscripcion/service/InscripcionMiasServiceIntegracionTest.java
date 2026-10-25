@@ -71,6 +71,19 @@ class InscripcionMiasServiceIntegracionTest {
     }
 
     @Test
+    void cadaInscripcionTraeSuTorneoConNombreYSlug() {
+        jdbc.update("UPDATE torneo SET slug = ? WHERE id = ?", "torneo-mias", torneoIndividual);
+        inscripcionIndividual(torneoIndividual, jugador, "BORRADOR");
+
+        InscripcionResumen resumen = inscripcionService.listarMias(jugador, null, PRIMERA_PAGINA).getContent().get(0);
+
+        assertThat(resumen.torneo().id()).isEqualTo(torneoIndividual);
+        assertThat(resumen.torneo().nombre())
+                .isEqualTo(jdbc.queryForObject("SELECT nombre FROM torneo WHERE id = ?", String.class, torneoIndividual));
+        assertThat(resumen.torneo().slug()).isEqualTo("torneo-mias");
+    }
+
+    @Test
     void traeLasInscripcionesDeLosEquiposDelCapitanConSuEquipoYSinUsuario() {
         Long capitan = usuario("cap_mias").getId();
         long halcones = equipo("Los Halcones", capitan);

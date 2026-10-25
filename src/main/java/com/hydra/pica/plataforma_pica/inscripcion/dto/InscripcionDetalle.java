@@ -15,6 +15,7 @@ import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 public record InscripcionDetalle(
         Long id,
         Long torneoId,
+        TorneoDeInscripcion torneo,
         Long usuarioId,
         EstadoInscripcion estado,
         Instant reglamentoAceptadoEn,
@@ -31,6 +32,7 @@ public record InscripcionDetalle(
     public static InscripcionDetalle de(Inscripcion inscripcion, List<UsuarioPublico> nomina) {
         Equipo equipo = inscripcion.getEquipo();
         return new InscripcionDetalle(inscripcion.getId(), inscripcion.getTorneo().getId(),
+                TorneoDeInscripcion.de(inscripcion.getTorneo()),
                 inscripcion.getUsuario() == null ? null : inscripcion.getUsuario().getId(), inscripcion.getEstado(),
                 inscripcion.getReglamentoAceptadoEn(), inscripcion.getCreadoEn(), inscripcion.getModificadoEn(),
                 EquipoInscripto.de(equipo), nomina);

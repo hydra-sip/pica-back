@@ -1574,15 +1574,26 @@ components:
       properties:
         id: {$ref: '#/components/schemas/Id'}
         nombre: {type: string}
+    TorneoDeInscripcion:
+      type: object
+      required: [id, nombre, slug]
+      description: >-
+        El torneo de una inscripción, para mostrarlo y llegar a su ficha pública con `GET /torneos/slug/{slug}`.
+        El `slug` es null mientras el torneo no se publicó, cosa que no pasa con uno que ya tiene inscripciones.
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string}
+        slug: {type: [string, 'null']}
     InscripcionResumen:
       type: object
-      required: [id, torneoId, estado, creadoEn, modificadoEn]
+      required: [id, torneoId, torneo, estado, creadoEn, modificadoEn]
       description: >-
         Una inscripción sin la nómina. La individual lleva `usuarioId`; la de equipo lleva `equipo` y su `usuarioId`
         es null, como en `InscripcionDetalle`.
       properties:
         id: {$ref: '#/components/schemas/Id'}
         torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {$ref: '#/components/schemas/TorneoDeInscripcion'}
         usuarioId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: Solo en la individual}
         estado: {$ref: '#/components/schemas/EstadoInscripcion'}
         creadoEn: {type: string, format: date-time}
@@ -1604,13 +1615,14 @@ components:
           description: Ids de los demás jugadores de este torneo. Los que no son integrantes se suman al equipo.
     InscripcionDetalle:
       type: object
-      required: [id, torneoId, estado, creadoEn, modificadoEn]
+      required: [id, torneoId, torneo, estado, creadoEn, modificadoEn]
       description: >-
         Una inscripción. La individual lleva `usuarioId`; la de equipo lleva `equipo` y `nomina`, y su `usuarioId`
         es null (el capitán es el del equipo).
       properties:
         id: {$ref: '#/components/schemas/Id'}
         torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {$ref: '#/components/schemas/TorneoDeInscripcion'}
         usuarioId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: Solo en la individual}
         estado: {$ref: '#/components/schemas/EstadoInscripcion'}
         reglamentoAceptadoEn: {type: [string, 'null'], format: date-time, description: Se completa al confirmar; en BORRADOR es null}
