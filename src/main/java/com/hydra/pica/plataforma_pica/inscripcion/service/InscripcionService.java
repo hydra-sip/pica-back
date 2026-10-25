@@ -19,6 +19,7 @@ import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class InscripcionService {
+
+    private static final String UQ_ACTIVA = "uq_inscripcion_activa_torneo_usuario";
 
     private static final List<EstadoInscripcion> ACTIVAS =
             List.of(EstadoInscripcion.PENDIENTE_PAGO, EstadoInscripcion.CONFIRMADA);
@@ -125,12 +128,20 @@ public class InscripcionService {
             return InscripcionDetalle.de(inscripcionRepository.saveAndFlush(inscripcion));
         } catch (DataIntegrityViolationException e) {
             // otra confirmación del mismo usuario ganó la carrera entre el chequeo de arriba y este flush
-            if (e.getMostSpecificCause().getMessage().contains("uq_inscripcion_activa_torneo_usuario")) {
+            if (UQ_ACTIVA.equals(nombreDeConstraint(e))) {
                 throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
                         "Ya tenés una inscripción activa en el torneo " + torneoId);
             }
             throw e;
         }
+    }
+
+    private static String nombreDeConstraint(DataIntegrityViolationException e) {
+        Throwable causa = e;
+        while (causa != null && !(causa instanceof ConstraintViolationException)) {
+            causa = causa.getCause();
+        }
+        return causa == null ? null : ((ConstraintViolationException) causa).getConstraintName();
     }
 
     private Inscripcion buscar(Long id) {

@@ -2,9 +2,9 @@ package com.hydra.pica.plataforma_pica.torneo.repository;
 
 import java.util.Optional;
 
-import jakarta.persistence.LockModeType;
-
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
