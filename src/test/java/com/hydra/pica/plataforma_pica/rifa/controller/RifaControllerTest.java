@@ -23,9 +23,11 @@ import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.FaltantePublicacion;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
@@ -112,7 +114,7 @@ class RifaControllerTest {
         ArgumentCaptor<RifaRequest> captor = ArgumentCaptor.forClass(RifaRequest.class);
         verify(rifaService).crear(eq(ORGANIZADOR), captor.capture());
         assertThat(captor.getValue()).isEqualTo(
-                new RifaRequest("Rifa del club", null, 1, 100, new BigDecimal("500"), null, null));
+                new RifaRequest("Rifa del club", null, 1, 100, new BigDecimal("500"), null, null, null));
     }
 
     @Test
@@ -184,6 +186,63 @@ class RifaControllerTest {
 
     @Test
     @WithMockUser(authorities = "RIFA_GESTIONAR")
+    @DisplayName("POST /api/v1/rifas/{id}/publicar con términos y lotería aceptados publica la rifa")
+    void publica() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(rifaService.publicar(ORGANIZADOR, 7L)).thenReturn(detalle());
+
+        mockMvc.perform(post("/api/v1/rifas/7/publicar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"aceptaTerminos": true, "declaraAutorizacionLoteria": true}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(7));
+        verify(rifaService).publicar(ORGANIZADOR, 7L);
+    }
+
+    @Test
+    @WithMockUser(authorities = "RIFA_GESTIONAR")
+    @DisplayName("POST /api/v1/rifas/{id}/publicar sin aceptar los términos o sin declarar la lotería responde 400")
+    void publicarSinAceptar() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+
+        mockMvc.perform(post("/api/v1/rifas/7/publicar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"aceptaTerminos": false}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"))
+                .andExpect(jsonPath("$.errores[?(@.campo == 'aceptaTerminos')].codigo").value("REQUERIDO"))
+                .andExpect(jsonPath("$.errores[?(@.campo == 'declaraAutorizacionLoteria')].codigo").value("REQUERIDO"));
+        verify(rifaService, never()).publicar(any(), any());
+    }
+
+    @Test
+    @WithMockUser(authorities = "RIFA_GESTIONAR")
+    @DisplayName("POST /api/v1/rifas/{id}/publicar de una rifa incompleta responde 409 RIFA_INCOMPLETA con los faltantes")
+    void publicarIncompleta() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(rifaService.publicar(ORGANIZADOR, 7L)).thenThrow(
+                new ConflictoException(CodigoError.RIFA_INCOMPLETA, "Le falta algo")
+                        .con("faltantes", List.of(FaltantePublicacion.FECHA_SORTEO, FaltantePublicacion.PREMIOS_NO_SUMAN_100))
+                        .con("sumaPremios", 80));
+
+        mockMvc.perform(post("/api/v1/rifas/7/publicar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"aceptaTerminos": true, "declaraAutorizacionLoteria": true}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("RIFA_INCOMPLETA"))
+                .andExpect(jsonPath("$.faltantes[0]").value("FECHA_SORTEO"))
+                .andExpect(jsonPath("$.faltantes[1]").value("PREMIOS_NO_SUMAN_100"))
+                .andExpect(jsonPath("$.sumaPremios").value(80));
+    }
+
+    @Test
+    @WithMockUser(authorities = "RIFA_GESTIONAR")
     @DisplayName("PUT /api/v1/rifas/{id} de una rifa ajena responde 404 RIFA_NO_ENCONTRADA")
     void modificarAjena() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
@@ -206,7 +265,7 @@ class RifaControllerTest {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
         when(rifaService.listarMias(eq(ORGANIZADOR), any(Pageable.class))).thenReturn(new PageImpl<>(List.of(
                 new RifaResumen(7L, "Rifa del club", EstadoRifa.BORRADOR, 1, 100, new BigDecimal("500.00"), "ARS",
-                        null, null, CREADA)), PageRequest.of(0, 20), 1));
+                        null, null, null, CREADA)), PageRequest.of(0, 20), 1));
 
         mockMvc.perform(get("/api/v1/rifas/mis-rifas"))
                 .andExpect(status().isOk())
@@ -217,7 +276,7 @@ class RifaControllerTest {
 
     private static RifaDetalle detalle() {
         return new RifaDetalle(7L, "Rifa del club", null, EstadoRifa.BORRADOR, 1, 100, new BigDecimal("500.00"),
-                "ARS", null, null, null, List.of(new PremioRifaDetalle(1, 100, "Una bici", null)),
+                "ARS", null, null, null, null, null, List.of(new PremioRifaDetalle(1, 100, "Una bici", null)),
                 CREADA, CREADA);
     }
 }
