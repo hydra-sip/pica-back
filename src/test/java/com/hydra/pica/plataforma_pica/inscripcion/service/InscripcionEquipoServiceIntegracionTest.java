@@ -941,6 +941,54 @@ class InscripcionEquipoServiceIntegracionTest {
         assertError(() -> inscripcionService.cancelar(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
     }
 
+    // --- reabrir ------------------------------------------------------------
+
+    @Test
+    void reabrirUnaInscripcionDeEquipoLaDejaEnBorradorConElMismoEquipoYLaMismaNomina() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("reab_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+
+        InscripcionDetalle reabierta = inscripcionService.reabrir(capitan, id);
+
+        assertThat(reabierta.estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+        assertThat(reabierta.reglamentoAceptadoEn()).isNull();
+        assertThat(reabierta.equipo().id()).isEqualTo(equipo);
+        assertThat(reabierta.nomina()).extracting(UsuarioPublico::id).containsExactlyInAnyOrder(capitan, jugador);
+        assertThat(jdbc.queryForList("SELECT usuario_id FROM nomina WHERE inscripcion_id = ?", Long.class, id))
+                .containsExactlyInAnyOrder(capitan, jugador);
+    }
+
+    @Test
+    void soloElCapitanReabreLaInscripcionDeEquipo() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long enNomina = integranteNuevo("reab2_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, enNomina)).id();
+        inscripcionService.confirmar(capitan, id, true);
+
+        assertError(() -> inscripcionService.reabrir(enNomina, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.reabrir(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertThat(inscripcionService.detalle(capitan, id).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+    }
+
+    @Test
+    void despuesDeReabrirSeEditaLaNominaYSeConfirmaDeNuevo() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long primero = integranteNuevo("reab3a_eq");
+        Long segundo = integranteNuevo("reab3b_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, primero)).id();
+        inscripcionService.confirmar(capitan, id, true);
+
+        inscripcionService.reabrir(capitan, id);
+        inscripcionService.editar(capitan, id, existente(equipo, segundo));
+        InscripcionDetalle confirmada = inscripcionService.confirmar(capitan, id, true);
+
+        assertThat(confirmada.estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+        assertThat(confirmada.reglamentoAceptadoEn()).isNotNull();
+        assertThat(confirmada.nomina()).extracting(UsuarioPublico::id).containsExactlyInAnyOrder(capitan, segundo);
+    }
+
     // --- escenario ----------------------------------------------------------
 
     private void assertError(ThrowingCallable accion, HttpStatus status, CodigoError codigo) {

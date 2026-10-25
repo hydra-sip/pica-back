@@ -366,6 +366,10 @@ INSCRIPCION_ID=$(campo .id)
 pedir 409:INSCRIPCION_NO_EDITABLE GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
 pedir 409:INSCRIPCION_NO_EDITABLE POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
 pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+# reabrir la deja otra vez en borrador y sin el reglamento aceptado: hay que confirmarla de nuevo
+pedir 200 PUT /api/v1/inscripciones/{id}/reabrir "/api/v1/inscripciones/$INSCRIPCION_ID/reabrir" "$USUARIO"
+pedir 409:INSCRIPCION_NO_EDITABLE PUT /api/v1/inscripciones/{id}/reabrir "/api/v1/inscripciones/$INSCRIPCION_ID/reabrir" "$USUARIO"
+pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
 pedir 200 GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
 pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
 pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
@@ -390,6 +394,8 @@ SELECT id FROM e;
 SQL
 )
 [[ $EQUIPO_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudo cargar el equipo de la prueba"; exit 1; }
+pedir 200 GET /api/v1/equipos/mios "/api/v1/equipos/mios" "$USUARIO"
+en_listado "$EQUIPO_ID"
 pedir 400:VALIDACION POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIPO_ID/inscripciones" "$USUARIO"
 pedir 404:EQUIPO_NO_ENCONTRADO POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIPO_ID/inscripciones" "$USUARIO" '{"equipoId":0,"nomina":[]}'
 pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIPO_ID/inscripciones" "$USUARIO" \
@@ -412,6 +418,10 @@ SQL
 pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
 pedir 200 GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
 pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
+pedir 200 GET /api/v1/inscripciones/mias "/api/v1/inscripciones/mias" "$USUARIO"
+en_listado "$INSCRIPCION_ID"
+pedir 200 GET /api/v1/inscripciones/mias "/api/v1/inscripciones/mias?torneoId=$TORNEO_EQUIPO_ID" "$USUARIO"
+en_listado "$INSCRIPCION_ID"
 # cierra todas sus sesiones: después de esto su access ya no sirve
 pedir 204 PUT /api/v1/me/password "" "$USUARIO" "$(jq -nc --arg a "$CLAVE_2" --arg n "$CLAVE_3" \
     '{passwordActual: $a, passwordNueva: $n}')"
