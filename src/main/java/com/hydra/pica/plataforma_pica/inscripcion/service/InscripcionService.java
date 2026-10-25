@@ -262,13 +262,16 @@ public class InscripcionService {
         return detalleDe(inscripcion);
     }
 
-    /** La cancelación es una baja lógica: la inscripción queda en CANCELADA. */
+    /**
+     * La cancelación es una baja lógica: la inscripción queda en CANCELADA. Bloquea la fila del torneo antes de
+     * leer la inscripción, igual que {@link #pagar}: así no cancela una que otro pedido acaba de pagar.
+     */
     @Transactional
     public void cancelar(Long usuarioId, Long id) {
+        Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
+                .orElseThrow(() -> noEncontrada(id));
+        torneoBloqueado(torneoId);
         Inscripcion inscripcion = buscar(id);
-        if (!esDe(inscripcion, usuarioId)) {
-            throw noEncontrada(id);
-        }
         if (inscripcion.getEstado() != EstadoInscripcion.BORRADOR && inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
                     "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se cancela en BORRADOR o PENDIENTE_PAGO");
@@ -355,14 +358,16 @@ public class InscripcionService {
 
     /**
      * Reemplaza el equipo y la nómina del borrador de un torneo por equipos. Solo el capitán, y solo en
-     * BORRADOR. Se vuelven a chequear las mismas reglas que al crear.
+     * BORRADOR. Se vuelven a chequear las mismas reglas que al crear. Bloquea la fila del torneo antes de
+     * leer la inscripción: si no, pisaría el estado de una confirmación simultánea y cambiaría la nómina que
+     * ella validó.
      */
     @Transactional
     public InscripcionDetalle editar(Long usuarioId, Long id, InscripcionEquipoRequest request) {
+        Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
+                .orElseThrow(() -> noEncontrada(id));
+        torneoBloqueado(torneoId);
         Inscripcion inscripcion = buscar(id);
-        if (!esDe(inscripcion, usuarioId)) {
-            throw noEncontrada(id);
-        }
         if (!inscripcion.esDeEquipo()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
                     "La inscripción individual no tiene equipo ni nómina");
