@@ -6,5 +6,6 @@ public enum Modulo {
     PERSONAS,
     ROLES,
     RIFAS,
-    INSCRIPCIONES
+    INSCRIPCIONES,
+    TORNEOS
 }
