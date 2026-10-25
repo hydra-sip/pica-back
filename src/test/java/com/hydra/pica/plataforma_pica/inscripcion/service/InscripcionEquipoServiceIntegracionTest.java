@@ -3,8 +3,10 @@ package com.hydra.pica.plataforma_pica.inscripcion.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -13,6 +15,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.billetera.service.CobroRechazadoException;
+import com.hydra.pica.plataforma_pica.billetera.service.CobroService;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
@@ -54,6 +58,7 @@ class InscripcionEquipoServiceIntegracionTest {
 
     @Autowired private InscripcionService inscripcionService;
     @MockitoSpyBean private InscripcionRepository inscripcionRepository;
+    @MockitoSpyBean private CobroService cobroService;
     @Autowired private BloqueoService bloqueoService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
@@ -568,7 +573,7 @@ class InscripcionEquipoServiceIntegracionTest {
         InscripcionDetalle confirmada = inscripcionService.confirmar(capitan, id, true);
 
         assertThat(confirmada.estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
-        assertThat(confirmada.reglamentoAceptadoEn()).isAfterOrEqualTo(antes.minusSeconds(1));
+        assertThat(confirmada.reglamentoAceptadoEn()).isBetween(antes.minusSeconds(1), Instant.now().plusSeconds(1));
         assertThat(confirmada.nomina()).extracting(UsuarioPublico::id).containsExactlyInAnyOrder(capitan, jugador);
     }
 
@@ -615,10 +620,10 @@ class InscripcionEquipoServiceIntegracionTest {
 
     @Test
     void unaNominaSinElCapitanNoSeConfirma() {
-        long unoSolo = torneoPorEquipos(1, 2);
+        long unoOdos = torneoPorEquipos(1, 2);
         Long jugador = integranteNuevo("sincap_eq");
-        long id = inscripcionDeEquipo(unoSolo, equipo, "BORRADOR");
-        enNomina(id, jugador, equipo); // el cupo de jugadores alcanza, pero el capitán no figura
+        long id = inscripcionDeEquipo(unoOdos, equipo, "BORRADOR");
+        enNomina(id, jugador, equipo); // la cantidad de jugadores alcanza, pero el capitán no figura
 
         assertError(() -> inscripcionService.confirmar(capitan, id, true), HttpStatus.CONFLICT, CodigoError.NOMINA_INVALIDA);
     }
@@ -669,6 +674,7 @@ class InscripcionEquipoServiceIntegracionTest {
 
         assertError(() -> inscripcionService.confirmar(jugador, id, true), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
         assertError(() -> inscripcionService.confirmar(organizador, id, true), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertThat(inscripcionService.detalle(capitan, id).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
     }
 
     @Test
@@ -686,6 +692,7 @@ class InscripcionEquipoServiceIntegracionTest {
         long id = inscripcionService.crear(capitan, gratis, existente(equipo)).id();
 
         assertThat(inscripcionService.confirmar(capitan, id, true).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isZero();
     }
 
     @Test
@@ -785,6 +792,49 @@ class InscripcionEquipoServiceIntegracionTest {
 
         assertError(() -> inscripcionService.pagar(capitan, id), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isZero();
+    }
+
+    @Test
+    void siElCobroSeRechazaLaInscripcionDeEquipoSigueEnPendienteDePago() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("rech_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+        doThrow(new CobroRechazadoException("sin fondos")).when(cobroService).cobrar(any());
+
+        assertError(() -> inscripcionService.pagar(capitan, id), HttpStatus.CONFLICT, CodigoError.COBRO_RECHAZADO);
+
+        assertThat(inscripcionService.detalle(capitan, id).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isZero();
+    }
+
+    @Test
+    void cancelarUnaPendienteDePagoDeEquipoLiberaALosJugadoresDeLaNomina() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("libre_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+        Long otroCapitan = usuario("cap6_eq").getId();
+        Long otroEquipo = equipo("Los Gavilanes", otroCapitan);
+        assertError(() -> inscripcionService.crear(otroCapitan, dosATres, existente(otroEquipo, jugador)), HttpStatus.CONFLICT, CodigoError.JUGADOR_YA_INSCRIPTO);
+
+        inscripcionService.cancelar(capitan, id);
+
+        assertThat(inscripcionService.crear(otroCapitan, dosATres, existente(otroEquipo, jugador)).nomina())
+                .extracting(UsuarioPublico::id).contains(jugador);
+    }
+
+    @Test
+    void lasNominasYaConfirmadasNoCambianSiDespuesCrecenLosIntegrantesDelEquipo() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("antes_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+
+        integranteNuevo("despues_eq");
+
+        assertThat(inscripcionService.detalle(capitan, id).nomina()).extracting(UsuarioPublico::id)
+                .containsExactlyInAnyOrder(capitan, jugador);
     }
 
     // --- ver y cancelar -----------------------------------------------------

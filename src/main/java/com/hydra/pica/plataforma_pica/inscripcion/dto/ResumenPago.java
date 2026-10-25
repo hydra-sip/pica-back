@@ -39,5 +39,4 @@ public record ResumenPago(
 
     public record TorneoPago(Long id, String nombre) {
     }
-
 }

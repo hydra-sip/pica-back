@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.inscripcion.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -461,7 +462,7 @@ class InscripcionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.equipo.id").value(4))
                 .andExpect(jsonPath("$.equipo.nombre").value("Los Halcones"))
-                .andExpect(jsonPath("$.participante").doesNotExist());
+                .andExpect(jsonPath("$.participante").value(nullValue()));
     }
 
     @Test

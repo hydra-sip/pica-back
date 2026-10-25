@@ -313,7 +313,7 @@ public class InscripcionService {
         try {
             return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
         } catch (DataIntegrityViolationException e) {
-            // otra confirmación del mismo usuario ganó la carrera entre el chequeo de arriba y este flush
+            // otra confirmación individual del mismo usuario ganó la carrera entre el chequeo de arriba y este flush
             if (UQ_ACTIVA.equals(nombreDeConstraint(e))) {
                 throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
                         "Ya tenés una inscripción activa en el torneo " + torneoId);
@@ -378,7 +378,7 @@ public class InscripcionService {
         return detalleDe(guardarEquipoYNomina(inscripcion, capitan, request));
     }
 
-    /** Lo que va a pagar el participante; solo se ve mientras la inscripción está pendiente de pago. */
+    /** Lo que va a pagar el participante o el capitán; solo se ve mientras la inscripción está pendiente de pago. */
     @Transactional(readOnly = true)
     public ResumenPago resumenPago(Long usuarioId, Long id) {
         Inscripcion inscripcion = buscar(id);
@@ -449,8 +449,10 @@ public class InscripcionService {
     private void validarUsuario(Usuario usuario) {
         switch (usuario.getEstado()) {
             case ACTIVO -> { }
-            case BLOQUEADO -> throw new ProhibidoException(CodigoError.USUARIO_BLOQUEADO, "El usuario está bloqueado");
-            default -> throw new ConflictoException(CodigoError.USUARIO_NO_ACTIVO, "El usuario no está activo");
+            case BLOQUEADO -> throw new ProhibidoException(CodigoError.USUARIO_BLOQUEADO,
+                    "El usuario " + usuario.getId() + " está bloqueado");
+            default -> throw new ConflictoException(CodigoError.USUARIO_NO_ACTIVO,
+                    "El usuario " + usuario.getId() + " no está activo");
         }
     }
 

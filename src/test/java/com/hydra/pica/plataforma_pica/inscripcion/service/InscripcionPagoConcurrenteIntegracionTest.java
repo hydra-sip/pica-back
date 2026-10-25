@@ -242,8 +242,9 @@ class InscripcionPagoConcurrenteIntegracionTest {
         };
     }
 
-    // un equipo del capitán con el jugador compartido, y su borrador con los dos en la nómina
-    private long borradorDeEquipo(Long capitan, Long compartido) {
+    // un equipo del capitán con otro jugador, y su borrador con los dos en la nómina; si se le pasa el mismo
+    // jugador a dos capitanes, comparten un jugador
+    private long borradorDeEquipo(Long capitan, Long jugador) {
         // en un solo statement: el capitán tiene que ser integrante cuando termina la transacción, y acá cada
         // statement hace commit
         long equipo = jdbc.queryForObject("""
@@ -251,11 +252,11 @@ class InscripcionPagoConcurrenteIntegracionTest {
                      i AS (INSERT INTO usuario_equipo (usuario_id, equipo_id)
                            SELECT u, e.id FROM e, (VALUES (CAST(? AS BIGINT)), (CAST(? AS BIGINT))) AS m (u))
                 SELECT id FROM e
-                """, Long.class, capitan, "Equipo " + capitan, capitan, compartido);
+                """, Long.class, capitan, "Equipo " + capitan, capitan, jugador);
         long inscripcion = jdbc.queryForObject(
                 "INSERT INTO inscripcion (torneo_id, equipo_id, estado) VALUES (?, ?, 'BORRADOR') RETURNING id", Long.class, torneo, equipo);
         jdbc.update("INSERT INTO nomina (inscripcion_id, usuario_id, equipo_id) VALUES (?, ?, ?), (?, ?, ?)",
-                inscripcion, capitan, equipo, inscripcion, compartido, equipo);
+                inscripcion, capitan, equipo, inscripcion, jugador, equipo);
         return inscripcion;
     }
 

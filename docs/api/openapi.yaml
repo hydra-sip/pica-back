@@ -866,10 +866,9 @@ paths:
       x-owner: Mateo
       description: >-
         Solo quien se inscribió (el capitán, en una de equipo), y solo un borrador. Guarda la fecha y hora en que
-        aceptó el reglamento y la inscripción pasa a PENDIENTE_PAGO; si el torneo es gratis (valor de
-        inscripción 0) pasa directo a
-        CONFIRMADA y ocupa un lugar del cupo. Sin cuerpo, sin el campo o con `false` el reglamento cuenta como
-        no aceptado. Vuelve a chequear el torneo, el usuario y la inscripción duplicada, como al crear.
+        aceptó el reglamento y la inscripción pasa a PENDIENTE_PAGO; si el torneo es gratis (valor de inscripción 0)
+        pasa directo a CONFIRMADA y ocupa un lugar del cupo. Sin cuerpo, sin el campo o con `false` el reglamento
+        cuenta como no aceptado. Vuelve a chequear el torneo, el usuario y la inscripción duplicada, como al crear.
         En una de equipo valida además la nómina: la cantidad de jugadores, con el capitán incluido, tiene que
         estar entre el tamaño de equipo y el máximo de nómina del torneo, y cada jugador tiene que seguir activo,
         sin bloqueo vigente y sin otra inscripción activa en el torneo. Se bloquea la fila del torneo para que dos
@@ -878,12 +877,12 @@ paths:
         `TORNEO_NO_ENCONTRADO` si el torneo fue dado de baja.
         409 `INSCRIPCION_NO_EDITABLE` si no está en BORRADOR; `REGLAMENTO_NO_ACEPTADO`; `INSCRIPCION_NO_ABIERTA`;
         `USUARIO_NO_ACTIVO` (el capitán o un jugador de la nómina); `INSCRIPCION_DUPLICADA` (también si otra
-        confirmación del mismo usuario gana la carrera); `NOMINA_INVALIDA` si la nómina tiene menos jugadores que el
-        tamaño de equipo o más que el máximo de nómina, o no incluye al capitán; `JUGADOR_YA_INSCRIPTO` si un
+        confirmación del mismo usuario gana la carrera); `NOMINA_INVALIDA` si la nómina tiene menos jugadores que
+        el tamaño de equipo o más que el máximo de nómina, o no incluye al capitán; `JUGADOR_YA_INSCRIPTO` si un
         jugador de la nómina figura en otra inscripción activa del torneo; `CUPO_COMPLETO` si las inscripciones
-        confirmadas ya
-        completan el cupo (la inscripción sigue en BORRADOR). En un torneo con costo es un aviso temprano: el
-        cupo se chequea en firme al pagar. En uno gratis es el chequeo en firme, con la fila del torneo bloqueada.
+        confirmadas ya completan el cupo (la inscripción sigue en BORRADOR). En un torneo con costo es un aviso
+        temprano: el cupo se chequea en firme al pagar. En uno gratis es el chequeo en firme, con la fila del
+        torneo bloqueada.
         403 `USUARIO_BLOQUEADO` si el capitán o un jugador de la nómina tiene un bloqueo vigente.
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
@@ -1480,17 +1479,19 @@ components:
           oneOf: [{$ref: '#/components/schemas/UsuarioPublico'}, {type: 'null'}]
           description: Solo en la individual
         equipo:
-          type: [object, 'null']
+          oneOf: [{$ref: '#/components/schemas/EquipoInscripto'}, {type: 'null'}]
           description: Solo en la de equipo
-          required: [id, nombre]
-          properties:
-            id: {$ref: '#/components/schemas/Id'}
-            nombre: {type: string}
         monto: {type: number, description: El valor de la inscripción}
         moneda: {type: string, minLength: 3, maxLength: 3, example: ARS}
         cupoMaximo: {type: integer}
         cupoDisponible: {type: integer, minimum: 0, description: El cupo máximo menos las inscripciones confirmadas}
         cierreInscripcionEn: {type: string, format: date-time}
+    EquipoInscripto:
+      type: object
+      required: [id, nombre]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string}
     InscripcionEquipoRequest:
       type: object
       description: >-
@@ -1518,12 +1519,8 @@ components:
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: string, format: date-time}
         equipo:
-          type: [object, 'null']
+          oneOf: [{$ref: '#/components/schemas/EquipoInscripto'}, {type: 'null'}]
           description: Solo en la de equipo
-          required: [id, nombre]
-          properties:
-            id: {$ref: '#/components/schemas/Id'}
-            nombre: {type: string}
         nomina:
           type: [array, 'null']
           description: Solo en la de equipo; incluye siempre al capitán
