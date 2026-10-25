@@ -156,6 +156,49 @@ class InscripcionPagoConcurrenteIntegracionTest {
     }
 
     @RepeatedTest(5)
+    void dosBorradoresSimultaneosDelMismoUsuarioCreanUnoSoloYElOtroRecibeDuplicada() throws Exception {
+        Long organizador = usuario("org_borr");
+        torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion,
+                                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
+                VALUES (?, 'Torneo', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL', 8, 2,
+                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        Long jugador = usuario("j_borr");
+
+        CyclicBarrier salida = new CyclicBarrier(2);
+        ExecutorService hilos = Executors.newFixedThreadPool(2);
+        try {
+            Callable<EstadoInscripcion> creacion = () -> {
+                salida.await();
+                return inscripcionService.crear(jugador, torneo, null).estado();
+            };
+            Future<EstadoInscripcion> primera = hilos.submit(creacion);
+            Future<EstadoInscripcion> segunda = hilos.submit(creacion);
+
+            List<EstadoInscripcion> creados = new ArrayList<>();
+            List<CodigoError> rechazos = new ArrayList<>();
+            for (Future<EstadoInscripcion> pedido : List.of(primera, segunda)) {
+                try {
+                    creados.add(pedido.get(30, TimeUnit.SECONDS));
+                } catch (ExecutionException e) {
+                    assertThat(e.getCause()).isInstanceOf(ApiException.class);
+                    rechazos.add(((ApiException) e.getCause()).getCodigo());
+                }
+            }
+
+            assertThat(creados).containsExactly(EstadoInscripcion.BORRADOR);
+            assertThat(rechazos).containsExactly(CodigoError.INSCRIPCION_DUPLICADA);
+        } finally {
+            hilos.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM inscripcion WHERE torneo_id = ? AND estado = 'BORRADOR'", Integer.class, torneo)).isEqualTo(1);
+    }
+
+    @RepeatedTest(5)
     void dosEquiposQueComparteUnJugadorConfirmanALaVezYSoloUnoConfirma() throws Exception {
         Long organizador = usuario("org_comp");
         torneo = jdbc.queryForObject("""

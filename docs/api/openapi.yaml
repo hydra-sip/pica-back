@@ -772,15 +772,19 @@ paths:
         los demás jugadores. El capitán entra siempre en la nómina, figure o no en la lista. Los jugadores que
         todavía no son integrantes se suman al equipo, y un integrante dado de baja que se vuelve a cargar se
         reactiva. En el borrador la nómina puede estar incompleta: su tamaño se valida al confirmar.
-        Nace en BORRADOR, sin el reglamento aceptado y sin ocupar cupo. En un torneo individual un usuario puede
-        tener más de un borrador; un equipo tiene una sola inscripción por torneo, en cualquier estado.
+        Nace en BORRADOR, sin el reglamento aceptado y sin ocupar cupo. Quien se inscribe tiene un solo borrador
+        por torneo: el suyo en uno individual, o el de cualquiera de sus equipos si es capitán. Si ya lo tiene,
+        el mensaje del error trae el id del borrador existente para retomarlo (en uno por equipos, con `PUT`) o
+        cancelarlo; una cancelada no cuenta. Además, un equipo tiene una sola inscripción por torneo, en
+        cualquier estado.
         404 `TORNEO_NO_ENCONTRADO` si el torneo no existe o está dado de baja; `EQUIPO_NO_ENCONTRADO` si el
         equipo no existe, está dado de baja o no es del capitán; `USUARIO_NO_ENCONTRADO` si un jugador no existe.
         409 `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA o ya pasó la fecha de cierre;
-        `USUARIO_NO_ACTIVO` si el capitán o un jugador no está activo; `INSCRIPCION_DUPLICADA` si ya tiene una
-        inscripción activa en el torneo (individual) o si el equipo ya tiene una inscripción en el torneo (de
-        equipo); `JUGADOR_YA_INSCRIPTO` si un jugador, el capitán incluido, figura en otra inscripción activa
-        (pendiente de pago o confirmada) del torneo.
+        `USUARIO_NO_ACTIVO` si el capitán o un jugador no está activo; `INSCRIPCION_DUPLICADA` si ya tiene un
+        borrador o una inscripción activa en el torneo (individual), o si ya tiene un borrador de cualquiera de
+        sus equipos o el equipo ya tiene una inscripción en el torneo (de equipo); `JUGADOR_YA_INSCRIPTO` si un
+        jugador, el capitán incluido, figura en otra inscripción activa (pendiente de pago o confirmada) del
+        torneo.
         403 `USUARIO_BLOQUEADO` si el capitán o un jugador tiene un bloqueo vigente;
         `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si el capitán es el organizador o un árbitro designado del torneo.
         400 `VALIDACION` si un torneo por equipos llega sin cuerpo, si un torneo individual llega con cuerpo, si
@@ -1061,7 +1065,7 @@ components:
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) ·
-        INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay una activa en el torneo) ·
+        INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
         JUGADOR_YA_INSCRIPTO (figura en otra inscripción activa del torneo, como capitán o en la nómina) ·

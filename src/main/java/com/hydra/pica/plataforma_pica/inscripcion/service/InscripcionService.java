@@ -81,9 +81,23 @@ public class InscripcionService {
         validarUsuario(usuario);
         validarTorneoAbierto(torneo);
         validarQueNoOrganiza(torneo, usuarioId);
+        // no hay un índice que asegure un borrador por usuario (en uno de equipo el capitán está en el equipo y
+        // no en la inscripción), así que dos pedidos simultáneos se serializan por la fila del torneo
+        torneoBloqueado(torneoId);
+        exigirSinBorrador(torneoId, usuarioId);
         return torneo.getTipoParticipante() == TipoParticipante.EQUIPO
                 ? crearDeEquipo(usuario, torneo, request)
                 : crearIndividual(usuario, torneo, request);
+    }
+
+    // quien se inscribe tiene un solo borrador por torneo (el suyo o, si es capitán, el de cualquiera de sus
+    // equipos): si ya hay uno, lo retoma en vez de abrir otro
+    private void exigirSinBorrador(Long torneoId, Long usuarioId) {
+        List<Long> borradores = inscripcionRepository.borradoresDe(torneoId, usuarioId);
+        if (!borradores.isEmpty()) {
+            throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA, "Ya tenés el borrador " + borradores.get(0)
+                    + " en el torneo " + torneoId + ": retomalo o cancelalo antes de crear otro");
+        }
     }
 
     private InscripcionDetalle crearIndividual(Usuario usuario, Torneo torneo, InscripcionEquipoRequest request) {
