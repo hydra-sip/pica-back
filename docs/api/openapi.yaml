@@ -48,6 +48,7 @@ tags:
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
   - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
   - {name: Inscripciones, description: 'Inscripción de un participante a un torneo. HU-204 (PICA-50), Mateo.'}
+  - {name: Torneos, description: 'Catálogo público y detalle de torneos. HU-208, Tomás.'}
 
 security:
   - bearerAuth: []
@@ -750,105 +751,59 @@ paths:
         required: true
         content: {application/json: {schema: {type: object, required: [premios], properties: {premios: {type: array, items: {$ref: '#/components/schemas/PremioRifaRequest'}}}}}}
       responses:
-        '200': {$ref: '#/components/responses/Rifa'}
-        '409': {$ref: '#/components/responses/Conflicto'}
-
-  # --- Inscripciones -----------------------------------------------------------
-  # Crear, confirmar y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
-  # Ver alcanza con estar logueado: la ven quien se inscribió y el organizador del torneo. Para cualquier otro usuario
-  # la inscripción no existe: 404 INSCRIPCION_NO_ENCONTRADA. El usuario siempre sale de la sesión.
-
-  /api/v1/torneos/{id}/inscripciones:
-    post:
-      tags: [Inscripciones]
-      summary: Crear el borrador de inscripción en un torneo individual
-      x-jira: PICA-208
-      x-permiso: INSCRIPCION_GESTIONAR
-      x-owner: Mateo
-      description: >-
-        Sin cuerpo: inscribe al usuario de la sesión. Nace en BORRADOR, sin el reglamento aceptado y sin ocupar
-        cupo. Un usuario puede tener más de un borrador en el mismo torneo.
-        404 `TORNEO_NO_ENCONTRADO` si el torneo no existe o está dado de baja.
-        409 `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA o ya pasó la fecha de cierre;
-        `USUARIO_NO_ACTIVO` si el usuario no está activo; `INSCRIPCION_DUPLICADA` si ya tiene una inscripción
-        activa (pendiente de pago o confirmada) en el torneo; los borradores y las canceladas no cuentan.
-        403 `USUARIO_BLOQUEADO` si tiene un bloqueo vigente; `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si es el
-        organizador o un árbitro designado del torneo.
-        400 `VALIDACION` (sin `errores`) si el torneo es por equipos: todavía no se inscribe a equipos.
-      parameters: [{$ref: '#/components/parameters/id'}]
-      responses:
-        '201':
-          description: Borrador creado; `Location` apunta a `GET /inscripciones/{id}`
-          headers: {Location: {schema: {type: string, format: uri}}}
-          content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}
-        '400': {$ref: '#/components/responses/Error'}
-        '401': {$ref: '#/components/responses/Error'}
-        '403': {$ref: '#/components/responses/Error'}
-        '404': {$ref: '#/components/responses/Error'}
-        '409': {$ref: '#/components/responses/Conflicto'}
-
-  /api/v1/inscripciones/{id}:
-    parameters: [{$ref: '#/components/parameters/id'}]
-    get:
-      tags: [Inscripciones]
-      summary: Ver una inscripción
-      x-jira: PICA-208
-      x-owner: Mateo
-      description: >-
-        La ve quien se inscribió y el organizador del torneo. 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o
-        si es de otro usuario.
-      responses:
-        '200': {description: Inscripción, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
-        '401': {$ref: '#/components/responses/Error'}
-        '404': {$ref: '#/components/responses/Error'}
-    delete:
-      tags: [Inscripciones]
-      summary: Cancelar una inscripción en BORRADOR o PENDIENTE_PAGO
-      x-jira: PICA-208
-      x-permiso: INSCRIPCION_GESTIONAR
-      x-owner: Mateo
-      description: >-
-        Solo quien se inscribió. No borra la fila: la inscripción pasa a CANCELADA. 404 `INSCRIPCION_NO_ENCONTRADA`
-        si no existe o si es de otro usuario (también del organizador). 409 `INSCRIPCION_NO_EDITABLE` si está en
-        otro estado.
-      responses:
-        '204': {description: Cancelada}
-        '401': {$ref: '#/components/responses/Error'}
-        '403': {$ref: '#/components/responses/Error'}
-        '404': {$ref: '#/components/responses/Error'}
-        '409': {$ref: '#/components/responses/Conflicto'}
-
-  /api/v1/inscripciones/{id}/confirmar:
-    put:
-      tags: [Inscripciones]
-      summary: Confirmar el borrador aceptando el reglamento
-      x-jira: PICA-209
-      x-permiso: INSCRIPCION_GESTIONAR
-      x-owner: Mateo
-      description: >-
-        Solo quien se inscribió, y solo un borrador. Guarda la fecha y hora en que aceptó el reglamento y la
-        inscripción pasa a PENDIENTE_PAGO; si el torneo es gratis (valor de inscripción 0) pasa directo a
-        CONFIRMADA y ocupa un lugar del cupo. Sin cuerpo, sin el campo o con `false` el reglamento cuenta como
-        no aceptado. Vuelve a chequear el torneo, el usuario y la inscripción duplicada, como al crear.
-        404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador);
-        `TORNEO_NO_ENCONTRADO` si el torneo fue dado de baja.
-        409 `INSCRIPCION_NO_EDITABLE` si no está en BORRADOR; `REGLAMENTO_NO_ACEPTADO`; `INSCRIPCION_NO_ABIERTA`;
-        `USUARIO_NO_ACTIVO`; `INSCRIPCION_DUPLICADA` (también si otra confirmación del mismo usuario gana la carrera); `CUPO_COMPLETO` si las inscripciones confirmadas ya
-        completan el cupo (la inscripción sigue en BORRADOR). En un torneo con costo es un aviso temprano: el
-        cupo se chequea en firme al pagar. En uno gratis es el chequeo en firme, con la fila del torneo bloqueada.
-        403 `USUARIO_BLOQUEADO` si tiene un bloqueo vigente.
-        400 `VALIDACION` (sin `errores`) si el torneo es por equipos.
-      parameters: [{$ref: '#/components/parameters/id'}]
-      requestBody:
-        required: false
-        content: {application/json: {schema: {$ref: '#/components/schemas/ConfirmarInscripcionRequest'}}}
-      responses:
         '200': {description: Inscripción confirmada, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
         '400': {$ref: '#/components/responses/Error'}
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
+
+  # --- Torneos (Públicos) -----------------------------------------------------
+
+  /api/v1/torneos/resumen:
+    get:
+      tags: [Torneos]
+      summary: Catálogo público de torneos (resumen paginado)
+      x-jira: PICA-196
+      x-owner: Tomás
+      security: []
+      description: >-
+        Lista paginada de torneos públicos con filtros opcionales por disciplina y estado.
+        No muestra borradores ni torneos eliminados. Accesible sin autenticación.
+      parameters:
+        - {name: disciplina, in: query, schema: {type: string}, description: Filtro por disciplina}
+        - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoTorneo'}, description: Filtro por estado del torneo}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+        - {$ref: '#/components/parameters/sort'}
+      responses:
+        '200':
+          description: Página de torneos
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PageTorneoResumen'}
+
+  /api/v1/torneos/slug/{slug}:
+    get:
+      tags: [Torneos]
+      summary: Detalle público de un torneo
+      x-jira: PICA-196
+      x-owner: Tomás
+      security: []
+      description: >-
+        Devuelve el detalle completo del torneo identificado por su slug público (fechas, cupo disponible,
+        valor de inscripción, pozo estimado, reglamento y premios).
+        No accesible si el torneo está en BORRADOR o eliminado (404 TORNEO_NO_ENCONTRADO). Accesible sin autenticación.
+      parameters:
+        - {name: slug, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Detalle del torneo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TorneoDetalle'}
+        '404':
+          $ref: '#/components/responses/Error'
 
 # =============================================================================
 
@@ -1048,6 +1003,10 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/RifaResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageTorneoResumen:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/TorneoResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
 
     # --- auth ----------------------------------------------------------------
     RegistroRequest:
@@ -1391,3 +1350,83 @@ components:
         premios: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: [string, 'null'], format: date-time}
+
+    # --- Torneos -------------------------------------------------------------
+    EstadoTorneo:
+      type: string
+      enum: [BORRADOR, INSCRIPCION_ABIERTA, INSCRIPCION_CERRADA, EN_CURSO, FINALIZADO, CANCELADO]
+    FormatoTorneo:
+      type: string
+      enum: [ELIMINACION_DIRECTA]
+    ModalidadTorneo:
+      type: string
+      enum: [PRESENCIAL, VIRTUAL, HIBRIDO]
+    TipoParticipanteTorneo:
+      type: string
+      enum: [INDIVIDUAL, EQUIPO]
+    PremioDetalle:
+      type: object
+      required: [puesto, pct]
+      properties:
+        puesto: {type: integer, minimum: 1}
+        pct: {type: number, description: '% del pozo asignado a este puesto'}
+    OrganizadorResumen:
+      type: object
+      required: [id, nombreCompleto, username]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombreCompleto: {type: string}
+        username: {type: string}
+    TorneoResumen:
+      type: object
+      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoDisponible, valorInscripcion, moneda, pozoEstimado, cierreInscripcionEn, fechaInicio]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        slug: {type: string}
+        nombre: {type: string}
+        descripcion: {type: [string, 'null']}
+        disciplina: {type: string}
+        formato: {$ref: '#/components/schemas/FormatoTorneo'}
+        modalidad: {$ref: '#/components/schemas/ModalidadTorneo'}
+        tipoParticipante: {$ref: '#/components/schemas/TipoParticipanteTorneo'}
+        sede: {type: [string, 'null']}
+        estado: {$ref: '#/components/schemas/EstadoTorneo'}
+        cupoMaximo: {type: integer}
+        cupoDisponible: {type: integer}
+        valorInscripcion: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        pozoEstimado: {type: number}
+        cierreInscripcionEn: {type: string, format: date-time}
+        fechaInicio: {type: string, format: date-time}
+        fechaFin: {type: [string, 'null'], format: date-time}
+    TorneoDetalle:
+      type: object
+      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoMinimo, cupoDisponible, valorInscripcion, moneda, pctPozoCompetidores, pctPremioRifa, pozoEstimado, premios, cierreInscripcionEn, fechaInicio, reglamentoUrl, publicadoEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        slug: {type: string}
+        nombre: {type: string}
+        descripcion: {type: [string, 'null']}
+        disciplina: {type: string}
+        formato: {$ref: '#/components/schemas/FormatoTorneo'}
+        modalidad: {$ref: '#/components/schemas/ModalidadTorneo'}
+        tipoParticipante: {$ref: '#/components/schemas/TipoParticipanteTorneo'}
+        sede: {type: [string, 'null']}
+        estado: {$ref: '#/components/schemas/EstadoTorneo'}
+        cupoMaximo: {type: integer}
+        cupoMinimo: {type: integer}
+        cupoDisponible: {type: integer}
+        tamanioEquipo: {type: [integer, 'null']}
+        valorInscripcion: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        pctPozoCompetidores: {type: number}
+        pctPremioRifa: {type: number}
+        pozoEstimado: {type: number}
+        premios: {type: array, items: {$ref: '#/components/schemas/PremioDetalle'}}
+        cierreInscripcionEn: {type: string, format: date-time}
+        fechaInicio: {type: string, format: date-time}
+        fechaFin: {type: [string, 'null'], format: date-time}
+        reglamentoUrl: {type: string}
+        reglamentoHash: {type: [string, 'null']}
+        organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
+        publicadoEn: {type: [string, 'null'], format: date-time}

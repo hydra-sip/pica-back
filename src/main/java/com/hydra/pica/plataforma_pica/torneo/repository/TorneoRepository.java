@@ -5,12 +5,14 @@ import java.util.Optional;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface TorneoRepository extends JpaRepository<Torneo, Long> {
+public interface TorneoRepository extends JpaRepository<Torneo, Long>, JpaSpecificationExecutor<Torneo> {
 
     Optional<Torneo> findByIdAndEliminadoEnIsNull(Long id);
 
@@ -21,4 +23,7 @@ public interface TorneoRepository extends JpaRepository<Torneo, Long> {
 
     @Query("select count(t) > 0 from Torneo t join t.arbitros a where t.id = :torneoId and a.id = :usuarioId")
     boolean esArbitro(@Param("torneoId") Long torneoId, @Param("usuarioId") Long usuarioId);
+
+    @EntityGraph(attributePaths = {"organizador", "organizador.persona"})
+    Optional<Torneo> findBySlugAndEliminadoEnIsNull(String slug);
 }
