@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.inscripcion.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,6 +17,7 @@ import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -29,9 +31,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Dos pagos simultáneos por el último lugar (PICA-210), contra Postgres y sin la transacción del test:
+ * Operaciones simultáneas sobre la misma inscripción o el mismo cupo (PICA-210, PICA-208), contra Postgres y sin la transacción del test:
  * cada hilo corre su propia transacción, así que lo que se prueba es el bloqueo de la fila del torneo.
  * Como lo que se escribe queda confirmado, el escenario se borra al terminar.
  */
@@ -44,6 +48,7 @@ class InscripcionPagoConcurrenteIntegracionTest {
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private PlatformTransactionManager transacciones;
 
     private final List<Long> usuarios = new ArrayList<>();
     private final List<Long> personas = new ArrayList<>();
@@ -151,6 +156,49 @@ class InscripcionPagoConcurrenteIntegracionTest {
     }
 
     @RepeatedTest(5)
+    void dosBorradoresSimultaneosDelMismoUsuarioCreanUnoSoloYElOtroRecibeDuplicada() throws Exception {
+        Long organizador = usuario("org_borr");
+        torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion,
+                                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
+                VALUES (?, 'Torneo', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL', 8, 2,
+                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        Long jugador = usuario("j_borr");
+
+        CyclicBarrier salida = new CyclicBarrier(2);
+        ExecutorService hilos = Executors.newFixedThreadPool(2);
+        try {
+            Callable<EstadoInscripcion> creacion = () -> {
+                salida.await();
+                return inscripcionService.crear(jugador, torneo, null).estado();
+            };
+            Future<EstadoInscripcion> primera = hilos.submit(creacion);
+            Future<EstadoInscripcion> segunda = hilos.submit(creacion);
+
+            List<EstadoInscripcion> creados = new ArrayList<>();
+            List<CodigoError> rechazos = new ArrayList<>();
+            for (Future<EstadoInscripcion> pedido : List.of(primera, segunda)) {
+                try {
+                    creados.add(pedido.get(30, TimeUnit.SECONDS));
+                } catch (ExecutionException e) {
+                    assertThat(e.getCause()).isInstanceOf(ApiException.class);
+                    rechazos.add(((ApiException) e.getCause()).getCodigo());
+                }
+            }
+
+            assertThat(creados).containsExactly(EstadoInscripcion.BORRADOR);
+            assertThat(rechazos).containsExactly(CodigoError.INSCRIPCION_DUPLICADA);
+        } finally {
+            hilos.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM inscripcion WHERE torneo_id = ? AND estado = 'BORRADOR'", Integer.class, torneo)).isEqualTo(1);
+    }
+
+    @RepeatedTest(5)
     void dosEquiposQueComparteUnJugadorConfirmanALaVezYSoloUnoConfirma() throws Exception {
         Long organizador = usuario("org_comp");
         torneo = jdbc.queryForObject("""
@@ -232,6 +280,118 @@ class InscripcionPagoConcurrenteIntegracionTest {
             assertThat(rechazos).containsExactly(CodigoError.INSCRIPCION_NO_EDITABLE);
         } finally {
             hilos.shutdownNow();
+        }
+    }
+
+    // editar reemplaza la nómina por la del capitán solo, que no alcanza para confirmar: si la confirmación
+    // ganara sin ver ese cambio, quedaría una pendiente con la nómina sin validar
+    @RepeatedTest(5)
+    void editarYConfirmarElMismoBorradorDeEquipoNoDejanUnaPendienteConLaNominaSinValidar() throws Exception {
+        Long organizador = usuario("org_edit_conf");
+        torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, tamanio_equipo, nomina_maxima,
+                                    valor_inscripcion, pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en,
+                                    fecha_inicio, estado)
+                VALUES (?, 'Torneo', 'https://r', 'Futbol', 'ELIMINACION_DIRECTA', 'PRESENCIAL', 'EQUIPO', 8, 2, 2, 3,
+                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        Long jugador = usuario("jug_edit_conf");
+        Long capitan = usuario("cap_edit_conf");
+        long inscripcion = borradorDeEquipo(capitan, jugador);
+        Long equipo = jdbc.queryForObject("SELECT equipo_id FROM inscripcion WHERE id = ?", Long.class, inscripcion);
+
+        CyclicBarrier salida = new CyclicBarrier(2);
+        ExecutorService hilos = Executors.newFixedThreadPool(2);
+        List<CodigoError> rechazos = new ArrayList<>();
+        boolean confirmo;
+        try {
+            Future<EstadoInscripcion> edita = hilos.submit(() -> {
+                salida.await();
+                return inscripcionService.editar(capitan, inscripcion, new InscripcionEquipoRequest(equipo, null, List.of())).estado();
+            });
+            Future<EstadoInscripcion> confirma = hilos.submit(confirmacion(salida, capitan, inscripcion));
+
+            confirmo = resultado(confirma, rechazos) != null;
+            resultado(edita, rechazos);
+        } finally {
+            hilos.shutdownNow();
+        }
+
+        // pierde el que llega segundo, y por el estado o la nómina que dejó el primero
+        assertThat(rechazos).isSubsetOf(CodigoError.INSCRIPCION_NO_EDITABLE, CodigoError.NOMINA_INVALIDA);
+        String estado = jdbc.queryForObject("SELECT estado FROM inscripcion WHERE id = ?", String.class, inscripcion);
+        Integer jugadores = jdbc.queryForObject("SELECT count(*) FROM nomina WHERE inscripcion_id = ?", Integer.class, inscripcion);
+        if (confirmo) {
+            assertThat(estado).isEqualTo("PENDIENTE_PAGO");
+        }
+        if (estado.equals("PENDIENTE_PAGO")) {
+            assertThat(jugadores).isGreaterThanOrEqualTo(2);
+        }
+    }
+
+    // Cancelar es tan corto que casi siempre commitea antes de que pagar lea, y una carrera con barrera no falla
+    // siempre sin el bloqueo. Así que acá el test tiene el bloqueo del torneo: cancelar espera, un pago
+    // "comitea" CONFIRMADA mientras tanto, y al soltar cancelar tiene que ver ese estado y no pisarlo.
+    @RepeatedTest(5)
+    void cancelarQueEsperabaElBloqueoVeElPagoQueSeConfirmoMientrasTanto() throws Exception {
+        Long organizador = usuario("org_canc_pago");
+        torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion,
+                                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
+                VALUES (?, 'Torneo', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL', 8, 2,
+                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        Long jugador = usuario("j_canc_pago");
+        long inscripcion = inscripcion(jugador, "PENDIENTE_PAGO");
+
+        ExecutorService hilos = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> cancela = new TransactionTemplate(transacciones).execute(tx -> {
+                jdbc.queryForList("SELECT id FROM torneo WHERE id = ? FOR UPDATE", torneo);
+                Future<?> cancelacion = hilos.submit(() -> inscripcionService.cancelar(jugador, inscripcion));
+                esperarQueSeBloquee(cancelacion);
+                jdbc.update("UPDATE inscripcion SET estado = 'CONFIRMADA' WHERE id = ?", inscripcion);
+                return cancelacion;
+            });
+
+            assertThatThrownBy(() -> cancela.get(30, TimeUnit.SECONDS))
+                    .isInstanceOf(ExecutionException.class)
+                    .cause().isInstanceOfSatisfying(ApiException.class,
+                            e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.INSCRIPCION_NO_EDITABLE));
+        } finally {
+            hilos.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject("SELECT estado FROM inscripcion WHERE id = ?", String.class, inscripcion))
+                .isEqualTo("CONFIRMADA");
+    }
+
+    // Sin el bloqueo, la operación termina sola enseguida y el test falla en la aserción siguiente; con él,
+    // queda esperando y sale por tiempo.
+    private void esperarQueSeBloquee(Future<?> operacion) {
+        long limite = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (!operacion.isDone() && System.nanoTime() < limite
+                && jdbc.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'", Integer.class) == 0) {
+            try {
+                Thread.sleep(20);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    // el estado con que terminó la operación, o nulo si la rechazaron (y entonces suma el código a rechazos)
+    private EstadoInscripcion resultado(Future<EstadoInscripcion> operacion, List<CodigoError> rechazos) throws Exception {
+        try {
+            return operacion.get(30, TimeUnit.SECONDS);
+        } catch (ExecutionException e) {
+            assertThat(e.getCause()).isInstanceOf(ApiException.class);
+            rechazos.add(((ApiException) e.getCause()).getCodigo());
+            return null;
         }
     }
 
