@@ -332,6 +332,12 @@ INSCRIPCION_ID=$(campo .id)
 pedir 200 GET /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
 pedir 204 DELETE /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
 pedir 409:INSCRIPCION_NO_EDITABLE DELETE /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
+# el torneo de la prueba es gratis: al confirmar queda CONFIRMADA
+pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
+INSCRIPCION_ID=$(campo .id)
+pedir 409:REGLAMENTO_NO_ACEPTADO PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":false}'
+pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+pedir 409:INSCRIPCION_NO_EDITABLE PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
 # cierra todas sus sesiones: después de esto su access ya no sirve
 pedir 204 PUT /api/v1/me/password "" "$USUARIO" "$(jq -nc --arg a "$CLAVE_2" --arg n "$CLAVE_3" \
     '{passwordActual: $a, passwordNueva: $n}')"

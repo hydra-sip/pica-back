@@ -73,7 +73,7 @@ Responde 200 con `"status": "UP"` si la app y la base andan, y 503 con `DOWN` si
 
 ### Prueba de humo del contrato
 
-`scripts/prueba-de-humo.sh` recorre todas las operaciones de `docs/api/openapi.yaml` contra una API levantada y compara cada código HTTP con el del contrato. Termina con `Contrato: 34/34 operaciones` y falla si alguna operación quedó sin probar, así que un endpoint nuevo en el contrato obliga a sumarlo al script. Los torneos todavía no tienen API: para probar las inscripciones el script carga uno por SQL y lo borra al limpiar.
+`scripts/prueba-de-humo.sh` recorre todas las operaciones de `docs/api/openapi.yaml` contra una API levantada y compara cada código HTTP con el del contrato. Termina con `Contrato: 35/35 operaciones` y falla si alguna operación quedó sin probar, así que un endpoint nuevo en el contrato obliga a sumarlo al script. Los torneos todavía no tienen API: para probar las inscripciones el script carga uno por SQL y lo borra al limpiar.
 
 Crea un rol, una persona y dos usuarios marcados con el id de la corrida (`humo-…`). Al final los borra de la base por SQL, porque la API solo hace bajas lógicas. La limpieza corre aunque un paso falle o se corte con Ctrl+C, y al final verifica que no quedó nada de la corrida. Si no puede llegar a la base, no arranca. Lo único que queda son las líneas de log de la API.
 

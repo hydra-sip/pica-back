@@ -3,6 +3,9 @@ package com.hydra.pica.plataforma_pica.inscripcion.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doReturn;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -13,6 +16,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
+import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -29,6 +33,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -42,6 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
 class InscripcionServiceIntegracionTest {
 
     @Autowired private InscripcionService inscripcionService;
+    @MockitoSpyBean private InscripcionRepository inscripcionRepository;
     @Autowired private BloqueoService bloqueoService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
@@ -247,6 +253,166 @@ class InscripcionServiceIntegracionTest {
         assertError(() -> inscripcionService.cancelar(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
     }
 
+    // --- confirmar ----------------------------------------------------------
+
+    @Test
+    void confirmarPasaElBorradorAPendienteDePagoYGuardaCuandoSeAceptoElReglamento() {
+        long id = inscripcionDe(jugador, "BORRADOR");
+        Instant antes = Instant.now();
+
+        InscripcionDetalle confirmada = inscripcionService.confirmar(jugador, id, true);
+
+        assertThat(confirmada.estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+        assertThat(confirmada.reglamentoAceptadoEn()).isAfterOrEqualTo(antes.minusSeconds(1));
+        assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+    }
+
+    @Test
+    void sinAceptarElReglamentoNoSeConfirmaYSigueEnBorrador() {
+        long id = inscripcionDe(jugador, "BORRADOR");
+
+        assertError(() -> inscripcionService.confirmar(jugador, id, false), HttpStatus.CONFLICT, CodigoError.REGLAMENTO_NO_ACEPTADO);
+
+        InscripcionDetalle vista = inscripcionService.detalle(jugador, id);
+        assertThat(vista.estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+        assertThat(vista.reglamentoAceptadoEn()).isNull();
+    }
+
+    @Test
+    void soloSeConfirmaUnBorrador() {
+        for (String estado : new String[] {"PENDIENTE_PAGO", "CONFIRMADA", "CANCELADA"}) {
+            long id = inscripcionDe(usuario("u_" + estado.toLowerCase()).getId(), estado);
+            Long dueno = jdbc.queryForObject("SELECT usuario_id FROM inscripcion WHERE id = ?", Long.class, id);
+
+            assertError(() -> inscripcionService.confirmar(dueno, id, true), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
+        }
+    }
+
+    @Test
+    void soloElParticipanteConfirmaSuInscripcion() {
+        long id = inscripcionDe(jugador, "BORRADOR");
+
+        assertError(() -> inscripcionService.confirmar(organizador, id, true), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.confirmar(usuario("otro_conf").getId(), id, true), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+    }
+
+    @Test
+    void alConfirmarElTorneoTieneQueSeguirAbierto() {
+        long id = inscripcionDe(jugador, "BORRADOR");
+        jdbc.update("UPDATE torneo SET estado = 'INSCRIPCION_CERRADA' WHERE id = ?", torneo);
+
+        assertError(() -> inscripcionService.confirmar(jugador, id, true), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+    }
+
+    @Test
+    void alConfirmarLaFechaDeCierreNoPuedePasar() {
+        long id = inscripcionDe(jugador, "BORRADOR");
+        jdbc.update("UPDATE torneo SET cierre_inscripcion_en = now() - interval '1 minute' WHERE id = ?", torneo);
+
+        assertError(() -> inscripcionService.confirmar(jugador, id, true), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+    }
+
+    @Test
+    void unUsuarioBloqueadoDespuesDelBorradorNoConfirma() {
+        Usuario bloqueado = usuario("bloq_conf");
+        long id = inscripcionDe(bloqueado.getId(), "BORRADOR");
+        bloqueoService.bloquear(bloqueado, "Mala conducta", Instant.now().plus(5, ChronoUnit.DAYS));
+
+        assertError(() -> inscripcionService.confirmar(bloqueado.getId(), id, true), HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO);
+    }
+
+    @Test
+    void unUsuarioQueDejoDeEstarActivoNoConfirma() {
+        Usuario suspendido = usuario("susp_conf");
+        long id = inscripcionDe(suspendido.getId(), "BORRADOR");
+        suspendido.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
+        usuarioRepository.saveAndFlush(suspendido);
+
+        assertError(() -> inscripcionService.confirmar(suspendido.getId(), id, true), HttpStatus.CONFLICT, CodigoError.USUARIO_NO_ACTIVO);
+    }
+
+    @Test
+    void conOtraInscripcionActivaEnElTorneoNoSeConfirma() {
+        long borrador = inscripcionDe(jugador, "BORRADOR");
+        inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        assertError(() -> inscripcionService.confirmar(jugador, borrador, true), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
+        assertThat(inscripcionService.detalle(jugador, borrador).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+    }
+
+    @Test
+    void conElCupoCompletoNoSeConfirmaYSigueEnBorrador() {
+        long id = inscripcionDe(jugador, "BORRADOR");
+        llenarElCupo(2);
+
+        assertError(() -> inscripcionService.confirmar(jugador, id, true), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
+
+        InscripcionDetalle vista = inscripcionService.detalle(jugador, id);
+        assertThat(vista.estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+        assertThat(vista.reglamentoAceptadoEn()).isNull();
+    }
+
+    @Test
+    void lasPendientesDePagoNoOcupanCupo() {
+        long id = inscripcionDe(jugador, "BORRADOR");
+        jdbc.update("UPDATE torneo SET cupo_maximo = 2 WHERE id = ?", torneo);
+        inscripcionDe(usuario("conf_cupo").getId(), "CONFIRMADA");
+        inscripcionDe(usuario("pend_cupo").getId(), "PENDIENTE_PAGO");
+
+        assertThat(inscripcionService.confirmar(jugador, id, true).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+    }
+
+    @Test
+    void enUnTorneoGratisLaInscripcionQuedaConfirmadaSinPasarPorElPago() {
+        long gratis = torneoIndividualGratis();
+        long id = inscripcionEn(gratis, jugador, "BORRADOR");
+
+        InscripcionDetalle confirmada = inscripcionService.confirmar(jugador, id, true);
+
+        assertThat(confirmada.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(confirmada.reglamentoAceptadoEn()).isNotNull();
+    }
+
+    @Test
+    void enUnTorneoGratisConElCupoCompletoTampocoSeConfirma() {
+        long gratis = torneoIndividualGratis();
+        jdbc.update("UPDATE torneo SET cupo_maximo = 2 WHERE id = ?", gratis);
+        inscripcionEn(gratis, usuario("g1_cupo").getId(), "CONFIRMADA");
+        inscripcionEn(gratis, usuario("g2_cupo").getId(), "CONFIRMADA");
+        long id = inscripcionEn(gratis, jugador, "BORRADOR");
+
+        assertError(() -> inscripcionService.confirmar(jugador, id, true), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
+        assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+    }
+
+    @Test
+    void unTorneoDadoDeBajaNoSeConfirma() {
+        long id = inscripcionDe(jugador, "BORRADOR");
+        jdbc.update("UPDATE torneo SET eliminado_en = now() WHERE id = ?", torneo);
+
+        assertError(() -> inscripcionService.confirmar(jugador, id, true), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
+    }
+
+    @Test
+    void unTorneoGratisDadoDeBajaTampocoSeConfirma() {
+        long gratis = torneoIndividualGratis();
+        long id = inscripcionEn(gratis, jugador, "BORRADOR");
+        jdbc.update("UPDATE torneo SET eliminado_en = now() WHERE id = ?", gratis);
+
+        assertError(() -> inscripcionService.confirmar(jugador, id, true), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
+    }
+
+    @Test
+    void siLaBaseDetectaLaDuplicadaDespuesDelChequeoEsUn409Duplicada() {
+        long borrador = inscripcionDe(jugador, "BORRADOR");
+        inscripcionDe(jugador, "PENDIENTE_PAGO");
+        // otra confirmación concurrente ganó la carrera después de que este chequeo pasó
+        doReturn(false).when(inscripcionRepository).existsByTorneoIdAndUsuarioIdAndEstadoIn(anyLong(), anyLong(), any());
+
+        assertError(() -> inscripcionService.confirmar(jugador, borrador, true), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
+    }
+
     // --- reglas de la base --------------------------------------------------
 
     @Test
@@ -276,11 +442,22 @@ class InscripcionServiceIntegracionTest {
     }
 
     private long inscripcionDe(long usuario, String estado) {
+        return inscripcionEn(torneo, usuario, estado);
+    }
+
+    private void llenarElCupo(int lugares) {
+        jdbc.update("UPDATE torneo SET cupo_maximo = ? WHERE id = ?", lugares, torneo);
+        for (int i = 0; i < lugares; i++) {
+            inscripcionDe(usuario("lleno_" + i).getId(), "CONFIRMADA");
+        }
+    }
+
+    private long inscripcionEn(long torneoId, long usuario, String estado) {
         return jdbc.queryForObject("""
                 INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
                 VALUES (?, ?, ?, CASE WHEN ? = 'BORRADOR' THEN NULL ELSE now() END)
                 RETURNING id
-                """, Long.class, torneo, usuario, estado, estado);
+                """, Long.class, torneoId, usuario, estado, estado);
     }
 
     private long torneoPorEquipos() {
@@ -292,6 +469,12 @@ class InscripcionServiceIntegracionTest {
                         1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
                 RETURNING id
                 """, Long.class, organizador);
+    }
+
+    private long torneoIndividualGratis() {
+        long gratis = torneoIndividual("INSCRIPCION_ABIERTA", "now() + interval '1 day'");
+        jdbc.update("UPDATE torneo SET valor_inscripcion = 0 WHERE id = ?", gratis);
+        return gratis;
     }
 
     private long torneoIndividual(String estado, String cierre) {

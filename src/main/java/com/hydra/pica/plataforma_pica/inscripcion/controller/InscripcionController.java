@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.inscripcion.controller;
 import java.net.URI;
 
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.ConfirmarInscripcionRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
 import org.springframework.http.ResponseEntity;
@@ -12,12 +13,14 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
- * Inscripciones del usuario logueado (PICA-208). Crear y cancelar piden INSCRIPCION_GESTIONAR (V14, rol
+ * Inscripciones del usuario logueado. Crear, confirmar y cancelar piden INSCRIPCION_GESTIONAR (V14, rol
  * PARTICIPANTE). Ver alcanza con estar logueado, porque también la ve el organizador del torneo: quién
  * la ve lo decide {@link InscripcionService}, y para cualquier otro responde 404.
  */
@@ -47,6 +50,13 @@ public class InscripcionController {
     @GetMapping("/inscripciones/{id}")
     public InscripcionDetalle ver(@PathVariable Long id) {
         return inscripcionService.detalle(usuarioActual(), id);
+    }
+
+    @PutMapping("/inscripciones/{id}/confirmar")
+    @PreAuthorize("hasAuthority('INSCRIPCION_GESTIONAR')")
+    public InscripcionDetalle confirmar(@PathVariable Long id, @RequestBody(required = false) ConfirmarInscripcionRequest request) {
+        boolean reglamentoAceptado = request != null && Boolean.TRUE.equals(request.reglamentoAceptado());
+        return inscripcionService.confirmar(usuarioActual(), id, reglamentoAceptado);
     }
 
     @DeleteMapping("/inscripciones/{id}")
