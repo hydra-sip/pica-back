@@ -178,6 +178,10 @@ CREATE TEMP TABLE humo_t ON COMMIT DROP AS
 SELECT (SELECT count(*) FROM humo_u), (SELECT count(*) FROM humo_p),
        (SELECT count(*) FROM humo_r), (SELECT count(*) FROM humo_t);
 DELETE FROM refresh_token WHERE id IN (SELECT id FROM humo_t);
+DELETE FROM movimiento
+    WHERE inscripcion_id IN (SELECT id FROM inscripcion
+        WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u));
+DELETE FROM billetera WHERE usuario_id IN (SELECT id FROM humo_u);
 DELETE FROM inscripcion
     WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u);
 DELETE FROM torneo WHERE id IN (SELECT id FROM humo_tor);
@@ -314,7 +318,7 @@ USUARIO=$(campo .accessToken)
 USUARIO_REFRESH=$(campo .refreshToken)
 
 echo
-echo "Inscripciones (en un torneo individual cargado por SQL: todavía no hay API para crearlos)"
+echo "Inscripciones (en torneos individuales cargados por SQL: todavía no hay API para crearlos)"
 TORNEO_ID=$(sql <<SQL
 INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad, tipo_participante,
                     cupo_maximo, cupo_minimo, valor_inscripcion, pct_pozo_competidores, pct_premio_rifa,
@@ -338,6 +342,27 @@ INSCRIPCION_ID=$(campo .id)
 pedir 409:REGLAMENTO_NO_ACEPTADO PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":false}'
 pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
 pedir 409:INSCRIPCION_NO_EDITABLE PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+# un torneo con costo: confirmar la deja pendiente de pago y se paga por la interfaz de cobro simulada
+TORNEO_PAGO_ID=$(sql <<SQL
+INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad, tipo_participante,
+                    cupo_maximo, cupo_minimo, valor_inscripcion, pct_pozo_competidores, pct_premio_rifa,
+                    cierre_inscripcion_en, fecha_inicio, estado)
+SELECT id, '$CORRIDA', 'https://example.com/reglamento', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL',
+       8, 2, 1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA'
+FROM usuario WHERE username = '$ADMIN_USER'
+RETURNING id;
+SQL
+)
+[[ $TORNEO_PAGO_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudo cargar el torneo con costo de la prueba"; exit 1; }
+pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_PAGO_ID/inscripciones" "$USUARIO"
+INSCRIPCION_ID=$(campo .id)
+pedir 409:INSCRIPCION_NO_EDITABLE GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
+pedir 409:INSCRIPCION_NO_EDITABLE POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
+pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+pedir 200 GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
+pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
+pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
+pedir 409:INSCRIPCION_NO_EDITABLE GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
 # cierra todas sus sesiones: después de esto su access ya no sirve
 pedir 204 PUT /api/v1/me/password "" "$USUARIO" "$(jq -nc --arg a "$CLAVE_2" --arg n "$CLAVE_3" \
     '{passwordActual: $a, passwordNueva: $n}')"

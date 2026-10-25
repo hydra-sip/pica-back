@@ -3,6 +3,9 @@ package com.hydra.pica.plataforma_pica.inscripcion.service;
 import java.time.Instant;
 import java.util.List;
 
+import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
+import com.hydra.pica.plataforma_pica.billetera.service.CobroService;
+import com.hydra.pica.plataforma_pica.billetera.service.SolicitudCobro;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
@@ -11,6 +14,7 @@ import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
@@ -45,6 +49,7 @@ public class InscripcionService {
     private final InscripcionRepository inscripcionRepository;
     private final TorneoRepository torneoRepository;
     private final UsuarioRepository usuarioRepository;
+    private final CobroService cobroService;
 
     @Transactional
     public InscripcionDetalle crear(Long usuarioId, Long torneoId) {
@@ -110,8 +115,7 @@ public class InscripcionService {
         // Un torneo gratis confirma acá, así que el cupo se chequea en firme con la fila bloqueada. En uno
         // pago es un aviso temprano: el chequeo en firme es el del pago.
         Torneo torneo = gratis
-                ? torneoRepository.buscarBloqueado(torneoId)
-                        .orElseThrow(() -> new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO, "No existe el torneo " + torneoId))
+                ? torneoBloqueado(torneoId)
                 : inscripcion.getTorneo();
         validarUsuario(inscripcion.getUsuario());
         validarTorneo(torneo);
@@ -119,9 +123,7 @@ public class InscripcionService {
             throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
                     "Ya tenés una inscripción activa en el torneo " + torneoId);
         }
-        if (inscripcionRepository.countByTorneoIdAndEstado(torneoId, EstadoInscripcion.CONFIRMADA) >= torneo.getCupoMaximo()) {
-            throw new ConflictoException(CodigoError.CUPO_COMPLETO, "El torneo " + torneoId + " ya no tiene cupo");
-        }
+        validarCupo(torneo);
         inscripcion.setEstado(gratis ? EstadoInscripcion.CONFIRMADA : EstadoInscripcion.PENDIENTE_PAGO);
         inscripcion.setReglamentoAceptadoEn(Instant.now());
         try {
@@ -144,6 +146,51 @@ public class InscripcionService {
         return causa == null ? null : ((ConstraintViolationException) causa).getConstraintName();
     }
 
+    /** Lo que va a pagar el participante; solo se ve mientras la inscripción está pendiente de pago. */
+    @Transactional(readOnly = true)
+    public ResumenPago resumenPago(Long usuarioId, Long id) {
+        Inscripcion inscripcion = buscar(id);
+        if (!esDe(inscripcion, usuarioId)) {
+            throw noEncontrada(id);
+        }
+        if (inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
+            throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
+                    "La inscripción " + id + " está " + inscripcion.getEstado() + ": el resumen es de una PENDIENTE_PAGO");
+        }
+        return ResumenPago.de(inscripcion, confirmadas(inscripcion.getTorneo().getId()));
+    }
+
+    /**
+     * Cobra el valor de la inscripción por la interfaz de cobro y la deja confirmada. Primero bloquea la
+     * fila del torneo y recién después lee la inscripción, así un pago simultáneo de la misma inscripción
+     * o por el último lugar ve lo que dejó el anterior.
+     */
+    @Transactional
+    public InscripcionDetalle pagar(Long usuarioId, Long id) {
+        Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
+                .orElseThrow(() -> noEncontrada(id));
+        Torneo torneo = torneoBloqueado(torneoId);
+        Inscripcion inscripcion = buscar(id);
+        if (inscripcion.getEstado() == EstadoInscripcion.CONFIRMADA) {
+            return InscripcionDetalle.de(inscripcion);
+        }
+        if (inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
+            throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
+                    "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se paga en PENDIENTE_PAGO");
+        }
+        validarUsuario(usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + usuarioId)));
+        validarTorneoAbierto(torneo);
+        validarCupo(torneo);
+        // un torneo sin costo no pasa por el cobro: V9 exige monto > 0
+        if (torneo.getValorInscripcion().signum() > 0) {
+            cobroService.cobrar(new SolicitudCobro(usuarioId, TipoMovimiento.INSCRIPCION, torneo.getValorInscripcion(),
+                    torneoId, id, "inscripcion-" + id, "Inscripción al torneo " + torneo.getNombre()));
+        }
+        inscripcion.setEstado(EstadoInscripcion.CONFIRMADA);
+        return InscripcionDetalle.de(inscripcionRepository.saveAndFlush(inscripcion));
+    }
+
     private Inscripcion buscar(Long id) {
         return inscripcionRepository.findById(id).orElseThrow(() -> noEncontrada(id));
     }
@@ -164,7 +211,16 @@ public class InscripcionService {
         }
     }
 
+    // crear y confirmar rechazan los torneos por equipos hasta que llegue su borrador; pagar no, a propósito
     private void validarTorneo(Torneo torneo) {
+        validarTorneoAbierto(torneo);
+        if (torneo.getTipoParticipante() == TipoParticipante.EQUIPO) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
+                    "La inscripción a torneos por equipos no está disponible");
+        }
+    }
+
+    private void validarTorneoAbierto(Torneo torneo) {
         if (torneo.getEliminadoEn() != null) {
             throw new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO, "No existe el torneo " + torneo.getId());
         }
@@ -172,9 +228,21 @@ public class InscripcionService {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
                     "El torneo " + torneo.getId() + " no tiene la inscripción abierta");
         }
-        if (torneo.getTipoParticipante() == TipoParticipante.EQUIPO) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
-                    "La inscripción a torneos por equipos no está disponible");
+    }
+
+    private Torneo torneoBloqueado(Long torneoId) {
+        return torneoRepository.buscarBloqueado(torneoId)
+                .orElseThrow(() -> new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO, "No existe el torneo " + torneoId));
+    }
+
+    // solo las confirmadas ocupan cupo
+    private long confirmadas(Long torneoId) {
+        return inscripcionRepository.countByTorneoIdAndEstado(torneoId, EstadoInscripcion.CONFIRMADA);
+    }
+
+    private void validarCupo(Torneo torneo) {
+        if (confirmadas(torneo.getId()) >= torneo.getCupoMaximo()) {
+            throw new ConflictoException(CodigoError.CUPO_COMPLETO, "El torneo " + torneo.getId() + " ya no tiene cupo");
         }
     }
 

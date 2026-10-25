@@ -13,9 +13,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Optional;
 
+import com.hydra.pica.plataforma_pica.billetera.service.CobroRechazadoException;
 import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
@@ -25,7 +27,9 @@ import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -228,6 +232,105 @@ class InscripcionControllerTest {
         mockMvc.perform(put("/api/v1/inscripciones/8/confirmar").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.codigo").value("CUPO_COMPLETO"));
+    }
+
+    @Test
+    @DisplayName("GET resumen-pago y POST pago sin autenticación responden 401")
+    void pagoSinAutenticacion() throws Exception {
+        mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/inscripciones/7/pago")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(inscripcionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "ROL_VER")
+    @DisplayName("Sin INSCRIPCION_GESTIONAR, el resumen y el pago responden 403 SIN_PERMISO")
+    void pagoSinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+
+        mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
+        mockMvc.perform(post("/api/v1/inscripciones/7/pago"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
+        verifyNoInteractions(inscripcionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("GET /inscripciones/{id}/resumen-pago responde 200 con lo que se va a pagar")
+    void resumenDePago() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.resumenPago(PARTICIPANTE, 7L)).thenReturn(new ResumenPago(7L,
+                new ResumenPago.TorneoPago(3L, "Copa"), new UsuarioPublico(PARTICIPANTE, "jugador", "Ana", "Paz"),
+                new BigDecimal("1500.00"), "ARS", 8, 5L, CREADA));
+
+        mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inscripcionId").value(7))
+                .andExpect(jsonPath("$.torneo.nombre").value("Copa"))
+                .andExpect(jsonPath("$.participante.username").value("jugador"))
+                .andExpect(jsonPath("$.participante.email").doesNotExist())
+                .andExpect(jsonPath("$.monto").value(1500.00))
+                .andExpect(jsonPath("$.moneda").value("ARS"))
+                .andExpect(jsonPath("$.cupoMaximo").value(8))
+                .andExpect(jsonPath("$.cupoDisponible").value(5))
+                .andExpect(jsonPath("$.cierreInscripcionEn").value("2026-10-24T12:00:00Z"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("El resumen de una inscripción ajena responde 404 y fuera de PENDIENTE_PAGO responde 409 con su código")
+    void resumenConError() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.resumenPago(PARTICIPANTE, 7L))
+                .thenThrow(new NoEncontradoException(CodigoError.INSCRIPCION_NO_ENCONTRADA, "no existe"));
+        when(inscripcionService.resumenPago(PARTICIPANTE, 8L))
+                .thenThrow(new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE, "confirmada"));
+
+        mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("INSCRIPCION_NO_ENCONTRADA"));
+        mockMvc.perform(get("/api/v1/inscripciones/8/resumen-pago"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("INSCRIPCION_NO_EDITABLE"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("POST /inscripciones/{id}/pago paga con el usuario de la sesión y responde 200")
+    void paga() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.pagar(PARTICIPANTE, 7L))
+                .thenReturn(new InscripcionDetalle(7L, 3L, PARTICIPANTE, EstadoInscripcion.CONFIRMADA, CREADA, CREADA, CREADA));
+
+        mockMvc.perform(post("/api/v1/inscripciones/7/pago"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(7))
+                .andExpect(jsonPath("$.estado").value("CONFIRMADA"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("El pago deja pasar el código de cada regla: 404, cupo completo y cobro rechazado")
+    void pagoConError() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.pagar(PARTICIPANTE, 7L))
+                .thenThrow(new NoEncontradoException(CodigoError.INSCRIPCION_NO_ENCONTRADA, "no existe"));
+        when(inscripcionService.pagar(PARTICIPANTE, 8L))
+                .thenThrow(new ConflictoException(CodigoError.CUPO_COMPLETO, "lleno"));
+        when(inscripcionService.pagar(PARTICIPANTE, 9L)).thenThrow(new CobroRechazadoException("sin fondos"));
+
+        mockMvc.perform(post("/api/v1/inscripciones/7/pago"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("INSCRIPCION_NO_ENCONTRADA"));
+        mockMvc.perform(post("/api/v1/inscripciones/8/pago"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("CUPO_COMPLETO"));
+        mockMvc.perform(post("/api/v1/inscripciones/9/pago"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("COBRO_RECHAZADO"));
     }
 
     private InscripcionDetalle detalle() {

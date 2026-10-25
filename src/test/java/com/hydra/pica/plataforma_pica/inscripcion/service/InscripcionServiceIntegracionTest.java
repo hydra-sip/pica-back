@@ -6,16 +6,26 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
+import com.hydra.pica.plataforma_pica.billetera.service.CobroRechazadoException;
+import com.hydra.pica.plataforma_pica.billetera.service.CobroService;
+import com.hydra.pica.plataforma_pica.billetera.service.SolicitudCobro;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
@@ -26,6 +36,7 @@ import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -48,6 +59,7 @@ class InscripcionServiceIntegracionTest {
 
     @Autowired private InscripcionService inscripcionService;
     @MockitoSpyBean private InscripcionRepository inscripcionRepository;
+    @MockitoSpyBean private CobroService cobroService;
     @Autowired private BloqueoService bloqueoService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
@@ -413,6 +425,238 @@ class InscripcionServiceIntegracionTest {
         assertError(() -> inscripcionService.confirmar(jugador, borrador, true), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
     }
 
+    // --- pagar --------------------------------------------------------------
+
+    @Test
+    void pagarConfirmaLaInscripcionYRegistraElCobroDelValorDelTorneo() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        InscripcionDetalle pagada = inscripcionService.pagar(jugador, id);
+
+        assertThat(pagada.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        Map<String, Object> cobro = jdbc.queryForMap("""
+                SELECT m.tipo, m.estado, m.monto, b.usuario_id
+                FROM movimiento m JOIN billetera b ON b.id = m.billetera_id
+                WHERE m.inscripcion_id = ?
+                """, id);
+        assertThat(cobro).containsEntry("tipo", "INSCRIPCION").containsEntry("estado", "CONFIRMADO")
+                .containsEntry("usuario_id", jugador);
+        assertThat((BigDecimal) cobro.get("monto")).isEqualByComparingTo("1000");
+    }
+
+    @Test
+    void reintentarElPagoDeUnaConfirmadaRespondeConExitoYNoCobraDeNuevo() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+        inscripcionService.pagar(jugador, id);
+
+        InscripcionDetalle reintento = inscripcionService.pagar(jugador, id);
+
+        assertThat(reintento.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(movimientosDe(id)).isEqualTo(1);
+    }
+
+    @Test
+    void reintentarUnaConfirmadaSigueSiendoExitoAunqueElTorneoYaCerro() {
+        long id = inscripcionDe(jugador, "CONFIRMADA");
+        jdbc.update("UPDATE torneo SET estado = 'INSCRIPCION_CERRADA' WHERE id = ?", torneo);
+
+        assertThat(inscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(movimientosDe(id)).isZero();
+    }
+
+    @Test
+    void elCobroLlevaLaClaveDeLaInscripcionElMontoDelTorneoYElTipoInscripcion() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        inscripcionService.pagar(jugador, id);
+
+        ArgumentCaptor<SolicitudCobro> solicitud = ArgumentCaptor.forClass(SolicitudCobro.class);
+        verify(cobroService).cobrar(solicitud.capture());
+        assertThat(solicitud.getValue().claveIdempotencia()).isEqualTo("inscripcion-" + id);
+        assertThat(solicitud.getValue().tipo()).isEqualTo(TipoMovimiento.INSCRIPCION);
+        assertThat(solicitud.getValue().monto()).isEqualByComparingTo("1000");
+        assertThat(solicitud.getValue().usuarioId()).isEqualTo(jugador);
+        assertThat(solicitud.getValue().torneoId()).isEqualTo(torneo);
+        assertThat(solicitud.getValue().inscripcionId()).isEqualTo(id);
+    }
+
+    @Test
+    void reintentarUnaConfirmadaSigueSiendoExitoAunqueElTorneoSeHayaDadoDeBaja() {
+        long id = inscripcionDe(jugador, "CONFIRMADA");
+        jdbc.update("UPDATE torneo SET eliminado_en = now() WHERE id = ?", torneo);
+
+        assertThat(inscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        verify(cobroService, never()).cobrar(any());
+    }
+
+    @Test
+    void soloSePagaUnaPendienteDePago() {
+        for (String estado : new String[] {"BORRADOR", "CANCELADA"}) {
+            Long dueno = usuario("pagar_" + estado.toLowerCase()).getId();
+            long id = inscripcionDe(dueno, estado);
+
+            assertError(() -> inscripcionService.pagar(dueno, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
+            assertThat(movimientosDe(id)).isZero();
+        }
+    }
+
+    @Test
+    void soloElParticipantePagaSuInscripcion() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        assertError(() -> inscripcionService.pagar(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.pagar(usuario("otro_pago").getId(), id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.pagar(jugador, 999_999L), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertThat(movimientosDe(id)).isZero();
+    }
+
+    @Test
+    void alPagarElTorneoTieneQueSeguirConLaInscripcionAbierta() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+        jdbc.update("UPDATE torneo SET estado = 'INSCRIPCION_CERRADA' WHERE id = ?", torneo);
+
+        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+        assertThat(movimientosDe(id)).isZero();
+        assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+    }
+
+    @Test
+    void alPagarLaFechaDeCierreNoPuedePasar() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+        jdbc.update("UPDATE torneo SET cierre_inscripcion_en = now() - interval '1 minute' WHERE id = ?", torneo);
+
+        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+        assertThat(movimientosDe(id)).isZero();
+    }
+
+    @Test
+    void unTorneoDadoDeBajaNoSePaga() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+        jdbc.update("UPDATE torneo SET eliminado_en = now() WHERE id = ?", torneo);
+
+        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
+        assertThat(movimientosDe(id)).isZero();
+    }
+
+    @Test
+    void unUsuarioBloqueadoDespuesDeConfirmarNoPagaNiSeLeCobra() {
+        Usuario bloqueado = usuario("bloq_pago");
+        long id = inscripcionDe(bloqueado.getId(), "PENDIENTE_PAGO");
+        bloqueoService.bloquear(bloqueado, "Mala conducta", Instant.now().plus(5, ChronoUnit.DAYS));
+
+        assertError(() -> inscripcionService.pagar(bloqueado.getId(), id), HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO);
+        assertThat(movimientosDe(id)).isZero();
+    }
+
+    @Test
+    void unUsuarioQueDejoDeEstarActivoNoPaga() {
+        Usuario inactivo = usuario("inact_pago");
+        long id = inscripcionDe(inactivo.getId(), "PENDIENTE_PAGO");
+        inactivo.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
+        usuarioRepository.saveAndFlush(inactivo);
+
+        assertError(() -> inscripcionService.pagar(inactivo.getId(), id), HttpStatus.CONFLICT, CodigoError.USUARIO_NO_ACTIVO);
+        assertThat(movimientosDe(id)).isZero();
+    }
+
+    @Test
+    void conElCupoCompletoElPagoSeRechazaAntesDeCobrar() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+        llenarElCupo(2);
+
+        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
+
+        verify(cobroService, never()).cobrar(any());
+        assertThat(movimientosDe(id)).isZero();
+        assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+    }
+
+    @Test
+    void lasPendientesDePagoNoOcupanCupoAlPagar() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+        jdbc.update("UPDATE torneo SET cupo_maximo = 2 WHERE id = ?", torneo);
+        inscripcionDe(usuario("conf_pago").getId(), "CONFIRMADA");
+        inscripcionDe(usuario("pend_pago").getId(), "PENDIENTE_PAGO");
+
+        assertThat(inscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+    }
+
+    @Test
+    void siElCobroSeRechazaLaInscripcionSigueEnPendienteDePago() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+        doThrow(new CobroRechazadoException("sin fondos")).when(cobroService).cobrar(any());
+
+        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.COBRO_RECHAZADO);
+
+        assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+        assertThat(movimientosDe(id)).isZero();
+    }
+
+    @Test
+    void enUnTorneoSinCostoPagarConfirmaSinCobrar() {
+        long gratis = torneoIndividualGratis();
+        long id = inscripcionEn(gratis, jugador, "PENDIENTE_PAGO");
+
+        assertThat(inscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+
+        verify(cobroService, never()).cobrar(any());
+    }
+
+    @Test
+    void enUnTorneoSinCostoConElCupoCompletoTampocoSePaga() {
+        long gratis = torneoIndividualGratis();
+        jdbc.update("UPDATE torneo SET cupo_maximo = 2 WHERE id = ?", gratis);
+        inscripcionEn(gratis, usuario("g1_pago").getId(), "CONFIRMADA");
+        inscripcionEn(gratis, usuario("g2_pago").getId(), "CONFIRMADA");
+        long id = inscripcionEn(gratis, jugador, "PENDIENTE_PAGO");
+
+        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
+    }
+
+    // --- resumen de pago ----------------------------------------------------
+
+    @Test
+    void elResumenMuestraElTorneoElParticipanteElMontoLaMonedaElCupoQueQuedaYElCierre() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+        inscripcionDe(usuario("conf1_res").getId(), "CONFIRMADA");
+        inscripcionDe(usuario("conf2_res").getId(), "CONFIRMADA");
+        inscripcionDe(usuario("pend_res").getId(), "PENDIENTE_PAGO");
+
+        ResumenPago resumen = inscripcionService.resumenPago(jugador, id);
+
+        assertThat(resumen.inscripcionId()).isEqualTo(id);
+        assertThat(resumen.torneo().id()).isEqualTo(torneo);
+        assertThat(resumen.torneo().nombre()).isEqualTo("Torneo");
+        assertThat(resumen.participante().id()).isEqualTo(jugador);
+        assertThat(resumen.participante().username()).isEqualTo("jug_insc");
+        assertThat(resumen.participante().nombres()).isEqualTo("jug_insc");
+        assertThat(resumen.monto()).isEqualByComparingTo("1000");
+        assertThat(resumen.moneda()).isEqualTo("ARS");
+        assertThat(resumen.cupoMaximo()).isEqualTo(8);
+        assertThat(resumen.cupoDisponible()).isEqualTo(6);
+        assertThat(resumen.cierreInscripcionEn()).isAfter(Instant.now());
+    }
+
+    @Test
+    void elResumenSoloSeVeEnPendienteDePago() {
+        for (String estado : new String[] {"BORRADOR", "CONFIRMADA", "CANCELADA"}) {
+            Long dueno = usuario("res_" + estado.toLowerCase()).getId();
+            long id = inscripcionDe(dueno, estado);
+
+            assertError(() -> inscripcionService.resumenPago(dueno, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
+        }
+    }
+
+    @Test
+    void elResumenSoloLoVeElParticipante() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        assertError(() -> inscripcionService.resumenPago(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.resumenPago(usuario("otro_res").getId(), id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.resumenPago(jugador, 999_999L), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+    }
+
     // --- reglas de la base --------------------------------------------------
 
     @Test
@@ -458,6 +702,10 @@ class InscripcionServiceIntegracionTest {
                 VALUES (?, ?, ?, CASE WHEN ? = 'BORRADOR' THEN NULL ELSE now() END)
                 RETURNING id
                 """, Long.class, torneoId, usuario, estado, estado);
+    }
+
+    private int movimientosDe(long inscripcionId) {
+        return jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, inscripcionId);
     }
 
     private long torneoPorEquipos() {
