@@ -87,9 +87,13 @@ public class Torneo extends AuditableEntity {
     @Column(name = "cupo_minimo", nullable = false)
     private Integer cupoMinimo;
 
-    /** Solo en torneos por equipos. */
+    /** Solo en torneos por equipos: el mínimo de la nómina, los titulares. */
     @Column(name = "tamanio_equipo")
     private Integer tamanioEquipo;
+
+    /** Solo en torneos por equipos: el máximo de la nómina, con los suplentes incluidos. */
+    @Column(name = "nomina_maxima")
+    private Integer nominaMaxima;
 
     @Column(name = "valor_inscripcion", precision = 14, scale = 2, nullable = false)
     private BigDecimal valorInscripcion;

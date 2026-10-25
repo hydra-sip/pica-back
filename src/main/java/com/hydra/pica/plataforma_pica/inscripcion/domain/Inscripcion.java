@@ -61,6 +61,15 @@ public class Inscripcion extends AuditableEntity {
     @Column(name = "posicion")
     private Integer posicion;
 
-    @Column(name = "reglamento_aceptado_en", nullable = false)
+    @Column(name = "reglamento_aceptado_en")
     private Instant reglamentoAceptadoEn;
+
+    public boolean esDeEquipo() {
+        return equipo != null;
+    }
+
+    /** Quien responde por la inscripción: el participante de la individual, el capitán de la de equipo. */
+    public Usuario titular() {
+        return esDeEquipo() ? equipo.getCapitan() : usuario;
+    }
 }

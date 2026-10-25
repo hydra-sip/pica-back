@@ -371,7 +371,7 @@ class RifaServiceIntegracionTest {
     void fueraDeBorradorLaBaseExigeLoteriaYFechaDeSorteo() {
         RifaDetalle rifa = rifaService.crear(organizador, request(1, 10, MANIANA, EN_UNA_SEMANA));
 
-        // con ventana y términos alcanzaba en V10; V14 pide también la lotería y el sorteo
+        // con ventana y términos alcanzaba en V10; V17 pide también la lotería y el sorteo
         assertThatThrownBy(() -> jdbc.update(
                 "UPDATE rifa SET estado = 'EN_VENTA', terminos_aceptados_en = now() WHERE id = ?", rifa.id()))
                 .isInstanceOf(DataIntegrityViolationException.class)

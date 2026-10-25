@@ -151,7 +151,7 @@ class RolServiceIntegracionTest {
         assertThat(administrador.permisos()).containsExactly(
                 "USUARIO_VER", "USUARIO_CREAR", "USUARIO_EDITAR", "USUARIO_ELIMINAR",
                 "PERSONA_VER", "PERSONA_CREAR", "PERSONA_EDITAR", "PERSONA_ELIMINAR",
-                "ROL_VER", "ROL_ASIGNAR", "RIFA_GESTIONAR");
+                "ROL_VER", "ROL_ASIGNAR", "RIFA_GESTIONAR", "INSCRIPCION_GESTIONAR");
         assertThat(administrador.creadoEn()).isNotNull();
         assertThat(administrador.eliminado()).isFalse();
         assertThat(administrador.eliminadoEn()).isNull();
@@ -286,7 +286,7 @@ class RolServiceIntegracionTest {
     void laBajaLeSacaLosPermisosASusUsuariosYReactivarSeLosDevuelve() {
         Usuario usuario = usuarioCon("admin2", "ADMINISTRADOR");
         Long id = idDe("ADMINISTRADOR");
-        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(11);
+        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(12);
 
         rolService.eliminar(id);
         entityManager.flush();
@@ -298,7 +298,7 @@ class RolServiceIntegracionTest {
         entityManager.clear();
         assertThat(reactivado.eliminado()).isFalse();
         assertThat(reactivado.cantidadUsuarios()).isEqualTo(1L);
-        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(11);
+        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(12);
         assertThat(nombres(SIN_FILTRO)).contains("ADMINISTRADOR");
     }
 
@@ -432,11 +432,11 @@ class RolServiceIntegracionTest {
         List<ModuloPermisos> catalogo = permisoService.catalogo();
 
         assertThat(catalogo).extracting(ModuloPermisos::modulo)
-                .containsExactly(Modulo.USUARIOS, Modulo.PERSONAS, Modulo.ROLES, Modulo.RIFAS);
+                .containsExactly(Modulo.USUARIOS, Modulo.PERSONAS, Modulo.ROLES, Modulo.RIFAS, Modulo.INSCRIPCIONES);
         assertThat(catalogo.get(2).permisos()).extracting(ModuloPermisos.Item::codigo)
                 .containsExactly("ROL_VER", "ROL_CREAR", "ROL_EDITAR", "ROL_ELIMINAR", "ROL_ASIGNAR");
         assertThat(catalogo).flatExtracting(ModuloPermisos::permisos)
-                .hasSize(14)
+                .hasSize(15)
                 .allSatisfy(item -> assertThat(item.descripcion()).isNotBlank());
     }
 

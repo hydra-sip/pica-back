@@ -113,7 +113,7 @@ public class Rifa extends AuditableEntity {
     private Instant semillaObtenidaEn;
 
     /**
-     * Fecha PROGRAMADA del sorteo (V14): la carga el organizador, es posterior a {@code ventaHasta} y la
+     * Fecha PROGRAMADA del sorteo (V17): la carga el organizador, es posterior a {@code ventaHasta} y la
      * aplicación sortea sola cuando llega. El momento real queda en {@code semillaObtenidaEn}.
      */
     @Column(name = "sorteada_en")

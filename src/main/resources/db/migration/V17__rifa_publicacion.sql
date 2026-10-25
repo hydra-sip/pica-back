@@ -1,4 +1,4 @@
--- Publicar la rifa (HU-402, PICA-219).
+-- Publicar la rifa (HU-402, PICA-219). Es V17 porque V14 a V16 son de inscripciones (PICA-208/209).
 --
 -- sorteada_en pasa a ser la fecha PROGRAMADA del sorteo: la carga el organizador antes de publicar,
 -- el participante la ve al comprar y la aplicación sortea sola cuando llega. Se reusa la columna de
@@ -8,6 +8,12 @@
 -- la autorización de la lotería y la fecha del sorteo.
 COMMENT ON COLUMN rifa.sorteada_en IS
     'Fecha programada del sorteo; el momento real en que se sorteó es semilla_obtenida_en';
+
+-- Las rifas que ya estaban publicadas sin fecha de sorteo (la del seed de desarrollo) la reciben un día
+-- después del fin de la venta, para que pasen los CHECK de abajo.
+UPDATE rifa
+SET sorteada_en = venta_hasta + interval '1 day'
+WHERE estado <> 'BORRADOR' AND sorteada_en IS NULL AND venta_hasta IS NOT NULL;
 
 ALTER TABLE rifa
     DROP CONSTRAINT ck_rifa_completa_fuera_de_borrador;

@@ -43,6 +43,24 @@ docker compose up -d
 ./mvnw spring-boot:run
 ```
 
+### Datos de prueba (perfil `seed`)
+
+`./mvnw spring-boot:run` arranca con los perfiles `dev` (claves JWT efímeras, Google opcional) y `seed`: además de las migraciones, Flyway corre el seed `db/seed/R__seed_desarrollo.sql`. La imagen Docker, el CI y Railway no lo usan. Para arrancar sin datos de prueba: `./mvnw spring-boot:run -Dspring-boot.run.profiles=dev`.
+
+Todos los usuarios tienen la contraseña `PicaDev2026`, también el `admin` (salvo que se pase `ADMIN_INITIAL_PASSWORD`):
+
+| Usuario | Rol |
+|---|---|
+| `dev_organizador` | Organizador |
+| `dev_arbitro` | Árbitro |
+| `dev_jugador1` a `dev_jugador6` | Participante |
+
+- **Equipos:** Los Halcones (capitán `dev_jugador1`, con 2 y 3) y Las Panteras (capitán `dev_jugador4`, con 5 y 6).
+- **Copa abierta** (`dev-copa-abierta`): por equipos, con la inscripción abierta, Los Halcones inscriptos y pagados, y la rifa en venta (números 1 a 100; 7, 13 y 42 vendidos a `dev_jugador5`).
+- **Torneo cerrado** (`dev-torneo-cerrado`): individual, con `dev_jugador1` a 4 confirmados, el árbitro designado y el bracket generado: dos semifinales con sus lados y la final vacía.
+
+El seed es repetible: si se modifica, Flyway lo vuelve a correr en el próximo arranque y solo agrega lo que falta.
+
 ### Probar que levantó
 
 Una vez levantada la aplicación en `http://localhost:8080`:
@@ -55,7 +73,7 @@ Responde 200 con `"status": "UP"` si la app y la base andan, y 503 con `DOWN` si
 
 ### Prueba de humo del contrato
 
-`scripts/prueba-de-humo.sh` recorre todas las operaciones de `docs/api/openapi.yaml` contra una API levantada y compara cada código HTTP con el del contrato. Termina con `Contrato: 34/34 operaciones` y falla si alguna operación quedó sin probar, así que un endpoint nuevo en el contrato obliga a sumarlo al script.
+`scripts/prueba-de-humo.sh` recorre todas las operaciones de `docs/api/openapi.yaml` contra una API levantada y compara cada código HTTP con el del contrato. Termina con `Contrato: 35/35 operaciones` y falla si alguna operación quedó sin probar, así que un endpoint nuevo en el contrato obliga a sumarlo al script. Los torneos todavía no tienen API: para probar las inscripciones el script carga tres torneos (uno gratis, uno con costo y uno por equipos, con un equipo del usuario de prueba) por SQL y los borra al limpiar, junto con la nómina, el equipo, el movimiento y la billetera del pago.
 
 Crea un rol, una persona y dos usuarios marcados con el id de la corrida (`humo-…`). Al final los borra de la base por SQL, porque la API solo hace bajas lógicas. La limpieza corre aunque un paso falle o se corte con Ctrl+C, y al final verifica que no quedó nada de la corrida. Si no puede llegar a la base, no arranca. Lo único que queda son las líneas de log de la API.
 
