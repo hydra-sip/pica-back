@@ -29,7 +29,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * En BORRADOR casi todo puede faltar (V17): el asistente lo va completando y fuera de BORRADOR la base exige
+ * En BORRADOR casi todo puede faltar (V18): el asistente lo va completando y fuera de BORRADOR la base exige
  * lo que antes era NOT NULL.
  *
  * Baja lógica con {@code eliminadoEn}, sin {@code @SQLRestriction}: inscripciones, partidos y

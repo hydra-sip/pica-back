@@ -42,7 +42,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Pasos 1 y 2 del asistente de crear torneo (HU-201, PICA-199) contra Postgres, con V17: un torneo en BORRADOR se
+ * Pasos 1 y 2 del asistente de crear torneo (HU-201, PICA-199) contra Postgres, con V18: un torneo en BORRADOR se
  * guarda incompleto y fuera de BORRADOR la base exige lo que antes era NOT NULL. Cada test hace rollback al terminar.
  */
 @SpringBootTest
