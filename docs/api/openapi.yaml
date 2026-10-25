@@ -754,7 +754,7 @@ paths:
         '409': {$ref: '#/components/responses/Conflicto'}
 
   # --- Inscripciones -----------------------------------------------------------
-  # Crear, confirmar y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
+  # Crear, confirmar, ver el resumen de pago, pagar y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
   # Ver alcanza con estar logueado: la ven quien se inscribió y el organizador del torneo. Para cualquier otro usuario
   # la inscripción no existe: 404 INSCRIPCION_NO_ENCONTRADA. El usuario siempre sale de la sesión.
 
@@ -845,6 +845,54 @@ paths:
       responses:
         '200': {description: Inscripción confirmada, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
         '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/inscripciones/{id}/resumen-pago:
+    get:
+      tags: [Inscripciones]
+      summary: Ver lo que se va a pagar antes de pagar
+      x-jira: PICA-210
+      x-permiso: INSCRIPCION_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        Solo quien se inscribió, y solo mientras la inscripción está en PENDIENTE_PAGO. Muestra el torneo, el
+        participante, el monto (el valor de la inscripción, sin comisiones), la moneda, el cupo que queda
+        (el cupo máximo menos las inscripciones confirmadas) y la fecha de cierre.
+        404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador).
+        409 `INSCRIPCION_NO_EDITABLE` si no está en PENDIENTE_PAGO.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200': {description: Resumen de pago, content: {application/json: {schema: {$ref: '#/components/schemas/ResumenPago'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/inscripciones/{id}/pago:
+    post:
+      tags: [Inscripciones]
+      summary: Pagar la inscripción por la interfaz de cobro
+      x-jira: PICA-210
+      x-permiso: INSCRIPCION_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        Sin cuerpo. Solo quien se inscribió. Bloquea la fila del torneo, cuenta las inscripciones confirmadas y,
+        si no queda lugar, responde `CUPO_COMPLETO` sin cobrar. Con lugar, cobra el valor de la inscripción con
+        la misma clave de idempotencia por inscripción y la deja en CONFIRMADA. En un torneo sin costo
+        (valor 0) la confirma sin pasar por el cobro. Reintentar el pago de una inscripción ya CONFIRMADA
+        responde 200 sin cobrar de nuevo. Si el cobro se rechaza, la inscripción sigue en PENDIENTE_PAGO.
+        404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario; `TORNEO_NO_ENCONTRADO` si el
+        torneo fue dado de baja.
+        409 `INSCRIPCION_NO_EDITABLE` si no está en PENDIENTE_PAGO (ni CONFIRMADA); `INSCRIPCION_NO_ABIERTA` si el
+        torneo ya no tiene la inscripción abierta; `USUARIO_NO_ACTIVO`; `CUPO_COMPLETO`; `COBRO_RECHAZADO` si el
+        pago no se aprobó y no se cobró nada.
+        403 `USUARIO_BLOQUEADO` si tiene un bloqueo vigente.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200': {description: Inscripción confirmada, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
@@ -1361,6 +1409,26 @@ components:
       description: Sin cuerpo, sin el campo o con `false` responde 409 `REGLAMENTO_NO_ACEPTADO`, no un 400.
       properties:
         reglamentoAceptado: {type: boolean, description: Tiene que ser `true`}
+    ResumenPago:
+      type: object
+      required: [inscripcionId, torneo, participante, monto, moneda, cupoMaximo, cupoDisponible, cierreInscripcionEn]
+      description: >-
+        Lo que va a pagar quien tiene una inscripción pendiente de pago, sin comisiones. La inscripción de equipo
+        suma el equipo en lugar del participante (T204-5).
+      properties:
+        inscripcionId: {$ref: '#/components/schemas/Id'}
+        torneo:
+          type: object
+          required: [id, nombre]
+          properties:
+            id: {$ref: '#/components/schemas/Id'}
+            nombre: {type: string}
+        participante: {$ref: '#/components/schemas/UsuarioPublico'}
+        monto: {type: number, description: El valor de la inscripción}
+        moneda: {type: string, minLength: 3, maxLength: 3, example: ARS}
+        cupoMaximo: {type: integer}
+        cupoDisponible: {type: integer, minimum: 0, description: El cupo máximo menos las inscripciones confirmadas}
+        cierreInscripcionEn: {type: string, format: date-time}
     InscripcionDetalle:
       type: object
       required: [id, torneoId, usuarioId, estado, creadoEn, modificadoEn]
