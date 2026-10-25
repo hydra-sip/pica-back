@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
- * Inscripciones del usuario logueado. Crear, editar, confirmar, ver el resumen de pago, pagar y cancelar piden
+ * Inscripciones del usuario logueado. Crear, editar, confirmar, reabrir, ver el resumen de pago, pagar y cancelar piden
  * INSCRIPCION_GESTIONAR (V14, rol PARTICIPANTE). Ver alcanza con estar logueado, porque también la ve el
  * organizador del torneo: quién la ve lo decide {@link InscripcionService}, y para cualquier otro
  * responde 404.
@@ -69,6 +69,12 @@ public class InscripcionController {
     public InscripcionDetalle confirmar(@PathVariable Long id, @RequestBody(required = false) ConfirmarInscripcionRequest request) {
         boolean reglamentoAceptado = request != null && Boolean.TRUE.equals(request.reglamentoAceptado());
         return inscripcionService.confirmar(usuarioActual(), id, reglamentoAceptado);
+    }
+
+    @PutMapping("/inscripciones/{id}/reabrir")
+    @PreAuthorize("hasAuthority('INSCRIPCION_GESTIONAR')")
+    public InscripcionDetalle reabrir(@PathVariable Long id) {
+        return inscripcionService.reabrir(usuarioActual(), id);
     }
 
     @GetMapping("/inscripciones/{id}/resumen-pago")

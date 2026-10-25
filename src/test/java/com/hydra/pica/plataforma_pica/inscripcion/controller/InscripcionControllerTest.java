@@ -493,6 +493,59 @@ class InscripcionControllerTest {
                 .andExpect(jsonPath("$.codigo").value("JUGADOR_YA_INSCRIPTO"));
     }
 
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("PUT /inscripciones/{id}/reabrir reabre con el usuario de la sesión, sin cuerpo, y responde 200 con el detalle en BORRADOR")
+    void reabre() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.reabrir(PARTICIPANTE, 7L)).thenReturn(borradorDeEquipo());
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/reabrir"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(7))
+                .andExpect(jsonPath("$.estado").value("BORRADOR"))
+                .andExpect(jsonPath("$.reglamentoAceptadoEn").value(nullValue()))
+                .andExpect(jsonPath("$.equipo.nombre").value("Los Halcones"))
+                .andExpect(jsonPath("$.nomina[0].username").value("capitan"));
+    }
+
+    @Test
+    @DisplayName("PUT /inscripciones/{id}/reabrir sin autenticación responde 401")
+    void reabrirSinAutenticacion() throws Exception {
+        mockMvc.perform(put("/api/v1/inscripciones/7/reabrir")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(inscripcionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "ROL_VER")
+    @DisplayName("Sin INSCRIPCION_GESTIONAR, reabrir responde 403 SIN_PERMISO")
+    void reabrirSinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/reabrir"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
+        verifyNoInteractions(inscripcionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("Reabrir una inscripción ajena responde 404 y fuera de PENDIENTE_PAGO responde 409 con su código")
+    void reabrirConError() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.reabrir(PARTICIPANTE, 7L))
+                .thenThrow(new NoEncontradoException(CodigoError.INSCRIPCION_NO_ENCONTRADA, "no existe"));
+        when(inscripcionService.reabrir(PARTICIPANTE, 8L))
+                .thenThrow(new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE, "confirmada"));
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/reabrir"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("INSCRIPCION_NO_ENCONTRADA"));
+        mockMvc.perform(put("/api/v1/inscripciones/8/reabrir"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("INSCRIPCION_NO_EDITABLE"));
+    }
+
     private InscripcionDetalle borradorDeEquipo() {
         return new InscripcionDetalle(7L, 3L, null, EstadoInscripcion.BORRADOR, null, CREADA, CREADA,
                 new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones"),
