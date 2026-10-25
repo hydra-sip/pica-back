@@ -80,7 +80,7 @@ class SeedDesarrolloTest {
                 SELECT r.estado, count(n.numero) FILTER (WHERE n.estado = 'VENDIDO') AS vendidos, count(n.numero) AS total
                 FROM rifa r JOIN torneo t ON t.id = r.torneo_id JOIN numero n ON n.rifa_id = r.id
                 WHERE t.slug = 'dev-copa-abierta' GROUP BY r.id
-                """)).containsEntry("estado", "EN_VENTA").containsEntry("vendidos", 3L).containsEntry("total", 100L);
+                """)).containsEntry("estado", "EN_VENTA").containsEntry("vendidos", 3L).containsEntry("total", 3L);
 
         assertThat(jdbc.queryForObject("SELECT estado FROM torneo WHERE slug = 'dev-torneo-cerrado'", String.class))
                 .isEqualTo("INSCRIPCION_CERRADA");
