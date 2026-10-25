@@ -164,6 +164,10 @@ public class InscripcionService {
      * Cobra el valor de la inscripción por la interfaz de cobro y la deja confirmada. Primero bloquea la
      * fila del torneo y recién después lee la inscripción, así un pago simultáneo de la misma inscripción
      * o por el último lugar ve lo que dejó el anterior.
+     *
+     * <p>El bloqueo del torneo dura todo el cobro. Con {@code CobroSimulado} no se nota; con una pasarela
+     * lenta, los pagos del mismo torneo esperan detrás del que está cobrando. Hay que revisarlo al
+     * integrar la pasarela (billetera virtual, HU-602).
      */
     @Transactional
     public InscripcionDetalle pagar(Long usuarioId, Long id) {
