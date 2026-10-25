@@ -235,6 +235,56 @@ class InscripcionPagoConcurrenteIntegracionTest {
         }
     }
 
+    @RepeatedTest(5)
+    void reabrirYPagarALaVezNuncaDejanUnaInscripcionCobradaYEnBorrador() throws Exception {
+        Long organizador = usuario("org_reab");
+        torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion,
+                                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
+                VALUES (?, 'Torneo', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL', 8, 2,
+                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        Long jugador = usuario("j_reab");
+        long inscripcion = inscripcion(jugador, "PENDIENTE_PAGO");
+
+        CyclicBarrier salida = new CyclicBarrier(2);
+        ExecutorService hilos = Executors.newFixedThreadPool(2);
+        try {
+            Future<EstadoInscripcion> pago = hilos.submit(pago(salida, jugador, inscripcion));
+            Future<EstadoInscripcion> reapertura = hilos.submit(reapertura(salida, jugador, inscripcion));
+
+            List<EstadoInscripcion> exitos = new ArrayList<>();
+            List<CodigoError> rechazos = new ArrayList<>();
+            for (Future<EstadoInscripcion> operacion : List.of(pago, reapertura)) {
+                try {
+                    exitos.add(operacion.get(30, TimeUnit.SECONDS));
+                } catch (ExecutionException e) {
+                    assertThat(e.getCause()).isInstanceOf(ApiException.class);
+                    rechazos.add(((ApiException) e.getCause()).getCodigo());
+                }
+            }
+
+            // uno gana y el otro ve lo que dejó el primero
+            assertThat(exitos).hasSize(1);
+            assertThat(rechazos).containsExactly(CodigoError.INSCRIPCION_NO_EDITABLE);
+        } finally {
+            hilos.shutdownNow();
+        }
+        String estado = jdbc.queryForObject("SELECT estado FROM inscripcion WHERE id = ?", String.class, inscripcion);
+        Integer cobros = jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, inscripcion);
+        assertThat(estado.equals("BORRADOR") && cobros > 0).as("borrador con un cobro: estado %s, cobros %s", estado, cobros).isFalse();
+        assertThat(estado.equals("CONFIRMADA")).isEqualTo(cobros == 1);
+    }
+
+    private Callable<EstadoInscripcion> reapertura(CyclicBarrier salida, Long usuario, long inscripcion) {
+        return () -> {
+            salida.await();
+            return inscripcionService.reabrir(usuario, inscripcion).estado();
+        };
+    }
+
     private Callable<EstadoInscripcion> confirmacion(CyclicBarrier salida, Long capitan, long inscripcion) {
         return () -> {
             salida.await();

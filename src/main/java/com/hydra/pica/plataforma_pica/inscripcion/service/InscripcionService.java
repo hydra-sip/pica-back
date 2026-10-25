@@ -427,6 +427,26 @@ public class InscripcionService {
         return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
     }
 
+    /**
+     * Vuelve una pendiente de pago a borrador: se pierde la aceptación del reglamento y el equipo y la nómina
+     * quedan. Igual que {@link #pagar}, primero bloquea la fila del torneo y recién después lee la inscripción:
+     * un pago simultáneo no puede cobrar y que después se lo pise con BORRADOR.
+     */
+    @Transactional
+    public InscripcionDetalle reabrir(Long usuarioId, Long id) {
+        Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
+                .orElseThrow(() -> noEncontrada(id));
+        torneoBloqueado(torneoId);
+        Inscripcion inscripcion = buscar(id);
+        if (inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
+            throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
+                    "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se reabre en PENDIENTE_PAGO");
+        }
+        inscripcion.setEstado(EstadoInscripcion.BORRADOR);
+        inscripcion.setReglamentoAceptadoEn(null);
+        return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
+    }
+
     private Inscripcion buscar(Long id) {
         return inscripcionRepository.findById(id).orElseThrow(() -> noEncontrada(id));
     }
