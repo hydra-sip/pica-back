@@ -180,8 +180,20 @@ class InscripcionServiceIntegracionTest {
     }
 
     @Test
-    void unBorradorNoImpideCrearOtro() {
-        inscripcionDe(jugador, "BORRADOR");
+    void conUnBorradorEnElTorneoNoSeCreaOtroYElErrorTraeElIdDelExistente() {
+        long existente = inscripcionDe(jugador, "BORRADOR");
+
+        ApiException error = catchThrowableOfType(ApiException.class, () -> inscripcionService.crear(jugador, torneo, null));
+
+        assertThat(error).isNotNull();
+        assertThat(error.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(error.getCodigo()).isEqualTo(CodigoError.INSCRIPCION_DUPLICADA);
+        assertThat(error.getMessage()).contains("borrador " + existente);
+    }
+
+    @Test
+    void elBorradorDeOtroUsuarioNoImpideCrearElPropio() {
+        inscripcionDe(usuario("otro_borr").getId(), "BORRADOR");
 
         assertThat(inscripcionService.crear(jugador, torneo, null).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
     }
