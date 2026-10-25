@@ -45,6 +45,7 @@ tags:
   - {name: Admin – Usuarios, description: 'ABM de usuarios. HU-101, Laura. Roles de un usuario: HU-105, Tomás.'}
   - {name: Admin – Personas, description: 'ABM de personas. HU-104, Laura.'}
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
+  - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
 
 security:
   - bearerAuth: []
@@ -313,7 +314,9 @@ paths:
         Se mandan todos los campos. Los roles van por su propio endpoint porque exigen otro permiso.
         Si cambia el `email`, el usuario queda con `emailVerificado: false` en `PENDIENTE_VERIFICACION` y
         se le manda el mail de verificación al email nuevo (si a la vez se lo bloquea, queda `BLOQUEADO`).
-        Pasarlo a `BLOQUEADO` le revoca los refresh tokens.
+        Pasarlo a `BLOQUEADO` le revoca los refresh tokens. Para bloquear con motivo y fecha de fin está
+        `POST /admin/usuarios/{id}/bloqueo`; desde acá queda bloqueado sin motivo propio, y volver a `ACTIVO`
+        levanta el bloqueo.
         Un usuario con el mail sin verificar (`PENDIENTE_VERIFICACION`) no se puede pasar a `ACTIVO` a mano:
         se activa solo cuando verifica. Pasarlo a `BLOQUEADO` sí se puede.
         Un usuario dado de baja no se modifica: 404, primero hay que reactivarlo.
@@ -376,6 +379,40 @@ paths:
       responses:
         '204': {description: Reemplazada}
         '403': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/usuarios/{id}/bloqueo:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Admin – Usuarios]
+      summary: Bloquear con motivo
+      x-jira: PICA-230
+      x-owner: Tomás
+      x-permiso: USUARIO_EDITAR
+      description: >-
+        Pasa el usuario a `BLOQUEADO`, guarda el motivo y la fecha de fin, y le revoca las sesiones. Sin `hasta`
+        es indefinido; con fecha, el primer login después de que vence lo levanta solo. Para cambiar el
+        motivo o la fecha se levanta y se vuelve a bloquear.
+        400 `VALIDACION` (`motivo` vacío o de más de 500, `hasta` que no es futura).
+        403 `USUARIO_PROTEGIDO`, `ACCION_SOBRE_SI_MISMO`. 404 `USUARIO_NO_ENCONTRADO`.
+        409 `USUARIO_YA_BLOQUEADO`.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/BloqueoRequest'}}}
+      responses:
+        '200': {$ref: '#/components/responses/Usuario'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Admin – Usuarios]
+      summary: Levantar el bloqueo
+      x-jira: PICA-230
+      x-owner: Tomás
+      x-permiso: USUARIO_EDITAR
+      description: >-
+        Vuelve a `ACTIVO`, o a `PENDIENTE_VERIFICACION` si el mail no está verificado. Idempotente: si no
+        estaba bloqueado lo devuelve igual. 404 `USUARIO_NO_ENCONTRADO`.
+      responses:
+        '200': {$ref: '#/components/responses/Usuario'}
 
   /api/v1/admin/usuarios/{id}/roles:
     put:
@@ -611,6 +648,86 @@ paths:
       responses:
         '200': {description: Permisos agrupados, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ModuloPermisos'}}}}}
 
+  # --- Rifas -------------------------------------------------------------------
+  # Todas exigen RIFA_GESTIONAR (ORGANIZADOR, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO. La rifa de otro
+  # organizador da 404 RIFA_NO_ENCONTRADA, como si no existiera.
+
+  /api/v1/rifas:
+    post:
+      tags: [Rifas]
+      summary: Crear una rifa (en BORRADOR)
+      x-jira: PICA-226
+      x-permiso: RIFA_GESTIONAR
+      x-owner: Laura
+      description: >-
+        Datos generales (pestaña 1). Nace en BORRADOR y sin premios, que se cargan con
+        `PUT /rifas/{id}/premios`. Se puede guardar incompleta: la ventana de venta puede faltar (las dos
+        fechas van juntas). 400 `VALIDACION` con `errores`: `RANGO_INVALIDO` en `numeroHasta` si es menor
+        que `numeroDesde`; `VENTANA_INVALIDA` en `ventaHasta` si no es posterior a `ventaDesde` o ya pasó;
+        `REQUERIDO` si viene una sola fecha.
+      requestBody: {$ref: '#/components/requestBodies/Rifa'}
+      responses:
+        '201': {$ref: '#/components/responses/Rifa'}
+
+  /api/v1/rifas/mis-rifas:
+    get:
+      tags: [Rifas]
+      summary: Mis rifas
+      x-jira: PICA-226
+      x-permiso: RIFA_GESTIONAR
+      x-owner: Laura
+      description: Las del usuario logueado, sin las dadas de baja. La más nueva primero; `sort` se ignora.
+      parameters:
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageRifaResumen'}}}}
+
+  /api/v1/rifas/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Rifas]
+      summary: Ver una rifa propia (con premios)
+      x-jira: PICA-226
+      x-permiso: RIFA_GESTIONAR
+      x-owner: Laura
+      responses:
+        '200': {$ref: '#/components/responses/Rifa'}
+    put:
+      tags: [Rifas]
+      summary: Modificar una rifa en BORRADOR
+      x-jira: PICA-226
+      x-permiso: RIFA_GESTIONAR
+      x-owner: Laura
+      description: >-
+        Reemplaza los datos generales; los premios quedan como estaban. Mismas validaciones que el alta,
+        y además `RANGO_INVALIDO` en `numeroHasta` si el rango queda con menos números que premios cargados.
+        409 `RIFA_NO_EDITABLE` si ya no está en BORRADOR.
+      requestBody: {$ref: '#/components/requestBodies/Rifa'}
+      responses:
+        '200': {$ref: '#/components/responses/Rifa'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/rifas/{id}/premios:
+    put:
+      tags: [Rifas]
+      summary: Reemplazar los premios de una rifa en BORRADOR
+      x-jira: PICA-226
+      x-permiso: RIFA_GESTIONAR
+      x-owner: Laura
+      description: >-
+        Premios (pestaña 2). Lista completa en orden de puesto, reemplaza la anterior (vacía = sin premios).
+        En BORRADOR pueden sumar menos de 100 %; para publicar, exactamente 100. 400 `VALIDACION` con
+        `PREMIOS_INVALIDOS` en `premios` si suman más de 100 o hay más premios que números.
+        409 `RIFA_NO_EDITABLE` si ya no está en BORRADOR.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [premios], properties: {premios: {type: array, items: {$ref: '#/components/schemas/PremioRifaRequest'}}}}}}
+      responses:
+        '200': {$ref: '#/components/responses/Rifa'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
 # =============================================================================
 
 components:
@@ -648,6 +765,7 @@ components:
     Refresh: {required: true, content: {application/json: {schema: {type: object, required: [refreshToken], properties: {refreshToken: {type: string}}}}}}
     Persona: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PersonaRequest'}}}}
     Rol: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RolRequest'}}}}
+    Rifa: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RifaRequest'}}}}
 
   responses:
     Tokens: {description: Sesión iniciada, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
@@ -655,6 +773,7 @@ components:
     Usuario: {description: Usuario, content: {application/json: {schema: {$ref: '#/components/schemas/UsuarioDetalle'}}}}
     Persona: {description: Persona, content: {application/json: {schema: {$ref: '#/components/schemas/PersonaDetalle'}}}}
     Rol: {description: Rol con permisos, content: {application/json: {schema: {$ref: '#/components/schemas/RolDetalle'}}}}
+    Rifa: {description: Rifa con premios, content: {application/json: {schema: {$ref: '#/components/schemas/RifaDetalle'}}}}
     Error: {description: Ver códigos en la descripción de la operación, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetail'}}}}
     Conflicto: {description: Regla de negocio que no se cumple; el código dice cuál, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetail'}}}}
 
@@ -702,13 +821,14 @@ components:
       type: string
       enum: [PENDIENTE_VERIFICACION, ACTIVO, BLOQUEADO]
       description: PENDIENTE hasta el clic en el mail; BLOQUEADO lo pone un admin. La baja lógica no es un estado.
-    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES]}
+    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
-             ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR]
+             ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
+             RIFA_GESTIONAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -721,15 +841,17 @@ components:
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400.
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
+        USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM).
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
-             USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO,
+             USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
-             PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO, COBRO_RECHAZADO,
+             PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
+             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, COBRO_RECHAZADO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO]
     ErrorCampo:
       type: object
@@ -739,11 +861,13 @@ components:
         REQUERIDO, @Email/@Pattern/documento según el tipo → FORMATO_INVALIDO, @Size → LONGITUD,
         @PastOrPresent → FECHA_FUTURA, política de clave → PASSWORD_DEBIL, nombres o apellidos con
         caracteres no permitidos → NOMBRE_INVALIDO, edad fuera de 18 a 120 años → EDAD_FUERA_DE_RANGO,
-        otra → VALOR_INVALIDO.
+        otra → VALOR_INVALIDO. Las rifas suman reglas entre campos: RANGO_INVALIDO, VENTANA_INVALIDA y
+        PREMIOS_INVALIDOS (ver `POST /rifas` y `PUT /rifas/{id}/premios`).
       properties:
         campo: {type: string, description: Nombre del campo tal como viene en el JSON}
         codigo: {type: string, enum: [REQUERIDO, FORMATO_INVALIDO, LONGITUD, FECHA_FUTURA, PASSWORD_DEBIL,
-                                      NOMBRE_INVALIDO, EDAD_FUERA_DE_RANGO, VALOR_INVALIDO]}
+                                      NOMBRE_INVALIDO, EDAD_FUERA_DE_RANGO, RANGO_INVALIDO, VENTANA_INVALIDA,
+                                      PREMIOS_INVALIDOS, VALOR_INVALIDO]}
         mensaje: {type: string, description: Orientativo; el front muestra el suyo según `codigo`}
     ProblemDetail:
       type: object
@@ -787,6 +911,10 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/RolResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageRifaResumen:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/RifaResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
 
     # --- auth ----------------------------------------------------------------
     RegistroRequest:
@@ -953,6 +1081,22 @@ components:
         roles: {type: array, items: {$ref: '#/components/schemas/RolMinimo'}}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: [string, 'null'], format: date-time}
+        bloqueo:
+          description: 'El bloqueo vigente, solo en `GET /admin/usuarios/{id}` y en el POST de bloqueo; null si no está bloqueado'
+          oneOf: [{$ref: '#/components/schemas/BloqueoDatos'}, {type: 'null'}]
+    BloqueoDatos:
+      type: object
+      required: [motivo, desde]
+      properties:
+        motivo: {type: string}
+        desde: {type: string, format: date-time}
+        hasta: {type: [string, 'null'], format: date-time, description: null es indefinido}
+    BloqueoRequest:
+      type: object
+      required: [motivo]
+      properties:
+        motivo: {type: string, minLength: 1, maxLength: 500}
+        hasta: {type: [string, 'null'], format: date-time, description: 'Futura; sin ella el bloqueo es indefinido'}
     UsuarioCreateRequest:
       type: object
       required: [username, email, passwordTemporal, personaId, roles]
@@ -1026,3 +1170,64 @@ components:
         permisos:
           type: array
           items: {type: object, required: [codigo, descripcion], properties: {codigo: {$ref: '#/components/schemas/CodigoPermiso'}, descripcion: {type: string}}}
+
+    # --- rifas ---------------------------------------------------------------
+    EstadoRifa: {type: string, enum: [BORRADOR, EN_VENTA, CERRADA, SORTEADA, EN_REVISION, LIQUIDADA, CANCELADA]}
+    PremioRifaRequest:
+      type: object
+      required: [pct]
+      description: El puesto no viene; es la posición en la lista (el primero es el 1.º).
+      properties:
+        pct: {type: integer, minimum: 1, maximum: 100, description: '% entero del pozo de la rifa; con decimales da 400'}
+        descripcion: {type: [string, 'null'], maxLength: 255}
+    PremioRifa:
+      type: object
+      required: [puesto, pct]
+      properties:
+        puesto: {type: integer, minimum: 1}
+        pct: {type: integer}
+        descripcion: {type: [string, 'null']}
+        numeroGanador: {type: [integer, 'null'], description: Número que ganó el premio; null hasta el sorteo}
+    RifaRequest:
+      type: object
+      required: [titulo, numeroDesde, numeroHasta, precioNumero]
+      properties:
+        titulo: {type: string, maxLength: 100}
+        descripcion: {type: [string, 'null'], maxLength: 2000}
+        numeroDesde: {type: integer, minimum: 0}
+        numeroHasta: {type: integer, minimum: 0, description: Mayor o igual que numeroDesde}
+        precioNumero: {type: number, exclusiveMinimum: 0, description: Precio de cada número en ARS}
+        ventaDesde: {type: [string, 'null'], format: date-time, description: Va junto con ventaHasta}
+        ventaHasta: {type: [string, 'null'], format: date-time, description: Posterior a ventaDesde y en el futuro}
+    RifaResumen:
+      type: object
+      required: [id, titulo, estado, numeroDesde, numeroHasta, precioNumero, moneda, creadoEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        titulo: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoRifa'}
+        numeroDesde: {type: integer}
+        numeroHasta: {type: integer}
+        precioNumero: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        ventaDesde: {type: [string, 'null'], format: date-time}
+        ventaHasta: {type: [string, 'null'], format: date-time}
+        creadoEn: {type: string, format: date-time}
+    RifaDetalle:
+      type: object
+      required: [id, titulo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, creadoEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        titulo: {type: string}
+        descripcion: {type: [string, 'null']}
+        estado: {$ref: '#/components/schemas/EstadoRifa'}
+        numeroDesde: {type: integer}
+        numeroHasta: {type: integer}
+        precioNumero: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        ventaDesde: {type: [string, 'null'], format: date-time}
+        ventaHasta: {type: [string, 'null'], format: date-time}
+        terminosAceptadosEn: {type: [string, 'null'], format: date-time, description: Se completa al publicar}
+        premios: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}}
+        creadoEn: {type: string, format: date-time}
+        modificadoEn: {type: [string, 'null'], format: date-time}

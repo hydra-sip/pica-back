@@ -1,7 +1,5 @@
 package com.hydra.pica.plataforma_pica.rifa.domain;
 
-import java.math.BigDecimal;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
@@ -34,11 +32,19 @@ public class PremioRifa {
     @Setter(AccessLevel.NONE)
     private Rifa rifa;
 
-    @Column(name = "pct", precision = 5, scale = 2, nullable = false)
-    private BigDecimal pct;
+    /** Porcentaje entero, de 1 a 100 (V12). */
+    @Column(name = "pct", nullable = false)
+    private Integer pct;
 
     @Column(name = "descripcion", length = 255)
     private String descripcion;
+
+    /**
+     * Número que ganó este premio; null hasta el sorteo (V13). La base exige que sea un número
+     * vendido de la misma rifa (FK a numero) y que no gane dos premios (UNIQUE).
+     */
+    @Column(name = "numero_ganador")
+    private Integer numeroGanador;
 
     protected PremioRifa() {
     }
