@@ -365,12 +365,14 @@ class MigracionModeloCorregidoTest {
     private long torneo(String tipoParticipante) {
         return id("""
                 INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
-                                    tipo_participante, cupo_maximo, cupo_minimo, tamanio_equipo, valor_inscripcion,
-                                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio)
-                VALUES (?, 'Torneo', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', ?, 8, 2, ?, 1000, 50, 10,
-                        now(), now() + interval '1 day')
+                                    tipo_participante, cupo_maximo, cupo_minimo, tamanio_equipo, nomina_maxima,
+                                    valor_inscripcion, pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en,
+                                    fecha_inicio)
+                VALUES (?, 'Torneo', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', ?, 8, 2, ?, ?, 1000, 50,
+                        10, now(), now() + interval '1 day')
                 RETURNING id
-                """, organizador, tipoParticipante, "EQUIPO".equals(tipoParticipante) ? 5 : null);
+                """, organizador, tipoParticipante, "EQUIPO".equals(tipoParticipante) ? 5 : null,
+                "EQUIPO".equals(tipoParticipante) ? 8 : null);
     }
 
     private long equipoCon(long capitan) {
