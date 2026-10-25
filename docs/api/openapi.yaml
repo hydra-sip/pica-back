@@ -865,18 +865,25 @@ paths:
       x-permiso: INSCRIPCION_GESTIONAR
       x-owner: Mateo
       description: >-
-        Solo quien se inscribió, y solo un borrador. Guarda la fecha y hora en que aceptó el reglamento y la
-        inscripción pasa a PENDIENTE_PAGO; si el torneo es gratis (valor de inscripción 0) pasa directo a
-        CONFIRMADA y ocupa un lugar del cupo. Sin cuerpo, sin el campo o con `false` el reglamento cuenta como
-        no aceptado. Vuelve a chequear el torneo, el usuario y la inscripción duplicada, como al crear.
+        Solo quien se inscribió (el capitán, en una de equipo), y solo un borrador. Guarda la fecha y hora en que
+        aceptó el reglamento y la inscripción pasa a PENDIENTE_PAGO; si el torneo es gratis (valor de inscripción 0)
+        pasa directo a CONFIRMADA y ocupa un lugar del cupo. Sin cuerpo, sin el campo o con `false` el reglamento
+        cuenta como no aceptado. Vuelve a chequear el torneo, el usuario y la inscripción duplicada, como al crear.
+        En una de equipo valida además la nómina: la cantidad de jugadores, con el capitán incluido, tiene que
+        estar entre el tamaño de equipo y el máximo de nómina del torneo, y cada jugador tiene que seguir activo,
+        sin bloqueo vigente y sin otra inscripción activa en el torneo. Se bloquea la fila del torneo para que dos
+        equipos con un jugador en común no confirmen a la vez.
         404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador);
         `TORNEO_NO_ENCONTRADO` si el torneo fue dado de baja.
         409 `INSCRIPCION_NO_EDITABLE` si no está en BORRADOR; `REGLAMENTO_NO_ACEPTADO`; `INSCRIPCION_NO_ABIERTA`;
-        `USUARIO_NO_ACTIVO`; `INSCRIPCION_DUPLICADA` (también si otra confirmación del mismo usuario gana la carrera); `CUPO_COMPLETO` si las inscripciones confirmadas ya
-        completan el cupo (la inscripción sigue en BORRADOR). En un torneo con costo es un aviso temprano: el
-        cupo se chequea en firme al pagar. En uno gratis es el chequeo en firme, con la fila del torneo bloqueada.
-        403 `USUARIO_BLOQUEADO` si tiene un bloqueo vigente.
-        400 `VALIDACION` (sin `errores`) si el torneo es por equipos.
+        `USUARIO_NO_ACTIVO` (el capitán o un jugador de la nómina); `INSCRIPCION_DUPLICADA` (también si otra
+        confirmación del mismo usuario gana la carrera); `NOMINA_INVALIDA` si la nómina tiene menos jugadores que
+        el tamaño de equipo o más que el máximo de nómina, o no incluye al capitán; `JUGADOR_YA_INSCRIPTO` si un
+        jugador de la nómina figura en otra inscripción activa del torneo; `CUPO_COMPLETO` si las inscripciones
+        confirmadas ya completan el cupo (la inscripción sigue en BORRADOR). En un torneo con costo es un aviso
+        temprano: el cupo se chequea en firme al pagar. En uno gratis es el chequeo en firme, con la fila del
+        torneo bloqueada.
+        403 `USUARIO_BLOQUEADO` si el capitán o un jugador de la nómina tiene un bloqueo vigente.
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
         required: false
@@ -897,8 +904,9 @@ paths:
       x-permiso: INSCRIPCION_GESTIONAR
       x-owner: Mateo
       description: >-
-        Solo quien se inscribió, y solo mientras la inscripción está en PENDIENTE_PAGO. Muestra el torneo, el
-        participante, el monto (el valor de la inscripción, sin comisiones), la moneda, el cupo que queda
+        Solo quien se inscribió (el capitán, en una de equipo), y solo mientras la inscripción está en
+        PENDIENTE_PAGO. Muestra el torneo, el participante o el equipo, el monto (el valor de la inscripción,
+        sin comisiones), la moneda, el cupo que queda
         (el cupo máximo menos las inscripciones confirmadas) y la fecha de cierre.
         404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador).
         409 `INSCRIPCION_NO_EDITABLE` si no está en PENDIENTE_PAGO.
@@ -918,7 +926,8 @@ paths:
       x-permiso: INSCRIPCION_GESTIONAR
       x-owner: Mateo
       description: >-
-        Sin cuerpo. Solo quien se inscribió. Bloquea la fila del torneo, cuenta las inscripciones confirmadas y,
+        Sin cuerpo. Solo quien se inscribió (el capitán, en una de equipo, que es quien paga). Bloquea la fila
+        del torneo, cuenta las inscripciones confirmadas y,
         si no queda lugar, responde `CUPO_COMPLETO` sin cobrar. Con lugar, cobra el valor de la inscripción con
         la misma clave de idempotencia por inscripción y la deja en CONFIRMADA. En un torneo sin costo
         (valor 0) la confirma sin pasar por el cobro. Reintentar el pago de una inscripción ya CONFIRMADA
@@ -1055,7 +1064,9 @@ components:
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
-        JUGADOR_YA_INSCRIPTO (figura en otra inscripción activa del torneo, como capitán o en la nómina).
+        JUGADOR_YA_INSCRIPTO (figura en otra inscripción activa del torneo, como capitán o en la nómina) ·
+        NOMINA_INVALIDA (al confirmar: menos jugadores que el tamaño de equipo, más que el máximo de nómina, o
+        sin el capitán).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él).
@@ -1067,7 +1078,8 @@ components:
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
              USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, COBRO_RECHAZADO,
-             INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO, CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO,
+             INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
+             CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO]
     ErrorCampo:
@@ -1451,10 +1463,10 @@ components:
         reglamentoAceptado: {type: boolean, description: Tiene que ser `true`}
     ResumenPago:
       type: object
-      required: [inscripcionId, torneo, participante, monto, moneda, cupoMaximo, cupoDisponible, cierreInscripcionEn]
+      required: [inscripcionId, torneo, monto, moneda, cupoMaximo, cupoDisponible, cierreInscripcionEn]
       description: >-
-        Lo que va a pagar quien tiene una inscripción pendiente de pago, sin comisiones. La inscripción de equipo
-        suma el equipo en lugar del participante (T204-5).
+        Lo que va a pagar quien tiene una inscripción pendiente de pago, sin comisiones. La individual lleva el
+        `participante`; la de equipo lleva el `equipo` y no el participante: paga su capitán.
       properties:
         inscripcionId: {$ref: '#/components/schemas/Id'}
         torneo:
@@ -1463,12 +1475,23 @@ components:
           properties:
             id: {$ref: '#/components/schemas/Id'}
             nombre: {type: string}
-        participante: {$ref: '#/components/schemas/UsuarioPublico'}
+        participante:
+          oneOf: [{$ref: '#/components/schemas/UsuarioPublico'}, {type: 'null'}]
+          description: Solo en la individual
+        equipo:
+          oneOf: [{$ref: '#/components/schemas/EquipoInscripto'}, {type: 'null'}]
+          description: Solo en la de equipo
         monto: {type: number, description: El valor de la inscripción}
         moneda: {type: string, minLength: 3, maxLength: 3, example: ARS}
         cupoMaximo: {type: integer}
         cupoDisponible: {type: integer, minimum: 0, description: El cupo máximo menos las inscripciones confirmadas}
         cierreInscripcionEn: {type: string, format: date-time}
+    EquipoInscripto:
+      type: object
+      required: [id, nombre]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string}
     InscripcionEquipoRequest:
       type: object
       description: >-
@@ -1496,12 +1519,8 @@ components:
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: string, format: date-time}
         equipo:
-          type: [object, 'null']
+          oneOf: [{$ref: '#/components/schemas/EquipoInscripto'}, {type: 'null'}]
           description: Solo en la de equipo
-          required: [id, nombre]
-          properties:
-            id: {$ref: '#/components/schemas/Id'}
-            nombre: {type: string}
         nomina:
           type: [array, 'null']
           description: Solo en la de equipo; incluye siempre al capitán

@@ -283,23 +283,27 @@ public class InscripcionService {
         if (!esDe(inscripcion, usuarioId)) {
             throw noEncontrada(id);
         }
-        if (inscripcion.getEstado() != EstadoInscripcion.BORRADOR) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
-                    "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se confirma en BORRADOR");
-        }
+        exigirBorrador(id, inscripcion.getEstado());
         if (!reglamentoAceptado) {
             throw new ConflictoException(CodigoError.REGLAMENTO_NO_ACEPTADO, "Hay que aceptar el reglamento para confirmar");
         }
         Long torneoId = inscripcion.getTorneo().getId();
         boolean gratis = inscripcion.getTorneo().getValorInscripcion().signum() == 0;
-        // Un torneo gratis confirma acá, así que el cupo se chequea en firme con la fila bloqueada. En uno
-        // pago es un aviso temprano: el chequeo en firme es el del pago.
-        Torneo torneo = gratis
-                ? torneoBloqueado(torneoId)
-                : inscripcion.getTorneo();
-        validarUsuario(inscripcion.getUsuario());
-        validarTorneo(torneo);
-        if (inscripcionRepository.existsByTorneoIdAndUsuarioIdAndEstadoIn(torneoId, usuarioId, ACTIVAS)) {
+        // Se bloquea la fila del torneo en dos casos: uno gratis confirma acá, así que el cupo se chequea en
+        // firme; y uno de equipo, para que dos equipos que comparten un jugador no confirmen a la vez y lo
+        // dejen en dos inscripciones activas. En uno pago e individual el cupo es un aviso temprano: el chequeo
+        // en firme es el del pago.
+        boolean bloquea = gratis || inscripcion.esDeEquipo();
+        Torneo torneo = bloquea ? torneoBloqueado(torneoId) : inscripcion.getTorneo();
+        if (bloquea) {
+            // el estado de arriba se leyó antes de esperar el bloqueo: otro pedido pudo confirmarla mientras tanto
+            exigirBorrador(id, inscripcionRepository.estadoDe(id).orElseThrow(() -> noEncontrada(id)));
+        }
+        validarUsuario(inscripcion.titular());
+        validarTorneoAbierto(torneo);
+        if (inscripcion.esDeEquipo()) {
+            validarNomina(inscripcion, torneo);
+        } else if (inscripcionRepository.existsByTorneoIdAndUsuarioIdAndEstadoIn(torneoId, usuarioId, ACTIVAS)) {
             throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
                     "Ya tenés una inscripción activa en el torneo " + torneoId);
         }
@@ -309,13 +313,36 @@ public class InscripcionService {
         try {
             return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
         } catch (DataIntegrityViolationException e) {
-            // otra confirmación del mismo usuario ganó la carrera entre el chequeo de arriba y este flush
+            // otra confirmación individual del mismo usuario ganó la carrera entre el chequeo de arriba y este flush
             if (UQ_ACTIVA.equals(nombreDeConstraint(e))) {
                 throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
                         "Ya tenés una inscripción activa en el torneo " + torneoId);
             }
             throw e;
         }
+    }
+
+    private void exigirBorrador(Long id, EstadoInscripcion estado) {
+        if (estado != EstadoInscripcion.BORRADOR) {
+            throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
+                    "La inscripción " + id + " está " + estado + ": solo se confirma en BORRADOR");
+        }
+    }
+
+    // El tamaño de la nómina se valida acá y no en el borrador, que puede estar incompleto. El capitán cuenta
+    // dentro de la nómina, y cada jugador tiene que seguir activo, sin bloqueo y sin otra inscripción activa.
+    private void validarNomina(Inscripcion inscripcion, Torneo torneo) {
+        List<Usuario> jugadores = nominaRepository.jugadoresDe(inscripcion.getId());
+        if (jugadores.size() < torneo.getTamanioEquipo() || jugadores.size() > torneo.getNominaMaxima()) {
+            throw new ConflictoException(CodigoError.NOMINA_INVALIDA, "La nómina tiene " + jugadores.size()
+                    + " jugadores y el torneo pide entre " + torneo.getTamanioEquipo() + " y " + torneo.getNominaMaxima());
+        }
+        Long capitanId = inscripcion.titular().getId();
+        if (jugadores.stream().noneMatch(jugador -> jugador.getId().equals(capitanId))) {
+            throw new ConflictoException(CodigoError.NOMINA_INVALIDA, "El capitán tiene que figurar en la nómina");
+        }
+        jugadores.forEach(this::validarUsuario);
+        validarJugadoresLibres(torneo, jugadores, inscripcion.getId());
     }
 
     private static String nombreDeConstraint(DataIntegrityViolationException e) {
@@ -351,7 +378,7 @@ public class InscripcionService {
         return detalleDe(guardarEquipoYNomina(inscripcion, capitan, request));
     }
 
-    /** Lo que va a pagar el participante; solo se ve mientras la inscripción está pendiente de pago. */
+    /** Lo que va a pagar el participante o el capitán; solo se ve mientras la inscripción está pendiente de pago. */
     @Transactional(readOnly = true)
     public ResumenPago resumenPago(Long usuarioId, Long id) {
         Inscripcion inscripcion = buscar(id);
@@ -422,18 +449,10 @@ public class InscripcionService {
     private void validarUsuario(Usuario usuario) {
         switch (usuario.getEstado()) {
             case ACTIVO -> { }
-            case BLOQUEADO -> throw new ProhibidoException(CodigoError.USUARIO_BLOQUEADO, "El usuario está bloqueado");
-            default -> throw new ConflictoException(CodigoError.USUARIO_NO_ACTIVO, "El usuario no está activo");
-        }
-    }
-
-    // confirmar rechaza los torneos por equipos hasta que llegue su confirmación (ticket de equipos); crear,
-    // editar y pagar no lo hacen
-    private void validarTorneo(Torneo torneo) {
-        validarTorneoAbierto(torneo);
-        if (torneo.getTipoParticipante() == TipoParticipante.EQUIPO) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
-                    "La inscripción a torneos por equipos no está disponible");
+            case BLOQUEADO -> throw new ProhibidoException(CodigoError.USUARIO_BLOQUEADO,
+                    "El usuario " + usuario.getId() + " está bloqueado");
+            default -> throw new ConflictoException(CodigoError.USUARIO_NO_ACTIVO,
+                    "El usuario " + usuario.getId() + " no está activo");
         }
     }
 

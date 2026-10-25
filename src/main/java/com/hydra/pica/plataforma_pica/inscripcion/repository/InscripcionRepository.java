@@ -18,7 +18,15 @@ public interface InscripcionRepository extends JpaRepository<Inscripcion, Long> 
 
     long countByTorneoIdAndEstado(Long torneoId, EstadoInscripcion estado);
 
-    /** El torneo de la inscripción, solo si es de ese usuario; no carga la inscripción. */
-    @Query("select i.torneo.id from Inscripcion i where i.id = :id and i.usuario.id = :usuarioId")
+    /**
+     * El torneo de la inscripción, solo si es de ese usuario (el participante de la individual, el capitán de la
+     * de equipo); no carga la inscripción.
+     */
+    @Query("select i.torneo.id from Inscripcion i left join i.equipo e "
+            + "where i.id = :id and (i.usuario.id = :usuarioId or e.capitan.id = :usuarioId)")
     Optional<Long> torneoIdDeInscripcionPropia(@Param("id") Long id, @Param("usuarioId") Long usuarioId);
+
+    /** El estado guardado, leído de la base y no del contexto de persistencia: sirve después de esperar un bloqueo. */
+    @Query("select i.estado from Inscripcion i where i.id = :id")
+    Optional<EstadoInscripcion> estadoDe(@Param("id") Long id);
 }
