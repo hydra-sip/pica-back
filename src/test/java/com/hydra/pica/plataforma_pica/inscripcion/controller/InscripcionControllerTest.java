@@ -1,12 +1,14 @@
 package com.hydra.pica.plataforma_pica.inscripcion.controller;
 
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -29,6 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -152,6 +155,79 @@ class InscripcionControllerTest {
         mockMvc.perform(delete("/api/v1/inscripciones/7"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.codigo").value("INSCRIPCION_NO_EDITABLE"));
+    }
+
+    @Test
+    @DisplayName("PUT /inscripciones/{id}/confirmar sin autenticación responde 401")
+    void confirmarSinAutenticacion() throws Exception {
+        mockMvc.perform(put("/api/v1/inscripciones/7/confirmar")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(inscripcionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "ROL_VER")
+    @DisplayName("PUT /inscripciones/{id}/confirmar sin INSCRIPCION_GESTIONAR responde 403 SIN_PERMISO")
+    void confirmarSinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/confirmar").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reglamentoAceptado\":true}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
+        verifyNoInteractions(inscripcionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("PUT /inscripciones/{id}/confirmar confirma con el usuario de la sesión y responde 200")
+    void confirma() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.confirmar(PARTICIPANTE, 7L, true))
+                .thenReturn(new InscripcionDetalle(7L, 3L, PARTICIPANTE, EstadoInscripcion.PENDIENTE_PAGO, CREADA, CREADA, CREADA));
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/confirmar").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reglamentoAceptado\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("PENDIENTE_PAGO"))
+                .andExpect(jsonPath("$.reglamentoAceptadoEn").value("2026-10-24T12:00:00Z"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("Sin cuerpo, sin el campo o con false el reglamento cuenta como no aceptado")
+    void sinAceptarElReglamento() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.confirmar(PARTICIPANTE, 7L, false))
+                .thenThrow(new ConflictoException(CodigoError.REGLAMENTO_NO_ACEPTADO, "falta aceptar"));
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/confirmar"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("REGLAMENTO_NO_ACEPTADO"));
+        mockMvc.perform(put("/api/v1/inscripciones/7/confirmar").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isConflict());
+        mockMvc.perform(put("/api/v1/inscripciones/7/confirmar").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reglamentoAceptado\":false}"))
+                .andExpect(status().isConflict());
+        verify(inscripcionService, times(3)).confirmar(PARTICIPANTE, 7L, false);
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("Confirmar una inscripción ajena responde 404 y sin cupo responde 409 CUPO_COMPLETO")
+    void confirmarConError() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.confirmar(PARTICIPANTE, 7L, true))
+                .thenThrow(new NoEncontradoException(CodigoError.INSCRIPCION_NO_ENCONTRADA, "no existe"));
+        when(inscripcionService.confirmar(PARTICIPANTE, 8L, true))
+                .thenThrow(new ConflictoException(CodigoError.CUPO_COMPLETO, "lleno"));
+        String cuerpo = "{\"reglamentoAceptado\":true}";
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/confirmar").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("INSCRIPCION_NO_ENCONTRADA"));
+        mockMvc.perform(put("/api/v1/inscripciones/8/confirmar").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("CUPO_COMPLETO"));
     }
 
     private InscripcionDetalle detalle() {

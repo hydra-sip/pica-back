@@ -730,7 +730,7 @@ paths:
         '409': {$ref: '#/components/responses/Conflicto'}
 
   # --- Inscripciones -----------------------------------------------------------
-  # Crear y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
+  # Crear, confirmar y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
   # Ver alcanza con estar logueado: la ven quien se inscribió y el organizador del torneo. Para cualquier otro usuario
   # la inscripción no existe: 404 INSCRIPCION_NO_ENCONTRADA. El usuario siempre sale de la sesión.
 
@@ -789,6 +789,37 @@ paths:
         otro estado.
       responses:
         '204': {description: Cancelada}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/inscripciones/{id}/confirmar:
+    put:
+      tags: [Inscripciones]
+      summary: Confirmar el borrador aceptando el reglamento
+      x-jira: PICA-209
+      x-permiso: INSCRIPCION_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        Solo quien se inscribió, y solo un borrador. Guarda la fecha y hora en que aceptó el reglamento y la
+        inscripción pasa a PENDIENTE_PAGO; si el torneo es gratis (valor de inscripción 0) pasa directo a
+        CONFIRMADA y ocupa un lugar del cupo. Sin cuerpo, sin el campo o con `false` el reglamento cuenta como
+        no aceptado. Vuelve a chequear el torneo, el usuario y la inscripción duplicada, como al crear.
+        404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador).
+        409 `INSCRIPCION_NO_EDITABLE` si no está en BORRADOR; `REGLAMENTO_NO_ACEPTADO`; `INSCRIPCION_NO_ABIERTA`;
+        `USUARIO_NO_ACTIVO`; `INSCRIPCION_DUPLICADA`; `CUPO_COMPLETO` si las inscripciones confirmadas ya
+        completan el cupo (la inscripción sigue en BORRADOR). En un torneo con costo es un aviso temprano: el
+        cupo se chequea en firme al pagar. En uno gratis es el chequeo en firme, con la fila del torneo bloqueada.
+        403 `USUARIO_BLOQUEADO` si tiene un bloqueo vigente.
+        400 `VALIDACION` (sin `errores`) si el torneo es por equipos.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      requestBody:
+        required: false
+        content: {application/json: {schema: {$ref: '#/components/schemas/ConfirmarInscripcionRequest'}}}
+      responses:
+        '200': {description: Inscripción confirmada, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
@@ -909,7 +940,8 @@ components:
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay una activa en el torneo) ·
-        INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO).
+        INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
+        REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él).
@@ -921,7 +953,7 @@ components:
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
              USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE,
-             INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE,
+             INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO, CUPO_COMPLETO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO]
     ErrorCampo:
@@ -1285,6 +1317,11 @@ components:
         ventaHasta: {type: [string, 'null'], format: date-time}
         creadoEn: {type: string, format: date-time}
     EstadoInscripcion: {type: string, enum: [BORRADOR, PENDIENTE_PAGO, CONFIRMADA, CANCELADA, REINTEGRADA]}
+    ConfirmarInscripcionRequest:
+      type: object
+      description: Sin cuerpo, sin el campo o con `false` responde 409 `REGLAMENTO_NO_ACEPTADO`, no un 400.
+      properties:
+        reglamentoAceptado: {type: boolean, description: Tiene que ser `true`}
     InscripcionDetalle:
       type: object
       required: [id, torneoId, usuarioId, estado, creadoEn, modificadoEn]
