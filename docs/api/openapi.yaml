@@ -970,6 +970,28 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/publicar:
+    post:
+      tags: [Torneos]
+      summary: Publicar el torneo y abrir la inscripción
+      x-jira: PICA-204
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        El último paso del asistente. Sella con SHA-256 el esquema económico (`esquemaHash`, ver
+        `TorneoInformacion`) y el reglamento escrito, genera el `slug` del enlace público (el nombre en minúsculas, sin
+        tildes y con guiones; `-2`, `-3`... si ya existe o choca con una ruta, como `nuevo`), pasa a INSCRIPCION_ABIERTA y guarda `publicadoEn`. Después
+        ya no se tocan los pasos ni los gastos. 400 `VALIDACION` con `REQUERIDO` en `aceptaTerminos` si no viene en
+        `true`. 409 `TORNEO_INCOMPLETO` si le falta algo: la lista va en `faltantes` (ver `FaltanteTorneo`) y la suma
+        de los premios en `sumaPremios`. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PublicarTorneoRequest'}}}}
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   # --- Inscripciones -----------------------------------------------------------
   # Crear, confirmar, reabrir, ver el resumen de pago, pagar y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
   # Ver alcanza con estar logueado: la ven quien se inscribió y el organizador del torneo. Para cualquier otro usuario
@@ -1378,7 +1400,8 @@ components:
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
         RIFA_INCOMPLETA (le falta algo para publicarse) ·
-        TORNEO_NO_EDITABLE (los pasos del asistente solo se guardan en BORRADOR) ·
+        TORNEO_NO_EDITABLE (los pasos del asistente se guardan y el torneo se publica solo en BORRADOR) ·
+        TORNEO_INCOMPLETO (le falta algo para publicarse; la lista va en `faltantes`) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) ·
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
@@ -1396,7 +1419,8 @@ components:
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
-             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_EDITABLE, COBRO_RECHAZADO,
+             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_EDITABLE, TORNEO_INCOMPLETO,
+             COBRO_RECHAZADO,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
@@ -1435,8 +1459,11 @@ components:
         errores: {type: array, items: {$ref: '#/components/schemas/ErrorCampo'}}
         invalidos: {type: array, items: {type: string}, description: 'Solo en PERMISO_NO_ENCONTRADO: los códigos que no existen'}
         roles: {type: array, items: {type: string}, description: 'Solo en SIN_PERMISO al asignar roles (alta o PUT de roles): los que tienen permisos que quien llama no tiene'}
-        faltantes: {type: array, items: {$ref: '#/components/schemas/FaltantePublicacion'}, description: 'Solo en RIFA_INCOMPLETA: lo que le falta a la rifa para publicarse'}
-        sumaPremios: {type: integer, description: 'Solo en RIFA_INCOMPLETA: cuánto suman hoy los premios'}
+        faltantes:
+          type: array
+          items: {anyOf: [{$ref: '#/components/schemas/FaltantePublicacion'}, {$ref: '#/components/schemas/FaltanteTorneo'}]}
+          description: 'Solo en RIFA_INCOMPLETA (ver `FaltantePublicacion`) y TORNEO_INCOMPLETO (ver `FaltanteTorneo`): lo que le falta para publicarse'
+        sumaPremios: {type: number, description: 'Solo en RIFA_INCOMPLETA y TORNEO_INCOMPLETO: cuánto suman hoy los premios (en la rifa, un entero)'}
       examples:
         - {type: 'about:blank', title: Bad Request, status: 400, detail: Hay campos inválidos, instance: /api/v1/auth/registro,
          codigo: VALIDACION, errores: [{campo: password, codigo: PASSWORD_DEBIL, mensaje: 'Mínimo 8, una mayúscula y un número'}]}
@@ -1807,8 +1834,35 @@ components:
         tamanioEquipo: {type: [integer, 'null']}
         nominaMaxima: {type: [integer, 'null']}
         economia: {$ref: '#/components/schemas/EconomiaTorneo'}
+        slug: {type: [string, 'null'], description: 'El enlace público (`GET /torneos/slug/{slug}`); se genera al publicar', examples: [apertura-f5-2026]}
+        esquemaHash:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
+          description: >-
+            SHA-256 en hexadecimal del esquema económico, sellado al publicar. Se calcula sobre un texto con una línea
+            por dato separadas con `\n`, en UTF-8, con montos y porcentajes con dos decimales: `torneo:<id>`,
+            `inscripcion:<valor> <moneda>`, `reparto:<competidores>|<rifa>|<comisión>`, `premio:<puesto>:<pct>` por
+            puesto y `gasto:<n>:<monto>:<descripción>` por gasto previsto, los dos en orden. Lo que se pague de un
+            gasto después no entra.
+        publicadoEn: {type: [string, 'null'], format: date-time}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: string, format: date-time}
+    PublicarTorneoRequest:
+      type: object
+      required: [aceptaTerminos]
+      description: El organizador acepta los términos de custodia de los fondos; sin eso no se publica.
+      properties:
+        aceptaTerminos: {type: boolean, const: true}
+    FaltanteTorneo:
+      type: string
+      description: >-
+        Lo que le falta a un torneo para publicarse (en `faltantes` del 409 `TORNEO_INCOMPLETO`). INFORMACION: el
+        paso 1 incompleto (modalidad, tipo de participante, sede si es presencial, fechas o reglamento). CUPOS: el
+        paso 2 incompleto (cupos y, por equipos, tamaño y nómina máxima). ECONOMIA: sin valor de inscripción o sin el
+        reparto. SIN_PREMIOS: no hay premios por puesto. PREMIOS_NO_SUMAN_100: la suma va en `sumaPremios`.
+        POZO_NETO_NO_POSITIVO: con el cupo mínimo, los gastos previstos se comen el pozo de competidores.
+        CIERRE_VENCIDO: el cierre de la inscripción ya pasó.
+      enum: [INFORMACION, CUPOS, ECONOMIA, SIN_PREMIOS, PREMIOS_NO_SUMAN_100, POZO_NETO_NO_POSITIVO, CIERRE_VENCIDO]
     EconomiaTorneoRequest:
       type: object
       required: [valorInscripcion, pctPozoCompetidores, pctPremioRifa, pctComision, premios]

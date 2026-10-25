@@ -25,6 +25,7 @@ import com.hydra.pica.plataforma_pica.torneo.dto.EconomiaTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoRequest;
 import com.hydra.pica.plataforma_pica.torneo.service.EconomiaTorneoService;
+import com.hydra.pica.plataforma_pica.torneo.service.PublicacionTorneoService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -37,7 +38,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** Paso 3 del asistente (PICA-203): el organizador sale de la sesión y las reglas están en EconomiaTorneoService. */
+/**
+ * Paso 3 del asistente (PICA-203) y publicar (PICA-204): el organizador sale de la sesión y las reglas están en los
+ * servicios.
+ */
 @WebMvcTest(EconomiaTorneoController.class)
 @ActiveProfiles("dev")
 @Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
@@ -50,6 +54,9 @@ class EconomiaTorneoControllerTest {
 
     @MockitoBean
     private EconomiaTorneoService economiaService;
+
+    @MockitoBean
+    private PublicacionTorneoService publicacionService;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
@@ -142,6 +149,37 @@ class EconomiaTorneoControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errores[?(@.campo == 'descripcion')].codigo").value("REQUERIDO"));
         verify(economiaService, never()).agregarGasto(any(), any(), any());
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("POST /publicar sin aceptar los términos responde 400 REQUERIDO sin llamar al servicio")
+    void publicarSinAceptarLosTerminos() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+
+        for (String body : new String[] {"{}", "{\"aceptaTerminos\": false}"}) {
+            mockMvc.perform(post("/api/v1/torneos/9/publicar")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errores[?(@.campo == 'aceptaTerminos')].codigo").value("REQUERIDO"));
+        }
+        verifyNoInteractions(publicacionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("POST /publicar con los términos aceptados publica el torneo del organizador")
+    void publicar() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+
+        mockMvc.perform(post("/api/v1/torneos/9/publicar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"aceptaTerminos": true}
+                                """))
+                .andExpect(status().isOk());
+        verify(publicacionService).publicar(ORGANIZADOR, 9L);
     }
 
     private static final String ECONOMIA = """

@@ -7,9 +7,11 @@ import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.torneo.dto.EconomiaTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoRequest;
+import com.hydra.pica.plataforma_pica.torneo.dto.PublicarTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.ResumenEconomico;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
 import com.hydra.pica.plataforma_pica.torneo.service.EconomiaTorneoService;
+import com.hydra.pica.plataforma_pica.torneo.service.PublicacionTorneoService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,18 +26,23 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-/** Paso 3 del asistente: esquema económico y gastos (HU-601, PICA-203). Las reglas están en {@link EconomiaTorneoService}. */
+/**
+ * Paso 3 del asistente: esquema económico y gastos (HU-601, PICA-203), y publicar (PICA-204). Las reglas están en
+ * {@link EconomiaTorneoService} y {@link PublicacionTorneoService}.
+ */
 @RestController
 @PreAuthorize("hasAuthority('TORNEO_GESTIONAR')")
 @RequestMapping("/api/v1/torneos/{id}")
 public class EconomiaTorneoController {
 
     private final EconomiaTorneoService economiaTorneoService;
+    private final PublicacionTorneoService publicacionTorneoService;
     private final CurrentUserProvider currentUserProvider;
 
     public EconomiaTorneoController(EconomiaTorneoService economiaTorneoService,
-            CurrentUserProvider currentUserProvider) {
+            PublicacionTorneoService publicacionTorneoService, CurrentUserProvider currentUserProvider) {
         this.economiaTorneoService = economiaTorneoService;
+        this.publicacionTorneoService = publicacionTorneoService;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -75,6 +82,12 @@ public class EconomiaTorneoController {
     public ResponseEntity<Void> eliminarGasto(@PathVariable Long id, @PathVariable int gastoId) {
         economiaTorneoService.eliminarGasto(usuarioActual(), id, gastoId);
         return ResponseEntity.noContent().build();
+    }
+
+    /** El body solo trae la aceptación de los términos; sin ella responde 400 antes de llegar al servicio. */
+    @PostMapping("/publicar")
+    public TorneoInformacion publicar(@PathVariable Long id, @Valid @RequestBody PublicarTorneoRequest request) {
+        return publicacionTorneoService.publicar(usuarioActual(), id);
     }
 
     private Long usuarioActual() {
