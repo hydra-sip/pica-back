@@ -141,6 +141,9 @@ class TorneoPublicoServiceIntegracionTest {
         rifa.setVentaDesde(Instant.now().minus(1, ChronoUnit.DAYS));
         rifa.setVentaHasta(Instant.now().plus(7, ChronoUnit.DAYS));
         rifa.setTerminosAceptadosEn(Instant.now().minus(1, ChronoUnit.DAYS));
+        // desde V17, fuera de BORRADOR también son obligatorias la declaración de la lotería y la fecha del sorteo
+        rifa.setLoteriaDeclaradaEn(Instant.now().minus(1, ChronoUnit.DAYS));
+        rifa.setSorteadaEn(Instant.now().plus(8, ChronoUnit.DAYS));
         rifa.setEstado(EstadoRifa.EN_VENTA);
         rifaRepository.save(rifa);
 
