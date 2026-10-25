@@ -296,6 +296,10 @@ pedir 200 POST /api/v1/auth/login "" "" "$(jq -nc --arg u "$USER_ADM" --arg c "$
 USUARIO=$(campo .accessToken)
 USUARIO_REFRESH=$(campo .refreshToken)
 pedir 200 GET /api/v1/me "" "$USUARIO"
+# sin permiso especial: cualquier usuario logueado busca jugadores, y se encuentra a sí mismo
+pedir 200 GET /api/v1/usuarios "/api/v1/usuarios?q=$USER_ADM" "$USUARIO"
+en_listado "$USR_ID"
+pedir 400:VALIDACION GET /api/v1/usuarios "/api/v1/usuarios?q=ab" "$USUARIO"
 pedir 200 PUT /api/v1/me "" "$USUARIO" \
     '{"nombres":"Prueba","apellidos":"Humo","fechaNacimiento":"1990-05-17","domicilioPostal":"Calle Falsa 123","telefono":"1133333333"}'
 pedir 200 POST /api/v1/auth/refresh "" "" "$(jq -nc --arg t "$USUARIO_REFRESH" '{refreshToken: $t}')"
