@@ -754,6 +754,29 @@ paths:
         '200': {$ref: '#/components/responses/Rifa'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/rifas/{id}/publicar:
+    post:
+      tags: [Rifas]
+      summary: Publicar una rifa en BORRADOR (pasa a EN_VENTA)
+      x-jira: PICA-219
+      x-permiso: RIFA_GESTIONAR
+      x-owner: Laura
+      description: >-
+        Paso 3 del asistente. Registra cuándo se aceptaron los términos y se declaró la autorización de la
+        lotería, y pasa la rifa a EN_VENTA. No crea números: se insertan al elegirlos.
+        400 `VALIDACION` con `REQUERIDO` en el campo que no venga en `true`.
+        409 `RIFA_NO_EDITABLE` si ya no está en BORRADOR.
+        409 `RIFA_INCOMPLETA` si le falta algo para venderse: la lista va en `faltantes` (ver
+        `FaltantePublicacion`) y la suma de los premios en `sumaPremios`. Una venta que ya empezó no se
+        ajusta sola: el organizador corrige `ventaDesde`.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PublicarRifaRequest'}}}
+      responses:
+        '200': {$ref: '#/components/responses/Rifa'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   # --- Equipos -----------------------------------------------------------------
 
   /api/v1/equipos/mios:
@@ -1131,6 +1154,7 @@ components:
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
+        RIFA_INCOMPLETA (le falta algo para publicarse) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) ·
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
@@ -1148,7 +1172,7 @@ components:
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
-             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, COBRO_RECHAZADO,
+             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, COBRO_RECHAZADO,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
@@ -1157,8 +1181,8 @@ components:
       type: object
       required: [campo, codigo]
       description: >-
-        Un ítem de `errores` en los 400. `codigo` sale de la anotación que falló: @NotBlank/@NotNull →
-        REQUERIDO, @Email/@Pattern/documento según el tipo → FORMATO_INVALIDO, @Size → LONGITUD,
+        Un ítem de `errores` en los 400. `codigo` sale de la anotación que falló: @NotBlank/@NotNull, o
+        una casilla que tiene que venir en true (@AssertTrue) → REQUERIDO, @Email/@Pattern/documento según el tipo → FORMATO_INVALIDO, @Size → LONGITUD,
         @PastOrPresent → FECHA_FUTURA, política de clave → PASSWORD_DEBIL, nombres o apellidos con
         caracteres no permitidos → NOMBRE_INVALIDO, edad fuera de 18 a 120 años → EDAD_FUERA_DE_RANGO,
         otra → VALOR_INVALIDO. Las rifas suman reglas entre campos: RANGO_INVALIDO, VENTANA_INVALIDA y
@@ -1185,6 +1209,8 @@ components:
         errores: {type: array, items: {$ref: '#/components/schemas/ErrorCampo'}}
         invalidos: {type: array, items: {type: string}, description: 'Solo en PERMISO_NO_ENCONTRADO: los códigos que no existen'}
         roles: {type: array, items: {type: string}, description: 'Solo en SIN_PERMISO al asignar roles (alta o PUT de roles): los que tienen permisos que quien llama no tiene'}
+        faltantes: {type: array, items: {$ref: '#/components/schemas/FaltantePublicacion'}, description: 'Solo en RIFA_INCOMPLETA: lo que le falta a la rifa para publicarse'}
+        sumaPremios: {type: integer, description: 'Solo en RIFA_INCOMPLETA: cuánto suman hoy los premios'}
       examples:
         - {type: 'about:blank', title: Bad Request, status: 400, detail: Hay campos inválidos, instance: /api/v1/auth/registro,
          codigo: VALIDACION, errores: [{campo: password, codigo: PASSWORD_DEBIL, mensaje: 'Mínimo 8, una mayúscula y un número'}]}
@@ -1520,6 +1546,12 @@ components:
         precioNumero: {type: number, exclusiveMinimum: 0, description: Precio de cada número en ARS}
         ventaDesde: {type: [string, 'null'], format: date-time, description: Va junto con ventaHasta}
         ventaHasta: {type: [string, 'null'], format: date-time, description: Posterior a ventaDesde y en el futuro}
+        fechaSorteo:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            Fecha programada del sorteo (PICA-219): futura y posterior a ventaHasta (400 `VENTANA_INVALIDA`
+            en `fechaSorteo`). La aplicación sortea sola en esa fecha. Opcional en borrador; para publicar, obligatoria.
     RifaResumen:
       type: object
       required: [id, titulo, estado, numeroDesde, numeroHasta, precioNumero, moneda, creadoEn]
@@ -1533,6 +1565,7 @@ components:
         moneda: {type: string, examples: [ARS]}
         ventaDesde: {type: [string, 'null'], format: date-time}
         ventaHasta: {type: [string, 'null'], format: date-time}
+        fechaSorteo: {type: [string, 'null'], format: date-time, description: Fecha programada del sorteo}
         creadoEn: {type: string, format: date-time}
     EstadoInscripcion: {type: string, enum: [BORRADOR, PENDIENTE_PAGO, CONFIRMADA, CANCELADA, REINTEGRADA]}
     ConfirmarInscripcionRequest:
@@ -1653,7 +1686,24 @@ components:
         moneda: {type: string, examples: [ARS]}
         ventaDesde: {type: [string, 'null'], format: date-time}
         ventaHasta: {type: [string, 'null'], format: date-time}
+        fechaSorteo: {type: [string, 'null'], format: date-time, description: Fecha programada del sorteo}
         terminosAceptadosEn: {type: [string, 'null'], format: date-time, description: Se completa al publicar}
+        loteriaDeclaradaEn: {type: [string, 'null'], format: date-time, description: Se completa al publicar}
         premios: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: [string, 'null'], format: date-time}
+    PublicarRifaRequest:
+      type: object
+      required: [aceptaTerminos, declaraAutorizacionLoteria]
+      properties:
+        aceptaTerminos: {type: boolean, const: true, description: Acepta los términos y condiciones de la rifa}
+        declaraAutorizacionLoteria: {type: boolean, const: true, description: Declara que tiene la autorización de la lotería provincial}
+    FaltantePublicacion:
+      type: string
+      description: >-
+        Lo que le falta a una rifa para publicarse (en `faltantes` del 409 `RIFA_INCOMPLETA`). VENTANA: no
+        están cargadas las fechas de venta · VENTA_YA_EMPEZO: las fechas de venta quedaron en el pasado
+        (`ventaDesde` es anterior a ahora, o la venta ya terminó) y hay que actualizarlas · FECHA_SORTEO:
+        falta la fecha del sorteo · SIN_PREMIOS: no hay premios · PREMIOS_NO_SUMAN_100: los premios no
+        suman 100 % (la suma va en `sumaPremios`).
+      enum: [VENTANA, VENTA_YA_EMPEZO, FECHA_SORTEO, SIN_PREMIOS, PREMIOS_NO_SUMAN_100]
