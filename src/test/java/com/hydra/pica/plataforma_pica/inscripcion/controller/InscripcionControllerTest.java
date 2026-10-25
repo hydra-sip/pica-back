@@ -32,6 +32,7 @@ import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.TorneoDeInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
@@ -55,6 +56,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class InscripcionControllerTest {
 
     private static final Long PARTICIPANTE = 5L;
+    private static final TorneoDeInscripcion TORNEO = new TorneoDeInscripcion(3L, "Torneo Apertura F5", "torneo-apertura-f5");
     private static final Instant CREADA = Instant.parse("2026-10-24T12:00:00Z");
 
     @Autowired
@@ -128,6 +130,9 @@ class InscripcionControllerTest {
         mockMvc.perform(get("/api/v1/inscripciones/7"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(7))
+                .andExpect(jsonPath("$.torneo.id").value(3))
+                .andExpect(jsonPath("$.torneo.nombre").value("Torneo Apertura F5"))
+                .andExpect(jsonPath("$.torneo.slug").value("torneo-apertura-f5"))
                 .andExpect(jsonPath("$.usuarioId").value(PARTICIPANTE));
     }
 
@@ -194,7 +199,7 @@ class InscripcionControllerTest {
     void confirma() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         when(inscripcionService.confirmar(PARTICIPANTE, 7L, true))
-                .thenReturn(new InscripcionDetalle(7L, 3L, PARTICIPANTE, EstadoInscripcion.PENDIENTE_PAGO, CREADA, CREADA, CREADA, null, null));
+                .thenReturn(new InscripcionDetalle(7L, 3L, TORNEO, PARTICIPANTE, EstadoInscripcion.PENDIENTE_PAGO, CREADA, CREADA, CREADA, null, null));
 
         mockMvc.perform(put("/api/v1/inscripciones/7/confirmar").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reglamentoAceptado\":true}"))
@@ -310,7 +315,7 @@ class InscripcionControllerTest {
     void paga() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         when(inscripcionService.pagar(PARTICIPANTE, 7L))
-                .thenReturn(new InscripcionDetalle(7L, 3L, PARTICIPANTE, EstadoInscripcion.CONFIRMADA, CREADA, CREADA, CREADA, null, null));
+                .thenReturn(new InscripcionDetalle(7L, 3L, TORNEO, PARTICIPANTE, EstadoInscripcion.CONFIRMADA, CREADA, CREADA, CREADA, null, null));
 
         mockMvc.perform(post("/api/v1/inscripciones/7/pago"))
                 .andExpect(status().isOk())
@@ -493,13 +498,66 @@ class InscripcionControllerTest {
                 .andExpect(jsonPath("$.codigo").value("JUGADOR_YA_INSCRIPTO"));
     }
 
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("PUT /inscripciones/{id}/reabrir reabre con el usuario de la sesión, sin cuerpo, y responde 200 con el detalle en BORRADOR")
+    void reabre() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.reabrir(PARTICIPANTE, 7L)).thenReturn(borradorDeEquipo());
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/reabrir"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(7))
+                .andExpect(jsonPath("$.estado").value("BORRADOR"))
+                .andExpect(jsonPath("$.reglamentoAceptadoEn").value(nullValue()))
+                .andExpect(jsonPath("$.equipo.nombre").value("Los Halcones"))
+                .andExpect(jsonPath("$.nomina[0].username").value("capitan"));
+    }
+
+    @Test
+    @DisplayName("PUT /inscripciones/{id}/reabrir sin autenticación responde 401")
+    void reabrirSinAutenticacion() throws Exception {
+        mockMvc.perform(put("/api/v1/inscripciones/7/reabrir")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(inscripcionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "ROL_VER")
+    @DisplayName("Sin INSCRIPCION_GESTIONAR, reabrir responde 403 SIN_PERMISO")
+    void reabrirSinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/reabrir"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
+        verifyNoInteractions(inscripcionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("Reabrir una inscripción ajena responde 404 y fuera de PENDIENTE_PAGO responde 409 con su código")
+    void reabrirConError() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.reabrir(PARTICIPANTE, 7L))
+                .thenThrow(new NoEncontradoException(CodigoError.INSCRIPCION_NO_ENCONTRADA, "no existe"));
+        when(inscripcionService.reabrir(PARTICIPANTE, 8L))
+                .thenThrow(new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE, "confirmada"));
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/reabrir"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("INSCRIPCION_NO_ENCONTRADA"));
+        mockMvc.perform(put("/api/v1/inscripciones/8/reabrir"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("INSCRIPCION_NO_EDITABLE"));
+    }
+
     private InscripcionDetalle borradorDeEquipo() {
-        return new InscripcionDetalle(7L, 3L, null, EstadoInscripcion.BORRADOR, null, CREADA, CREADA,
+        return new InscripcionDetalle(7L, 3L, TORNEO, null, EstadoInscripcion.BORRADOR, null, CREADA, CREADA,
                 new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones"),
                 List.of(new UsuarioPublico(PARTICIPANTE, "capitan", "Ana", "Paz")));
     }
 
     private InscripcionDetalle detalle() {
-        return new InscripcionDetalle(7L, 3L, PARTICIPANTE, EstadoInscripcion.BORRADOR, null, CREADA, CREADA, null, null);
+        return new InscripcionDetalle(7L, 3L, TORNEO, PARTICIPANTE, EstadoInscripcion.BORRADOR, null, CREADA, CREADA, null, null);
     }
 }

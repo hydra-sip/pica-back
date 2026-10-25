@@ -47,6 +47,7 @@ tags:
   - {name: Admin – Personas, description: 'ABM de personas. HU-104, Laura.'}
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
   - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
+  - {name: Equipos, description: 'Equipos del capitán para elegir al inscribirse. HU-204 (PICA-234), Mateo.'}
   - {name: Inscripciones, description: 'Inscripción de un participante a un torneo. HU-204 (PICA-50), Mateo.'}
   - {name: Torneos, description: 'Catálogo público y detalle de torneos. HU-208, Tomás.'}
 
@@ -777,8 +778,28 @@ paths:
         '200': {$ref: '#/components/responses/Rifa'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  # --- Equipos -----------------------------------------------------------------
+
+  /api/v1/equipos/mios:
+    get:
+      tags: [Equipos]
+      summary: Mis equipos
+      x-jira: PICA-234
+      x-permiso: INSCRIPCION_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        Los equipos de los que el usuario logueado es capitán, sin los dados de baja, para elegir `equipoId` al
+        inscribirse (`POST /torneos/{id}/inscripciones`). Ordenados por nombre; `sort` se ignora.
+      parameters:
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageEquipoResumen'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+
   # --- Inscripciones -----------------------------------------------------------
-  # Crear, confirmar, ver el resumen de pago, pagar y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
+  # Crear, confirmar, reabrir, ver el resumen de pago, pagar y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
   # Ver alcanza con estar logueado: la ven quien se inscribió y el organizador del torneo. Para cualquier otro usuario
   # la inscripción no existe: 404 INSCRIPCION_NO_ENCONTRADA. El usuario siempre sale de la sesión.
 
@@ -828,6 +849,27 @@ paths:
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/inscripciones/mias:
+    get:
+      tags: [Inscripciones]
+      summary: Mis inscripciones
+      x-jira: PICA-234
+      x-owner: Mateo
+      description: >-
+        Las que armó el usuario logueado: la suya en un torneo individual, o las de sus equipos si es capitán. No
+        incluye las de equipos en los que solo figura en la nómina. Trae todos los estados, canceladas incluidas
+        (un equipo no puede volver a inscribirse en un torneo donde ya tiene una cancelada). La más nueva primero;
+        `sort` se ignora. Con `torneoId` solo las de ese torneo: así el front sabe si hay un borrador para
+        retomar antes de abrir el formulario en blanco. Trae el resumen; el equipo y la nómina se piden con
+        `GET /inscripciones/{id}`.
+      parameters:
+        - {name: torneoId, in: query, required: false, schema: {$ref: '#/components/schemas/Id'}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageInscripcionResumen'}}}}
+        '401': {$ref: '#/components/responses/Error'}
 
   /api/v1/inscripciones/{id}:
     parameters: [{$ref: '#/components/parameters/id'}]
@@ -919,6 +961,31 @@ paths:
       responses:
         '200': {description: Inscripción confirmada, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
         '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/inscripciones/{id}/reabrir:
+    put:
+      tags: [Inscripciones]
+      summary: Volver una inscripción pendiente de pago a borrador
+      x-jira: PICA-234
+      x-permiso: INSCRIPCION_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        Para "Modificar nómina" desde el paso de pago. Sin cuerpo. Solo quien se inscribió (el capitán, en una de
+        equipo), y solo una inscripción en PENDIENTE_PAGO: pasa a BORRADOR y se borra la fecha de aceptación del
+        reglamento, así que hay que confirmar de nuevo. El equipo y la nómina quedan como estaban y se editan con
+        `PUT /inscripciones/{id}`. No toca cupo ni cobros: en PENDIENTE_PAGO todavía no se cobró ni se ocupó
+        cupo. No sirve cancelar y volver a crear, porque un equipo tiene una sola inscripción por torneo en
+        cualquier estado.
+        404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador);
+        `TORNEO_NO_ENCONTRADO` si el torneo fue dado de baja.
+        409 `INSCRIPCION_NO_EDITABLE` si no está en PENDIENTE_PAGO.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200': {description: Inscripción vuelta a borrador, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
@@ -1230,6 +1297,14 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/TorneoResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageEquipoResumen:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/EquipoResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageInscripcionResumen:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/InscripcionResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
 
     # --- auth ----------------------------------------------------------------
     RegistroRequest:
@@ -1581,6 +1656,40 @@ components:
       properties:
         id: {$ref: '#/components/schemas/Id'}
         nombre: {type: string}
+    EquipoResumen:
+      type: object
+      required: [id, nombre]
+      description: Un equipo del capitán, para elegirlo al inscribirse.
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string}
+    TorneoDeInscripcion:
+      type: object
+      required: [id, nombre, slug]
+      description: >-
+        El torneo de una inscripción, para mostrarlo y llegar a su ficha pública con `GET /torneos/slug/{slug}`.
+        El `slug` es null mientras el torneo no se publicó, cosa que no pasa con uno que ya tiene inscripciones.
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string}
+        slug: {type: [string, 'null']}
+    InscripcionResumen:
+      type: object
+      required: [id, torneoId, torneo, estado, creadoEn, modificadoEn]
+      description: >-
+        Una inscripción sin la nómina. La individual lleva `usuarioId`; la de equipo lleva `equipo` y su `usuarioId`
+        es null, como en `InscripcionDetalle`.
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {$ref: '#/components/schemas/TorneoDeInscripcion'}
+        usuarioId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: Solo en la individual}
+        estado: {$ref: '#/components/schemas/EstadoInscripcion'}
+        creadoEn: {type: string, format: date-time}
+        modificadoEn: {type: string, format: date-time}
+        equipo:
+          oneOf: [{$ref: '#/components/schemas/EquipoInscripto'}, {type: 'null'}]
+          description: Solo en la de equipo
     InscripcionEquipoRequest:
       type: object
       description: >-
@@ -1595,13 +1704,14 @@ components:
           description: Ids de los demás jugadores de este torneo. Los que no son integrantes se suman al equipo.
     InscripcionDetalle:
       type: object
-      required: [id, torneoId, estado, creadoEn, modificadoEn]
+      required: [id, torneoId, torneo, estado, creadoEn, modificadoEn]
       description: >-
         Una inscripción. La individual lleva `usuarioId`; la de equipo lleva `equipo` y `nomina`, y su `usuarioId`
         es null (el capitán es el del equipo).
       properties:
         id: {$ref: '#/components/schemas/Id'}
         torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {$ref: '#/components/schemas/TorneoDeInscripcion'}
         usuarioId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: Solo en la individual}
         estado: {$ref: '#/components/schemas/EstadoInscripcion'}
         reglamentoAceptadoEn: {type: [string, 'null'], format: date-time, description: Se completa al confirmar; en BORRADOR es null}
