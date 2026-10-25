@@ -773,6 +773,27 @@ paths:
       responses:
         '201': {$ref: '#/components/responses/TorneoInformacion'}
 
+  /api/v1/torneos/mis-torneos:
+    get:
+      tags: [Torneos]
+      summary: Mis torneos
+      x-jira: PICA-201
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        Los del usuario logueado, borradores incluidos y sin los dados de baja. El último que se tocó primero;
+        `sort` se ignora. `q` busca en el nombre sin mayúsculas ni tildes y exige todas las palabras;
+        `disciplina` se compara entera, sin mayúsculas. `porEstado` aplica `q` y `disciplina` pero no `estado`,
+        para las pestañas.
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoTorneo'}}
+        - {name: disciplina, in: query, schema: {type: string, maxLength: 50}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página con las cantidades por estado, content: {application/json: {schema: {$ref: '#/components/schemas/MisTorneos'}}}}
+
   /api/v1/torneos/opciones:
     get:
       tags: [Torneos]
@@ -1522,6 +1543,7 @@ components:
       properties:
         id: {$ref: '#/components/schemas/Id'}
         estado: {$ref: '#/components/schemas/EstadoTorneo'}
+        pasoPendiente: {type: [integer, 'null'], minimum: 1, maximum: 3, description: 'En BORRADOR, el paso del asistente donde reabrirlo: el primero con algo sin cargar (3 si los dos primeros están completos). Null en los demás estados'}
         nombre: {type: string}
         disciplina: {type: string}
         descripcion: {type: [string, 'null']}
@@ -1541,6 +1563,35 @@ components:
         nominaMaxima: {type: [integer, 'null']}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: string, format: date-time}
+    MiTorneoResumen:
+      type: object
+      required: [id, nombre, disciplina, estado, inscriptos, pozoEstimado, moneda, modificadoEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string}
+        disciplina: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoTorneo'}
+        pasoPendiente: {type: [integer, 'null'], minimum: 1, maximum: 3, description: Como en `TorneoInformacion`}
+        sede: {type: [string, 'null']}
+        cupoMaximo: {type: [integer, 'null']}
+        inscriptos: {type: integer, description: Inscripciones confirmadas}
+        pozo: {type: [number, 'null'], description: 'Valor de inscripción × participantes × % del pozo de competidores, sin la rifa. Null si falta la parte económica o el cupo'}
+        pozoEstimado: {type: boolean, description: 'true en BORRADOR: se calcula con el cupo completo. Si no, con las inscripciones confirmadas'}
+        moneda: {type: string, examples: [ARS]}
+        fechaInicio: {type: [string, 'null'], format: date-time}
+        modificadoEn: {type: string, format: date-time}
+    MisTorneos:
+      type: object
+      required: [content, page, porEstado, disciplinas]
+      properties:
+        content: {type: array, items: {$ref: '#/components/schemas/MiTorneoResumen'}}
+        page: {$ref: '#/components/schemas/PageInfo'}
+        porEstado:
+          type: object
+          description: Cantidad en cada estado (están todos, con 0 si no hay) con `q` y `disciplina`, sin `estado`
+          additionalProperties: {type: integer, format: int64}
+          examples: [{BORRADOR: 1, INSCRIPCION_ABIERTA: 2, INSCRIPCION_CERRADA: 0, EN_CURSO: 1, FINALIZADO: 0, CANCELADO: 0}]
+        disciplinas: {type: array, items: {type: string}, description: 'Las de los torneos del organizador, para el filtro'}
     OpcionesTorneo:
       type: object
       required: [disciplinas, formatos, modalidades, cupoMaximo, canchas]
