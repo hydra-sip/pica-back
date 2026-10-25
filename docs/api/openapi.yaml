@@ -806,9 +806,10 @@ paths:
         inscripción pasa a PENDIENTE_PAGO; si el torneo es gratis (valor de inscripción 0) pasa directo a
         CONFIRMADA y ocupa un lugar del cupo. Sin cuerpo, sin el campo o con `false` el reglamento cuenta como
         no aceptado. Vuelve a chequear el torneo, el usuario y la inscripción duplicada, como al crear.
-        404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador).
+        404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador);
+        `TORNEO_NO_ENCONTRADO` si el torneo fue dado de baja.
         409 `INSCRIPCION_NO_EDITABLE` si no está en BORRADOR; `REGLAMENTO_NO_ACEPTADO`; `INSCRIPCION_NO_ABIERTA`;
-        `USUARIO_NO_ACTIVO`; `INSCRIPCION_DUPLICADA`; `CUPO_COMPLETO` si las inscripciones confirmadas ya
+        `USUARIO_NO_ACTIVO`; `INSCRIPCION_DUPLICADA` (también si otra confirmación del mismo usuario gana la carrera); `CUPO_COMPLETO` si las inscripciones confirmadas ya
         completan el cupo (la inscripción sigue en BORRADOR). En un torneo con costo es un aviso temprano: el
         cupo se chequea en firme al pagar. En uno gratis es el chequeo en firme, con la fila del torneo bloqueada.
         403 `USUARIO_BLOQUEADO` si tiene un bloqueo vigente.

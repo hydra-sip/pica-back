@@ -3,6 +3,9 @@ package com.hydra.pica.plataforma_pica.inscripcion.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doReturn;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -13,6 +16,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
+import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -29,6 +33,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -42,6 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
 class InscripcionServiceIntegracionTest {
 
     @Autowired private InscripcionService inscripcionService;
+    @MockitoSpyBean private InscripcionRepository inscripcionRepository;
     @Autowired private BloqueoService bloqueoService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
@@ -378,6 +384,33 @@ class InscripcionServiceIntegracionTest {
 
         assertError(() -> inscripcionService.confirmar(jugador, id, true), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
         assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+    }
+
+    @Test
+    void unTorneoDadoDeBajaNoSeConfirma() {
+        long id = inscripcionDe(jugador, "BORRADOR");
+        jdbc.update("UPDATE torneo SET eliminado_en = now() WHERE id = ?", torneo);
+
+        assertError(() -> inscripcionService.confirmar(jugador, id, true), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
+    }
+
+    @Test
+    void unTorneoGratisDadoDeBajaTampocoSeConfirma() {
+        long gratis = torneoIndividualGratis();
+        long id = inscripcionEn(gratis, jugador, "BORRADOR");
+        jdbc.update("UPDATE torneo SET eliminado_en = now() WHERE id = ?", gratis);
+
+        assertError(() -> inscripcionService.confirmar(jugador, id, true), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
+    }
+
+    @Test
+    void siLaBaseDetectaLaDuplicadaDespuesDelChequeoEsUn409Duplicada() {
+        long borrador = inscripcionDe(jugador, "BORRADOR");
+        inscripcionDe(jugador, "PENDIENTE_PAGO");
+        // otra confirmación concurrente ganó la carrera después de que este chequeo pasó
+        doReturn(false).when(inscripcionRepository).existsByTorneoIdAndUsuarioIdAndEstadoIn(anyLong(), anyLong(), any());
+
+        assertError(() -> inscripcionService.confirmar(jugador, borrador, true), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
     }
 
     // --- reglas de la base --------------------------------------------------

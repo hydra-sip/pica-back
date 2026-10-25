@@ -19,6 +19,7 @@ import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -120,7 +121,16 @@ public class InscripcionService {
         }
         inscripcion.setEstado(gratis ? EstadoInscripcion.CONFIRMADA : EstadoInscripcion.PENDIENTE_PAGO);
         inscripcion.setReglamentoAceptadoEn(Instant.now());
-        return InscripcionDetalle.de(inscripcionRepository.saveAndFlush(inscripcion));
+        try {
+            return InscripcionDetalle.de(inscripcionRepository.saveAndFlush(inscripcion));
+        } catch (DataIntegrityViolationException e) {
+            // otra confirmación del mismo usuario ganó la carrera entre el chequeo de arriba y este flush
+            if (e.getMostSpecificCause().getMessage().contains("uq_inscripcion_activa_torneo_usuario")) {
+                throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
+                        "Ya tenés una inscripción activa en el torneo " + torneoId);
+            }
+            throw e;
+        }
     }
 
     private Inscripcion buscar(Long id) {
@@ -144,6 +154,9 @@ public class InscripcionService {
     }
 
     private void validarTorneo(Torneo torneo) {
+        if (torneo.getEliminadoEn() != null) {
+            throw new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO, "No existe el torneo " + torneo.getId());
+        }
         if (torneo.getEstado() != EstadoTorneo.INSCRIPCION_ABIERTA || !torneo.getCierreInscripcionEn().isAfter(Instant.now())) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
                     "El torneo " + torneo.getId() + " no tiene la inscripción abierta");
