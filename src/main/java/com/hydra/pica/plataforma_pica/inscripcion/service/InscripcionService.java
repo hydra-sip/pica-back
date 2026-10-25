@@ -26,6 +26,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionResumen;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
@@ -38,6 +39,10 @@ import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -425,6 +430,13 @@ public class InscripcionService {
         }
         inscripcion.setEstado(EstadoInscripcion.CONFIRMADA);
         return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
+    }
+
+    /** Las que armó el usuario, la más nueva primero; el orden no se elige desde afuera. */
+    @Transactional(readOnly = true)
+    public Page<InscripcionResumen> listarMias(Long usuarioId, Long torneoId, Pageable pageable) {
+        Pageable masNuevaPrimero = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "id"));
+        return inscripcionRepository.buscarPropias(usuarioId, torneoId, masNuevaPrimero).map(InscripcionResumen::de);
     }
 
     private Inscripcion buscar(Long id) {
