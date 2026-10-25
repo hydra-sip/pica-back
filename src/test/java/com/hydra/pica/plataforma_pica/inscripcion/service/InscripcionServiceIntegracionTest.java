@@ -723,7 +723,7 @@ class InscripcionServiceIntegracionTest {
     }
 
     @Test
-    void reabrirNoPideCupoAunqueElTorneoYEsteLleno() {
+    void reabrirNoPideCupoAunqueElTorneoYaEsteLleno() {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
         llenarElCupo(2);
 

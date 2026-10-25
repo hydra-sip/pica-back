@@ -949,10 +949,11 @@ paths:
         Para "Modificar nómina" desde el paso de pago. Sin cuerpo. Solo quien se inscribió (el capitán, en una de
         equipo), y solo una inscripción en PENDIENTE_PAGO: pasa a BORRADOR y se borra la fecha de aceptación del
         reglamento, así que hay que confirmar de nuevo. El equipo y la nómina quedan como estaban y se editan con
-        `PUT /inscripciones/{id}`. No hay nada que devolver: en PENDIENTE_PAGO todavía no se cobró ni se ocupó
+        `PUT /inscripciones/{id}`. No toca cupo ni cobros: en PENDIENTE_PAGO todavía no se cobró ni se ocupó
         cupo. No sirve cancelar y volver a crear, porque un equipo tiene una sola inscripción por torneo en
         cualquier estado.
-        404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador).
+        404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador);
+        `TORNEO_NO_ENCONTRADO` si el torneo fue dado de baja.
         409 `INSCRIPCION_NO_EDITABLE` si no está en PENDIENTE_PAGO.
       parameters: [{$ref: '#/components/parameters/id'}]
       responses:

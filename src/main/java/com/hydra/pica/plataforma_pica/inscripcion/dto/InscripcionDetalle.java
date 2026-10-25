@@ -33,9 +33,14 @@ public record InscripcionDetalle(
         return new InscripcionDetalle(inscripcion.getId(), inscripcion.getTorneo().getId(),
                 inscripcion.getUsuario() == null ? null : inscripcion.getUsuario().getId(), inscripcion.getEstado(),
                 inscripcion.getReglamentoAceptadoEn(), inscripcion.getCreadoEn(), inscripcion.getModificadoEn(),
-                equipo == null ? null : new EquipoInscripto(equipo.getId(), equipo.getNombre()), nomina);
+                EquipoInscripto.de(equipo), nomina);
     }
 
     public record EquipoInscripto(Long id, String nombre) {
+
+        /** Nulo en las individuales, que no tienen equipo. */
+        public static EquipoInscripto de(Equipo equipo) {
+            return equipo == null ? null : new EquipoInscripto(equipo.getId(), equipo.getNombre());
+        }
     }
 }

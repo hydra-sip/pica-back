@@ -25,6 +25,6 @@ public record InscripcionResumen(
         return new InscripcionResumen(inscripcion.getId(), inscripcion.getTorneo().getId(),
                 inscripcion.getUsuario() == null ? null : inscripcion.getUsuario().getId(), inscripcion.getEstado(),
                 inscripcion.getCreadoEn(), inscripcion.getModificadoEn(),
-                equipo == null ? null : new EquipoInscripto(equipo.getId(), equipo.getNombre()));
+                EquipoInscripto.de(equipo));
     }
 }
