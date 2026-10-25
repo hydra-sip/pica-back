@@ -269,7 +269,7 @@ class InscripcionControllerTest {
     void resumenDePago() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         when(inscripcionService.resumenPago(PARTICIPANTE, 7L)).thenReturn(new ResumenPago(7L,
-                new ResumenPago.TorneoPago(3L, "Copa"), new UsuarioPublico(PARTICIPANTE, "jugador", "Ana", "Paz"),
+                new ResumenPago.TorneoPago(3L, "Copa"), new UsuarioPublico(PARTICIPANTE, "jugador", "Ana", "Paz"), null,
                 new BigDecimal("1500.00"), "ARS", 8, 5L, CREADA));
 
         mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago"))
@@ -446,6 +446,50 @@ class InscripcionControllerTest {
         mockMvc.perform(put("/api/v1/inscripciones/7").contentType(MediaType.APPLICATION_JSON).content("{\"equipoId\":4}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.codigo").value("INSCRIPCION_NO_EDITABLE"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("El resumen de pago de un equipo lleva el equipo y no el participante")
+    void resumenDePagoDeEquipo() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.resumenPago(PARTICIPANTE, 7L)).thenReturn(new ResumenPago(7L,
+                new ResumenPago.TorneoPago(3L, "Copa"), null, new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones"),
+                new BigDecimal("1500.00"), "ARS", 8, 5L, CREADA));
+
+        mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.equipo.id").value(4))
+                .andExpect(jsonPath("$.equipo.nombre").value("Los Halcones"))
+                .andExpect(jsonPath("$.participante").doesNotExist());
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("Confirmar con una nómina inválida responde 409 NOMINA_INVALIDA")
+    void confirmarConNominaInvalida() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.confirmar(PARTICIPANTE, 7L, true))
+                .thenThrow(new ConflictoException(CodigoError.NOMINA_INVALIDA, "faltan jugadores"));
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/confirmar").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reglamentoAceptado\":true}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("NOMINA_INVALIDA"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("Confirmar con un jugador que ya figura en otra inscripción responde 409 JUGADOR_YA_INSCRIPTO")
+    void confirmarConJugadorYaInscripto() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.confirmar(PARTICIPANTE, 7L, true))
+                .thenThrow(new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO, "ya figura"));
+
+        mockMvc.perform(put("/api/v1/inscripciones/7/confirmar").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reglamentoAceptado\":true}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("JUGADOR_YA_INSCRIPTO"));
     }
 
     private InscripcionDetalle borradorDeEquipo() {

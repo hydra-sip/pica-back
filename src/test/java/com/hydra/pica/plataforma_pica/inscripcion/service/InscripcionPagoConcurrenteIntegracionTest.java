@@ -53,11 +53,19 @@ class InscripcionPagoConcurrenteIntegracionTest {
     void limpiar() {
         if (torneo != null) {
             jdbc.update("DELETE FROM movimiento WHERE inscripcion_id IN (SELECT id FROM inscripcion WHERE torneo_id = ?)", torneo);
+            jdbc.update("DELETE FROM nomina WHERE inscripcion_id IN (SELECT id FROM inscripcion WHERE torneo_id = ?)", torneo);
             jdbc.update("DELETE FROM inscripcion WHERE torneo_id = ?", torneo);
             jdbc.update("DELETE FROM torneo WHERE id = ?", torneo);
         }
         for (Long usuario : usuarios) {
             jdbc.update("DELETE FROM billetera WHERE usuario_id = ?", usuario);
+            // en un solo statement: un equipo vivo no puede quedar sin su capitán como integrante
+            jdbc.update("""
+                    WITH propios AS (SELECT id FROM equipo WHERE capitan_id = ?),
+                         integrantes AS (DELETE FROM usuario_equipo
+                                         WHERE usuario_id = ? OR equipo_id IN (SELECT id FROM propios) RETURNING 1)
+                    DELETE FROM equipo WHERE id IN (SELECT id FROM propios)
+                    """, usuario, usuario);
             jdbc.update("DELETE FROM usuario WHERE id = ?", usuario);
         }
         for (Long persona : personas) {
@@ -140,6 +148,115 @@ class InscripcionPagoConcurrenteIntegracionTest {
         }
         assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, inscripcion))
                 .isEqualTo(1);
+    }
+
+    @RepeatedTest(5)
+    void dosEquiposQueComparteUnJugadorConfirmanALaVezYSoloUnoConfirma() throws Exception {
+        Long organizador = usuario("org_comp");
+        torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, tamanio_equipo, nomina_maxima,
+                                    valor_inscripcion, pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en,
+                                    fecha_inicio, estado)
+                VALUES (?, 'Torneo', 'https://r', 'Futbol', 'ELIMINACION_DIRECTA', 'PRESENCIAL', 'EQUIPO', 8, 2, 2, 3,
+                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        Long compartido = usuario("compartido_comp");
+        Long capitanA = usuario("cap_a_comp");
+        Long capitanB = usuario("cap_b_comp");
+        long inscripcionA = borradorDeEquipo(capitanA, compartido);
+        long inscripcionB = borradorDeEquipo(capitanB, compartido);
+
+        CyclicBarrier salida = new CyclicBarrier(2);
+        ExecutorService hilos = Executors.newFixedThreadPool(2);
+        try {
+            Future<EstadoInscripcion> confirmaA = hilos.submit(confirmacion(salida, capitanA, inscripcionA));
+            Future<EstadoInscripcion> confirmaB = hilos.submit(confirmacion(salida, capitanB, inscripcionB));
+
+            List<EstadoInscripcion> confirmadas = new ArrayList<>();
+            List<CodigoError> rechazos = new ArrayList<>();
+            for (Future<EstadoInscripcion> confirma : List.of(confirmaA, confirmaB)) {
+                try {
+                    confirmadas.add(confirma.get(30, TimeUnit.SECONDS));
+                } catch (ExecutionException e) {
+                    assertThat(e.getCause()).isInstanceOf(ApiException.class);
+                    rechazos.add(((ApiException) e.getCause()).getCodigo());
+                }
+            }
+
+            assertThat(confirmadas).containsExactly(EstadoInscripcion.PENDIENTE_PAGO);
+            assertThat(rechazos).containsExactly(CodigoError.JUGADOR_YA_INSCRIPTO);
+        } finally {
+            hilos.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM inscripcion WHERE torneo_id = ? AND estado = 'PENDIENTE_PAGO'", Integer.class, torneo)).isEqualTo(1);
+    }
+
+    @RepeatedTest(5)
+    void dosConfirmacionesSimultaneasDelMismoBorradorDeEquipoConfirmanUnaSolaVez() throws Exception {
+        Long organizador = usuario("org_misma_conf");
+        torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, tamanio_equipo, nomina_maxima,
+                                    valor_inscripcion, pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en,
+                                    fecha_inicio, estado)
+                VALUES (?, 'Torneo', 'https://r', 'Futbol', 'ELIMINACION_DIRECTA', 'PRESENCIAL', 'EQUIPO', 8, 2, 2, 3,
+                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        Long jugador = usuario("jug_misma_conf");
+        Long capitan = usuario("cap_misma_conf");
+        long inscripcion = borradorDeEquipo(capitan, jugador);
+
+        CyclicBarrier salida = new CyclicBarrier(2);
+        ExecutorService hilos = Executors.newFixedThreadPool(2);
+        try {
+            Future<EstadoInscripcion> primera = hilos.submit(confirmacion(salida, capitan, inscripcion));
+            Future<EstadoInscripcion> segunda = hilos.submit(confirmacion(salida, capitan, inscripcion));
+
+            List<EstadoInscripcion> confirmadas = new ArrayList<>();
+            List<CodigoError> rechazos = new ArrayList<>();
+            for (Future<EstadoInscripcion> confirma : List.of(primera, segunda)) {
+                try {
+                    confirmadas.add(confirma.get(30, TimeUnit.SECONDS));
+                } catch (ExecutionException e) {
+                    assertThat(e.getCause()).isInstanceOf(ApiException.class);
+                    rechazos.add(((ApiException) e.getCause()).getCodigo());
+                }
+            }
+
+            // la segunda ve el estado que dejó la primera: ya no es un borrador
+            assertThat(confirmadas).containsExactly(EstadoInscripcion.PENDIENTE_PAGO);
+            assertThat(rechazos).containsExactly(CodigoError.INSCRIPCION_NO_EDITABLE);
+        } finally {
+            hilos.shutdownNow();
+        }
+    }
+
+    private Callable<EstadoInscripcion> confirmacion(CyclicBarrier salida, Long capitan, long inscripcion) {
+        return () -> {
+            salida.await();
+            return inscripcionService.confirmar(capitan, inscripcion, true).estado();
+        };
+    }
+
+    // un equipo del capitán con el jugador compartido, y su borrador con los dos en la nómina
+    private long borradorDeEquipo(Long capitan, Long compartido) {
+        // en un solo statement: el capitán tiene que ser integrante cuando termina la transacción, y acá cada
+        // statement hace commit
+        long equipo = jdbc.queryForObject("""
+                WITH e AS (INSERT INTO equipo (capitan_id, nombre) VALUES (?, ?) RETURNING id),
+                     i AS (INSERT INTO usuario_equipo (usuario_id, equipo_id)
+                           SELECT u, e.id FROM e, (VALUES (CAST(? AS BIGINT)), (CAST(? AS BIGINT))) AS m (u))
+                SELECT id FROM e
+                """, Long.class, capitan, "Equipo " + capitan, capitan, compartido);
+        long inscripcion = jdbc.queryForObject(
+                "INSERT INTO inscripcion (torneo_id, equipo_id, estado) VALUES (?, ?, 'BORRADOR') RETURNING id", Long.class, torneo, equipo);
+        jdbc.update("INSERT INTO nomina (inscripcion_id, usuario_id, equipo_id) VALUES (?, ?, ?), (?, ?, ?)",
+                inscripcion, capitan, equipo, inscripcion, compartido, equipo);
+        return inscripcion;
     }
 
     private Callable<EstadoInscripcion> pago(CyclicBarrier salida, Long usuario, long inscripcion) {

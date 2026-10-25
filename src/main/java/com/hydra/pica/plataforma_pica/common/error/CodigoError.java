@@ -56,6 +56,7 @@ public enum CodigoError {
     REGLAMENTO_NO_ACEPTADO,
     CUPO_COMPLETO,
     JUGADOR_YA_INSCRIPTO,
+    NOMINA_INVALIDA,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,
