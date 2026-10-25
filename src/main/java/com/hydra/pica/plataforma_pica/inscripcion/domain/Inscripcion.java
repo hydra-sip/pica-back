@@ -61,6 +61,6 @@ public class Inscripcion extends AuditableEntity {
     @Column(name = "posicion")
     private Integer posicion;
 
-    @Column(name = "reglamento_aceptado_en", nullable = false)
+    @Column(name = "reglamento_aceptado_en")
     private Instant reglamentoAceptadoEn;
 }

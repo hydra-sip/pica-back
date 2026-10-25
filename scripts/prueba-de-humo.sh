@@ -107,7 +107,8 @@ if ! previo=$(sql <<SQL
 SELECT now() - interval '1 minute',
        (SELECT count(*) FROM usuario WHERE username LIKE '$CORRIDA-%')
      + (SELECT count(*) FROM persona WHERE nro_doc IN ('$DNI_REG', '$DNI_PER'))
-     + (SELECT count(*) FROM rol WHERE nombre = '$ROL');
+     + (SELECT count(*) FROM rol WHERE nombre = '$ROL')
+     + (SELECT count(*) FROM torneo WHERE nombre = '$CORRIDA');
 SQL
 ); then
     echo "No llego a la base: sin eso no se puede limpiar, así que no arranco" >&2
@@ -169,12 +170,17 @@ CREATE TEMP TABLE humo_p ON COMMIT DROP AS
     UNION SELECT id FROM persona WHERE nro_doc IN ('$DNI_REG', '$DNI_PER') AND creado_en >= '$INICIO';
 CREATE TEMP TABLE humo_r ON COMMIT DROP AS
     SELECT id FROM rol WHERE nombre = '$ROL' AND creado_en >= '$INICIO';
+CREATE TEMP TABLE humo_tor ON COMMIT DROP AS
+    SELECT id FROM torneo WHERE nombre = '$CORRIDA' AND creado_en >= '$INICIO';
 CREATE TEMP TABLE humo_t ON COMMIT DROP AS
     SELECT id FROM refresh_token
     WHERE usuario_id IN (SELECT id FROM humo_u) OR (user_agent = '$AGENTE' AND creado_en >= '$INICIO');
 SELECT (SELECT count(*) FROM humo_u), (SELECT count(*) FROM humo_p),
        (SELECT count(*) FROM humo_r), (SELECT count(*) FROM humo_t);
 DELETE FROM refresh_token WHERE id IN (SELECT id FROM humo_t);
+DELETE FROM inscripcion
+    WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u);
+DELETE FROM torneo WHERE id IN (SELECT id FROM humo_tor);
 DELETE FROM usuario_rol WHERE usuario_id IN (SELECT id FROM humo_u) OR rol_id IN (SELECT id FROM humo_r);
 DELETE FROM rol_permiso WHERE rol_id IN (SELECT id FROM humo_r);
 DELETE FROM usuario WHERE id IN (SELECT id FROM humo_u);
@@ -184,6 +190,7 @@ COMMIT;
 SELECT (SELECT count(*) FROM usuario WHERE username LIKE '$CORRIDA-%')
      + (SELECT count(*) FROM persona WHERE nro_doc IN ('$DNI_REG', '$DNI_PER'))
      + (SELECT count(*) FROM rol WHERE nombre = '$ROL')
+     + (SELECT count(*) FROM torneo WHERE nombre = '$CORRIDA')
      + (SELECT count(*) FROM refresh_token WHERE user_agent = '$AGENTE');
 SQL
 }
@@ -254,7 +261,7 @@ echo "Admin: roles y permisos"
 pedir 200 GET /api/v1/admin/permisos "" "$ADMIN"
 pedir 201 POST /api/v1/admin/roles "" "$ADMIN" "$(jq -nc --arg r "$ROL" '{nombre: $r, nombreAmigable: "Rol de la prueba de humo"}')"
 ROL_ID=$(campo .id)
-pedir 200 PUT /api/v1/admin/roles/{id}/permisos "/api/v1/admin/roles/$ROL_ID/permisos" "$ADMIN" '{"permisos":["USUARIO_VER"]}'
+pedir 200 PUT /api/v1/admin/roles/{id}/permisos "/api/v1/admin/roles/$ROL_ID/permisos" "$ADMIN" '{"permisos":["USUARIO_VER","INSCRIPCION_GESTIONAR"]}'
 pedir 200 GET /api/v1/admin/roles "/api/v1/admin/roles?q=$ROL" "$ADMIN"
 en_listado "$ROL_ID"
 pedir 200 GET /api/v1/admin/roles/{id} "/api/v1/admin/roles/$ROL_ID" "$ADMIN"
@@ -305,6 +312,26 @@ pedir 200 PUT /api/v1/me "" "$USUARIO" \
 pedir 200 POST /api/v1/auth/refresh "" "" "$(jq -nc --arg t "$USUARIO_REFRESH" '{refreshToken: $t}')"
 USUARIO=$(campo .accessToken)
 USUARIO_REFRESH=$(campo .refreshToken)
+
+echo
+echo "Inscripciones (en un torneo individual cargado por SQL: todavía no hay API para crearlos)"
+TORNEO_ID=$(sql <<SQL
+INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad, tipo_participante,
+                    cupo_maximo, cupo_minimo, valor_inscripcion, pct_pozo_competidores, pct_premio_rifa,
+                    cierre_inscripcion_en, fecha_inicio, estado)
+SELECT id, '$CORRIDA', 'https://example.com/reglamento', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL',
+       8, 2, 0, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA'
+FROM usuario WHERE username = '$ADMIN_USER'
+RETURNING id;
+SQL
+)
+[[ $TORNEO_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudo cargar el torneo de la prueba"; exit 1; }
+pedir 404:TORNEO_NO_ENCONTRADO POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/0/inscripciones" "$USUARIO"
+pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
+INSCRIPCION_ID=$(campo .id)
+pedir 200 GET /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
+pedir 204 DELETE /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
+pedir 409:INSCRIPCION_NO_EDITABLE DELETE /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
 # cierra todas sus sesiones: después de esto su access ya no sirve
 pedir 204 PUT /api/v1/me/password "" "$USUARIO" "$(jq -nc --arg a "$CLAVE_2" --arg n "$CLAVE_3" \
     '{passwordActual: $a, passwordNueva: $n}')"

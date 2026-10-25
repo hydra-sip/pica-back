@@ -47,6 +47,7 @@ tags:
   - {name: Admin – Personas, description: 'ABM de personas. HU-104, Laura.'}
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
   - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
+  - {name: Inscripciones, description: 'Inscripción de un participante a un torneo. HU-204 (PICA-50), Mateo.'}
 
 security:
   - bearerAuth: []
@@ -752,6 +753,71 @@ paths:
         '200': {$ref: '#/components/responses/Rifa'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  # --- Inscripciones -----------------------------------------------------------
+  # Crear y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
+  # Ver alcanza con estar logueado: la ven quien se inscribió y el organizador del torneo. Para cualquier otro usuario
+  # la inscripción no existe: 404 INSCRIPCION_NO_ENCONTRADA. El usuario siempre sale de la sesión.
+
+  /api/v1/torneos/{id}/inscripciones:
+    post:
+      tags: [Inscripciones]
+      summary: Crear el borrador de inscripción en un torneo individual
+      x-jira: PICA-208
+      x-permiso: INSCRIPCION_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        Sin cuerpo: inscribe al usuario de la sesión. Nace en BORRADOR, sin el reglamento aceptado y sin ocupar
+        cupo. Un usuario puede tener más de un borrador en el mismo torneo.
+        404 `TORNEO_NO_ENCONTRADO` si el torneo no existe o está dado de baja.
+        409 `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA o ya pasó la fecha de cierre;
+        `USUARIO_NO_ACTIVO` si el usuario no está activo; `INSCRIPCION_DUPLICADA` si ya tiene una inscripción
+        activa (pendiente de pago o confirmada) en el torneo; los borradores y las canceladas no cuentan.
+        403 `USUARIO_BLOQUEADO` si tiene un bloqueo vigente; `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si es el
+        organizador o un árbitro designado del torneo.
+        400 `VALIDACION` (sin `errores`) si el torneo es por equipos: todavía no se inscribe a equipos.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '201':
+          description: Borrador creado; `Location` apunta a `GET /inscripciones/{id}`
+          headers: {Location: {schema: {type: string, format: uri}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/inscripciones/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Inscripciones]
+      summary: Ver una inscripción
+      x-jira: PICA-208
+      x-owner: Mateo
+      description: >-
+        La ve quien se inscribió y el organizador del torneo. 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o
+        si es de otro usuario.
+      responses:
+        '200': {description: Inscripción, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Inscripciones]
+      summary: Cancelar una inscripción en BORRADOR o PENDIENTE_PAGO
+      x-jira: PICA-208
+      x-permiso: INSCRIPCION_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        Solo quien se inscribió. No borra la fila: la inscripción pasa a CANCELADA. 404 `INSCRIPCION_NO_ENCONTRADA`
+        si no existe o si es de otro usuario (también del organizador). 409 `INSCRIPCION_NO_EDITABLE` si está en
+        otro estado.
+      responses:
+        '204': {description: Cancelada}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
 # =============================================================================
 
 components:
@@ -845,14 +911,14 @@ components:
       type: string
       enum: [PENDIENTE_VERIFICACION, ACTIVO, BLOQUEADO]
       description: PENDIENTE hasta el clic en el mail; BLOQUEADO lo pone un admin. La baja lógica no es un estado.
-    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS]}
+    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226) e INSCRIPCION_GESTIONAR de V14 (PICA-208). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
-             RIFA_GESTIONAR]
+             RIFA_GESTIONAR, INSCRIPCION_GESTIONAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -866,17 +932,23 @@ components:
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
-        COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada).
+        COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) ·
+        INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay una activa en el torneo) ·
+        INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
-        ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM).
+        ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
+        INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él).
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
+             TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
              USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, COBRO_RECHAZADO,
-             USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO]
+             INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE,
+             USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
+             INSCRIPCION_NO_PERMITIDA_EN_TORNEO]
     ErrorCampo:
       type: object
       required: [campo, codigo]
@@ -1250,6 +1322,19 @@ components:
         ventaDesde: {type: [string, 'null'], format: date-time}
         ventaHasta: {type: [string, 'null'], format: date-time}
         creadoEn: {type: string, format: date-time}
+    EstadoInscripcion: {type: string, enum: [BORRADOR, PENDIENTE_PAGO, CONFIRMADA, CANCELADA, REINTEGRADA]}
+    InscripcionDetalle:
+      type: object
+      required: [id, torneoId, usuarioId, estado, creadoEn, modificadoEn]
+      description: Inscripción individual. La de equipo suma el equipo y la nómina (T204-5).
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        torneoId: {$ref: '#/components/schemas/Id'}
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        estado: {$ref: '#/components/schemas/EstadoInscripcion'}
+        reglamentoAceptadoEn: {type: [string, 'null'], format: date-time, description: Se completa al confirmar; en BORRADOR es null}
+        creadoEn: {type: string, format: date-time}
+        modificadoEn: {type: string, format: date-time}
     RifaDetalle:
       type: object
       required: [id, titulo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, creadoEn]

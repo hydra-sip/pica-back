@@ -5,5 +5,6 @@ public enum Modulo {
     USUARIOS,
     PERSONAS,
     ROLES,
-    RIFAS
+    RIFAS,
+    INSCRIPCIONES
 }
