@@ -42,6 +42,7 @@ servers:
 tags:
   - {name: Auth, description: 'Registro, verificación, login, refresh, Google. HU-101/102, Mateo.'}
   - {name: Perfil, description: 'Datos del usuario logueado. HU-103, Laura.'}
+  - {name: Usuarios, description: 'Búsqueda de jugadores para la nómina. HU-204 (PICA-208), Mateo.'}
   - {name: Admin – Usuarios, description: 'ABM de usuarios. HU-101, Laura. Roles de un usuario: HU-105, Tomás.'}
   - {name: Admin – Personas, description: 'ABM de personas. HU-104, Laura.'}
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
@@ -252,6 +253,29 @@ paths:
                 passwordNueva: {$ref: '#/components/schemas/Password'}
       responses:
         '204': {description: 'Cambiada, volver a iniciar sesión'}
+        '400': {$ref: '#/components/responses/Error'}
+
+  # --- Usuarios ----------------------------------------------------------------
+
+  /api/v1/usuarios:
+    get:
+      tags: [Usuarios]
+      summary: Buscar jugadores
+      x-jira: PICA-208
+      x-owner: Mateo
+      description: >-
+        Para cargar la nómina de una inscripción. Lo puede usar cualquier usuario logueado, sin permiso
+        especial. Cada palabra de `q` tiene que aparecer en el username, los nombres o los apellidos ("juan perez"
+        encuentra a Juan Pérez), sin distinguir mayúsculas ni tildes; `%` y `_` se buscan como texto. Devuelve
+        solo usuarios activos, ordenados por apellidos y nombres, y sin email ni documento. 400 `VALIDACION`
+        con `REQUERIDO` en `q` si falta o está en blanco, y `LONGITUD` si tiene menos de 3 caracteres sin
+        contar los espacios de los costados.
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 3, maxLength: 100}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageUsuarioPublico'}}}}
         '400': {$ref: '#/components/responses/Error'}
 
   # --- Admin: usuarios ---------------------------------------------------------
@@ -1008,6 +1032,10 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/UsuarioResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageUsuarioPublico:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/UsuarioPublico'}}, page: {$ref: '#/components/schemas/PageInfo'}}
     PagePersonaResumen:
       type: object
       required: [content, page]
@@ -1147,6 +1175,15 @@ components:
         email: {type: string}
         estado: {$ref: '#/components/schemas/EstadoUsuario'}
         eliminado: {type: boolean}
+    UsuarioPublico:
+      type: object
+      description: Lo que cualquier usuario logueado puede ver de otro, sin datos personales.
+      required: [id, username, nombres, apellidos]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        nombres: {type: string}
+        apellidos: {type: string}
     UsuarioResumen:
       type: object
       required: [id, username, email, estado, eliminado, protegido, persona, roles, creadoEn]
