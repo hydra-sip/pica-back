@@ -23,6 +23,7 @@ import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
+import jakarta.persistence.EntityManager;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,6 +53,7 @@ class InscripcionServiceIntegracionTest {
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private EntityManager entityManager;
 
     private Long organizador;
     private Long jugador;
@@ -221,6 +223,16 @@ class InscripcionServiceIntegracionTest {
         inscripcionService.cancelar(jugador, id);
 
         assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.CANCELADA);
+    }
+
+    @Test
+    void cancelarUnBorradorQuedaGuardadoEnLaBase() {
+        long id = inscripcionDe(jugador, "BORRADOR");
+
+        inscripcionService.cancelar(jugador, id);
+        entityManager.flush(); // sin flush el test no ve lo que la base rechaza al guardar
+
+        assertThat(jdbc.queryForObject("SELECT estado FROM inscripcion WHERE id = ?", String.class, id)).isEqualTo("CANCELADA");
     }
 
     @Test
