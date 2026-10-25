@@ -198,10 +198,11 @@ ON CONFLICT DO NOTHING;
 -- ---------------------------------------------------------------------------------------------------
 
 INSERT INTO rifa (organizador_id, torneo_id, titulo, descripcion, numero_desde, numero_hasta, precio_numero,
-                  venta_desde, venta_hasta, terminos_aceptados_en, loteria_declarada_en, estado,
+                  venta_desde, venta_hasta, sorteada_en, terminos_aceptados_en, loteria_declarada_en, estado,
                   creado_por, modificado_por)
 SELECT u.id, t.id, 'Rifa de la Copa abierta', 'El premio se sortea con la lotería nacional', 1, 100, 1000.00,
-       now() - interval '1 day', now() + interval '7 days', now() - interval '1 day', now() - interval '1 day',
+       now() - interval '1 day', now() + interval '7 days', now() + interval '8 days',
+       now() - interval '1 day', now() - interval '1 day',
        'EN_VENTA', 'SEED', 'SEED'
 FROM torneo t
 JOIN usuario u ON u.username = 'dev_organizador'

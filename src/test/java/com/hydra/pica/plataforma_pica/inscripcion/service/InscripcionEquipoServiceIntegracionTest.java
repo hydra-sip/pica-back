@@ -3,8 +3,10 @@ package com.hydra.pica.plataforma_pica.inscripcion.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -13,12 +15,15 @@ import java.util.Map;
 import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.billetera.service.CobroRechazadoException;
+import com.hydra.pica.plataforma_pica.billetera.service.CobroService;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
@@ -53,6 +58,7 @@ class InscripcionEquipoServiceIntegracionTest {
 
     @Autowired private InscripcionService inscripcionService;
     @MockitoSpyBean private InscripcionRepository inscripcionRepository;
+    @MockitoSpyBean private CobroService cobroService;
     @Autowired private BloqueoService bloqueoService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
@@ -282,8 +288,48 @@ class InscripcionEquipoServiceIntegracionTest {
         }
     }
 
+    @Test
+    void unCapitanConUnBorradorEnElTorneoNoCreaOtroConUnEquipoDistinto() {
+        Long otroEquipo = equipo("Los Gavilanes", capitan);
+        long idDelBorrador = inscripcionDeEquipo(torneo, equipo, "BORRADOR");
+
+        ApiException error = catchThrowableOfType(ApiException.class,
+                () -> inscripcionService.crear(capitan, torneo, existente(otroEquipo)));
+
+        assertThat(error).isNotNull();
+        assertThat(error.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(error.getCodigo()).isEqualTo(CodigoError.INSCRIPCION_DUPLICADA);
+        assertThat(error.getMessage()).contains("borrador " + idDelBorrador);
+    }
+
+    @Test
+    void elBorradorRechazadoNoDejaUnEquipoNuevoCreado() {
+        inscripcionDeEquipo(torneo, equipo, "BORRADOR");
+
+        assertError(() -> inscripcionService.crear(capitan, torneo, nuevo("Los Zorros")), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM equipo WHERE nombre = 'Los Zorros'", Integer.class)).isZero();
+    }
+
+    @Test
+    void elBorradorCanceladoDelCapitanNoImpideCrearOtroConOtroEquipo() {
+        Long otroEquipo = equipo("Los Gavilanes", capitan);
+        inscripcionDeEquipo(torneo, equipo, "CANCELADA");
+
+        assertThat(inscripcionService.crear(capitan, torneo, existente(otroEquipo)).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+    }
+
+    @Test
+    void elBorradorDelCapitanEnOtroTorneoNoImpideCrearEnEste() {
+        inscripcionDeEquipo(torneoPorEquipos(5, 8), equipo, "BORRADOR");
+        Long otroEquipo = equipo("Los Gavilanes", capitan);
+
+        assertThat(inscripcionService.crear(capitan, torneo, existente(otroEquipo)).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+    }
+
     // La clave única de torneo y equipo de V9 se mantiene: un equipo tiene una sola inscripción por torneo,
-    // sea cual sea su estado. Si ya tiene un borrador se edita ese, y una cancelada no se vuelve a abrir.
+    // sea cual sea su estado. Si ya tiene un borrador se edita ese (lo corta la regla del borrador único), y una
+    // cancelada no se vuelve a abrir.
     @Test
     void elMismoEquipoConUnBorradorEnElTorneoNoCreaOtroEnVezDeUnErrorDeLaBase() {
         inscripcionDeEquipo(torneo, equipo, "BORRADOR");
@@ -470,7 +516,8 @@ class InscripcionEquipoServiceIntegracionTest {
     @Test
     void siGanaOtroPedidoSimultaneoDelMismoEquipoRespondeDuplicadaYNoUnErrorDeLaBase() {
         inscripcionDeEquipo(torneo, equipo, "BORRADOR");
-        // el chequeo previo no ve a la otra inscripción, pero la clave única de la base sí
+        // los chequeos previos no ven a la otra inscripción, pero la clave única de la base sí
+        doReturn(List.of()).when(inscripcionRepository).borradoresDe(anyLong(), anyLong());
         doReturn(Optional.empty()).when(inscripcionRepository).findByTorneoIdAndEquipoId(anyLong(), anyLong());
 
         assertError(() -> inscripcionService.crear(capitan, torneo, existente(equipo)), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
@@ -555,6 +602,282 @@ class InscripcionEquipoServiceIntegracionTest {
         assertError(() -> inscripcionService.editar(capitan, id, existente(equipo)), HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
     }
 
+    // --- confirmar ----------------------------------------------------------
+
+    @Test
+    void confirmarUnaNominaValidaLaDejaPendienteDePagoConLaFechaDelReglamento() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("conf1_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        Instant antes = Instant.now();
+
+        InscripcionDetalle confirmada = inscripcionService.confirmar(capitan, id, true);
+
+        assertThat(confirmada.estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+        assertThat(confirmada.reglamentoAceptadoEn()).isBetween(antes.minusSeconds(1), Instant.now().plusSeconds(1));
+        assertThat(confirmada.nomina()).extracting(UsuarioPublico::id).containsExactlyInAnyOrder(capitan, jugador);
+    }
+
+    @Test
+    void elCapitanCuentaDentroDeLaNomina() {
+        long unoSolo = torneoPorEquipos(1, 1);
+        long id = inscripcionService.crear(capitan, unoSolo, existente(equipo)).id();
+
+        assertThat(inscripcionService.confirmar(capitan, id, true).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+    }
+
+    @Test
+    void conMenosJugadoresQueElTamanioDeEquipoNoSeConfirma() {
+        long dosATres = torneoPorEquipos(2, 3);
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo)).id();
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, true), HttpStatus.CONFLICT, CodigoError.NOMINA_INVALIDA);
+
+        InscripcionDetalle vista = inscripcionService.detalle(capitan, id);
+        assertThat(vista.estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+        assertThat(vista.reglamentoAceptadoEn()).isNull();
+    }
+
+    @Test
+    void conMasJugadoresQueElMaximoDeNominaNoSeConfirma() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long a = integranteNuevo("max1_eq");
+        Long b = integranteNuevo("max2_eq");
+        Long c = integranteNuevo("max3_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, a, b, c)).id();
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, true), HttpStatus.CONFLICT, CodigoError.NOMINA_INVALIDA);
+    }
+
+    @Test
+    void conElMaximoExactoDeNominaSeConfirma() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long a = integranteNuevo("exacto1_eq");
+        Long b = integranteNuevo("exacto2_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, a, b)).id();
+
+        assertThat(inscripcionService.confirmar(capitan, id, true).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+    }
+
+    @Test
+    void unaNominaSinElCapitanNoSeConfirma() {
+        long unoOdos = torneoPorEquipos(1, 2);
+        Long jugador = integranteNuevo("sincap_eq");
+        long id = inscripcionDeEquipo(unoOdos, equipo, "BORRADOR");
+        enNomina(id, jugador, equipo); // la cantidad de jugadores alcanza, pero el capitán no figura
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, true), HttpStatus.CONFLICT, CodigoError.NOMINA_INVALIDA);
+    }
+
+    @Test
+    void alConfirmarSeVuelveAChequearACadaJugadorDeLaNomina() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Usuario sinVerificar = usuario("pend4_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, sinVerificar.getId())).id();
+        sinVerificar.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
+        usuarioRepository.saveAndFlush(sinVerificar);
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, true), HttpStatus.CONFLICT, CodigoError.USUARIO_NO_ACTIVO);
+    }
+
+    @Test
+    void unJugadorBloqueadoDespuesDelBorradorNoDejaConfirmar() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Usuario bloqueado = usuario("bloq2_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, bloqueado.getId())).id();
+        bloqueoService.bloquear(bloqueado, "Mala conducta", Instant.now().plus(5, ChronoUnit.DAYS));
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, true), HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO);
+    }
+
+    @Test
+    void unJugadorQueQuedoInscriptoEnOtroEquipoMientrasTantoNoDejaConfirmar() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long compartido = usuario("compartido6_eq").getId();
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, compartido)).id();
+        // otro capitán confirmó antes a un equipo con el mismo jugador
+        Long otroCapitan = usuario("cap5_eq").getId();
+        Long otroEquipo = equipo("Los Gavilanes", otroCapitan);
+        integrante(otroEquipo, compartido);
+        long activa = inscripcionDeEquipo(dosATres, otroEquipo, "PENDIENTE_PAGO");
+        enNomina(activa, otroCapitan, otroEquipo);
+        enNomina(activa, compartido, otroEquipo);
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, true), HttpStatus.CONFLICT, CodigoError.JUGADOR_YA_INSCRIPTO);
+        assertThat(inscripcionService.detalle(capitan, id).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+    }
+
+    @Test
+    void soloElCapitanConfirmaElBorradorDeEquipo() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("conf2_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+
+        assertError(() -> inscripcionService.confirmar(jugador, id, true), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.confirmar(organizador, id, true), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertThat(inscripcionService.detalle(capitan, id).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+    }
+
+    @Test
+    void sinAceptarElReglamentoNoSeConfirmaElBorradorDeEquipo() {
+        long unoSolo = torneoPorEquipos(1, 1);
+        long id = inscripcionService.crear(capitan, unoSolo, existente(equipo)).id();
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, false), HttpStatus.CONFLICT, CodigoError.REGLAMENTO_NO_ACEPTADO);
+    }
+
+    @Test
+    void enUnTorneoPorEquiposGratisLaInscripcionQuedaConfirmadaSinPagar() {
+        long gratis = torneoPorEquipos(1, 1);
+        jdbc.update("UPDATE torneo SET valor_inscripcion = 0 WHERE id = ?", gratis);
+        long id = inscripcionService.crear(capitan, gratis, existente(equipo)).id();
+
+        assertThat(inscripcionService.confirmar(capitan, id, true).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isZero();
+    }
+
+    @Test
+    void enUnTorneoPorEquiposGratisConElCupoCompletoNoSeConfirma() {
+        long gratis = torneoPorEquipos(1, 1);
+        jdbc.update("UPDATE torneo SET valor_inscripcion = 0, cupo_maximo = 2 WHERE id = ?", gratis);
+        confirmarEquipos(gratis, 2);
+        long id = inscripcionService.crear(capitan, gratis, existente(equipo)).id();
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, true), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
+    }
+
+    // --- resumen de pago y pago ---------------------------------------------
+
+    @Test
+    void elResumenDeUnaInscripcionDeEquipoMuestraElEquipoYNoUnParticipante() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("res1_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+
+        ResumenPago resumen = inscripcionService.resumenPago(capitan, id);
+
+        assertThat(resumen.inscripcionId()).isEqualTo(id);
+        assertThat(resumen.equipo().id()).isEqualTo(equipo);
+        assertThat(resumen.equipo().nombre()).isEqualTo("Los Halcones");
+        assertThat(resumen.participante()).isNull();
+        assertThat(resumen.monto()).isEqualByComparingTo("1000");
+        assertThat(resumen.torneo().id()).isEqualTo(dosATres);
+        assertThat(resumen.cupoDisponible()).isEqualTo(8);
+    }
+
+    @Test
+    void elResumenDeEquipoSoloLoVeElCapitan() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("res2_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+
+        assertError(() -> inscripcionService.resumenPago(jugador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.resumenPago(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+    }
+
+    @Test
+    void elCapitanPagaLaInscripcionDeEquipoYElCupoDisponibleBajaEnUno() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("pago1_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+        assertThat(inscripcionService.resumenPago(capitan, id).cupoDisponible()).isEqualTo(8);
+
+        InscripcionDetalle pagada = inscripcionService.pagar(capitan, id);
+
+        assertThat(pagada.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(pagada.nomina()).extracting(UsuarioPublico::id).containsExactlyInAnyOrder(capitan, jugador);
+        Map<String, Object> cobro = jdbc.queryForMap("""
+                SELECT m.tipo, m.estado, m.monto, b.usuario_id
+                FROM movimiento m JOIN billetera b ON b.id = m.billetera_id
+                WHERE m.inscripcion_id = ?
+                """, id);
+        assertThat(cobro).containsEntry("tipo", "INSCRIPCION").containsEntry("estado", "CONFIRMADO").containsEntry("usuario_id", capitan);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inscripcion WHERE torneo_id = ? AND estado = 'CONFIRMADA'", Integer.class, dosATres))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void reintentarElPagoDeEquipoYaConfirmadoNoCobraDeNuevo() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("pago2_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+        inscripcionService.pagar(capitan, id);
+
+        assertThat(inscripcionService.pagar(capitan, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isEqualTo(1);
+    }
+
+    @Test
+    void soloElCapitanPagaLaInscripcionDeEquipo() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("pago3_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+
+        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.pagar(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isZero();
+    }
+
+    @Test
+    void siElCupoSeLlenoMientrasTantoElPagoDeEquipoSeRechazaAntesDeCobrar() {
+        long dosATres = torneoPorEquipos(2, 3);
+        long id = inscripcionDeEquipo(dosATres, equipo, "PENDIENTE_PAGO");
+        enNomina(id, capitan, equipo);
+        jdbc.update("UPDATE torneo SET cupo_maximo = 2 WHERE id = ?", dosATres);
+        confirmarEquipos(dosATres, 2);
+
+        assertError(() -> inscripcionService.pagar(capitan, id), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isZero();
+    }
+
+    @Test
+    void siElCobroSeRechazaLaInscripcionDeEquipoSigueEnPendienteDePago() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("rech_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+        doThrow(new CobroRechazadoException("sin fondos")).when(cobroService).cobrar(any());
+
+        assertError(() -> inscripcionService.pagar(capitan, id), HttpStatus.CONFLICT, CodigoError.COBRO_RECHAZADO);
+
+        assertThat(inscripcionService.detalle(capitan, id).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isZero();
+    }
+
+    @Test
+    void cancelarUnaPendienteDePagoDeEquipoLiberaALosJugadoresDeLaNomina() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("libre_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+        Long otroCapitan = usuario("cap6_eq").getId();
+        Long otroEquipo = equipo("Los Gavilanes", otroCapitan);
+        assertError(() -> inscripcionService.crear(otroCapitan, dosATres, existente(otroEquipo, jugador)), HttpStatus.CONFLICT, CodigoError.JUGADOR_YA_INSCRIPTO);
+
+        inscripcionService.cancelar(capitan, id);
+
+        assertThat(inscripcionService.crear(otroCapitan, dosATres, existente(otroEquipo, jugador)).nomina())
+                .extracting(UsuarioPublico::id).contains(jugador);
+    }
+
+    @Test
+    void lasNominasYaConfirmadasNoCambianSiDespuesCrecenLosIntegrantesDelEquipo() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("antes_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+
+        integranteNuevo("despues_eq");
+
+        assertThat(inscripcionService.detalle(capitan, id).nomina()).extracting(UsuarioPublico::id)
+                .containsExactlyInAnyOrder(capitan, jugador);
+    }
+
     // --- ver y cancelar -----------------------------------------------------
 
     @Test
@@ -625,6 +948,15 @@ class InscripcionEquipoServiceIntegracionTest {
         assertThat(error).isNotNull();
         assertThat(error.getStatus()).isEqualTo(status);
         assertThat(error.getCodigo()).isEqualTo(codigo);
+    }
+
+    // inscripciones de equipo ya confirmadas, de otros capitanes, que ocupan lugares del torneo
+    private void confirmarEquipos(long torneoId, int cantidad) {
+        for (int i = 0; i < cantidad; i++) {
+            Long otroCapitan = usuario("cap_lleno_" + torneoId + "_" + i).getId();
+            Long otroEquipo = equipo("Lleno " + torneoId + " " + i, otroCapitan);
+            enNomina(inscripcionDeEquipo(torneoId, otroEquipo, "CONFIRMADA"), otroCapitan, otroEquipo);
+        }
     }
 
     // una inscripción de otro equipo en el mismo torneo, con el jugador en su nómina

@@ -370,13 +370,14 @@ pedir 200 GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$IN
 pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
 pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
 pedir 409:INSCRIPCION_NO_EDITABLE GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
-# un torneo por equipos y un equipo del usuario de prueba (tampoco hay API de equipos): borrador, edición y baja
+# un torneo por equipos y un equipo del usuario de prueba (tampoco hay API de equipos): borrador, edición,
+# confirmación y pago. El torneo pide una nómina de 2 a 4 jugadores y el usuario de prueba está solo.
 TORNEO_EQUIPO_ID=$(sql <<SQL
 INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad, tipo_participante,
                     cupo_maximo, cupo_minimo, tamanio_equipo, nomina_maxima, valor_inscripcion,
                     pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
 SELECT id, '$CORRIDA', 'https://example.com/reglamento', 'Fútbol 5', 'ELIMINACION_DIRECTA', 'PRESENCIAL', 'EQUIPO',
-       8, 2, 2, 4, 0, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA'
+       8, 2, 2, 4, 1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA'
 FROM usuario WHERE username = '$ADMIN_USER'
 RETURNING id;
 SQL
@@ -399,6 +400,18 @@ pedir 200 PUT /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID"
     "$(jq -nc --arg n "$CORRIDA nuevo" '{nombreEquipoNuevo: $n, nomina: []}')"
 pedir 404:EQUIPO_NO_ENCONTRADO PUT /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO" '{"equipoId":0,"nomina":[]}'
 pedir 204 DELETE /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
+# el equipo de una inscripción cancelada no vuelve a inscribirse en el torneo: se arma otro borrador con uno nuevo
+pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIPO_ID/inscripciones" "$USUARIO" \
+    "$(jq -nc --arg n "$CORRIDA dos" '{nombreEquipoNuevo: $n, nomina: []}')"
+INSCRIPCION_ID=$(campo .id)
+pedir 409:NOMINA_INVALIDA PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+# con un solo usuario de prueba no hay forma de armar una nómina de 2: se baja el mínimo del torneo
+sql <<SQL >/dev/null
+UPDATE torneo SET tamanio_equipo = 1 WHERE id = $TORNEO_EQUIPO_ID;
+SQL
+pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+pedir 200 GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
+pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
 # cierra todas sus sesiones: después de esto su access ya no sirve
 pedir 204 PUT /api/v1/me/password "" "$USUARIO" "$(jq -nc --arg a "$CLAVE_2" --arg n "$CLAVE_3" \
     '{passwordActual: $a, passwordNueva: $n}')"

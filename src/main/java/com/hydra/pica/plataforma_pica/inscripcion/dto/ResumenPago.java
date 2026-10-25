@@ -8,13 +8,14 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 
 /**
- * Lo que va a pagar quien tiene una inscripción pendiente de pago, sin comisiones. En una inscripción
- * individual el pagador es el participante; la de equipo suma el equipo (ticket 05).
+ * Lo que va a pagar quien tiene una inscripción pendiente de pago, sin comisiones. La individual lleva al
+ * {@code participante}; la de equipo lleva el {@code equipo} y no el participante: paga su capitán.
  */
 public record ResumenPago(
         Long inscripcionId,
         TorneoPago torneo,
         UsuarioPublico participante,
+        InscripcionDetalle.EquipoInscripto equipo,
         BigDecimal monto,
         String moneda,
         int cupoMaximo,
@@ -24,8 +25,15 @@ public record ResumenPago(
     /** {@code confirmadas}: las inscripciones confirmadas del torneo, que son las que ocupan cupo. */
     public static ResumenPago de(Inscripcion inscripcion, long confirmadas) {
         Torneo torneo = inscripcion.getTorneo();
-        return new ResumenPago(inscripcion.getId(), new TorneoPago(torneo.getId(), torneo.getNombre()),
-                UsuarioPublico.desde(inscripcion.getUsuario()), torneo.getValorInscripcion(), torneo.getMoneda(),
+        UsuarioPublico participante = null;
+        InscripcionDetalle.EquipoInscripto equipo = null;
+        if (inscripcion.esDeEquipo()) {
+            equipo = new InscripcionDetalle.EquipoInscripto(inscripcion.getEquipo().getId(), inscripcion.getEquipo().getNombre());
+        } else {
+            participante = UsuarioPublico.desde(inscripcion.getUsuario());
+        }
+        return new ResumenPago(inscripcion.getId(), new TorneoPago(torneo.getId(), torneo.getNombre()), participante,
+                equipo, torneo.getValorInscripcion(), torneo.getMoneda(),
                 torneo.getCupoMaximo(), Math.max(0, torneo.getCupoMaximo() - confirmadas), torneo.getCierreInscripcionEn());
     }
 

@@ -81,9 +81,23 @@ public class InscripcionService {
         validarUsuario(usuario);
         validarTorneoAbierto(torneo);
         validarQueNoOrganiza(torneo, usuarioId);
+        // no hay un índice que asegure un borrador por usuario (en uno de equipo el capitán está en el equipo y
+        // no en la inscripción), así que dos pedidos simultáneos se serializan por la fila del torneo
+        torneoBloqueado(torneoId);
+        exigirSinBorrador(torneoId, usuarioId);
         return torneo.getTipoParticipante() == TipoParticipante.EQUIPO
                 ? crearDeEquipo(usuario, torneo, request)
                 : crearIndividual(usuario, torneo, request);
+    }
+
+    // quien se inscribe tiene un solo borrador por torneo (el suyo o, si es capitán, el de cualquiera de sus
+    // equipos): si ya hay uno, lo retoma en vez de abrir otro
+    private void exigirSinBorrador(Long torneoId, Long usuarioId) {
+        List<Long> borradores = inscripcionRepository.borradoresDe(torneoId, usuarioId);
+        if (!borradores.isEmpty()) {
+            throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA, "Ya tenés el borrador " + borradores.get(0)
+                    + " en el torneo " + torneoId + ": retomalo o cancelalo antes de crear otro");
+        }
     }
 
     private InscripcionDetalle crearIndividual(Usuario usuario, Torneo torneo, InscripcionEquipoRequest request) {
@@ -262,13 +276,16 @@ public class InscripcionService {
         return detalleDe(inscripcion);
     }
 
-    /** La cancelación es una baja lógica: la inscripción queda en CANCELADA. */
+    /**
+     * La cancelación es una baja lógica: la inscripción queda en CANCELADA. Bloquea la fila del torneo antes de
+     * leer la inscripción, igual que {@link #pagar}: así no cancela una que otro pedido acaba de pagar.
+     */
     @Transactional
     public void cancelar(Long usuarioId, Long id) {
+        Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
+                .orElseThrow(() -> noEncontrada(id));
+        torneoBloqueado(torneoId);
         Inscripcion inscripcion = buscar(id);
-        if (!esDe(inscripcion, usuarioId)) {
-            throw noEncontrada(id);
-        }
         if (inscripcion.getEstado() != EstadoInscripcion.BORRADOR && inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
                     "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se cancela en BORRADOR o PENDIENTE_PAGO");
@@ -283,23 +300,27 @@ public class InscripcionService {
         if (!esDe(inscripcion, usuarioId)) {
             throw noEncontrada(id);
         }
-        if (inscripcion.getEstado() != EstadoInscripcion.BORRADOR) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
-                    "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se confirma en BORRADOR");
-        }
+        exigirBorrador(id, inscripcion.getEstado());
         if (!reglamentoAceptado) {
             throw new ConflictoException(CodigoError.REGLAMENTO_NO_ACEPTADO, "Hay que aceptar el reglamento para confirmar");
         }
         Long torneoId = inscripcion.getTorneo().getId();
         boolean gratis = inscripcion.getTorneo().getValorInscripcion().signum() == 0;
-        // Un torneo gratis confirma acá, así que el cupo se chequea en firme con la fila bloqueada. En uno
-        // pago es un aviso temprano: el chequeo en firme es el del pago.
-        Torneo torneo = gratis
-                ? torneoBloqueado(torneoId)
-                : inscripcion.getTorneo();
-        validarUsuario(inscripcion.getUsuario());
-        validarTorneo(torneo);
-        if (inscripcionRepository.existsByTorneoIdAndUsuarioIdAndEstadoIn(torneoId, usuarioId, ACTIVAS)) {
+        // Se bloquea la fila del torneo en dos casos: uno gratis confirma acá, así que el cupo se chequea en
+        // firme; y uno de equipo, para que dos equipos que comparten un jugador no confirmen a la vez y lo
+        // dejen en dos inscripciones activas. En uno pago e individual el cupo es un aviso temprano: el chequeo
+        // en firme es el del pago.
+        boolean bloquea = gratis || inscripcion.esDeEquipo();
+        Torneo torneo = bloquea ? torneoBloqueado(torneoId) : inscripcion.getTorneo();
+        if (bloquea) {
+            // el estado de arriba se leyó antes de esperar el bloqueo: otro pedido pudo confirmarla mientras tanto
+            exigirBorrador(id, inscripcionRepository.estadoDe(id).orElseThrow(() -> noEncontrada(id)));
+        }
+        validarUsuario(inscripcion.titular());
+        validarTorneoAbierto(torneo);
+        if (inscripcion.esDeEquipo()) {
+            validarNomina(inscripcion, torneo);
+        } else if (inscripcionRepository.existsByTorneoIdAndUsuarioIdAndEstadoIn(torneoId, usuarioId, ACTIVAS)) {
             throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
                     "Ya tenés una inscripción activa en el torneo " + torneoId);
         }
@@ -309,13 +330,36 @@ public class InscripcionService {
         try {
             return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
         } catch (DataIntegrityViolationException e) {
-            // otra confirmación del mismo usuario ganó la carrera entre el chequeo de arriba y este flush
+            // otra confirmación individual del mismo usuario ganó la carrera entre el chequeo de arriba y este flush
             if (UQ_ACTIVA.equals(nombreDeConstraint(e))) {
                 throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
                         "Ya tenés una inscripción activa en el torneo " + torneoId);
             }
             throw e;
         }
+    }
+
+    private void exigirBorrador(Long id, EstadoInscripcion estado) {
+        if (estado != EstadoInscripcion.BORRADOR) {
+            throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
+                    "La inscripción " + id + " está " + estado + ": solo se confirma en BORRADOR");
+        }
+    }
+
+    // El tamaño de la nómina se valida acá y no en el borrador, que puede estar incompleto. El capitán cuenta
+    // dentro de la nómina, y cada jugador tiene que seguir activo, sin bloqueo y sin otra inscripción activa.
+    private void validarNomina(Inscripcion inscripcion, Torneo torneo) {
+        List<Usuario> jugadores = nominaRepository.jugadoresDe(inscripcion.getId());
+        if (jugadores.size() < torneo.getTamanioEquipo() || jugadores.size() > torneo.getNominaMaxima()) {
+            throw new ConflictoException(CodigoError.NOMINA_INVALIDA, "La nómina tiene " + jugadores.size()
+                    + " jugadores y el torneo pide entre " + torneo.getTamanioEquipo() + " y " + torneo.getNominaMaxima());
+        }
+        Long capitanId = inscripcion.titular().getId();
+        if (jugadores.stream().noneMatch(jugador -> jugador.getId().equals(capitanId))) {
+            throw new ConflictoException(CodigoError.NOMINA_INVALIDA, "El capitán tiene que figurar en la nómina");
+        }
+        jugadores.forEach(this::validarUsuario);
+        validarJugadoresLibres(torneo, jugadores, inscripcion.getId());
     }
 
     private static String nombreDeConstraint(DataIntegrityViolationException e) {
@@ -328,14 +372,16 @@ public class InscripcionService {
 
     /**
      * Reemplaza el equipo y la nómina del borrador de un torneo por equipos. Solo el capitán, y solo en
-     * BORRADOR. Se vuelven a chequear las mismas reglas que al crear.
+     * BORRADOR. Se vuelven a chequear las mismas reglas que al crear. Bloquea la fila del torneo antes de
+     * leer la inscripción: si no, pisaría el estado de una confirmación simultánea y cambiaría la nómina que
+     * ella validó.
      */
     @Transactional
     public InscripcionDetalle editar(Long usuarioId, Long id, InscripcionEquipoRequest request) {
+        Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
+                .orElseThrow(() -> noEncontrada(id));
+        torneoBloqueado(torneoId);
         Inscripcion inscripcion = buscar(id);
-        if (!esDe(inscripcion, usuarioId)) {
-            throw noEncontrada(id);
-        }
         if (!inscripcion.esDeEquipo()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
                     "La inscripción individual no tiene equipo ni nómina");
@@ -351,7 +397,7 @@ public class InscripcionService {
         return detalleDe(guardarEquipoYNomina(inscripcion, capitan, request));
     }
 
-    /** Lo que va a pagar el participante; solo se ve mientras la inscripción está pendiente de pago. */
+    /** Lo que va a pagar el participante o el capitán; solo se ve mientras la inscripción está pendiente de pago. */
     @Transactional(readOnly = true)
     public ResumenPago resumenPago(Long usuarioId, Long id) {
         Inscripcion inscripcion = buscar(id);
@@ -422,18 +468,10 @@ public class InscripcionService {
     private void validarUsuario(Usuario usuario) {
         switch (usuario.getEstado()) {
             case ACTIVO -> { }
-            case BLOQUEADO -> throw new ProhibidoException(CodigoError.USUARIO_BLOQUEADO, "El usuario está bloqueado");
-            default -> throw new ConflictoException(CodigoError.USUARIO_NO_ACTIVO, "El usuario no está activo");
-        }
-    }
-
-    // confirmar rechaza los torneos por equipos hasta que llegue su confirmación (ticket de equipos); crear,
-    // editar y pagar no lo hacen
-    private void validarTorneo(Torneo torneo) {
-        validarTorneoAbierto(torneo);
-        if (torneo.getTipoParticipante() == TipoParticipante.EQUIPO) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
-                    "La inscripción a torneos por equipos no está disponible");
+            case BLOQUEADO -> throw new ProhibidoException(CodigoError.USUARIO_BLOQUEADO,
+                    "El usuario " + usuario.getId() + " está bloqueado");
+            default -> throw new ConflictoException(CodigoError.USUARIO_NO_ACTIVO,
+                    "El usuario " + usuario.getId() + " no está activo");
         }
     }
 
