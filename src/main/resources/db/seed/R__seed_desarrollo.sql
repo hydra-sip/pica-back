@@ -215,15 +215,6 @@ JOIN torneo t ON t.id = r.torneo_id
 WHERE t.slug = 'dev-copa-abierta'
 ON CONFLICT DO NOTHING;
 
--- Todos los números se crean al publicar la rifa, como DISPONIBLE.
-INSERT INTO numero (rifa_id, numero, creado_por, modificado_por)
-SELECT r.id, n, 'SEED', 'SEED'
-FROM rifa r
-JOIN torneo t ON t.id = r.torneo_id
-CROSS JOIN generate_series(r.numero_desde, r.numero_hasta) AS n
-WHERE t.slug = 'dev-copa-abierta'
-ON CONFLICT DO NOTHING;
-
 -- Una compra de tres números: el movimiento de pago, el ticket y los números que pasan a VENDIDO.
 INSERT INTO movimiento (billetera_id, tipo, monto, saldo_resultante, estado, referencia_externa, descripcion,
                         creado_por, modificado_por)
@@ -243,10 +234,10 @@ JOIN movimiento m ON m.referencia_externa = 'seed-ticket-0001'
 WHERE t.slug = 'dev-copa-abierta'
 ON CONFLICT DO NOTHING;
 
-UPDATE numero n
-SET estado = 'VENDIDO', ticket_id = tk.id, modificado_en = now(), modificado_por = 'SEED'
+-- Un número sin fila está libre: solo existen los que alguien eligió. Estos tres quedan VENDIDOS con el ticket.
+INSERT INTO numero (rifa_id, numero, estado, ticket_id, creado_por, modificado_por)
+SELECT tk.rifa_id, n, 'VENDIDO', tk.id, 'SEED', 'SEED'
 FROM ticket tk
+CROSS JOIN unnest(ARRAY[7, 13, 42]) AS n
 WHERE tk.codigo = 'SEED-0001'
-  AND n.rifa_id = tk.rifa_id
-  AND n.numero IN (7, 13, 42)
-  AND n.estado = 'DISPONIBLE';
+ON CONFLICT DO NOTHING;
