@@ -782,8 +782,9 @@ paths:
         409 `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA o ya pasó la fecha de cierre;
         `USUARIO_NO_ACTIVO` si el capitán o un jugador no está activo; `INSCRIPCION_DUPLICADA` si ya tiene un
         borrador o una inscripción activa en el torneo (individual), o si ya tiene un borrador de cualquiera de
-        sus equipos o el equipo ya tiene una inscripción en el torneo (de equipo); `JUGADOR_YA_INSCRIPTO` si un jugador, el capitán incluido, figura en otra inscripción activa
-        (pendiente de pago o confirmada) del torneo.
+        sus equipos o el equipo ya tiene una inscripción en el torneo (de equipo); `JUGADOR_YA_INSCRIPTO` si un
+        jugador, el capitán incluido, figura en otra inscripción activa (pendiente de pago o confirmada) del
+        torneo.
         403 `USUARIO_BLOQUEADO` si el capitán o un jugador tiene un bloqueo vigente;
         `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si el capitán es el organizador o un árbitro designado del torneo.
         400 `VALIDACION` si un torneo por equipos llega sin cuerpo, si un torneo individual llega con cuerpo, si
