@@ -38,6 +38,12 @@ public interface InscripcionRepository extends JpaRepository<Inscripcion, Long> 
             + "where i.id = :id and (i.usuario.id = :usuarioId or e.capitan.id = :usuarioId)")
     Optional<Long> torneoIdDeInscripcionPropia(@Param("id") Long id, @Param("usuarioId") Long usuarioId);
 
+    @Query("SELECT i.torneo.id AS torneoId, count(i) AS cantidad FROM Inscripcion i " +
+           "WHERE i.torneo.id IN :torneoIds AND i.estado = :estado GROUP BY i.torneo.id")
+    List<ConteoInscripciones> contarPorTorneoIdInYEstado(
+            @Param("torneoIds") Collection<Long> torneoIds,
+            @Param("estado") EstadoInscripcion estado);
+
     /** El estado guardado, leído de la base y no del contexto de persistencia: sirve después de esperar un bloqueo. */
     @Query("select i.estado from Inscripcion i where i.id = :id")
     Optional<EstadoInscripcion> estadoDe(@Param("id") Long id);

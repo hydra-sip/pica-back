@@ -47,9 +47,10 @@ tags:
   - {name: Admin – Personas, description: 'ABM de personas. HU-104, Laura.'}
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
   - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
-  - {name: Torneos, description: 'Asistente de crear torneo del organizador logueado. HU-201 (PICA-38), Tomás.'}
+  - {name: Torneos, description: 'Asistente de crear torneo del organizador logueado (HU-201, PICA-38; HU-601, PICA-55), Tomás. Catálogo y ficha públicos (HU-208), Salvador.'}
   - {name: Equipos, description: 'Equipos del capitán para elegir al inscribirse. HU-204 (PICA-234), Mateo.'}
   - {name: Inscripciones, description: 'Inscripción de un participante a un torneo. HU-204 (PICA-50), Mateo.'}
+  - {name: Torneos, description: 'Catálogo público y detalle de torneos. HU-208, Tomás.'}
 
 security:
   - bearerAuth: []
@@ -1105,6 +1106,53 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  # --- Torneos (Públicos) -----------------------------------------------------
+
+  /api/v1/torneos/resumen:
+    get:
+      tags: [Torneos]
+      summary: Catálogo público de torneos (resumen paginado)
+      x-jira: PICA-196
+      x-owner: Tomás
+      security: []
+      description: >-
+        Lista paginada de torneos públicos con filtros opcionales por disciplina y estado.
+        No muestra borradores ni torneos eliminados. Accesible sin autenticación.
+      parameters:
+        - {name: disciplina, in: query, schema: {type: string}, description: Filtro por disciplina}
+        - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoTorneo'}, description: Filtro por estado del torneo}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+        - {$ref: '#/components/parameters/sort'}
+      responses:
+        '200':
+          description: Página de torneos
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PageTorneoResumen'}
+
+  /api/v1/torneos/slug/{slug}:
+    get:
+      tags: [Torneos]
+      summary: Detalle público de un torneo
+      x-jira: PICA-196
+      x-owner: Tomás
+      security: []
+      description: >-
+        Devuelve el detalle completo del torneo identificado por su slug público (fechas, cupo disponible,
+        valor de inscripción, pozo estimado, reglamento y premios).
+        No accesible si el torneo está en BORRADOR o eliminado (404 TORNEO_NO_ENCONTRADO). Accesible sin autenticación.
+      parameters:
+        - {name: slug, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Detalle del torneo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TorneoDetalle'}
+        '404':
+          $ref: '#/components/responses/Error'
+
 # =============================================================================
 
 components:
@@ -1314,6 +1362,10 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/RifaResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageTorneoResumen:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/TorneoResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
     PageEquipoResumen:
       type: object
       required: [content, page]
@@ -1864,3 +1916,71 @@ components:
         falta la fecha del sorteo · SIN_PREMIOS: no hay premios · PREMIOS_NO_SUMAN_100: los premios no
         suman 100 % (la suma va en `sumaPremios`).
       enum: [VENTANA, VENTA_YA_EMPEZO, FECHA_SORTEO, SIN_PREMIOS, PREMIOS_NO_SUMAN_100]
+
+    # --- Torneos públicos (los enums son los del asistente) -------------------
+    PremioDetalle:
+      type: object
+      required: [puesto, pct]
+      properties:
+        puesto: {type: integer, minimum: 1}
+        pct: {type: number, description: '% del pozo asignado a este puesto'}
+    OrganizadorResumen:
+      type: object
+      required: [id, nombreCompleto, username]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombreCompleto: {type: string}
+        username: {type: string}
+    TorneoResumen:
+      type: object
+      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoDisponible, valorInscripcion, moneda, pozoEstimado, cierreInscripcionEn, fechaInicio]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        slug: {type: string}
+        nombre: {type: string}
+        descripcion: {type: [string, 'null']}
+        disciplina: {type: string}
+        formato: {$ref: '#/components/schemas/Formato'}
+        modalidad: {$ref: '#/components/schemas/Modalidad'}
+        tipoParticipante: {$ref: '#/components/schemas/TipoParticipante'}
+        sede: {type: [string, 'null']}
+        estado: {$ref: '#/components/schemas/EstadoTorneo'}
+        cupoMaximo: {type: integer}
+        cupoDisponible: {type: integer}
+        valorInscripcion: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        pozoEstimado: {type: number}
+        cierreInscripcionEn: {type: string, format: date-time}
+        fechaInicio: {type: string, format: date-time}
+        fechaFin: {type: [string, 'null'], format: date-time}
+    TorneoDetalle:
+      type: object
+      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoMinimo, cupoDisponible, valorInscripcion, moneda, pctPozoCompetidores, pctPremioRifa, pozoEstimado, premios, cierreInscripcionEn, fechaInicio, reglamentoUrl, publicadoEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        slug: {type: string}
+        nombre: {type: string}
+        descripcion: {type: [string, 'null']}
+        disciplina: {type: string}
+        formato: {$ref: '#/components/schemas/Formato'}
+        modalidad: {$ref: '#/components/schemas/Modalidad'}
+        tipoParticipante: {$ref: '#/components/schemas/TipoParticipante'}
+        sede: {type: [string, 'null']}
+        estado: {$ref: '#/components/schemas/EstadoTorneo'}
+        cupoMaximo: {type: integer}
+        cupoMinimo: {type: integer}
+        cupoDisponible: {type: integer}
+        tamanioEquipo: {type: [integer, 'null']}
+        valorInscripcion: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        pctPozoCompetidores: {type: number}
+        pctPremioRifa: {type: number}
+        pozoEstimado: {type: number}
+        premios: {type: array, items: {$ref: '#/components/schemas/PremioDetalle'}}
+        cierreInscripcionEn: {type: string, format: date-time}
+        fechaInicio: {type: string, format: date-time}
+        fechaFin: {type: [string, 'null'], format: date-time}
+        reglamentoUrl: {type: string}
+        reglamentoHash: {type: [string, 'null']}
+        organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
+        publicadoEn: {type: [string, 'null'], format: date-time}
