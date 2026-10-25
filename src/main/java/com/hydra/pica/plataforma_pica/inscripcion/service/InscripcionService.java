@@ -81,9 +81,23 @@ public class InscripcionService {
         validarUsuario(usuario);
         validarTorneoAbierto(torneo);
         validarQueNoOrganiza(torneo, usuarioId);
+        // no hay un índice que asegure un borrador por usuario (en uno de equipo el capitán está en el equipo y
+        // no en la inscripción), así que dos pedidos simultáneos se serializan por la fila del torneo
+        torneoBloqueado(torneoId);
+        exigirSinBorrador(torneoId, usuarioId);
         return torneo.getTipoParticipante() == TipoParticipante.EQUIPO
                 ? crearDeEquipo(usuario, torneo, request)
                 : crearIndividual(usuario, torneo, request);
+    }
+
+    // quien se inscribe tiene un solo borrador por torneo (el suyo o, si es capitán, el de cualquiera de sus
+    // equipos): si ya hay uno, lo retoma en vez de abrir otro
+    private void exigirSinBorrador(Long torneoId, Long usuarioId) {
+        List<Long> borradores = inscripcionRepository.borradoresDe(torneoId, usuarioId);
+        if (!borradores.isEmpty()) {
+            throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA, "Ya tenés el borrador " + borradores.get(0)
+                    + " en el torneo " + torneoId + ": retomalo o cancelalo antes de crear otro");
+        }
     }
 
     private InscripcionDetalle crearIndividual(Usuario usuario, Torneo torneo, InscripcionEquipoRequest request) {
@@ -262,13 +276,16 @@ public class InscripcionService {
         return detalleDe(inscripcion);
     }
 
-    /** La cancelación es una baja lógica: la inscripción queda en CANCELADA. */
+    /**
+     * La cancelación es una baja lógica: la inscripción queda en CANCELADA. Bloquea la fila del torneo antes de
+     * leer la inscripción, igual que {@link #pagar}: así no cancela una que otro pedido acaba de pagar.
+     */
     @Transactional
     public void cancelar(Long usuarioId, Long id) {
+        Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
+                .orElseThrow(() -> noEncontrada(id));
+        torneoBloqueado(torneoId);
         Inscripcion inscripcion = buscar(id);
-        if (!esDe(inscripcion, usuarioId)) {
-            throw noEncontrada(id);
-        }
         if (inscripcion.getEstado() != EstadoInscripcion.BORRADOR && inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
                     "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se cancela en BORRADOR o PENDIENTE_PAGO");
@@ -355,14 +372,16 @@ public class InscripcionService {
 
     /**
      * Reemplaza el equipo y la nómina del borrador de un torneo por equipos. Solo el capitán, y solo en
-     * BORRADOR. Se vuelven a chequear las mismas reglas que al crear.
+     * BORRADOR. Se vuelven a chequear las mismas reglas que al crear. Bloquea la fila del torneo antes de
+     * leer la inscripción: si no, pisaría el estado de una confirmación simultánea y cambiaría la nómina que
+     * ella validó.
      */
     @Transactional
     public InscripcionDetalle editar(Long usuarioId, Long id, InscripcionEquipoRequest request) {
+        Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
+                .orElseThrow(() -> noEncontrada(id));
+        torneoBloqueado(torneoId);
         Inscripcion inscripcion = buscar(id);
-        if (!esDe(inscripcion, usuarioId)) {
-            throw noEncontrada(id);
-        }
         if (!inscripcion.esDeEquipo()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
                     "La inscripción individual no tiene equipo ni nómina");
