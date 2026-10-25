@@ -108,9 +108,14 @@ public class Rifa extends AuditableEntity {
     @Column(name = "semilla_firma", columnDefinition = "TEXT")
     private String semillaFirma;
 
+    /** Cuándo se obtuvo la semilla, o sea, cuándo se sorteó de verdad. */
     @Column(name = "semilla_obtenida_en")
     private Instant semillaObtenidaEn;
 
+    /**
+     * Fecha PROGRAMADA del sorteo (V17): la carga el organizador, es posterior a {@code ventaHasta} y la
+     * aplicación sortea sola cuando llega. El momento real queda en {@code semillaObtenidaEn}.
+     */
     @Column(name = "sorteada_en")
     private Instant sorteadaEn;
 
