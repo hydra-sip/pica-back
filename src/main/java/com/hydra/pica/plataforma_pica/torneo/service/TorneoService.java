@@ -37,7 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
  * edita solo los suyos, y el de otro responde 404 como si no existiera. Por ahora solo se modifica en BORRADOR:
  * qué se puede editar de un torneo publicado es la HU-202.
  *
- * En BORRADOR se guarda incompleto (V17): solo el nombre y la disciplina son obligatorios, y lo que viene se
+ * En BORRADOR se guarda incompleto (V18): solo el nombre y la disciplina son obligatorios, y lo que viene se
  * valida contra lo demás que viene. Que esté todo (sede si es presencial, tamaño si es por equipos, la parte
  * económica) lo exige la publicación.
  *

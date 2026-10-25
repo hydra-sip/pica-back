@@ -1,7 +1,7 @@
 -- Un torneo en BORRADOR se guarda incompleto (HU-201, PICA-199): el asistente lo crea en el paso 1 y lo completa
--- en los pasos 2 y 3. Fuera de BORRADOR siguen siendo obligatorias las mismas columnas que antes, como hizo V10
--- con la rifa. Los CHECK de cupos, fechas, porcentajes y tamaño de equipo siguen valiendo: con NULL no fallan.
--- Lo que no estaba en la base (presencial con sede, tamaño en los torneos por equipos) lo exige la publicación.
+-- en los pasos 2 y 3. Es V18 porque V17 es la de publicar la rifa (HU-402). Fuera de BORRADOR siguen siendo
+-- obligatorias las mismas columnas que antes, como hizo V10 con la rifa. Los CHECK de cupos, fechas, porcentajes y
+-- tamaño de equipo siguen valiendo: con NULL no fallan.
 ALTER TABLE torneo
     ALTER COLUMN reglamento_url DROP NOT NULL,
     ALTER COLUMN modalidad DROP NOT NULL,
