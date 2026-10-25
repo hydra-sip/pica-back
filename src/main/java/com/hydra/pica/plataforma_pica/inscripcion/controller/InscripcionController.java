@@ -2,9 +2,12 @@ package com.hydra.pica.plataforma_pica.inscripcion.controller;
 
 import java.net.URI;
 
+import jakarta.validation.Valid;
+
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ConfirmarInscripcionRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
 import org.springframework.http.ResponseEntity;
@@ -21,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
- * Inscripciones del usuario logueado. Crear, confirmar, ver el resumen de pago, pagar y cancelar piden
+ * Inscripciones del usuario logueado. Crear, editar, confirmar, ver el resumen de pago, pagar y cancelar piden
  * INSCRIPCION_GESTIONAR (V14, rol PARTICIPANTE). Ver alcanza con estar logueado, porque también la ve el
  * organizador del torneo: quién la ve lo decide {@link InscripcionService}, y para cualquier otro
  * responde 404.
@@ -40,13 +43,20 @@ public class InscripcionController {
 
     @PostMapping("/torneos/{torneoId}/inscripciones")
     @PreAuthorize("hasAuthority('INSCRIPCION_GESTIONAR')")
-    public ResponseEntity<InscripcionDetalle> crear(@PathVariable Long torneoId) {
-        InscripcionDetalle creada = inscripcionService.crear(usuarioActual(), torneoId);
+    public ResponseEntity<InscripcionDetalle> crear(@PathVariable Long torneoId,
+            @Valid @RequestBody(required = false) InscripcionEquipoRequest request) {
+        InscripcionDetalle creada = inscripcionService.crear(usuarioActual(), torneoId, request);
         URI ubicacion = ServletUriComponentsBuilder.fromCurrentContextPath()
                 .path("/api/v1/inscripciones/{id}")
                 .buildAndExpand(creada.id())
                 .toUri();
         return ResponseEntity.created(ubicacion).body(creada);
+    }
+
+    @PutMapping("/inscripciones/{id}")
+    @PreAuthorize("hasAuthority('INSCRIPCION_GESTIONAR')")
+    public InscripcionDetalle editar(@PathVariable Long id, @Valid @RequestBody InscripcionEquipoRequest request) {
+        return inscripcionService.editar(usuarioActual(), id, request);
     }
 
     @GetMapping("/inscripciones/{id}")

@@ -82,7 +82,7 @@ class InscripcionServiceIntegracionTest {
 
     @Test
     void creaUnBorradorDelUsuarioEnElTorneo() {
-        InscripcionDetalle inscripcion = inscripcionService.crear(jugador, torneo);
+        InscripcionDetalle inscripcion = inscripcionService.crear(jugador, torneo, null);
 
         assertThat(inscripcion.id()).isNotNull();
         assertThat(inscripcion.torneoId()).isEqualTo(torneo);
@@ -94,35 +94,35 @@ class InscripcionServiceIntegracionTest {
 
     @Test
     void unTorneoInexistenteNoSeEncuentra() {
-        assertError(() -> inscripcionService.crear(jugador, 999_999L), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
+        assertError(() -> inscripcionService.crear(jugador, 999_999L, null), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
     }
 
     @Test
     void unTorneoDadoDeBajaNoSeEncuentra() {
         jdbc.update("UPDATE torneo SET eliminado_en = now() WHERE id = ?", torneo);
 
-        assertError(() -> inscripcionService.crear(jugador, torneo), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
+        assertError(() -> inscripcionService.crear(jugador, torneo, null), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
     }
 
     @Test
     void sinLaInscripcionAbiertaNoSePuedeCrear() {
         long cerrado = torneoIndividual("INSCRIPCION_CERRADA", "now() + interval '1 day'");
 
-        assertError(() -> inscripcionService.crear(jugador, cerrado), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+        assertError(() -> inscripcionService.crear(jugador, cerrado, null), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
     }
 
     @Test
     void conLaFechaDeCierrePasadaNoSePuedeCrear() {
         long vencido = torneoIndividual("INSCRIPCION_ABIERTA", "now() - interval '1 minute'");
 
-        assertError(() -> inscripcionService.crear(jugador, vencido), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+        assertError(() -> inscripcionService.crear(jugador, vencido, null), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
     }
 
     @Test
     void unTorneoPorEquiposTodaviaNoSeInscribeDesdeAca() {
         long porEquipos = torneoPorEquipos();
 
-        assertError(() -> inscripcionService.crear(jugador, porEquipos), HttpStatus.BAD_REQUEST, CodigoError.VALIDACION);
+        assertError(() -> inscripcionService.crear(jugador, porEquipos, null), HttpStatus.BAD_REQUEST, CodigoError.VALIDACION);
     }
 
     @Test
@@ -131,7 +131,7 @@ class InscripcionServiceIntegracionTest {
         sinVerificar.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
         usuarioRepository.saveAndFlush(sinVerificar);
 
-        assertError(() -> inscripcionService.crear(sinVerificar.getId(), 999_999L), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
+        assertError(() -> inscripcionService.crear(sinVerificar.getId(), 999_999L, null), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
     }
 
     // --- quién puede inscribirse --------------------------------------------
@@ -142,7 +142,7 @@ class InscripcionServiceIntegracionTest {
         sinVerificar.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
         usuarioRepository.saveAndFlush(sinVerificar);
 
-        assertError(() -> inscripcionService.crear(sinVerificar.getId(), torneo), HttpStatus.CONFLICT, CodigoError.USUARIO_NO_ACTIVO);
+        assertError(() -> inscripcionService.crear(sinVerificar.getId(), torneo, null), HttpStatus.CONFLICT, CodigoError.USUARIO_NO_ACTIVO);
     }
 
     @Test
@@ -150,47 +150,47 @@ class InscripcionServiceIntegracionTest {
         Usuario bloqueado = usuario("bloq_insc");
         bloqueoService.bloquear(bloqueado, "Mala conducta", Instant.now().plus(5, ChronoUnit.DAYS));
 
-        assertError(() -> inscripcionService.crear(bloqueado.getId(), torneo), HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO);
+        assertError(() -> inscripcionService.crear(bloqueado.getId(), torneo, null), HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO);
     }
 
     @Test
     void elOrganizadorNoSeInscribeEnSuTorneo() {
-        assertError(() -> inscripcionService.crear(organizador, torneo), HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+        assertError(() -> inscripcionService.crear(organizador, torneo, null), HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
     }
 
     @Test
     void unArbitroDesignadoNoSeInscribeEnElTorneo() {
         jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", torneo, jugador);
 
-        assertError(() -> inscripcionService.crear(jugador, torneo), HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+        assertError(() -> inscripcionService.crear(jugador, torneo, null), HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
     }
 
     @Test
     void conUnaInscripcionActivaNoSeInscribeDeNuevo() {
         inscripcionDe(jugador, "PENDIENTE_PAGO");
 
-        assertError(() -> inscripcionService.crear(jugador, torneo), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
+        assertError(() -> inscripcionService.crear(jugador, torneo, null), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
     }
 
     @Test
     void conUnaConfirmadaTampocoSeInscribeDeNuevo() {
         inscripcionDe(jugador, "CONFIRMADA");
 
-        assertError(() -> inscripcionService.crear(jugador, torneo), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
+        assertError(() -> inscripcionService.crear(jugador, torneo, null), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
     }
 
     @Test
     void unBorradorNoImpideCrearOtro() {
         inscripcionDe(jugador, "BORRADOR");
 
-        assertThat(inscripcionService.crear(jugador, torneo).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+        assertThat(inscripcionService.crear(jugador, torneo, null).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
     }
 
     @Test
     void unaCanceladaNoImpideInscribirseDeNuevo() {
         inscripcionDe(jugador, "CANCELADA");
 
-        assertThat(inscripcionService.crear(jugador, torneo).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+        assertThat(inscripcionService.crear(jugador, torneo, null).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
     }
 
     // --- ver ----------------------------------------------------------------
@@ -723,9 +723,9 @@ class InscripcionServiceIntegracionTest {
     private long torneoPorEquipos() {
         return jdbc.queryForObject("""
                 INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
-                                    tipo_participante, cupo_maximo, cupo_minimo, tamanio_equipo, valor_inscripcion,
-                                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
-                VALUES (?, 'Torneo', 'https://r', 'Futbol', 'ELIMINACION_DIRECTA', 'PRESENCIAL', 'EQUIPO', 8, 2, 5,
+                                    tipo_participante, cupo_maximo, cupo_minimo, tamanio_equipo, nomina_maxima,
+                                    valor_inscripcion, pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
+                VALUES (?, 'Torneo', 'https://r', 'Futbol', 'ELIMINACION_DIRECTA', 'PRESENCIAL', 'EQUIPO', 8, 2, 5, 8,
                         1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
                 RETURNING id
                 """, Long.class, organizador);

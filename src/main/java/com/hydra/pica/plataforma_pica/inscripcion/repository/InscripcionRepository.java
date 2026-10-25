@@ -13,6 +13,9 @@ public interface InscripcionRepository extends JpaRepository<Inscripcion, Long> 
 
     boolean existsByTorneoIdAndUsuarioIdAndEstadoIn(Long torneoId, Long usuarioId, Collection<EstadoInscripcion> estados);
 
+    /** La inscripción del equipo en el torneo: por la clave única de V9 hay una sola, en cualquier estado. */
+    Optional<Inscripcion> findByTorneoIdAndEquipoId(Long torneoId, Long equipoId);
+
     long countByTorneoIdAndEstado(Long torneoId, EstadoInscripcion estado);
 
     /** El torneo de la inscripción, solo si es de ese usuario; no carga la inscripción. */

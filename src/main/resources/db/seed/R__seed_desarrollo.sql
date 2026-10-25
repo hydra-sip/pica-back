@@ -90,25 +90,25 @@ ON CONFLICT DO NOTHING;
 -- ---------------------------------------------------------------------------------------------------
 
 INSERT INTO torneo (organizador_id, nombre, descripcion, reglamento_url, reglamento_hash, disciplina, formato, modalidad,
-                    tipo_participante, sede, cupo_maximo, cupo_minimo, tamanio_equipo, valor_inscripcion,
+                    tipo_participante, sede, cupo_maximo, cupo_minimo, tamanio_equipo, nomina_maxima, valor_inscripcion,
                     pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado, slug,
                     esquema_hash, publicado_en, lista_hash, lista_sellada_en, semilla_bracket,
                     checkin_min_antes, checkin_duracion_min, creado_por, modificado_por)
 SELECT u.id, v.nombre, v.descripcion, 'https://pica.local/reglamentos/' || v.slug || '.pdf',
        encode(sha256(convert_to('reglamento ' || v.slug, 'UTF8')), 'hex'), v.disciplina, 'ELIMINACION_DIRECTA',
        'PRESENCIAL',
-       v.tipo, 'Club UNLu', 8, v.cupo_minimo, v.tamanio, v.valor, 70, 20,
+       v.tipo, 'Club UNLu', 8, v.cupo_minimo, v.tamanio, v.nomina, v.valor, 70, 20,
        now() + v.cierre, now() + v.inicio, v.estado, v.slug,
        encode(sha256(convert_to('esquema ' || v.slug, 'UTF8')), 'hex'), now() - interval '10 days',
        v.lista_hash, v.lista_sellada_en, v.semilla, 30, 20, 'SEED', 'SEED'
 FROM (VALUES ('dev-copa-abierta', 'Copa abierta', 'Torneo de fútbol 5 por equipos con la inscripción abierta',
-              'Fútbol 5', 'EQUIPO', 2, 3, 5000.00, interval '7 days', interval '10 days', 'INSCRIPCION_ABIERTA',
+              'Fútbol 5', 'EQUIPO', 2, 3, 5, 5000.00, interval '7 days', interval '10 days', 'INSCRIPCION_ABIERTA',
               NULL::char(64), NULL::timestamptz, NULL),
              ('dev-torneo-cerrado', 'Torneo cerrado', 'Torneo individual de ajedrez con el bracket generado',
-              'Ajedrez', 'INDIVIDUAL', 4, NULL, 2000.00, interval '-1 day', interval '2 days', 'INSCRIPCION_CERRADA',
+              'Ajedrez', 'INDIVIDUAL', 4, NULL, NULL, 2000.00, interval '-1 day', interval '2 days', 'INSCRIPCION_CERRADA',
               encode(sha256(convert_to('lista dev-torneo-cerrado', 'UTF8')), 'hex'), now() - interval '1 day',
               'semilla-dev-torneo-cerrado'))
-     AS v (slug, nombre, descripcion, disciplina, tipo, cupo_minimo, tamanio, valor, cierre, inicio, estado,
+     AS v (slug, nombre, descripcion, disciplina, tipo, cupo_minimo, tamanio, nomina, valor, cierre, inicio, estado,
            lista_hash, lista_sellada_en, semilla)
 JOIN usuario u ON u.username = 'dev_organizador'
 ON CONFLICT DO NOTHING;
