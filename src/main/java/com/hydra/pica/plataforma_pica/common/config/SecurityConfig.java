@@ -6,6 +6,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -62,6 +63,11 @@ public class SecurityConfig {
                                 "/oauth2/**",
                                 "/login/oauth2/**",
                                 "/.well-known/**")
+                        .permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/torneos/resumen",
+                                "/api/v1/torneos/slug/*")
                         .permitAll()
                         .anyRequest().authenticated());
 
