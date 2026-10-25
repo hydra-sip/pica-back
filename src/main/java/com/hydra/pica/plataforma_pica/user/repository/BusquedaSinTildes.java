@@ -1,9 +1,12 @@
 package com.hydra.pica.plataforma_pica.user.repository;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.Predicate;
 
 /**
  * Búsqueda por texto sin distinguir mayúsculas ni tildes: "perez", "PEREZ" y "Pérez" encuentran a Pérez.
@@ -14,6 +17,8 @@ final class BusquedaSinTildes {
 
     private static final String CON_TILDE = "áàäâãéèëêíìïîóòöôõúùüûñçÁÀÄÂÃÉÈËÊÍÌÏÎÓÒÖÔÕÚÙÜÛÑÇ";
     private static final String SIN_TILDE = "aaaaaeeeeiiiiooooouuuuncaaaaaeeeeiiiiooooouuuunc";
+    // el de Postgres por defecto; patron() no escapa y sigue andando igual con él
+    private static final char ESCAPE = '\\';
 
     private BusquedaSinTildes() {
     }
@@ -23,13 +28,33 @@ final class BusquedaSinTildes {
         if (texto == null || texto.isBlank()) {
             return null;
         }
-        String normalizado = texto.trim().toLowerCase(Locale.ROOT);
-        StringBuilder patron = new StringBuilder("%");
-        for (char letra : normalizado.toCharArray()) {
-            int posicion = CON_TILDE.indexOf(letra);
-            patron.append(posicion < 0 ? letra : SIN_TILDE.charAt(posicion));
+        return "%" + normalizar(texto.trim()) + "%";
+    }
+
+    /**
+     * Un patrón por palabra, para exigir que aparezcan todas: "juan perez" encuentra a Juan Pérez.
+     * % y _ se escapan: "%%%" no tiene que traer a todos.
+     */
+    static List<String> patronesPorPalabra(String texto) {
+        if (texto == null || texto.isBlank()) {
+            return List.of();
         }
-        return patron.append('%').toString();
+        return Arrays.stream(texto.strip().split("\\s+"))
+                .map(palabra -> "%" + escaparComodines(normalizar(palabra)) + "%")
+                .toList();
+    }
+
+    private static String escaparComodines(String texto) {
+        return texto.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    private static String normalizar(String texto) {
+        StringBuilder normalizado = new StringBuilder();
+        for (char letra : texto.toLowerCase(Locale.ROOT).toCharArray()) {
+            int posicion = CON_TILDE.indexOf(letra);
+            normalizado.append(posicion < 0 ? letra : SIN_TILDE.charAt(posicion));
+        }
+        return normalizado.toString();
     }
 
     /** La columna normalizada, para SQL nativo. */
@@ -41,5 +66,12 @@ final class BusquedaSinTildes {
     static Expression<String> criteria(CriteriaBuilder cb, Expression<String> columna) {
         return cb.function("translate", String.class,
                 cb.lower(columna), cb.literal(CON_TILDE), cb.literal(SIN_TILDE));
+    }
+
+    /** Alguna de las columnas, normalizada, contiene el patrón. */
+    static Predicate algunaContiene(CriteriaBuilder cb, String patron, List<Expression<String>> columnas) {
+        return cb.or(columnas.stream()
+                .map(columna -> cb.like(criteria(cb, columna), patron, ESCAPE))
+                .toArray(Predicate[]::new));
     }
 }
