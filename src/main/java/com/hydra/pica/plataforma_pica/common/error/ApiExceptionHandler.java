@@ -24,6 +24,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
@@ -142,6 +145,37 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 ex.getParameterName(), ErrorCampo.Codigo.REQUERIDO, "Es obligatorio"));
         ProblemDetail pd = problema(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay parámetros inválidos", errores);
         return handleExceptionInternal(ex, pd, headers, HttpStatus.BAD_REQUEST, request);
+    }
+
+    /** Un archivo más grande que {@code spring.servlet.multipart.max-file-size}: lo corta Spring antes del controller. */
+    @Override
+    protected ResponseEntity<Object> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException ex,
+                                                                          HttpHeaders headers,
+                                                                          HttpStatusCode status,
+                                                                          WebRequest request) {
+        List<ErrorCampo> errores = List.of(new ErrorCampo(
+                "archivo", ErrorCampo.Codigo.LONGITUD, "Supera el tamaño máximo"));
+        ProblemDetail pd = problema(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay campos inválidos", errores);
+        return handleExceptionInternal(ex, pd, headers, HttpStatus.BAD_REQUEST, request);
+    }
+
+    /** Un multipart sin la parte del archivo (el {@code archivo} de la subida del reglamento). */
+    @Override
+    protected ResponseEntity<Object> handleMissingServletRequestPart(MissingServletRequestPartException ex,
+                                                                     HttpHeaders headers,
+                                                                     HttpStatusCode status,
+                                                                     WebRequest request) {
+        List<ErrorCampo> errores = List.of(new ErrorCampo(
+                ex.getRequestPartName(), ErrorCampo.Codigo.REQUERIDO, "Es obligatorio"));
+        ProblemDetail pd = problema(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay campos inválidos", errores);
+        return handleExceptionInternal(ex, pd, headers, HttpStatus.BAD_REQUEST, request);
+    }
+
+    /** Una subida que no viene como multipart. */
+    @ExceptionHandler(MultipartException.class)
+    ProblemDetail manejarMultipart(MultipartException ex) {
+        return problema(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay campos inválidos",
+                List.of(new ErrorCampo("archivo", ErrorCampo.Codigo.REQUERIDO, "Hace falta un multipart con el archivo")));
     }
 
     /** Cualquier otra cosa es un bug nuestro: se loguea completa y al cliente le llega un 500 sin detalles. */

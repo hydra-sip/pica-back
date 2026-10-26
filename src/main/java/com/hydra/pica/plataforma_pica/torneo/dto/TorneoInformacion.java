@@ -21,6 +21,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * @param pasoPendiente en BORRADOR, el paso donde reabrir el asistente (ver {@link AsistenteTorneo}); si no, null
  * @param economia el paso 3 (PICA-203)
  * @param slug el enlace público; se genera al publicar (PICA-204)
+ * @param reglamentoUrl el PDF, que sirve {@code GET /torneos/{id}/reglamento} (PICA-200)
+ * @param reglamentoHash SHA-256 del PDF desde que se sube; sin PDF, el del texto al publicar
  * @param esquemaHash SHA-256 del esquema económico, sellado al publicar (ver {@link SelloTorneo})
  */
 public record TorneoInformacion(
@@ -40,6 +42,7 @@ public record TorneoInformacion(
         Instant cierreInscripcionEn,
         String reglamentoTexto,
         String reglamentoUrl,
+        String reglamentoHash,
         Integer cupoMaximo,
         Integer cupoMinimo,
         Integer tamanioEquipo,
@@ -59,7 +62,7 @@ public record TorneoInformacion(
         return new TorneoInformacion(t.getId(), t.getEstado(), AsistenteTorneo.pasoPendiente(t), t.getNombre(),
                 t.getDisciplina(), t.getDescripcion(), t.getFormato(), t.getModalidad(), t.getTipoParticipante(),
                 t.getSede(), canchas, t.getFechaInicio(), t.getFechaFin(), t.getCierreInscripcionEn(),
-                t.getReglamentoTexto(), t.getReglamentoUrl(), t.getCupoMaximo(), t.getCupoMinimo(),
+                t.getReglamentoTexto(), t.getReglamentoUrl(), t.getReglamentoHash(), t.getCupoMaximo(), t.getCupoMinimo(),
                 t.getTamanioEquipo(), t.getNominaMaxima(), EconomiaTorneo.de(t, premios), t.getSlug(),
                 t.getEsquemaHash(), t.getPublicadoEn(), t.getCreadoEn(), t.getModificadoEn());
     }

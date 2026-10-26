@@ -14,6 +14,12 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
+  # El PDF del reglamento (PICA-200): el tope del archivo es el de ReglamentoTorneoService
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
   jpa:
     hibernate:
       ddl-auto: validate
@@ -92,6 +98,15 @@ app:
   torneos:
     cupo-maximo: ${APP_TORNEOS_CUPO_MAXIMO:64}   # tope de participantes por torneo (HU-201)
     comision-maxima: ${APP_TORNEOS_COMISION_MAXIMA:10}   # tope del % de comisión de la plataforma (HU-601)
+  # Los archivos que se suben (PICA-200): local, en una carpeta, o supabase, en un bucket privado de Storage
+  almacenamiento:
+    tipo: ${APP_ALMACENAMIENTO_TIPO:local}
+    local:
+      directorio: ${APP_ALMACENAMIENTO_DIRECTORIO:}   # sin valor, pica-archivos en la carpeta temporal
+    supabase:
+      url: ${APP_ALMACENAMIENTO_SUPABASE_URL:}        # https://<proyecto>.supabase.co
+      clave: ${APP_ALMACENAMIENTO_SUPABASE_CLAVE:}    # service_role: no sale del back
+      bucket: ${APP_ALMACENAMIENTO_SUPABASE_BUCKET:reglamentos}
   admin:
     username: ${ADMIN_USERNAME:admin}
     email: ${ADMIN_EMAIL:admin@pica.local}
