@@ -506,7 +506,7 @@ public class InscripcionService {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
                     "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se reemplaza en CONFIRMADA");
         }
-        validarTorneoAbierto(torneo);
+        validarTorneoAbiertoParaReemplazo(torneo);
 
         Long capitanId = inscripcion.titular().getId();
         Usuario entra = usuarioRepository.findById(request.entraUsuarioId())
@@ -586,6 +586,14 @@ public class InscripcionService {
         if (torneo.getEstado() != EstadoTorneo.INSCRIPCION_ABIERTA || !torneo.getCierreInscripcionEn().isAfter(Instant.now())) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
                     "El torneo " + torneo.getId() + " no tiene la inscripción abierta");
+        }
+    }
+
+    private void validarTorneoAbiertoParaReemplazo(Torneo torneo) {
+        validarTorneoAbierto(torneo);
+        if (confirmadas(torneo.getId()) >= torneo.getCupoMaximo()) {
+            throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
+                    "El torneo " + torneo.getId() + " ya cerró la inscripción por cupo completo");
         }
     }
 

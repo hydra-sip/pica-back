@@ -321,6 +321,19 @@ class InscripcionEquipoServiceIntegracionTest {
     }
 
     @Test
+    void noPermiteReemplazarCuandoElCupoYaEstaCompleto() {
+        Long sale = integranteNuevo("sale_cupo_reemplazo_eq");
+        Long entra = integranteNuevo("entra_cupo_reemplazo_eq");
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+        confirmarEquipos(torneo, 7);
+
+        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+                HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+    }
+
+    @Test
     void unEquipoNuevoSumaALosJugadoresDeLaNomina() {
         Long jugador = usuario("jug_nuevo_eq").getId();
 
