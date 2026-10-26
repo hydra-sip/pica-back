@@ -1158,8 +1158,8 @@ paths:
         reactiva. En el borrador la nómina puede estar incompleta: su tamaño se valida al confirmar.
         Nace en BORRADOR, sin el reglamento aceptado y sin ocupar cupo. Quien se inscribe tiene un solo borrador
         por torneo: el suyo en uno individual, o el de cualquiera de sus equipos si es capitán. Si ya lo tiene,
-        el mensaje del error trae el id del borrador existente para retomarlo (en uno por equipos, con `PUT`) o
-        cancelarlo; una cancelada no cuenta. Además, un equipo tiene una sola inscripción por torneo, en
+        el error trae en `inscripcionId` el id del borrador existente (también está en el mensaje) para retomarlo
+        (en uno por equipos, con `PUT`) o cancelarlo; una cancelada no cuenta. Además, un equipo tiene una sola inscripción por torneo, en
         cualquier estado.
         404 `TORNEO_NO_ENCONTRADO` si el torneo no existe o está dado de baja; `EQUIPO_NO_ENCONTRADO` si el
         equipo no existe, está dado de baja o no es del capitán; `USUARIO_NO_ENCONTRADO` si un jugador no existe.
@@ -1612,6 +1612,14 @@ components:
         errores: {type: array, items: {$ref: '#/components/schemas/ErrorCampo'}}
         invalidos: {type: array, items: {type: string}, description: 'Solo en PERMISO_NO_ENCONTRADO: los códigos que no existen'}
         roles: {type: array, items: {type: string}, description: 'Solo en SIN_PERMISO al asignar roles (alta o PUT de roles): los que tienen permisos que quien llama no tiene'}
+        inscripcionId:
+          type: integer
+          format: int64
+          minimum: 1
+          description: >-
+            Solo en INSCRIPCION_DUPLICADA: el id de la inscripción que ya existe (un borrador se retoma con
+            GET y PUT /inscripciones/{id}). Falta cuando el choque lo detecta recién la base ante dos pedidos
+            simultáneos, que no dejan ver cuál ganó.
         faltantes:
           type: array
           items: {anyOf: [{$ref: '#/components/schemas/FaltantePublicacion'}, {$ref: '#/components/schemas/FaltanteTorneo'}]}
