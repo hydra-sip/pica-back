@@ -9,6 +9,7 @@ import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.equipo.repository.NominaRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
+import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignado;
 import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignadoId;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
@@ -53,6 +54,7 @@ public class ArbitrosTorneoService {
     private final UsuarioRolRepository usuarioRolRepository;
     private final InscripcionRepository inscripcionRepository;
     private final NominaRepository nominaRepository;
+    private final PartidoRepository partidoRepository;
 
     /** Usuarios activos con rol ARBITRO, por usuario, nombres o apellidos; sin texto, todos. */
     @Transactional(readOnly = true)
@@ -91,12 +93,20 @@ public class ArbitrosTorneoService {
         return ArbitroDetalle.de(arbitro);
     }
 
+    /**
+     * Deja de figurar y pierde el acceso en el momento (ver {@link Arbitraje}). Con partidos asignados no se quita:
+     * 409 ARBITRO_CON_PARTIDOS, primero se reasignan.
+     */
     @Transactional
     public void quitar(Long organizadorId, Long id, Long usuarioId) {
         modificable(organizadorId, id);
         ArbitroDesignado arbitro = arbitroRepository.findById(new ArbitroDesignadoId(id, usuarioId))
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.ARBITRO_NO_ENCONTRADO,
                         "El usuario " + usuarioId + " no es árbitro del torneo " + id));
+        if (partidoRepository.existsByTorneoIdAndArbitroId(id, usuarioId)) {
+            throw new ConflictoException(CodigoError.ARBITRO_CON_PARTIDOS,
+                    "El usuario " + usuarioId + " tiene partidos asignados en el torneo " + id + ": hay que reasignarlos");
+        }
         arbitroRepository.delete(arbitro);
         arbitroRepository.flush();
     }
