@@ -22,6 +22,7 @@ class TorneosPropios {
 
     private final TorneoRepository torneoRepository;
     private final PremioRepository premioRepository;
+    private final EdicionTorneo edicionTorneo;
 
     Torneo buscarPropio(Long organizadorId, Long id) {
         return torneoRepository.findByIdAndOrganizadorIdAndEliminadoEnIsNull(id, organizadorId)
@@ -48,9 +49,10 @@ class TorneosPropios {
                 .orElseThrow(() -> noEncontrado(id));
     }
 
-    /** El torneo como lo ve su organizador, con los premios por puesto. */
+    /** El torneo como lo ve su organizador, con los premios por puesto y lo que ya no se puede cambiar. */
     TorneoInformacion informacion(Torneo torneo) {
-        return TorneoInformacion.de(torneo, premioRepository.findByTorneoIdOrderByIdPuestoAsc(torneo.getId()));
+        return TorneoInformacion.de(torneo, premioRepository.findByTorneoIdOrderByIdPuestoAsc(torneo.getId()),
+                edicionTorneo.bloqueados(torneo));
     }
 
     private static NoEncontradoException noEncontrado(Long id) {

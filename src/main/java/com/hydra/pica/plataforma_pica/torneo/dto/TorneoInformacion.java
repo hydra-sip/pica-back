@@ -24,6 +24,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * @param reglamentoUrl el PDF, que sirve {@code GET /torneos/{id}/reglamento} (PICA-200)
  * @param reglamentoHash SHA-256 del PDF desde que se sube; sin PDF, el del texto al publicar
  * @param esquemaHash SHA-256 del esquema económico, sellado al publicar (ver {@link SelloTorneo})
+ * @param camposBloqueados los de {@code InformacionTorneoRequest} que ya no se pueden cambiar (HU-202); vacío en
+ *                         BORRADOR
  */
 public record TorneoInformacion(
         Long id,
@@ -52,9 +54,10 @@ public record TorneoInformacion(
         String esquemaHash,
         Instant publicadoEn,
         Instant creadoEn,
-        Instant modificadoEn) {
+        Instant modificadoEn,
+        List<String> camposBloqueados) {
 
-    public static TorneoInformacion de(Torneo t, List<Premio> premios) {
+    public static TorneoInformacion de(Torneo t, List<Premio> premios, List<String> camposBloqueados) {
         List<String> canchas = t.getCanchas().stream()
                 .map(Cancha::getNombre)
                 .sorted(Comparator.comparing(String::toLowerCase))
@@ -64,6 +67,6 @@ public record TorneoInformacion(
                 t.getSede(), canchas, t.getFechaInicio(), t.getFechaFin(), t.getCierreInscripcionEn(),
                 t.getReglamentoTexto(), t.getReglamentoUrl(), t.getReglamentoHash(), t.getCupoMaximo(), t.getCupoMinimo(),
                 t.getTamanioEquipo(), t.getNominaMaxima(), EconomiaTorneo.de(t, premios), t.getSlug(),
-                t.getEsquemaHash(), t.getPublicadoEn(), t.getCreadoEn(), t.getModificadoEn());
+                t.getEsquemaHash(), t.getPublicadoEn(), t.getCreadoEn(), t.getModificadoEn(), camposBloqueados);
     }
 }

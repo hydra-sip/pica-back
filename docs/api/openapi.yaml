@@ -870,13 +870,21 @@ paths:
   /api/v1/torneos/{id}/informacion:
     put:
       tags: [Torneos]
-      summary: Guardar los pasos 1 y 2 de un torneo en BORRADOR
-      x-jira: PICA-199
+      summary: Guardar los pasos 1 y 2 de un torneo, en BORRADOR o publicado sin empezar
+      x-jira: PICA-199, PICA-206
       x-permiso: TORNEO_GESTIONAR
       x-owner: Tomás
       description: >-
         Reemplaza los datos de los pasos 1 y 2 con lo que viene (lo que falta queda vacío), canchas incluidas.
-        Mismas validaciones que el alta. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
+        Mismas validaciones que el alta. Con la inscripción abierta o cerrada también se edita (HU-202), salvo lo que
+        dice `camposBloqueados` del torneo: nunca la disciplina, si es individual o por equipos ni el reglamento; con
+        la inscripción cerrada, tampoco el cierre; y con al menos una inscripción paga, solo el nombre, la descripción y
+        el cupo máximo. Se rechaza solo lo que cambia: 409 `CAMPOS_BLOQUEADOS` con la lista en `campos`. Publicado,
+        "no puede ser anterior a hoy" se mira solo en las fechas que cambian, no se puede vaciar lo que pidió la
+        publicación (400 `REQUERIDO`) y el cupo máximo no baja de los inscriptos (pendientes de pago y confirmados;
+        400 `RANGO_INVALIDO`). Un campo que no es de estos pasos (por ejemplo `valorInscripcion`) es 400
+        `VALOR_INVALIDO` en ese campo: la parte económica se carga en el paso 3, solo en BORRADOR. 409
+        `TORNEO_NO_EDITABLE` si ya empezó, terminó o se canceló.
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody: {$ref: '#/components/requestBodies/InformacionTorneo'}
       responses:
@@ -1545,8 +1553,9 @@ components:
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
         RIFA_INCOMPLETA (le falta algo para publicarse) ·
-        TORNEO_NO_EDITABLE (los pasos del asistente se guardan y el torneo se publica solo en BORRADOR) ·
+        TORNEO_NO_EDITABLE (la parte económica, el reglamento y la publicación solo en BORRADOR; los pasos 1 y 2, hasta que empieza) ·
         TORNEO_INCOMPLETO (le falta algo para publicarse; la lista va en `faltantes`) ·
+        CAMPOS_BLOQUEADOS (el torneo publicado ya no admite cambios en esos campos; la lista va en `campos`) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) ·
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
@@ -1571,7 +1580,7 @@ components:
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
              USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_EDITABLE, TORNEO_INCOMPLETO,
-             COBRO_RECHAZADO,
+             CAMPOS_BLOQUEADOS, COBRO_RECHAZADO,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA,
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
@@ -1617,6 +1626,7 @@ components:
           items: {anyOf: [{$ref: '#/components/schemas/FaltantePublicacion'}, {$ref: '#/components/schemas/FaltanteTorneo'}]}
           description: 'Solo en RIFA_INCOMPLETA (ver `FaltantePublicacion`) y TORNEO_INCOMPLETO (ver `FaltanteTorneo`): lo que le falta para publicarse'
         sumaPremios: {type: number, description: 'Solo en RIFA_INCOMPLETA y TORNEO_INCOMPLETO: cuánto suman hoy los premios (en la rifa, un entero)'}
+        campos: {type: array, items: {type: string}, description: 'Solo en CAMPOS_BLOQUEADOS: los campos de InformacionTorneoRequest que cambiaban y ya no se pueden cambiar'}
       examples:
         - {type: 'about:blank', title: Bad Request, status: 400, detail: Hay campos inválidos, instance: /api/v1/auth/registro,
          codigo: VALIDACION, errores: [{campo: password, codigo: PASSWORD_DEBIL, mensaje: 'Mínimo 8, una mayúscula y un número'}]}
@@ -1963,7 +1973,7 @@ components:
         nominaMaxima: {type: [integer, 'null'], minimum: 1, description: Con suplentes; solo por equipos}
     TorneoInformacion:
       type: object
-      required: [id, estado, nombre, disciplina, formato, canchas, economia, creadoEn, modificadoEn]
+      required: [id, estado, nombre, disciplina, formato, canchas, economia, creadoEn, modificadoEn, camposBloqueados]
       description: Un torneo propio como lo ve su organizador en el asistente; lo que falta viene en null.
       properties:
         id: {$ref: '#/components/schemas/Id'}
@@ -2006,6 +2016,12 @@ components:
         publicadoEn: {type: [string, 'null'], format: date-time}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: string, format: date-time}
+        camposBloqueados:
+          type: array
+          items: {type: string}
+          description: >-
+            Los campos de InformacionTorneoRequest que ya no se pueden cambiar (HU-202). Vacío en BORRADOR; en curso,
+            finalizado o cancelado, todos.
     PermisoArbitro:
       type: string
       enum: [CARGAR_RESULTADOS, RESOLVER_OBJECIONES]
