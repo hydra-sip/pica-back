@@ -2,13 +2,17 @@ package com.hydra.pica.plataforma_pica.user.repository;
 
 import java.util.List;
 
+import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
+import com.hydra.pica.plataforma_pica.user.domain.Rol;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.domain.UsuarioRol;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.jpa.domain.Specification;
 
 /** `eliminado_en IS NULL` ya lo impone {@code @SQLRestriction} en {@link Usuario}. */
@@ -54,6 +58,23 @@ public final class UsuarioSpecifications {
             return null;
         }
         return (root, query, cb) -> cb.equal(root.get("estado"), estado);
+    }
+
+    /**
+     * Con ese rol asignado y activo. Va con EXISTS y no con join para no repetir filas: así no hace falta DISTINCT,
+     * que en Postgres no deja ordenar por la persona.
+     */
+    public static Specification<Usuario> conRolActivo(String nombreRol) {
+        return (root, query, cb) -> {
+            Subquery<Long> asignacion = query.subquery(Long.class);
+            Root<UsuarioRol> usuarioRol = asignacion.from(UsuarioRol.class);
+            Join<UsuarioRol, Rol> rol = usuarioRol.join("rol");
+            asignacion.select(usuarioRol.get("id").get("usuarioId")).where(
+                    cb.equal(usuarioRol.get("usuario"), root),
+                    cb.equal(rol.get("nombre"), nombreRol),
+                    cb.equal(rol.get("estado"), EstadoGeneral.ACTIVO));
+            return cb.exists(asignacion);
+        };
     }
 
     public static Specification<Usuario> conRol(Long rolId) {

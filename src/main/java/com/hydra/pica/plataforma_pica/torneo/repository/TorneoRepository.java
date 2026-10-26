@@ -22,7 +22,8 @@ public interface TorneoRepository extends JpaRepository<Torneo, Long>, JpaSpecif
     @Query("select t from Torneo t where t.id = :id")
     Optional<Torneo> buscarBloqueado(@Param("id") Long id);
 
-    @Query("select count(t) > 0 from Torneo t join t.arbitros a where t.id = :torneoId and a.id = :usuarioId")
+    /** Designado en cualquier estado, aunque todavía no haya aceptado (HU-203). */
+    @Query("select count(a) > 0 from ArbitroDesignado a where a.id.torneoId = :torneoId and a.id.usuarioId = :usuarioId")
     boolean esArbitro(@Param("torneoId") Long torneoId, @Param("usuarioId") Long usuarioId);
 
     /** Incluye los dados de baja: el slug es único en toda la tabla. */

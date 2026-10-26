@@ -33,14 +33,19 @@ class TorneosPropios {
      * pisen (PICA-204). Se bloquea antes de leer: si no, el estado podría quedar viejo en memoria.
      */
     Torneo buscarEditable(Long organizadorId, Long id) {
-        Torneo torneo = torneoRepository.buscarBloqueado(id)
-                .filter(t -> t.getEliminadoEn() == null && t.getOrganizador().getId().equals(organizadorId))
-                .orElseThrow(() -> noEncontrado(id));
+        Torneo torneo = buscarBloqueado(organizadorId, id);
         if (torneo.getEstado() != EstadoTorneo.BORRADOR) {
             throw new ConflictoException(CodigoError.TORNEO_NO_EDITABLE,
                     "El torneo " + id + " está " + torneo.getEstado() + ": solo se modifica en BORRADOR");
         }
         return torneo;
+    }
+
+    /** Propio y bloqueado como {@link #buscarEditable}, en cualquier estado: cada servicio decide cuáles admite. */
+    Torneo buscarBloqueado(Long organizadorId, Long id) {
+        return torneoRepository.buscarBloqueado(id)
+                .filter(t -> t.getEliminadoEn() == null && t.getOrganizador().getId().equals(organizadorId))
+                .orElseThrow(() -> noEncontrado(id));
     }
 
     /** El torneo como lo ve su organizador, con los premios por puesto. */

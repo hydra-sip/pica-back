@@ -945,6 +945,89 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/arbitros:
+    get:
+      tags: [Torneos]
+      summary: Buscar árbitros para designar
+      x-jira: PICA-236
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        El buscador del paso 2. Usuarios activos con el rol ÁRBITRO (activo), ordenados por apellidos y nombres;
+        `q` busca igual que en `GET /usuarios` (cada palabra en el username, los nombres o los apellidos). Sin
+        `q`, los primeros de la lista.
+      parameters:
+        - {name: q, in: query, required: false, schema: {type: string, maxLength: 100}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageUsuarioPublico'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/arbitros:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: Árbitros del torneo
+      x-jira: PICA-236
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: En el orden en que se designaron. Solo el organizador del torneo; para otro, 404 `TORNEO_NO_ENCONTRADO`.
+      responses:
+        '200':
+          description: Árbitros
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/ArbitroDetalle'}}
+        '404': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Torneos]
+      summary: Designar un árbitro
+      x-jira: PICA-236
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        HU-203. Queda PENDIENTE hasta que el árbitro acepta (HU-807); solo uno aceptado arbitra. Los árbitros se
+        cambian desde el BORRADOR hasta que el torneo termina: 409 `TORNEO_NO_EDITABLE` en FINALIZADO o CANCELADO.
+        400 `VALIDACION` con `REQUERIDO` en `permisos` si viene vacío. 404 `USUARIO_NO_ENCONTRADO` si el usuario no
+        existe. 409 `USUARIO_NO_ES_ARBITRO` si no está activo o no tiene el rol ÁRBITRO, `ARBITRO_DUPLICADO` si ya
+        está designado en el torneo y `ARBITRO_NO_PERMITIDO` si es el organizador o juega el torneo (inscripción
+        pendiente de pago o confirmada, propia o en una nómina).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DesignarArbitroRequest'}
+      responses:
+        '201':
+          description: Designado
+          headers:
+            Location: {schema: {type: string}, description: '/api/v1/torneos/{id}/arbitros/{usuarioId}'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ArbitroDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/torneos/{id}/arbitros/{usuarioId}:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {name: usuarioId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+    delete:
+      tags: [Torneos]
+      summary: Quitar un árbitro
+      x-jira: PICA-236
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        Deja de figurar en el torneo y pierde sus permisos. 404 `ARBITRO_NO_ENCONTRADO` si no está designado. 409
+        `TORNEO_NO_EDITABLE` si el torneo ya terminó.
+      responses:
+        '204': {description: Quitado}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/torneos/{id}/economia:
     put:
       tags: [Torneos]
@@ -1469,14 +1552,16 @@ components:
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
         JUGADOR_YA_INSCRIPTO (figura en otra inscripción activa del torneo, como capitán o en la nómina) ·
         NOMINA_INVALIDA (al confirmar: menos jugadores que el tamaño de equipo, más que el máximo de nómina, o
-        sin el capitán).
+        sin el capitán) ·
+        USUARIO_NO_ES_ARBITRO (no está activo o no tiene el rol ÁRBITRO) · ARBITRO_DUPLICADO (ya está designado en el
+        torneo) · ARBITRO_NO_PERMITIDO (es el organizador o juega el torneo).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él).
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
-             REGLAMENTO_NO_ENCONTRADO,
+             REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
@@ -1485,6 +1570,7 @@ components:
              COBRO_RECHAZADO,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA,
+             USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO]
     ErrorCampo:
@@ -1915,6 +2001,31 @@ components:
         publicadoEn: {type: [string, 'null'], format: date-time}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: string, format: date-time}
+    PermisoArbitro:
+      type: string
+      enum: [CARGAR_RESULTADOS, RESOLVER_OBJECIONES]
+      description: 'Lo que el organizador delega: cargar y validar resultados, y resolver objeciones.'
+    EstadoDesignacion:
+      type: string
+      enum: [PENDIENTE, ACEPTADO, RECHAZADO]
+      description: Nace PENDIENTE; el árbitro acepta o rechaza (HU-807). Solo uno ACEPTADO arbitra.
+    DesignarArbitroRequest:
+      type: object
+      required: [usuarioId, permisos]
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        permisos: {type: array, minItems: 1, uniqueItems: true, items: {$ref: '#/components/schemas/PermisoArbitro'}}
+    ArbitroDetalle:
+      type: object
+      required: [usuarioId, username, nombres, apellidos, estado, permisos, designadoEn]
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        nombres: {type: string}
+        apellidos: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoDesignacion'}
+        permisos: {type: array, items: {$ref: '#/components/schemas/PermisoArbitro'}}
+        designadoEn: {type: string, format: date-time}
     PublicarTorneoRequest:
       type: object
       required: [aceptaTerminos]
