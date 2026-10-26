@@ -17,6 +17,7 @@ import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.Gasto;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.Premio;
@@ -24,6 +25,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoResumen;
+import com.hydra.pica.plataforma_pica.torneo.repository.GastoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.PremioRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
@@ -48,6 +50,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Import(TestcontainersConfiguration.class)
 @Transactional
 class TorneoPublicoServiceIntegracionTest {
+
+    @Autowired
+    private GastoRepository gastoRepository;
 
     @Autowired
     private TorneoPublicoService torneoPublicoService;
@@ -119,11 +124,10 @@ class TorneoPublicoServiceIntegracionTest {
     }
 
     @Test
-    @DisplayName("listarPublicos: calcula correctamente cupo disponible y pozo estimado (con rifa y sin rifa)")
+    @DisplayName("listarPublicos: cupo disponible y pozo estimado como en el paso 3 (cupo completo, menos gastos, sin la rifa)")
     void calculoCupoYPozoEstimado() {
         // Torneo con cupoMaximo=8, valor=5000, pctPozo=70% -> pozo competidores = 8 * 5000 * 0.70 = 28000.
-        // Rifa con 100 números a 1000, pctPremioRifa=20% -> pozo rifa = 100000 * 0.20 = 20000.
-        // Pozo estimado total = 48000.
+        // Menos 8000 de gastos previstos: pozo neto = 20000. La rifa del torneo todavía no suma a la bolsa (HU-405).
         Torneo torneo = crearTorneo("t-con-rifa", "Torneo con Rifa", "Paddle", EstadoTorneo.INSCRIPCION_ABIERTA, null);
         torneo.setCupoMaximo(8);
         torneo.setValorInscripcion(new BigDecimal("5000.00"));
@@ -147,6 +151,11 @@ class TorneoPublicoServiceIntegracionTest {
         rifa.setEstado(EstadoRifa.EN_VENTA);
         rifaRepository.save(rifa);
 
+        Gasto alquiler = new Gasto(torneo, 1);
+        alquiler.setDescripcion("Alquiler");
+        alquiler.setMonto(new BigDecimal("8000.00"));
+        gastoRepository.save(alquiler);
+
         // 2 inscripciones confirmadas
         inscribir(torneo, jugador1, EstadoInscripcion.CONFIRMADA);
         inscribir(torneo, jugador2, EstadoInscripcion.CONFIRMADA);
@@ -157,7 +166,7 @@ class TorneoPublicoServiceIntegracionTest {
         TorneoResumen resumen = pagina.getContent().get(0);
         assertThat(resumen.cupoMaximo()).isEqualTo(8);
         assertThat(resumen.cupoDisponible()).isEqualTo(6); // 8 - 2
-        assertThat(resumen.pozoEstimado()).isEqualByComparingTo("48000.00");
+        assertThat(resumen.pozoEstimado()).isEqualByComparingTo("20000.00");
     }
 
     @Test
@@ -167,6 +176,7 @@ class TorneoPublicoServiceIntegracionTest {
         torneo.setDescripcion("Descripción del torneo");
         torneo.setReglamentoUrl("https://pica.local/reglamento.pdf");
         torneo.setReglamentoHash("hash1234");
+        torneo.setReglamentoTexto("Dos sets a 6 games.");
         torneo.setCupoMaximo(16);
         torneo.setCupoMinimo(4);
         torneo.setValorInscripcion(new BigDecimal("3000.00"));
@@ -199,6 +209,10 @@ class TorneoPublicoServiceIntegracionTest {
         assertThat(detalle.premios()).hasSize(2);
         assertThat(detalle.premios().get(0).puesto()).isEqualTo(1);
         assertThat(detalle.premios().get(0).pct()).isEqualByComparingTo("70.00");
+        assertThat(detalle.premios()).extracting(p -> p.monto().stripTrailingZeros().toPlainString())
+                .containsExactly("26880", "11520");
+        assertThat(detalle.premioRifaEstimado()).isEqualByComparingTo("0");
+        assertThat(detalle.reglamentoTexto()).isEqualTo("Dos sets a 6 games.");
         assertThat(detalle.organizador().username()).isEqualTo(organizador.getUsername());
     }
 

@@ -17,9 +17,6 @@ import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.ConteoInscripciones;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
-import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
-import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
-import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
@@ -28,6 +25,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoResumen;
+import com.hydra.pica.plataforma_pica.torneo.repository.GastoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.PremioRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -55,7 +53,7 @@ class TorneoPublicoServiceTest {
     private InscripcionRepository inscripcionRepository;
 
     @Mock
-    private RifaRepository rifaRepository;
+    private GastoRepository gastoRepository;
 
     @Mock
     private PremioRepository premioRepository;
@@ -97,7 +95,7 @@ class TorneoPublicoServiceTest {
     }
 
     @Test
-    @DisplayName("listarPublicos: mapea resumenes con cupo disponible y pozo estimado de competidores y rifa")
+    @DisplayName("listarPublicos: mapea resumenes con cupo disponible y el pozo neto con el cupo completo")
     void listarPublicosConRifaYConteo() {
         Pageable pageable = PageRequest.of(0, 10);
         when(torneoRepository.findAll(any(Specification.class), eq(pageable)))
@@ -117,16 +115,6 @@ class TorneoPublicoServiceTest {
         when(inscripcionRepository.contarPorTorneoIdInYEstado(any(), eq(EstadoInscripcion.CONFIRMADA)))
                 .thenReturn(List.of(conteo));
 
-        Rifa rifa = new Rifa();
-        rifa.setTorneo(torneo);
-        rifa.setNumeroDesde(1);
-        rifa.setNumeroHasta(100);
-        rifa.setPrecioNumero(new BigDecimal("1000.00"));
-        rifa.setEstado(EstadoRifa.EN_VENTA);
-
-        when(rifaRepository.findByTorneoIdInAndEliminadoEnIsNull(any()))
-                .thenReturn(List.of(rifa));
-
         Page<TorneoResumen> resultado = service.listarPublicos("Fútbol 5", EstadoTorneo.INSCRIPCION_ABIERTA, pageable);
 
         assertThat(resultado.getContent()).hasSize(1);
@@ -134,8 +122,8 @@ class TorneoPublicoServiceTest {
         assertThat(resumen.slug()).isEqualTo("copa-verano");
         assertThat(resumen.cupoMaximo()).isEqualTo(8);
         assertThat(resumen.cupoDisponible()).isEqualTo(5); // 8 - 3
-        // Pozo: 8 * 5000 * 0.70 = 28000. Rifa: 100 * 1000 * 0.20 = 20000. Total = 48000.
-        assertThat(resumen.pozoEstimado()).isEqualByComparingTo("48000.00");
+        // Pozo: 8 * 5000 * 0.70 = 28000, sin gastos.
+        assertThat(resumen.pozoEstimado()).isEqualByComparingTo("28000.00");
     }
 
     @Test
@@ -157,8 +145,7 @@ class TorneoPublicoServiceTest {
                 .thenReturn(Optional.of(torneo));
         when(inscripcionRepository.countByTorneoIdAndEstado(torneo.getId(), EstadoInscripcion.CONFIRMADA))
                 .thenReturn(2L);
-        when(rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneo.getId()))
-                .thenReturn(Optional.empty());
+        when(gastoRepository.totalDelTorneo(any())).thenReturn(new BigDecimal("4000.00"));
 
         Premio p1 = new Premio(torneo, 1);
         p1.setPct(new BigDecimal("70.00"));
@@ -171,7 +158,9 @@ class TorneoPublicoServiceTest {
 
         assertThat(detalle.slug()).isEqualTo("copa-verano");
         assertThat(detalle.cupoDisponible()).isEqualTo(6); // 8 - 2
-        assertThat(detalle.pozoEstimado()).isEqualByComparingTo("28000.00"); // 8 * 5000 * 0.70
+        assertThat(detalle.pozoEstimado()).isEqualByComparingTo("24000.00"); // 8 * 5000 * 0.70 - 4000
+        assertThat(detalle.premios().get(0).monto()).isEqualByComparingTo("16800.00"); // 70 % del neto
+        assertThat(detalle.premioRifaEstimado()).isEqualByComparingTo("8000.00"); // 8 * 5000 * 0.20
         assertThat(detalle.premios()).hasSize(2);
         assertThat(detalle.premios().get(0).puesto()).isEqualTo(1);
         assertThat(detalle.organizador().nombreCompleto()).isEqualTo("Carlos Perez");

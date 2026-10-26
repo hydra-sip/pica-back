@@ -10,6 +10,11 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
+/**
+ * La ficha pública de un torneo publicado (HU-208). Los montos son estimados con el cupo completo, como en el paso 3
+ * (HU-601): {@code pozoEstimado} es el pozo neto que se reparte en premios (competidores menos gastos) y cada premio
+ * trae su monto. El reglamento puede venir escrito, en PDF o los dos.
+ */
 public record TorneoDetalle(
         Long id,
         String slug,
@@ -30,10 +35,12 @@ public record TorneoDetalle(
         BigDecimal pctPozoCompetidores,
         BigDecimal pctPremioRifa,
         BigDecimal pozoEstimado,
+        BigDecimal premioRifaEstimado,
         List<PremioDetalle> premios,
         Instant cierreInscripcionEn,
         Instant fechaInicio,
         Instant fechaFin,
+        String reglamentoTexto,
         String reglamentoUrl,
         String reglamentoHash,
         OrganizadorResumen organizador,
@@ -43,6 +50,7 @@ public record TorneoDetalle(
             Torneo torneo,
             int cupoDisponible,
             BigDecimal pozoEstimado,
+            BigDecimal premioRifaEstimado,
             List<PremioDetalle> premios) {
         return new TorneoDetalle(
                 torneo.getId(),
@@ -64,10 +72,12 @@ public record TorneoDetalle(
                 torneo.getPctPozoCompetidores(),
                 torneo.getPctPremioRifa(),
                 pozoEstimado,
+                premioRifaEstimado,
                 premios,
                 torneo.getCierreInscripcionEn(),
                 torneo.getFechaInicio(),
                 torneo.getFechaFin(),
+                torneo.getReglamentoTexto(),
                 torneo.getReglamentoUrl(),
                 torneo.getReglamentoHash(),
                 OrganizadorResumen.de(torneo.getOrganizador()),
