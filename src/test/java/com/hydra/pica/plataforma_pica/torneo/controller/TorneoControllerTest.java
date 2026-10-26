@@ -14,8 +14,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
@@ -28,8 +30,11 @@ import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
+import com.hydra.pica.plataforma_pica.torneo.dto.MiTorneoResumen;
+import com.hydra.pica.plataforma_pica.torneo.dto.MisTorneos;
 import com.hydra.pica.plataforma_pica.torneo.dto.OpcionesTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
+import com.hydra.pica.plataforma_pica.torneo.service.MisTorneosService;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,13 +42,16 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PagedModel.PageMetadata;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** /api/v1/torneos del organizador (PICA-199): el id sale de la sesión y las reglas están en TorneoService. */
+/** /api/v1/torneos del organizador (PICA-199 y PICA-201): el id sale de la sesión y las reglas están en los servicios. */
 @WebMvcTest(TorneoController.class)
 @ActiveProfiles("dev")
 @Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
@@ -57,6 +65,9 @@ class TorneoControllerTest {
 
     @MockitoBean
     private TorneoService torneoService;
+
+    @MockitoBean
+    private MisTorneosService misTorneosService;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
@@ -192,8 +203,36 @@ class TorneoControllerTest {
                 .andExpect(jsonPath("$.formatos[0].disponible").value(true));
     }
 
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("GET /api/v1/torneos/mis-torneos pasa los filtros y la página, y devuelve las cantidades por estado")
+    void misTorneos() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        MiTorneoResumen fila = new MiTorneoResumen(9L, "Apertura F5", "Fútbol 5", EstadoTorneo.BORRADOR, 2,
+                "Club Mercedes", 16, 0, new BigDecimal("56000.00"), true, "ARS", null, CREADO);
+        when(misTorneosService.listar(eq(ORGANIZADOR), eq("apertura"), eq(EstadoTorneo.BORRADOR), eq("Fútbol 5"),
+                any(Pageable.class)))
+                .thenReturn(new MisTorneos(List.of(fila), new PageMetadata(5, 1, 6, 2),
+                        Map.of(EstadoTorneo.BORRADOR, 6L), List.of("Fútbol 5")));
+
+        mockMvc.perform(get("/api/v1/torneos/mis-torneos")
+                        .param("q", "apertura").param("estado", "BORRADOR").param("disciplina", "Fútbol 5")
+                        .param("page", "1").param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].pasoPendiente").value(2))
+                .andExpect(jsonPath("$.content[0].pozoEstimado").value(true))
+                .andExpect(jsonPath("$.page.totalElements").value(6))
+                .andExpect(jsonPath("$.porEstado.BORRADOR").value(6))
+                .andExpect(jsonPath("$.disciplinas[0]").value("Fútbol 5"));
+
+        ArgumentCaptor<Pageable> pagina = ArgumentCaptor.forClass(Pageable.class);
+        verify(misTorneosService).listar(eq(ORGANIZADOR), eq("apertura"), eq(EstadoTorneo.BORRADOR), eq("Fútbol 5"),
+                pagina.capture());
+        assertThat(pagina.getValue()).isEqualTo(PageRequest.of(1, 5));
+    }
+
     private static TorneoInformacion borrador() {
-        return new TorneoInformacion(9L, EstadoTorneo.BORRADOR, "Apertura F5", "Fútbol 5", null,
+        return new TorneoInformacion(9L, EstadoTorneo.BORRADOR, 1, "Apertura F5", "Fútbol 5", null,
                 Formato.ELIMINACION_DIRECTA, Modalidad.PRESENCIAL, null, "Club Mercedes", List.of("Cancha 1"), null,
                 null, null, null, null, null, null, null, null, CREADO, CREADO);
     }

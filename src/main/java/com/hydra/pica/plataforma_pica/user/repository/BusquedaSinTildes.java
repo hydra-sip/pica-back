@@ -13,7 +13,7 @@ import jakarta.persistence.criteria.Predicate;
  * La columna se normaliza en SQL con translate() y el texto buscado con la misma tabla en Java, así
  * los dos lados quedan iguales sin depender de la extensión unaccent.
  */
-final class BusquedaSinTildes {
+public final class BusquedaSinTildes {
 
     private static final String CON_TILDE = "áàäâãéèëêíìïîóòöôõúùüûñçÁÀÄÂÃÉÈËÊÍÌÏÎÓÒÖÔÕÚÙÜÛÑÇ";
     private static final String SIN_TILDE = "aaaaaeeeeiiiiooooouuuuncaaaaaeeeeiiiiooooouuuunc";
@@ -35,7 +35,7 @@ final class BusquedaSinTildes {
      * Un patrón por palabra, para exigir que aparezcan todas: "juan perez" encuentra a Juan Pérez.
      * % y _ se escapan: "%%%" no tiene que traer a todos.
      */
-    static List<String> patronesPorPalabra(String texto) {
+    public static List<String> patronesPorPalabra(String texto) {
         if (texto == null || texto.isBlank()) {
             return List.of();
         }
@@ -69,7 +69,7 @@ final class BusquedaSinTildes {
     }
 
     /** Alguna de las columnas, normalizada, contiene el patrón. */
-    static Predicate algunaContiene(CriteriaBuilder cb, String patron, List<Expression<String>> columnas) {
+    public static Predicate algunaContiene(CriteriaBuilder cb, String patron, List<Expression<String>> columnas) {
         return cb.or(columnas.stream()
                 .map(columna -> cb.like(criteria(cb, columna), patron, ESCAPE))
                 .toArray(Predicate[]::new));

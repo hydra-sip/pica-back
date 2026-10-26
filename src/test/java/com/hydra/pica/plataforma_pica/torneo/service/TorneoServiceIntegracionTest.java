@@ -78,6 +78,7 @@ class TorneoServiceIntegracionTest {
 
         assertThat(torneo.id()).isNotNull();
         assertThat(torneo.estado()).isEqualTo(EstadoTorneo.BORRADOR);
+        assertThat(torneo.pasoPendiente()).isEqualTo(1);
         assertThat(torneo.nombre()).isEqualTo("Apertura F5");
         assertThat(torneo.disciplina()).isEqualTo("Fútbol 5");
         assertThat(torneo.formato()).isEqualTo(Formato.ELIMINACION_DIRECTA);
@@ -93,6 +94,7 @@ class TorneoServiceIntegracionTest {
         TorneoInformacion creado = torneoService.crear(organizador, completo());
 
         TorneoInformacion visto = torneoService.detalle(organizador, creado.id());
+        assertThat(visto.pasoPendiente()).isEqualTo(3);
         assertThat(visto.modalidad()).isEqualTo(Modalidad.PRESENCIAL);
         assertThat(visto.tipoParticipante()).isEqualTo(TipoParticipante.EQUIPO);
         assertThat(visto.sede()).isEqualTo("Club Mercedes");

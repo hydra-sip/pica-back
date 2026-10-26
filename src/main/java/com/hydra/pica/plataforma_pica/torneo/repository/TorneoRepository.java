@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
@@ -26,6 +27,13 @@ public interface TorneoRepository extends JpaRepository<Torneo, Long>, JpaSpecif
 
     /** Un torneo propio del organizador; el de otro no aparece. */
     Optional<Torneo> findByIdAndOrganizadorIdAndEliminadoEnIsNull(Long id, Long organizadorId);
+
+    /** Para el filtro de Mis torneos: las que usó el organizador, sin repetir. */
+    @Query("""
+            select distinct t.disciplina from Torneo t
+            where t.organizador.id = :organizadorId and t.eliminadoEn is null
+            order by t.disciplina""")
+    List<String> disciplinasDelOrganizador(@Param("organizadorId") Long organizadorId);
 
     @EntityGraph(attributePaths = {"organizador", "organizador.persona"})
     Optional<Torneo> findBySlugAndEliminadoEnIsNull(String slug);
