@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremiosRifaRequest;
+import com.hydra.pica.plataforma_pica.rifa.dto.PublicarRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaResumen;
@@ -71,6 +72,12 @@ public class RifaController {
     @PutMapping("/{id}/premios")
     public RifaDetalle reemplazarPremios(@PathVariable Long id, @Valid @RequestBody PremiosRifaRequest request) {
         return rifaService.reemplazarPremios(usuarioActual(), id, request.premios());
+    }
+
+    /** El body exige términos y lotería en true (400 si no); lo demás lo controla el servicio. */
+    @PostMapping("/{id}/publicar")
+    public RifaDetalle publicar(@PathVariable Long id, @Valid @RequestBody PublicarRifaRequest request) {
+        return rifaService.publicar(usuarioActual(), id);
     }
 
     private Long usuarioActual() {

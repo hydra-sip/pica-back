@@ -10,12 +10,13 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.repository.ConteoInscripciones;
+import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.MiTorneoResumen;
 import com.hydra.pica.plataforma_pica.torneo.dto.MisTorneos;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
-import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository.InscripcionesPorTorneo;
 import com.hydra.pica.plataforma_pica.user.repository.BusquedaSinTildes;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Tuple;
@@ -51,6 +52,7 @@ public class MisTorneosService {
     private static final BigDecimal CIEN = BigDecimal.valueOf(100);
 
     private final TorneoRepository torneoRepository;
+    private final InscripcionRepository inscripcionRepository;
     private final EntityManager entityManager;
 
     /** El último que se tocó primero; el orden no se elige desde afuera. */
@@ -80,10 +82,10 @@ public class MisTorneosService {
         if (torneos.isEmpty()) {
             return Map.of();
         }
-        return torneoRepository
-                .contarInscripciones(torneos.stream().map(Torneo::getId).toList(), EstadoInscripcion.CONFIRMADA)
+        return inscripcionRepository
+                .contarPorTorneoIdInYEstado(torneos.stream().map(Torneo::getId).toList(), EstadoInscripcion.CONFIRMADA)
                 .stream()
-                .collect(Collectors.toMap(InscripcionesPorTorneo::getTorneoId, InscripcionesPorTorneo::getCantidad));
+                .collect(Collectors.toMap(ConteoInscripciones::getTorneoId, ConteoInscripciones::getCantidad));
     }
 
     private Map<EstadoTorneo, Long> porEstado(Specification<Torneo> filtros) {

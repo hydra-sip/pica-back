@@ -12,8 +12,9 @@ import jakarta.validation.constraints.Size;
 
 /**
  * Datos generales de una rifa en BORRADOR, para el alta y la modificación (PICA-226). Los premios van
- * aparte, en {@link PremiosRifaRequest}. La ventana de venta puede faltar mientras es borrador, pero
- * las dos fechas van juntas. Lo que compara un campo con otro (rango, ventana) lo valida
+ * aparte, en {@link PremiosRifaRequest}. Mientras es borrador pueden faltar la ventana de venta (las
+ * dos fechas van juntas) y la fecha programada del sorteo (PICA-219), que es posterior a
+ * {@code ventaHasta}. Lo que compara un campo con otro (rango, ventana, sorteo) lo valida
  * {@code RifaService}.
  */
 public record RifaRequest(
@@ -23,5 +24,6 @@ public record RifaRequest(
         @NotNull @Min(0) Integer numeroHasta,
         @NotNull @Positive @Digits(integer = 12, fraction = 2) BigDecimal precioNumero,
         Instant ventaDesde,
-        Instant ventaHasta) {
+        Instant ventaHasta,
+        Instant fechaSorteo) {
 }

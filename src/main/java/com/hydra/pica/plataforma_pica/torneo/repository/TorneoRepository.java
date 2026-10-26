@@ -1,13 +1,12 @@
 package com.hydra.pica.plataforma_pica.torneo.repository;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
@@ -36,17 +35,6 @@ public interface TorneoRepository extends JpaRepository<Torneo, Long>, JpaSpecif
             order by t.disciplina""")
     List<String> disciplinasDelOrganizador(@Param("organizadorId") Long organizadorId);
 
-    /** Inscripciones en {@code estado} de cada torneo; los que no tienen ninguna no aparecen. */
-    @Query("""
-            select i.torneo.id as torneoId, count(i) as cantidad from Inscripcion i
-            where i.torneo.id in :torneoIds and i.estado = :estado
-            group by i.torneo.id""")
-    List<InscripcionesPorTorneo> contarInscripciones(@Param("torneoIds") Collection<Long> torneoIds,
-            @Param("estado") EstadoInscripcion estado);
-
-    interface InscripcionesPorTorneo {
-        Long getTorneoId();
-
-        long getCantidad();
-    }
+    @EntityGraph(attributePaths = {"organizador", "organizador.persona"})
+    Optional<Torneo> findBySlugAndEliminadoEnIsNull(String slug);
 }

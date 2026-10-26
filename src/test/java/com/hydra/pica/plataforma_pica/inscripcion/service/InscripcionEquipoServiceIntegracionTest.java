@@ -288,8 +288,48 @@ class InscripcionEquipoServiceIntegracionTest {
         }
     }
 
+    @Test
+    void unCapitanConUnBorradorEnElTorneoNoCreaOtroConUnEquipoDistinto() {
+        Long otroEquipo = equipo("Los Gavilanes", capitan);
+        long idDelBorrador = inscripcionDeEquipo(torneo, equipo, "BORRADOR");
+
+        ApiException error = catchThrowableOfType(ApiException.class,
+                () -> inscripcionService.crear(capitan, torneo, existente(otroEquipo)));
+
+        assertThat(error).isNotNull();
+        assertThat(error.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(error.getCodigo()).isEqualTo(CodigoError.INSCRIPCION_DUPLICADA);
+        assertThat(error.getMessage()).contains("borrador " + idDelBorrador);
+    }
+
+    @Test
+    void elBorradorRechazadoNoDejaUnEquipoNuevoCreado() {
+        inscripcionDeEquipo(torneo, equipo, "BORRADOR");
+
+        assertError(() -> inscripcionService.crear(capitan, torneo, nuevo("Los Zorros")), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM equipo WHERE nombre = 'Los Zorros'", Integer.class)).isZero();
+    }
+
+    @Test
+    void elBorradorCanceladoDelCapitanNoImpideCrearOtroConOtroEquipo() {
+        Long otroEquipo = equipo("Los Gavilanes", capitan);
+        inscripcionDeEquipo(torneo, equipo, "CANCELADA");
+
+        assertThat(inscripcionService.crear(capitan, torneo, existente(otroEquipo)).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+    }
+
+    @Test
+    void elBorradorDelCapitanEnOtroTorneoNoImpideCrearEnEste() {
+        inscripcionDeEquipo(torneoPorEquipos(5, 8), equipo, "BORRADOR");
+        Long otroEquipo = equipo("Los Gavilanes", capitan);
+
+        assertThat(inscripcionService.crear(capitan, torneo, existente(otroEquipo)).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+    }
+
     // La clave única de torneo y equipo de V9 se mantiene: un equipo tiene una sola inscripción por torneo,
-    // sea cual sea su estado. Si ya tiene un borrador se edita ese, y una cancelada no se vuelve a abrir.
+    // sea cual sea su estado. Si ya tiene un borrador se edita ese (lo corta la regla del borrador único), y una
+    // cancelada no se vuelve a abrir.
     @Test
     void elMismoEquipoConUnBorradorEnElTorneoNoCreaOtroEnVezDeUnErrorDeLaBase() {
         inscripcionDeEquipo(torneo, equipo, "BORRADOR");
@@ -476,7 +516,8 @@ class InscripcionEquipoServiceIntegracionTest {
     @Test
     void siGanaOtroPedidoSimultaneoDelMismoEquipoRespondeDuplicadaYNoUnErrorDeLaBase() {
         inscripcionDeEquipo(torneo, equipo, "BORRADOR");
-        // el chequeo previo no ve a la otra inscripción, pero la clave única de la base sí
+        // los chequeos previos no ven a la otra inscripción, pero la clave única de la base sí
+        doReturn(List.of()).when(inscripcionRepository).borradoresDe(anyLong(), anyLong());
         doReturn(Optional.empty()).when(inscripcionRepository).findByTorneoIdAndEquipoId(anyLong(), anyLong());
 
         assertError(() -> inscripcionService.crear(capitan, torneo, existente(equipo)), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_DUPLICADA);
@@ -898,6 +939,54 @@ class InscripcionEquipoServiceIntegracionTest {
 
         assertError(() -> inscripcionService.cancelar(enNomina, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
         assertError(() -> inscripcionService.cancelar(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+    }
+
+    // --- reabrir ------------------------------------------------------------
+
+    @Test
+    void reabrirUnaInscripcionDeEquipoLaDejaEnBorradorConElMismoEquipoYLaMismaNomina() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("reab_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        inscripcionService.confirmar(capitan, id, true);
+
+        InscripcionDetalle reabierta = inscripcionService.reabrir(capitan, id);
+
+        assertThat(reabierta.estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+        assertThat(reabierta.reglamentoAceptadoEn()).isNull();
+        assertThat(reabierta.equipo().id()).isEqualTo(equipo);
+        assertThat(reabierta.nomina()).extracting(UsuarioPublico::id).containsExactlyInAnyOrder(capitan, jugador);
+        assertThat(jdbc.queryForList("SELECT usuario_id FROM nomina WHERE inscripcion_id = ?", Long.class, id))
+                .containsExactlyInAnyOrder(capitan, jugador);
+    }
+
+    @Test
+    void soloElCapitanReabreLaInscripcionDeEquipo() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long enNomina = integranteNuevo("reab2_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, enNomina)).id();
+        inscripcionService.confirmar(capitan, id, true);
+
+        assertError(() -> inscripcionService.reabrir(enNomina, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.reabrir(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertThat(inscripcionService.detalle(capitan, id).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+    }
+
+    @Test
+    void despuesDeReabrirSeEditaLaNominaYSeConfirmaDeNuevo() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long primero = integranteNuevo("reab3a_eq");
+        Long segundo = integranteNuevo("reab3b_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, primero)).id();
+        inscripcionService.confirmar(capitan, id, true);
+
+        inscripcionService.reabrir(capitan, id);
+        inscripcionService.editar(capitan, id, existente(equipo, segundo));
+        InscripcionDetalle confirmada = inscripcionService.confirmar(capitan, id, true);
+
+        assertThat(confirmada.estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+        assertThat(confirmada.reglamentoAceptadoEn()).isNotNull();
+        assertThat(confirmada.nomina()).extracting(UsuarioPublico::id).containsExactlyInAnyOrder(capitan, segundo);
     }
 
     // --- escenario ----------------------------------------------------------
