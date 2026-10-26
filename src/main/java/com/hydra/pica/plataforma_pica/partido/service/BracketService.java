@@ -114,6 +114,15 @@ public class BracketService {
         return armar(torneo);
     }
 
+    /** Público (PICA-216): el de un torneo publicado; sin generar, con las rondas vacías. */
+    @Transactional(readOnly = true)
+    public BracketTorneo ver(Long torneoId) {
+        Torneo torneo = torneoRepository.findByIdAndEliminadoEnIsNull(torneoId)
+                .filter(t -> t.getEstado() != EstadoTorneo.BORRADOR)
+                .orElseThrow(() -> noEncontrado(torneoId));
+        return armar(torneo);
+    }
+
     // --- sorteo -----------------------------------------------------------------
 
     private void sortear(Torneo torneo, Long organizadorId, String semillaAnterior) {

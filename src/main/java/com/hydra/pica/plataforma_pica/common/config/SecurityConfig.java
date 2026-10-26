@@ -69,7 +69,9 @@ public class SecurityConfig {
                                 "/api/v1/torneos/resumen",
                                 "/api/v1/torneos/slug/*",
                                 // el servicio decide: el de un borrador lo ve solo su organizador
-                                "/api/v1/torneos/*/reglamento")
+                                "/api/v1/torneos/*/reglamento",
+                                // el de un torneo publicado (PICA-216)
+                                "/api/v1/torneos/*/bracket")
                         .permitAll()
                         .anyRequest().authenticated());
 

@@ -1039,6 +1039,22 @@ paths:
 
   /api/v1/torneos/{id}/bracket:
     parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: Ver el bracket (público)
+      x-jira: PICA-216
+      x-owner: Tomás
+      security: []
+      description: >-
+        HU-207. Sin sesión: el de cualquier torneo publicado, con los lados, puntajes y ganadores que haya hasta el
+        momento. Sin generar, `rondas` vacío. 404 `TORNEO_NO_ENCONTRADO` si no existe o está en BORRADOR.
+      responses:
+        '200':
+          description: El bracket
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BracketTorneo'}
+        '404': {$ref: '#/components/responses/Error'}
     post:
       tags: [Torneos]
       summary: Generar el bracket de eliminación directa

@@ -248,6 +248,29 @@ class BracketServiceIntegracionTest {
                 .extracting("codigo").isEqualTo(CodigoError.TORNEO_NO_ENCONTRADO);
     }
 
+    // --- ver (PICA-216) --------------------------------------------------------
+
+    @Test
+    void cualquieraLoVeIgualQueElOrganizadorYSinGenerarVieneVacio() {
+        inscribir(5);
+        assertThat(bracketService.ver(torneo).rondas()).isEmpty();
+
+        BracketTorneo generado = bracketService.generar(organizador, torneo);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(bracketService.ver(torneo)).isEqualTo(generado);
+    }
+
+    @Test
+    void elDeUnBorradorNoSeVe() {
+        jdbc.update("UPDATE torneo SET estado = 'BORRADOR' WHERE id = ?", torneo);
+        entityManager.clear();
+
+        assertThatThrownBy(() -> bracketService.ver(torneo))
+                .extracting("codigo").isEqualTo(CodigoError.TORNEO_NO_ENCONTRADO);
+    }
+
     // --- helpers --------------------------------------------------------------
 
     /** Las inscripciones que juegan en la ronda, sin repetir ninguna. */
