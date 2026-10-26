@@ -27,11 +27,8 @@ public record ErrorCampo(String campo, Codigo codigo, String mensaje) {
         VENTANA_INVALIDA,
         PREMIOS_INVALIDOS,
         FECHAS_INVALIDAS,
-<<<<<<< HEAD
         REPARTO_INVALIDO,
         COMISION_EXCEDIDA,
-=======
->>>>>>> origin/dev
         VALOR_INVALIDO;
 
         /** {@code anotacion} es lo que devuelve {@code FieldError.getCode()}: "NotBlank", "Email", etc. */

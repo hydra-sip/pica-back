@@ -91,10 +91,7 @@ app:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   torneos:
     cupo-maximo: ${APP_TORNEOS_CUPO_MAXIMO:64}   # tope de participantes por torneo (HU-201)
-<<<<<<< HEAD
     comision-maxima: ${APP_TORNEOS_COMISION_MAXIMA:10}   # tope del % de comisión de la plataforma (HU-601)
-=======
->>>>>>> origin/dev
   admin:
     username: ${ADMIN_USERNAME:admin}
     email: ${ADMIN_EMAIL:admin@pica.local}

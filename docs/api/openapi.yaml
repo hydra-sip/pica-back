@@ -884,7 +884,6 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
-<<<<<<< HEAD
   /api/v1/torneos/{id}/economia:
     put:
       tags: [Torneos]
@@ -971,8 +970,6 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
-=======
->>>>>>> origin/dev
   # --- Inscripciones -----------------------------------------------------------
   # Crear, confirmar, reabrir, ver el resumen de pago, pagar y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
   # Ver alcanza con estar logueado: la ven quien se inscribió y el organizador del torneo. Para cualquier otro usuario
@@ -1302,10 +1299,7 @@ components:
     Rol: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RolRequest'}}}}
     Rifa: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RifaRequest'}}}}
     InformacionTorneo: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/InformacionTorneoRequest'}}}}
-<<<<<<< HEAD
     Gasto: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GastoRequest'}}}}
-=======
->>>>>>> origin/dev
 
   responses:
     Tokens: {description: Sesión iniciada, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
@@ -1417,21 +1411,13 @@ components:
         caracteres no permitidos → NOMBRE_INVALIDO, edad fuera de 18 a 120 años → EDAD_FUERA_DE_RANGO,
         otra → VALOR_INVALIDO. Las rifas suman reglas entre campos: RANGO_INVALIDO, VENTANA_INVALIDA y
         PREMIOS_INVALIDOS (ver `POST /rifas` y `PUT /rifas/{id}/premios`). Los torneos suman FECHAS_INVALIDAS
-<<<<<<< HEAD
         (ver `InformacionTorneoRequest`), REPARTO_INVALIDO y COMISION_EXCEDIDA (ver `PUT /torneos/{id}/economia`).
-=======
-        (ver `InformacionTorneoRequest`).
->>>>>>> origin/dev
       properties:
         campo: {type: string, description: Nombre del campo tal como viene en el JSON}
         codigo: {type: string, enum: [REQUERIDO, FORMATO_INVALIDO, LONGITUD, FECHA_FUTURA, PASSWORD_DEBIL,
                                       NOMBRE_INVALIDO, EDAD_FUERA_DE_RANGO, RANGO_INVALIDO, VENTANA_INVALIDA,
-<<<<<<< HEAD
                                       PREMIOS_INVALIDOS, FECHAS_INVALIDAS, REPARTO_INVALIDO,
                                       COMISION_EXCEDIDA, VALOR_INVALIDO]}
-=======
-                                      PREMIOS_INVALIDOS, FECHAS_INVALIDAS, VALOR_INVALIDO]}
->>>>>>> origin/dev
         mensaje: {type: string, description: Orientativo; el front muestra el suyo según `codigo`}
     ProblemDetail:
       type: object
@@ -1797,11 +1783,7 @@ components:
         nominaMaxima: {type: [integer, 'null'], minimum: 1, description: Con suplentes; solo por equipos}
     TorneoInformacion:
       type: object
-<<<<<<< HEAD
       required: [id, estado, nombre, disciplina, formato, canchas, economia, creadoEn, modificadoEn]
-=======
-      required: [id, estado, nombre, disciplina, formato, canchas, creadoEn, modificadoEn]
->>>>>>> origin/dev
       description: Un torneo propio como lo ve su organizador en el asistente; lo que falta viene en null.
       properties:
         id: {$ref: '#/components/schemas/Id'}
@@ -1824,7 +1806,6 @@ components:
         cupoMinimo: {type: [integer, 'null']}
         tamanioEquipo: {type: [integer, 'null']}
         nominaMaxima: {type: [integer, 'null']}
-<<<<<<< HEAD
         economia: {$ref: '#/components/schemas/EconomiaTorneo'}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: string, format: date-time}
@@ -1894,10 +1875,6 @@ components:
               puesto: {type: integer}
               pct: {type: number}
               monto: {type: [number, 'null']}
-=======
-        creadoEn: {type: string, format: date-time}
-        modificadoEn: {type: string, format: date-time}
->>>>>>> origin/dev
     MiTorneoResumen:
       type: object
       required: [id, nombre, disciplina, estado, inscriptos, pozoEstimado, moneda, modificadoEn]
@@ -1929,11 +1906,7 @@ components:
         disciplinas: {type: array, items: {type: string}, description: 'Las de los torneos del organizador, para el filtro'}
     OpcionesTorneo:
       type: object
-<<<<<<< HEAD
       required: [disciplinas, formatos, modalidades, cupoMaximo, comisionMaxima, canchas]
-=======
-      required: [disciplinas, formatos, modalidades, cupoMaximo, canchas]
->>>>>>> origin/dev
       properties:
         disciplinas:
           type: array
@@ -1959,10 +1932,7 @@ components:
               disponible: {type: boolean, description: 'false: se muestra como próximamente y no se puede elegir'}
         modalidades: {type: array, items: {$ref: '#/components/schemas/Modalidad'}}
         cupoMaximo: {type: integer, description: Máximo de participantes que admite la plataforma, examples: [64]}
-<<<<<<< HEAD
         comisionMaxima: {type: number, description: Tope del % de comisión de la plataforma en el paso 3, examples: [10]}
-=======
->>>>>>> origin/dev
         canchas: {type: array, items: {type: string}, description: Las que ya existen en la `sede` pedida}
     # --- rifas ---------------------------------------------------------------
     EstadoRifa: {type: string, enum: [BORRADOR, EN_VENTA, CERRADA, SORTEADA, EN_REVISION, LIQUIDADA, CANCELADA]}

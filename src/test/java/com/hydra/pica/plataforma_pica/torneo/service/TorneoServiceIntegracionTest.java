@@ -221,10 +221,7 @@ class TorneoServiceIntegracionTest {
                 .extracting(OpcionesTorneo.FormatoOpcion::codigo).containsExactly("ELIMINACION_DIRECTA");
         assertThat(opciones.modalidades()).containsExactly(Modalidad.PRESENCIAL, Modalidad.ONLINE);
         assertThat(opciones.cupoMaximo()).isEqualTo(64);
-<<<<<<< HEAD
         assertThat(opciones.comisionMaxima()).isEqualByComparingTo("10");
-=======
->>>>>>> origin/dev
         assertThat(opciones.canchas()).isEmpty();
     }
 
