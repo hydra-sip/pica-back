@@ -30,6 +30,10 @@ public interface InscripcionRepository extends JpaRepository<Inscripcion, Long> 
 
     long countByTorneoIdAndEstado(Long torneoId, EstadoInscripcion estado);
 
+    /** Las que entran al sorteo del bracket (PICA-215), por id. */
+    @Query("select i.id from Inscripcion i where i.torneo.id = :torneoId and i.estado = :estado order by i.id")
+    List<Long> idsPorTorneoYEstado(@Param("torneoId") Long torneoId, @Param("estado") EstadoInscripcion estado);
+
     /**
      * El torneo de la inscripción, solo si es de ese usuario (el participante de la individual, el capitán de la
      * de equipo); no carga la inscripción.
