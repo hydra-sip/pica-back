@@ -1,5 +1,5 @@
 CREATE TABLE reemplazo (
-    id BIGSERIAL PRIMARY KEY,
+    id BIGINT GENERATED ALWAYS AS IDENTITY,
     inscripcion_id BIGINT NOT NULL,
     equipo_id BIGINT NOT NULL,
     sale_usuario_id BIGINT NOT NULL,
@@ -9,6 +9,7 @@ CREATE TABLE reemplazo (
     modificado_en TIMESTAMPTZ NOT NULL DEFAULT now(),
     creado_por VARCHAR(100),
     modificado_por VARCHAR(100),
+    CONSTRAINT pk_reemplazo PRIMARY KEY (id),
     CONSTRAINT fk_reemplazo_inscripcion
         FOREIGN KEY (inscripcion_id, equipo_id)
         REFERENCES inscripcion (id, equipo_id),
