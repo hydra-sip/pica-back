@@ -1,10 +1,8 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -12,14 +10,13 @@ import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.ConteoInscripciones;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
-import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
-import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
-import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.PremioDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoResumen;
+import com.hydra.pica.plataforma_pica.torneo.repository.GastoRepository;
+import com.hydra.pica.plataforma_pica.torneo.repository.GastoRepository.GastosPorTorneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.PremioRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoSpecifications;
@@ -30,24 +27,29 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Catálogo y ficha pública de torneos (HU-208). El pozo estimado es el pozo neto con el cupo completo, como en el
+ * paso 3 del asistente (HU-601, PICA-270): sale de {@link CuentasTorneo}, así el organizador y el público ven el mismo
+ * número.
+ */
 @Service
 @Transactional(readOnly = true)
 public class TorneoPublicoService {
 
     private final TorneoRepository torneoRepository;
     private final InscripcionRepository inscripcionRepository;
-    private final RifaRepository rifaRepository;
     private final PremioRepository premioRepository;
+    private final GastoRepository gastoRepository;
 
     public TorneoPublicoService(
             TorneoRepository torneoRepository,
             InscripcionRepository inscripcionRepository,
-            RifaRepository rifaRepository,
-            PremioRepository premioRepository) {
+            PremioRepository premioRepository,
+            GastoRepository gastoRepository) {
         this.torneoRepository = torneoRepository;
         this.inscripcionRepository = inscripcionRepository;
-        this.rifaRepository = rifaRepository;
         this.premioRepository = premioRepository;
+        this.gastoRepository = gastoRepository;
     }
 
     public Page<TorneoResumen> listarPublicos(String disciplina, EstadoTorneo estado, Pageable pageable) {
@@ -68,18 +70,14 @@ public class TorneoPublicoService {
                 .stream()
                 .collect(Collectors.toMap(ConteoInscripciones::getTorneoId, ConteoInscripciones::getCantidad));
 
-        Map<Long, Rifa> rifaPorTorneo = rifaRepository
-                .findByTorneoIdInAndEliminadoEnIsNull(torneoIds)
-                .stream()
-                .filter(r -> r.getTorneo() != null)
-                .collect(Collectors.toMap(r -> r.getTorneo().getId(), r -> r, (r1, r2) -> r1));
+        Map<Long, BigDecimal> gastosPorTorneo = gastoRepository.totalesPorTorneo(torneoIds).stream()
+                .collect(Collectors.toMap(GastosPorTorneo::getTorneoId, GastosPorTorneo::getTotal));
 
         List<TorneoResumen> resumenes = pagina.getContent().stream().map(torneo -> {
             long confirmadas = confirmadasPorTorneo.getOrDefault(torneo.getId(), 0L);
             int cupoDisponible = Math.max(0, torneo.getCupoMaximo() - (int) confirmadas);
-            Rifa rifa = rifaPorTorneo.get(torneo.getId());
-            BigDecimal pozoEstimado = calcularPozoEstimado(torneo, rifa);
-            return TorneoResumen.de(torneo, cupoDisponible, pozoEstimado);
+            CuentasTorneo cuentas = cuentas(torneo, gastosPorTorneo.getOrDefault(torneo.getId(), BigDecimal.ZERO));
+            return TorneoResumen.de(torneo, cupoDisponible, cuentas.pozoNeto());
         }).toList();
 
         return new PageImpl<>(resumenes, pageable, pagina.getTotalElements());
@@ -96,36 +94,17 @@ public class TorneoPublicoService {
         long confirmadas = inscripcionRepository.countByTorneoIdAndEstado(torneo.getId(), EstadoInscripcion.CONFIRMADA);
         int cupoDisponible = Math.max(0, torneo.getCupoMaximo() - (int) confirmadas);
 
-        Optional<Rifa> rifaOpt = rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneo.getId());
-        BigDecimal pozoEstimado = calcularPozoEstimado(torneo, rifaOpt.orElse(null));
-
+        CuentasTorneo cuentas = cuentas(torneo, gastoRepository.totalDelTorneo(torneo.getId()));
         List<PremioDetalle> premios = premioRepository.findByTorneoIdOrderByIdPuestoAsc(torneo.getId())
                 .stream()
-                .map(PremioDetalle::de)
+                .map(p -> PremioDetalle.de(p, cuentas.delPuesto(p.getPct())))
                 .toList();
 
-        return TorneoDetalle.de(torneo, cupoDisponible, pozoEstimado, premios);
+        return TorneoDetalle.de(torneo, cupoDisponible, cuentas.pozoNeto(), cuentas.premioRifa(), premios);
     }
 
-    public BigDecimal calcularPozoEstimado(Torneo torneo, Rifa rifa) {
-        BigDecimal baseCompetidores = BigDecimal.ZERO;
-        if (torneo.getValorInscripcion() != null && torneo.getCupoMaximo() != null && torneo.getPctPozoCompetidores() != null) {
-            baseCompetidores = torneo.getValorInscripcion()
-                    .multiply(BigDecimal.valueOf(torneo.getCupoMaximo()))
-                    .multiply(torneo.getPctPozoCompetidores())
-                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        }
-
-        BigDecimal aporteRifa = BigDecimal.ZERO;
-        if (rifa != null && rifa.getEstado() != EstadoRifa.BORRADOR && rifa.getEstado() != EstadoRifa.CANCELADA
-                && torneo.getPctPremioRifa() != null && rifa.getPrecioNumero() != null) {
-            int totalNumeros = rifa.getNumeroHasta() - rifa.getNumeroDesde() + 1;
-            BigDecimal recaudacionRifa = rifa.getPrecioNumero().multiply(BigDecimal.valueOf(totalNumeros));
-            aporteRifa = recaudacionRifa
-                    .multiply(torneo.getPctPremioRifa())
-                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        }
-
-        return baseCompetidores.add(aporteRifa);
+    /** Con el cupo completo, como el resumen del paso 3. */
+    private static CuentasTorneo cuentas(Torneo torneo, BigDecimal gastos) {
+        return CuentasTorneo.de(torneo, torneo.getCupoMaximo(), gastos);
     }
 }

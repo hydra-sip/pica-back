@@ -2181,10 +2181,11 @@ components:
     # --- Torneos públicos (los enums son los del asistente) -------------------
     PremioDetalle:
       type: object
-      required: [puesto, pct]
+      required: [puesto, pct, monto]
       properties:
         puesto: {type: integer, minimum: 1}
-        pct: {type: number, description: '% del pozo asignado a este puesto'}
+        pct: {type: number, description: '% del pozo neto asignado a este puesto'}
+        monto: {type: [number, 'null'], description: 'Lo que le toca del pozo neto estimado (`pozoEstimado`); null si no se puede calcular'}
     OrganizadorResumen:
       type: object
       required: [id, nombreCompleto, username]
@@ -2210,13 +2211,13 @@ components:
         cupoDisponible: {type: integer}
         valorInscripcion: {type: number}
         moneda: {type: string, examples: [ARS]}
-        pozoEstimado: {type: number}
+        pozoEstimado: {type: number, description: 'Pozo neto a repartir en premios, estimado con el cupo completo como en el paso 3 (PICA-270): inscripción × cupo × % de competidores − gastos previstos. La rifa todavía no suma.'}
         cierreInscripcionEn: {type: string, format: date-time}
         fechaInicio: {type: string, format: date-time}
         fechaFin: {type: [string, 'null'], format: date-time}
     TorneoDetalle:
       type: object
-      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoMinimo, cupoDisponible, valorInscripcion, moneda, pctPozoCompetidores, pctPremioRifa, pozoEstimado, premios, cierreInscripcionEn, fechaInicio, reglamentoUrl, publicadoEn]
+      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoMinimo, cupoDisponible, valorInscripcion, moneda, pctPozoCompetidores, pctPremioRifa, pozoEstimado, premioRifaEstimado, premios, cierreInscripcionEn, fechaInicio, publicadoEn]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         slug: {type: string}
@@ -2236,12 +2237,14 @@ components:
         moneda: {type: string, examples: [ARS]}
         pctPozoCompetidores: {type: number}
         pctPremioRifa: {type: number}
-        pozoEstimado: {type: number}
+        pozoEstimado: {type: number, description: 'Pozo neto a repartir en premios, estimado con el cupo completo como en el paso 3 (PICA-270): inscripción × cupo × % de competidores − gastos previstos. La rifa todavía no suma.'}
+        premioRifaEstimado: {type: [number, 'null'], description: 'La parte de la bolsa que va al premio de la rifa del torneo, con el cupo completo'}
         premios: {type: array, items: {$ref: '#/components/schemas/PremioDetalle'}}
         cierreInscripcionEn: {type: string, format: date-time}
         fechaInicio: {type: string, format: date-time}
         fechaFin: {type: [string, 'null'], format: date-time}
-        reglamentoUrl: {type: string}
-        reglamentoHash: {type: [string, 'null']}
+        reglamentoTexto: {type: [string, 'null'], description: 'El reglamento escrito en el paso 1; puede venir este, el PDF o los dos'}
+        reglamentoUrl: {type: [string, 'null'], description: 'El PDF del reglamento, si se subió'}
+        reglamentoHash: {type: [string, 'null'], description: 'SHA-256 del reglamento (el PDF o, sin PDF, el texto), sellado al publicar'}
         organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
         publicadoEn: {type: [string, 'null'], format: date-time}

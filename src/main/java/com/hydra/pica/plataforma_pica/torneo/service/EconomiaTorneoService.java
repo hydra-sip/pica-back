@@ -1,7 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -96,26 +95,17 @@ public class EconomiaTorneoService {
         gastoRepository.delete(buscarGasto(id, gastoId));
     }
 
-    /** Las cuentas con el cupo completo; ver {@link ResumenEconomico}. */
+    /** Las cuentas con el cupo completo; ver {@link ResumenEconomico} y {@link CuentasTorneo}. */
     @Transactional(readOnly = true)
     public ResumenEconomico resumen(Long organizadorId, Long id) {
         Torneo torneo = torneosPropios.buscarPropio(organizadorId, id);
-        BigDecimal gastos = gastoRepository.findByTorneoIdOrderByIdGastoIdAsc(id).stream()
-                .map(Gasto::getMonto)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal recaudacion = torneo.getValorInscripcion() == null || torneo.getCupoMaximo() == null ? null
-                : torneo.getValorInscripcion().multiply(BigDecimal.valueOf(torneo.getCupoMaximo()));
-        BigDecimal pctComision = EconomiaTorneo.comision(torneo.getPctPozoCompetidores(), torneo.getPctPremioRifa());
-        BigDecimal pozoCompetidores = porcentaje(recaudacion, torneo.getPctPozoCompetidores());
-        BigDecimal pozoNeto = pozoCompetidores == null ? null : pozoCompetidores.subtract(gastos);
-
+        CuentasTorneo cuentas = CuentasTorneo.de(torneo, torneo.getCupoMaximo(), gastoRepository.totalDelTorneo(id));
         List<ResumenEconomico.Puesto> premios = premioRepository.findByTorneoIdOrderByIdPuestoAsc(id).stream()
-                .map(p -> new ResumenEconomico.Puesto(p.getId().getPuesto(), p.getPct(), porcentaje(pozoNeto, p.getPct())))
+                .map(p -> new ResumenEconomico.Puesto(p.getId().getPuesto(), p.getPct(), cuentas.delPuesto(p.getPct())))
                 .toList();
         return new ResumenEconomico(torneo.getCupoMaximo(), torneo.getValorInscripcion(), torneo.getMoneda(),
-                recaudacion, porcentaje(recaudacion, pctComision), porcentaje(recaudacion, torneo.getPctPremioRifa()),
-                pozoCompetidores, gastos, pozoNeto, premios);
+                cuentas.recaudacion(), cuentas.comision(), cuentas.premioRifa(), cuentas.pozoCompetidores(),
+                cuentas.gastos(), cuentas.pozoNeto(), premios);
     }
 
     // --- premios y gastos ---------------------------------------------------
@@ -177,9 +167,5 @@ public class EconomiaTorneoService {
                     .con("errores", errores)
                     .con("comisionMaxima", tope);
         }
-    }
-
-    private static BigDecimal porcentaje(BigDecimal monto, BigDecimal pct) {
-        return monto == null || pct == null ? null : monto.multiply(pct).divide(CIEN, 2, RoundingMode.HALF_UP);
     }
 }
