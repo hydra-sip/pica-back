@@ -9,13 +9,17 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-/** Generar y regenerar el bracket del torneo (HU-207). Las reglas están en {@link BracketService}. */
+/**
+ * El bracket del torneo (HU-207): generarlo y regenerarlo es del organizador; verlo es público (PICA-216). Las reglas
+ * están en {@link BracketService}.
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/torneos/{id}/bracket")
@@ -23,6 +27,12 @@ public class BracketController {
 
     private final BracketService bracketService;
     private final CurrentUserProvider currentUserProvider;
+
+    /** Sin sesión: lo ven los participantes y cualquiera que tenga el enlace del torneo. */
+    @GetMapping
+    public BracketTorneo ver(@PathVariable Long id) {
+        return bracketService.ver(id);
+    }
 
     @PostMapping
     @PreAuthorize("hasAuthority('TORNEO_GESTIONAR')")

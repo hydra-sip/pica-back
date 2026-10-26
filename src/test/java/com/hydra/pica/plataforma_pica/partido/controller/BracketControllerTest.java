@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.partido.controller;
 
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -32,7 +33,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** Generar y regenerar el bracket (PICA-215): el organizador sale de la sesión y las reglas están en el servicio. */
+/**
+ * El bracket (PICA-215 y PICA-216): generarlo y regenerarlo es del organizador de la sesión, verlo es público. Las
+ * reglas están en el servicio.
+ */
 @WebMvcTest(BracketController.class)
 @ActiveProfiles("dev")
 @Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
@@ -76,6 +80,17 @@ class BracketControllerTest {
                 .andExpect(jsonPath("$.rondas[0].partidos[0].bye").value(true))
                 .andExpect(jsonPath("$.rondas[0].partidos[0].local.nombre").value("Los Galácticos"))
                 .andExpect(jsonPath("$.rondas[0].partidos[0].visitante").isEmpty());
+    }
+
+    @Test
+    @DisplayName("GET sin sesión responde 200 con el bracket")
+    void publico() throws Exception {
+        when(bracketService.ver(9L)).thenReturn(new BracketTorneo(9L, null, null, List.of()));
+
+        mockMvc.perform(get("/api/v1/torneos/9/bracket"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.torneoId").value(9))
+                .andExpect(jsonPath("$.rondas").isEmpty());
     }
 
     @Test
