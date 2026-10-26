@@ -10,6 +10,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.Premio;
+import com.hydra.pica.plataforma_pica.torneo.domain.SelloTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
@@ -19,6 +20,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  *
  * @param pasoPendiente en BORRADOR, el paso donde reabrir el asistente (ver {@link AsistenteTorneo}); si no, null
  * @param economia el paso 3 (PICA-203)
+ * @param slug el enlace público; se genera al publicar (PICA-204)
+ * @param esquemaHash SHA-256 del esquema económico, sellado al publicar (ver {@link SelloTorneo})
  */
 public record TorneoInformacion(
         Long id,
@@ -42,6 +45,9 @@ public record TorneoInformacion(
         Integer tamanioEquipo,
         Integer nominaMaxima,
         EconomiaTorneo economia,
+        String slug,
+        String esquemaHash,
+        Instant publicadoEn,
         Instant creadoEn,
         Instant modificadoEn) {
 
@@ -54,7 +60,7 @@ public record TorneoInformacion(
                 t.getDisciplina(), t.getDescripcion(), t.getFormato(), t.getModalidad(), t.getTipoParticipante(),
                 t.getSede(), canchas, t.getFechaInicio(), t.getFechaFin(), t.getCierreInscripcionEn(),
                 t.getReglamentoTexto(), t.getReglamentoUrl(), t.getCupoMaximo(), t.getCupoMinimo(),
-                t.getTamanioEquipo(), t.getNominaMaxima(), EconomiaTorneo.de(t, premios), t.getCreadoEn(),
-                t.getModificadoEn());
+                t.getTamanioEquipo(), t.getNominaMaxima(), EconomiaTorneo.de(t, premios), t.getSlug(),
+                t.getEsquemaHash(), t.getPublicadoEn(), t.getCreadoEn(), t.getModificadoEn());
     }
 }

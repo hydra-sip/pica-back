@@ -75,9 +75,8 @@ public class EconomiaTorneoService {
 
     @Transactional
     public GastoDetalle agregarGasto(Long organizadorId, Long id, GastoRequest request) {
-        torneosPropios.buscarEditable(organizadorId, id);
         // el número sale del máximo: con el torneo bloqueado, dos altas a la vez no toman el mismo
-        Torneo torneo = torneoRepository.buscarBloqueado(id).orElseThrow();
+        Torneo torneo = torneosPropios.buscarEditable(organizadorId, id);
         Gasto gasto = new Gasto(torneo, gastoRepository.ultimoNumero(id) + 1);
         aplicar(gasto, request);
         return GastoDetalle.de(gastoRepository.save(gasto));

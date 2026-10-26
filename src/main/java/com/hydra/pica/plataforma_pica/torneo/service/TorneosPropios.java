@@ -25,11 +25,17 @@ class TorneosPropios {
 
     Torneo buscarPropio(Long organizadorId, Long id) {
         return torneoRepository.findByIdAndOrganizadorIdAndEliminadoEnIsNull(id, organizadorId)
-                .orElseThrow(() -> new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO, "No existe el torneo " + id));
+                .orElseThrow(() -> noEncontrado(id));
     }
 
+    /**
+     * Con la fila bloqueada hasta el fin de la transacción, para que un cambio del asistente y la publicación no se
+     * pisen (PICA-204). Se bloquea antes de leer: si no, el estado podría quedar viejo en memoria.
+     */
     Torneo buscarEditable(Long organizadorId, Long id) {
-        Torneo torneo = buscarPropio(organizadorId, id);
+        Torneo torneo = torneoRepository.buscarBloqueado(id)
+                .filter(t -> t.getEliminadoEn() == null && t.getOrganizador().getId().equals(organizadorId))
+                .orElseThrow(() -> noEncontrado(id));
         if (torneo.getEstado() != EstadoTorneo.BORRADOR) {
             throw new ConflictoException(CodigoError.TORNEO_NO_EDITABLE,
                     "El torneo " + id + " está " + torneo.getEstado() + ": solo se modifica en BORRADOR");
@@ -40,5 +46,9 @@ class TorneosPropios {
     /** El torneo como lo ve su organizador, con los premios por puesto. */
     TorneoInformacion informacion(Torneo torneo) {
         return TorneoInformacion.de(torneo, premioRepository.findByTorneoIdOrderByIdPuestoAsc(torneo.getId()));
+    }
+
+    private static NoEncontradoException noEncontrado(Long id) {
+        return new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO, "No existe el torneo " + id);
     }
 }

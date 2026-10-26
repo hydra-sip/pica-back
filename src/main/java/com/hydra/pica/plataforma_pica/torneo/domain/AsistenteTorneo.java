@@ -24,7 +24,7 @@ public final class AsistenteTorneo {
     }
 
     /** La disciplina y el nombre no se cuentan: sin ellos el borrador no se guarda. */
-    static boolean datosGeneralesCompletos(Torneo t) {
+    public static boolean datosGeneralesCompletos(Torneo t) {
         return t.getModalidad() != null
                 && t.getTipoParticipante() != null
                 && (t.getModalidad() != Modalidad.PRESENCIAL || t.getSede() != null)
@@ -33,7 +33,7 @@ public final class AsistenteTorneo {
                 && (t.getReglamentoTexto() != null || t.getReglamentoUrl() != null);
     }
 
-    static boolean cuposCompletos(Torneo t) {
+    public static boolean cuposCompletos(Torneo t) {
         return t.getCupoMaximo() != null
                 && t.getCupoMinimo() != null
                 && (t.getTipoParticipante() != TipoParticipante.EQUIPO
