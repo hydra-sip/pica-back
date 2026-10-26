@@ -47,6 +47,7 @@ tags:
   - {name: Admin – Personas, description: 'ABM de personas. HU-104, Laura.'}
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
   - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
+  - {name: Torneos, description: 'Asistente de crear torneo del organizador logueado (HU-201, PICA-38; HU-601, PICA-55), Tomás. Catálogo y ficha públicos (HU-208), Salvador.'}
   - {name: Equipos, description: 'Equipos del capitán para elegir al inscribirse. HU-204 (PICA-234), Mateo.'}
   - {name: Inscripciones, description: 'Inscripción de un participante a un torneo. HU-204 (PICA-50), Mateo.'}
   - {name: Torneos, description: 'Catálogo público y detalle de torneos. HU-208, Tomás.'}
@@ -798,6 +799,70 @@ paths:
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
 
+  # --- Torneos ----------------------------------------------------------------
+  # Todo exige TORNEO_GESTIONAR (ORGANIZADOR, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO. Cada uno ve y
+  # edita solo los suyos: el de otro organizador responde 404 TORNEO_NO_ENCONTRADO, como si no existiera.
+
+  /api/v1/torneos:
+    post:
+      tags: [Torneos]
+      summary: Crear un torneo (en BORRADOR)
+      x-jira: PICA-199
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        Paso 1 del asistente. Nace en BORRADOR con lo que venga: solo `nombre` y `disciplina` son obligatorios.
+        Valida lo que viene contra lo demás que viene (ver `InformacionTorneoRequest`); que esté todo lo exige la
+        publicación. 400 `VALIDACION` con `errores`.
+      requestBody: {$ref: '#/components/requestBodies/InformacionTorneo'}
+      responses:
+        '201': {$ref: '#/components/responses/TorneoInformacion'}
+
+  /api/v1/torneos/opciones:
+    get:
+      tags: [Torneos]
+      summary: Opciones del asistente
+      x-jira: PICA-199
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        Disciplinas sugeridas con sus valores por defecto (no es una lista cerrada: `disciplina` es texto),
+        formatos, modalidades y el cupo máximo de la plataforma. Con `sede`, también las canchas que ya existen ahí.
+      parameters:
+        - {name: sede, in: query, schema: {type: string, maxLength: 255}, description: Sin mayúsculas ni espacios de más}
+      responses:
+        '200': {description: Opciones, content: {application/json: {schema: {$ref: '#/components/schemas/OpcionesTorneo'}}}}
+
+  /api/v1/torneos/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: Ver un torneo propio (para seguir editándolo)
+      x-jira: PICA-199
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: Datos de los pasos 1 y 2 en cualquier estado, con lo que falta en null. 404 `TORNEO_NO_ENCONTRADO`.
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/informacion:
+    put:
+      tags: [Torneos]
+      summary: Guardar los pasos 1 y 2 de un torneo en BORRADOR
+      x-jira: PICA-199
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        Reemplaza los datos de los pasos 1 y 2 con lo que viene (lo que falta queda vacío), canchas incluidas.
+        Mismas validaciones que el alta. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      requestBody: {$ref: '#/components/requestBodies/InformacionTorneo'}
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   # --- Inscripciones -----------------------------------------------------------
   # Crear, confirmar, reabrir, ver el resumen de pago, pagar y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
   # Ver alcanza con estar logueado: la ven quien se inscribió y el organizador del torneo. Para cualquier otro usuario
@@ -1126,6 +1191,7 @@ components:
     Persona: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PersonaRequest'}}}}
     Rol: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RolRequest'}}}}
     Rifa: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RifaRequest'}}}}
+    InformacionTorneo: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/InformacionTorneoRequest'}}}}
 
   responses:
     Tokens: {description: Sesión iniciada, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
@@ -1134,6 +1200,7 @@ components:
     Persona: {description: Persona, content: {application/json: {schema: {$ref: '#/components/schemas/PersonaDetalle'}}}}
     Rol: {description: Rol con permisos, content: {application/json: {schema: {$ref: '#/components/schemas/RolDetalle'}}}}
     Rifa: {description: Rifa con premios, content: {application/json: {schema: {$ref: '#/components/schemas/RifaDetalle'}}}}
+    TorneoInformacion: {description: Torneo propio, content: {application/json: {schema: {$ref: '#/components/schemas/TorneoInformacion'}}}}
     Error: {description: Ver códigos en la descripción de la operación, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetail'}}}}
     Conflicto: {description: Regla de negocio que no se cumple; el código dice cuál, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetail'}}}}
 
@@ -1181,14 +1248,14 @@ components:
       type: string
       enum: [PENDIENTE_VERIFICACION, ACTIVO, BLOQUEADO]
       description: PENDIENTE hasta el clic en el mail; BLOQUEADO lo pone un admin. La baja lógica no es un estado.
-    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES]}
+    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226) e INSCRIPCION_GESTIONAR de V14 (PICA-208). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208) y TORNEO_GESTIONAR de V18 (PICA-199). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
-             RIFA_GESTIONAR, INSCRIPCION_GESTIONAR]
+             RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -1203,6 +1270,7 @@ components:
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
         RIFA_INCOMPLETA (le falta algo para publicarse) ·
+        TORNEO_NO_EDITABLE (los pasos del asistente solo se guardan en BORRADOR) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) ·
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
@@ -1220,7 +1288,7 @@ components:
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
-             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, COBRO_RECHAZADO,
+             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_EDITABLE, COBRO_RECHAZADO,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
@@ -1234,12 +1302,13 @@ components:
         @PastOrPresent → FECHA_FUTURA, política de clave → PASSWORD_DEBIL, nombres o apellidos con
         caracteres no permitidos → NOMBRE_INVALIDO, edad fuera de 18 a 120 años → EDAD_FUERA_DE_RANGO,
         otra → VALOR_INVALIDO. Las rifas suman reglas entre campos: RANGO_INVALIDO, VENTANA_INVALIDA y
-        PREMIOS_INVALIDOS (ver `POST /rifas` y `PUT /rifas/{id}/premios`).
+        PREMIOS_INVALIDOS (ver `POST /rifas` y `PUT /rifas/{id}/premios`). Los torneos suman FECHAS_INVALIDAS
+        (ver `InformacionTorneoRequest`).
       properties:
         campo: {type: string, description: Nombre del campo tal como viene en el JSON}
         codigo: {type: string, enum: [REQUERIDO, FORMATO_INVALIDO, LONGITUD, FECHA_FUTURA, PASSWORD_DEBIL,
                                       NOMBRE_INVALIDO, EDAD_FUERA_DE_RANGO, RANGO_INVALIDO, VENTANA_INVALIDA,
-                                      PREMIOS_INVALIDOS, VALOR_INVALIDO]}
+                                      PREMIOS_INVALIDOS, FECHAS_INVALIDAS, VALOR_INVALIDO]}
         mensaje: {type: string, description: Orientativo; el front muestra el suyo según `codigo`}
     ProblemDetail:
       type: object
@@ -1570,6 +1639,94 @@ components:
           type: array
           items: {type: object, required: [codigo, descripcion], properties: {codigo: {$ref: '#/components/schemas/CodigoPermiso'}, descripcion: {type: string}}}
 
+    # --- torneos -------------------------------------------------------------
+    EstadoTorneo: {type: string, enum: [BORRADOR, INSCRIPCION_ABIERTA, INSCRIPCION_CERRADA, EN_CURSO, FINALIZADO, CANCELADO]}
+    Formato: {type: string, enum: [ELIMINACION_DIRECTA]}
+    Modalidad: {type: string, enum: [PRESENCIAL, ONLINE]}
+    TipoParticipante: {type: string, enum: [INDIVIDUAL, EQUIPO]}
+    InformacionTorneoRequest:
+      type: object
+      required: [nombre, disciplina]
+      description: >-
+        Pasos 1 y 2 del asistente; el front manda todo cada vez y lo que falta queda vacío. Reglas entre campos
+        (400 `VALIDACION`): `FECHAS_INVALIDAS` en `fechaInicio` o `cierreInscripcionEn` si no son futuras, en
+        `fechaFin` si es anterior al inicio y en `cierreInscripcionEn` si es posterior al inicio · `REQUERIDO` en
+        `sede` si es presencial o trae canchas · `VALOR_INVALIDO` en `canchas` si es online · `RANGO_INVALIDO` en
+        `cupoMaximo` fuera de 2 a `OpcionesTorneo.cupoMaximo`, en `cupoMinimo` menor que 2 o mayor que el cupo, y
+        en `nominaMaxima` menor que `tamanioEquipo` · `VALOR_INVALIDO` en `tamanioEquipo` o `nominaMaxima` si no
+        es por equipos, o si no son positivos.
+      properties:
+        nombre: {type: string, maxLength: 100}
+        disciplina: {type: string, maxLength: 50, description: 'Texto libre; las sugeridas salen de `GET /torneos/opciones`'}
+        descripcion: {type: [string, 'null'], maxLength: 2000}
+        formato: {oneOf: [{$ref: '#/components/schemas/Formato'}, {type: 'null'}], description: 'Sin valor, ELIMINACION_DIRECTA'}
+        modalidad: {oneOf: [{$ref: '#/components/schemas/Modalidad'}, {type: 'null'}]}
+        tipoParticipante: {oneOf: [{$ref: '#/components/schemas/TipoParticipante'}, {type: 'null'}]}
+        sede: {type: [string, 'null'], maxLength: 255}
+        canchas: {type: [array, 'null'], items: {type: string, maxLength: 100}, description: 'Nombres; las que no existen en la sede se crean. Sin repetidos (sin mayúsculas)'}
+        fechaInicio: {type: [string, 'null'], format: date-time}
+        fechaFin: {type: [string, 'null'], format: date-time, description: Estimada}
+        cierreInscripcionEn: {type: [string, 'null'], format: date-time}
+        reglamentoTexto: {type: [string, 'null'], maxLength: 2000}
+        cupoMaximo: {type: [integer, 'null'], description: Participantes (equipos o jugadores)}
+        cupoMinimo: {type: [integer, 'null'], description: Mínimo para iniciar}
+        tamanioEquipo: {type: [integer, 'null'], minimum: 1, description: Titulares; solo por equipos}
+        nominaMaxima: {type: [integer, 'null'], minimum: 1, description: Con suplentes; solo por equipos}
+    TorneoInformacion:
+      type: object
+      required: [id, estado, nombre, disciplina, formato, canchas, creadoEn, modificadoEn]
+      description: Un torneo propio como lo ve su organizador en el asistente; lo que falta viene en null.
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        estado: {$ref: '#/components/schemas/EstadoTorneo'}
+        nombre: {type: string}
+        disciplina: {type: string}
+        descripcion: {type: [string, 'null']}
+        formato: {$ref: '#/components/schemas/Formato'}
+        modalidad: {oneOf: [{$ref: '#/components/schemas/Modalidad'}, {type: 'null'}]}
+        tipoParticipante: {oneOf: [{$ref: '#/components/schemas/TipoParticipante'}, {type: 'null'}]}
+        sede: {type: [string, 'null']}
+        canchas: {type: array, items: {type: string}, description: En orden alfabético}
+        fechaInicio: {type: [string, 'null'], format: date-time}
+        fechaFin: {type: [string, 'null'], format: date-time}
+        cierreInscripcionEn: {type: [string, 'null'], format: date-time}
+        reglamentoTexto: {type: [string, 'null']}
+        reglamentoUrl: {type: [string, 'null'], description: 'El PDF, si se subió'}
+        cupoMaximo: {type: [integer, 'null']}
+        cupoMinimo: {type: [integer, 'null']}
+        tamanioEquipo: {type: [integer, 'null']}
+        nominaMaxima: {type: [integer, 'null']}
+        creadoEn: {type: string, format: date-time}
+        modificadoEn: {type: string, format: date-time}
+    OpcionesTorneo:
+      type: object
+      required: [disciplinas, formatos, modalidades, cupoMaximo, canchas]
+      properties:
+        disciplinas:
+          type: array
+          items:
+            type: object
+            required: [nombre, tipoParticipante, modalidad, reglas]
+            description: Valores para completar el formulario; en las individuales el tamaño y la nómina van en null.
+            properties:
+              nombre: {type: string, examples: [Fútbol 5]}
+              tipoParticipante: {$ref: '#/components/schemas/TipoParticipante'}
+              modalidad: {$ref: '#/components/schemas/Modalidad'}
+              tamanioEquipo: {type: [integer, 'null']}
+              nominaMaxima: {type: [integer, 'null']}
+              reglas: {type: string, examples: [5 vs 5 · dos tiempos de 20 minutos]}
+        formatos:
+          type: array
+          items:
+            type: object
+            required: [codigo, nombre, disponible]
+            properties:
+              codigo: {type: string, examples: [ELIMINACION_DIRECTA]}
+              nombre: {type: string}
+              disponible: {type: boolean, description: 'false: se muestra como próximamente y no se puede elegir'}
+        modalidades: {type: array, items: {$ref: '#/components/schemas/Modalidad'}}
+        cupoMaximo: {type: integer, description: Máximo de participantes que admite la plataforma, examples: [64]}
+        canchas: {type: array, items: {type: string}, description: Las que ya existen en la `sede` pedida}
     # --- rifas ---------------------------------------------------------------
     EstadoRifa: {type: string, enum: [BORRADOR, EN_VENTA, CERRADA, SORTEADA, EN_REVISION, LIQUIDADA, CANCELADA]}
     PremioRifaRequest:
@@ -1760,19 +1917,7 @@ components:
         suman 100 % (la suma va en `sumaPremios`).
       enum: [VENTANA, VENTA_YA_EMPEZO, FECHA_SORTEO, SIN_PREMIOS, PREMIOS_NO_SUMAN_100]
 
-    # --- Torneos -------------------------------------------------------------
-    EstadoTorneo:
-      type: string
-      enum: [BORRADOR, INSCRIPCION_ABIERTA, INSCRIPCION_CERRADA, EN_CURSO, FINALIZADO, CANCELADO]
-    FormatoTorneo:
-      type: string
-      enum: [ELIMINACION_DIRECTA]
-    ModalidadTorneo:
-      type: string
-      enum: [PRESENCIAL, VIRTUAL, HIBRIDO]
-    TipoParticipanteTorneo:
-      type: string
-      enum: [INDIVIDUAL, EQUIPO]
+    # --- Torneos públicos (los enums son los del asistente) -------------------
     PremioDetalle:
       type: object
       required: [puesto, pct]
@@ -1795,9 +1940,9 @@ components:
         nombre: {type: string}
         descripcion: {type: [string, 'null']}
         disciplina: {type: string}
-        formato: {$ref: '#/components/schemas/FormatoTorneo'}
-        modalidad: {$ref: '#/components/schemas/ModalidadTorneo'}
-        tipoParticipante: {$ref: '#/components/schemas/TipoParticipanteTorneo'}
+        formato: {$ref: '#/components/schemas/Formato'}
+        modalidad: {$ref: '#/components/schemas/Modalidad'}
+        tipoParticipante: {$ref: '#/components/schemas/TipoParticipante'}
         sede: {type: [string, 'null']}
         estado: {$ref: '#/components/schemas/EstadoTorneo'}
         cupoMaximo: {type: integer}
@@ -1817,9 +1962,9 @@ components:
         nombre: {type: string}
         descripcion: {type: [string, 'null']}
         disciplina: {type: string}
-        formato: {$ref: '#/components/schemas/FormatoTorneo'}
-        modalidad: {$ref: '#/components/schemas/ModalidadTorneo'}
-        tipoParticipante: {$ref: '#/components/schemas/TipoParticipanteTorneo'}
+        formato: {$ref: '#/components/schemas/Formato'}
+        modalidad: {$ref: '#/components/schemas/Modalidad'}
+        tipoParticipante: {$ref: '#/components/schemas/TipoParticipante'}
         sede: {type: [string, 'null']}
         estado: {$ref: '#/components/schemas/EstadoTorneo'}
         cupoMaximo: {type: integer}

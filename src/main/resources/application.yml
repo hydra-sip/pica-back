@@ -89,6 +89,8 @@ app:
     sesion-maxima: ${APP_AUTH_SESION_MAXIMA:7d}   # tope desde el login, aunque se use
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+  torneos:
+    cupo-maximo: ${APP_TORNEOS_CUPO_MAXIMO:64}   # tope de participantes por torneo (HU-201)
   admin:
     username: ${ADMIN_USERNAME:admin}
     email: ${ADMIN_EMAIL:admin@pica.local}

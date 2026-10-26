@@ -24,6 +24,9 @@ public interface TorneoRepository extends JpaRepository<Torneo, Long>, JpaSpecif
     @Query("select count(t) > 0 from Torneo t join t.arbitros a where t.id = :torneoId and a.id = :usuarioId")
     boolean esArbitro(@Param("torneoId") Long torneoId, @Param("usuarioId") Long usuarioId);
 
+    /** Un torneo propio del organizador; el de otro no aparece. */
+    Optional<Torneo> findByIdAndOrganizadorIdAndEliminadoEnIsNull(Long id, Long organizadorId);
+
     @EntityGraph(attributePaths = {"organizador", "organizador.persona"})
     Optional<Torneo> findBySlugAndEliminadoEnIsNull(String slug);
 }

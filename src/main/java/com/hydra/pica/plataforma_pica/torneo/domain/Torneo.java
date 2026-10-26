@@ -29,6 +29,9 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
+ * En BORRADOR casi todo puede faltar (V18): el asistente lo va completando y fuera de BORRADOR la base exige
+ * lo que antes era NOT NULL.
+ *
  * Baja lógica con {@code eliminadoEn}, sin {@code @SQLRestriction}: inscripciones, partidos y
  * movimientos viejos siguen apuntando al torneo, así que cada consulta filtra los eliminados.
  */
@@ -56,7 +59,12 @@ public class Torneo extends AuditableEntity {
     @Column(name = "descripcion", columnDefinition = "TEXT")
     private String descripcion;
 
-    @Column(name = "reglamento_url", length = 500, nullable = false)
+    /** Texto del paso 1 del asistente; para publicar alcanza con este o con el PDF. */
+    @Column(name = "reglamento_texto", length = 2000)
+    private String reglamentoTexto;
+
+    /** El PDF (T201-2), opcional. */
+    @Column(name = "reglamento_url", length = 500)
     private String reglamentoUrl;
 
     @JdbcTypeCode(SqlTypes.CHAR)
@@ -71,20 +79,20 @@ public class Torneo extends AuditableEntity {
     private Formato formato = Formato.ELIMINACION_DIRECTA;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "modalidad", length = 20, nullable = false)
+    @Column(name = "modalidad", length = 20)
     private Modalidad modalidad;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "tipo_participante", length = 20, nullable = false)
+    @Column(name = "tipo_participante", length = 20)
     private TipoParticipante tipoParticipante;
 
     @Column(name = "sede", length = 255)
     private String sede;
 
-    @Column(name = "cupo_maximo", nullable = false)
+    @Column(name = "cupo_maximo")
     private Integer cupoMaximo;
 
-    @Column(name = "cupo_minimo", nullable = false)
+    @Column(name = "cupo_minimo")
     private Integer cupoMinimo;
 
     /** Solo en torneos por equipos: el mínimo de la nómina, los titulares. */
@@ -95,24 +103,24 @@ public class Torneo extends AuditableEntity {
     @Column(name = "nomina_maxima")
     private Integer nominaMaxima;
 
-    @Column(name = "valor_inscripcion", precision = 14, scale = 2, nullable = false)
+    @Column(name = "valor_inscripcion", precision = 14, scale = 2)
     private BigDecimal valorInscripcion;
 
     @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "moneda", length = 3, nullable = false)
     private String moneda = "ARS";
 
-    @Column(name = "pct_pozo_competidores", precision = 5, scale = 2, nullable = false)
+    @Column(name = "pct_pozo_competidores", precision = 5, scale = 2)
     private BigDecimal pctPozoCompetidores;
 
     /** % de lo recaudado por la rifa que se suma al premio del torneo. */
-    @Column(name = "pct_premio_rifa", precision = 5, scale = 2, nullable = false)
+    @Column(name = "pct_premio_rifa", precision = 5, scale = 2)
     private BigDecimal pctPremioRifa;
 
-    @Column(name = "cierre_inscripcion_en", nullable = false)
+    @Column(name = "cierre_inscripcion_en")
     private Instant cierreInscripcionEn;
 
-    @Column(name = "fecha_inicio", nullable = false)
+    @Column(name = "fecha_inicio")
     private Instant fechaInicio;
 
     @Column(name = "fecha_fin")
