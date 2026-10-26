@@ -10,11 +10,8 @@ import java.util.Map;
 import com.hydra.pica.plataforma_pica.common.config.TorneoConfig.TorneoProperties;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
-import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
-import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancha;
-import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
@@ -50,6 +47,7 @@ public class TorneoService {
     private static final int CUPO_MINIMO = 2;
 
     private final TorneoRepository torneoRepository;
+    private final TorneosPropios torneosPropios;
     private final CanchaRepository canchaRepository;
     private final UsuarioRepository usuarioRepository;
     private final TorneoProperties torneoProperties;
@@ -63,12 +61,12 @@ public class TorneoService {
                         .map(Cancha::getNombre)
                         .toList();
         return new OpcionesTorneo(CatalogoTorneo.DISCIPLINAS, CatalogoTorneo.FORMATOS, List.of(Modalidad.values()),
-                torneoProperties.cupoMaximo(), canchas);
+                torneoProperties.cupoMaximo(), torneoProperties.comisionMaxima(), canchas);
     }
 
     @Transactional(readOnly = true)
     public TorneoInformacion detalle(Long organizadorId, Long id) {
-        return TorneoInformacion.de(buscarPropio(organizadorId, id));
+        return torneosPropios.informacion(torneosPropios.buscarPropio(organizadorId, id));
     }
 
     /** Nace en BORRADOR con lo que se haya cargado del paso 1. */
@@ -79,33 +77,19 @@ public class TorneoService {
         Torneo torneo = new Torneo();
         torneo.setOrganizador(usuarioRepository.getReferenceById(organizadorId));
         aplicar(torneo, request);
-        return TorneoInformacion.de(torneoRepository.saveAndFlush(torneo));
+        return torneosPropios.informacion(torneoRepository.saveAndFlush(torneo));
     }
 
     /** Reemplaza los datos de los pasos 1 y 2, canchas incluidas. */
     @Transactional
     public TorneoInformacion actualizarInformacion(Long organizadorId, Long id, InformacionTorneoRequest request) {
-        Torneo torneo = buscarEditable(organizadorId, id);
+        Torneo torneo = torneosPropios.buscarEditable(organizadorId, id);
         validar(request);
 
         aplicar(torneo, request);
         // si solo cambian las canchas no se entera la auditoría; el flush es para que modificadoEn salga en la respuesta
         auditingHandler.markModified(torneo);
-        return TorneoInformacion.de(torneoRepository.saveAndFlush(torneo));
-    }
-
-    private Torneo buscarPropio(Long organizadorId, Long id) {
-        return torneoRepository.findByIdAndOrganizadorIdAndEliminadoEnIsNull(id, organizadorId)
-                .orElseThrow(() -> new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO, "No existe el torneo " + id));
-    }
-
-    private Torneo buscarEditable(Long organizadorId, Long id) {
-        Torneo torneo = buscarPropio(organizadorId, id);
-        if (torneo.getEstado() != EstadoTorneo.BORRADOR) {
-            throw new ConflictoException(CodigoError.TORNEO_NO_EDITABLE,
-                    "El torneo " + id + " está " + torneo.getEstado() + ": solo se modifica en BORRADOR");
-        }
-        return torneo;
+        return torneosPropios.informacion(torneoRepository.saveAndFlush(torneo));
     }
 
     private void aplicar(Torneo torneo, InformacionTorneoRequest request) {

@@ -37,8 +37,9 @@ public class Gasto {
     @Setter(AccessLevel.NONE)
     private Torneo torneo;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "beneficiario_id", nullable = false)
+    /** Previsto (V19): quién lo cobra se sabe al pagarlo. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "beneficiario_id")
     private Usuario beneficiario;
 
     @Column(name = "descripcion", length = 255)
@@ -53,7 +54,7 @@ public class Gasto {
     @Column(name = "fecha_abonado")
     private Instant fechaAbonado;
 
-    @Column(name = "comprobante", length = 500, nullable = false)
+    @Column(name = "comprobante", length = 500)
     private String comprobante;
 
     protected Gasto() {

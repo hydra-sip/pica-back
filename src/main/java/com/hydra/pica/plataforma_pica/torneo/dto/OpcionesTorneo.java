@@ -1,15 +1,17 @@
 package com.hydra.pica.plataforma_pica.torneo.dto;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 
 /**
- * Lo que necesita el paso 1 del asistente para armar sus opciones (PICA-199).
+ * Lo que necesita el asistente para armar sus opciones (PICA-199): el paso 1 y el tope de comisión del paso 3.
  *
  * @param disciplinas sugeridas, con sus valores por defecto; el organizador puede escribir otra
  * @param cupoMaximo el máximo de participantes que admite la plataforma
+ * @param comisionMaxima el tope del % de comisión de la plataforma (paso 3)
  * @param canchas las que ya existen en la sede pedida (vacío si no se pidió ninguna)
  */
 public record OpcionesTorneo(
@@ -17,6 +19,7 @@ public record OpcionesTorneo(
         List<FormatoOpcion> formatos,
         List<Modalidad> modalidades,
         int cupoMaximo,
+        BigDecimal comisionMaxima,
         List<String> canchas) {
 
     /**

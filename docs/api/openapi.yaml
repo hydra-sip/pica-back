@@ -884,6 +884,92 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/economia:
+    put:
+      tags: [Torneos]
+      summary: Guardar el paso 3 (esquema económico) de un torneo en BORRADOR
+      x-jira: PICA-203
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        Valor de la inscripción, reparto de la bolsa y premios por puesto (ver `EconomiaTorneoRequest`); los premios
+        reemplazan a los que había. Devuelve el torneo entero. 400 `VALIDACION` con `errores` (y `comisionMaxima`):
+        `REPARTO_INVALIDO` en `pctPozoCompetidores` si los tres % no suman 100; `COMISION_EXCEDIDA` en `pctComision`
+        si pasa el tope; `PREMIOS_INVALIDOS` en `premios` si suman más de 100 o hay más puestos que cupo.
+        409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EconomiaTorneoRequest'}}}}
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/torneos/{id}/resumen-economico:
+    get:
+      tags: [Torneos]
+      summary: Cuentas del paso 3
+      x-jira: PICA-203
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: Estimadas con el cupo completo, en cualquier estado. Ver `ResumenEconomico`.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200': {description: Resumen, content: {application/json: {schema: {$ref: '#/components/schemas/ResumenEconomico'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/gastos:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: Gastos previstos del torneo
+      x-jira: PICA-203
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: En orden de alta. Se descuentan del pozo de competidores.
+      responses:
+        '200': {description: Gastos, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/GastoDetalle'}}}}}
+        '404': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Torneos]
+      summary: Agregar un gasto previsto (en BORRADOR)
+      x-jira: PICA-203
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: '`gastoId` es el siguiente del torneo. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.'
+      requestBody: {$ref: '#/components/requestBodies/Gasto'}
+      responses:
+        '201': {description: Gasto creado, content: {application/json: {schema: {$ref: '#/components/schemas/GastoDetalle'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/torneos/{id}/gastos/{gastoId}:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {name: gastoId, in: path, required: true, schema: {type: integer, minimum: 1}}
+    put:
+      tags: [Torneos]
+      summary: Modificar un gasto previsto (en BORRADOR)
+      x-jira: PICA-203
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: 404 `GASTO_NO_ENCONTRADO` si el torneo no tiene ese gasto. 409 `TORNEO_NO_EDITABLE`.
+      requestBody: {$ref: '#/components/requestBodies/Gasto'}
+      responses:
+        '200': {description: Gasto, content: {application/json: {schema: {$ref: '#/components/schemas/GastoDetalle'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Torneos]
+      summary: Borrar un gasto previsto (en BORRADOR)
+      x-jira: PICA-203
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: 404 `GASTO_NO_ENCONTRADO`. 409 `TORNEO_NO_EDITABLE`.
+      responses:
+        '204': {description: Borrado}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   # --- Inscripciones -----------------------------------------------------------
   # Crear, confirmar, reabrir, ver el resumen de pago, pagar y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
   # Ver alcanza con estar logueado: la ven quien se inscribió y el organizador del torneo. Para cualquier otro usuario
@@ -1213,6 +1299,7 @@ components:
     Rol: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RolRequest'}}}}
     Rifa: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RifaRequest'}}}}
     InformacionTorneo: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/InformacionTorneoRequest'}}}}
+    Gasto: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GastoRequest'}}}}
 
   responses:
     Tokens: {description: Sesión iniciada, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
@@ -1304,7 +1391,7 @@ components:
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él).
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
-             TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO,
+             TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
@@ -1324,12 +1411,13 @@ components:
         caracteres no permitidos → NOMBRE_INVALIDO, edad fuera de 18 a 120 años → EDAD_FUERA_DE_RANGO,
         otra → VALOR_INVALIDO. Las rifas suman reglas entre campos: RANGO_INVALIDO, VENTANA_INVALIDA y
         PREMIOS_INVALIDOS (ver `POST /rifas` y `PUT /rifas/{id}/premios`). Los torneos suman FECHAS_INVALIDAS
-        (ver `InformacionTorneoRequest`).
+        (ver `InformacionTorneoRequest`), REPARTO_INVALIDO y COMISION_EXCEDIDA (ver `PUT /torneos/{id}/economia`).
       properties:
         campo: {type: string, description: Nombre del campo tal como viene en el JSON}
         codigo: {type: string, enum: [REQUERIDO, FORMATO_INVALIDO, LONGITUD, FECHA_FUTURA, PASSWORD_DEBIL,
                                       NOMBRE_INVALIDO, EDAD_FUERA_DE_RANGO, RANGO_INVALIDO, VENTANA_INVALIDA,
-                                      PREMIOS_INVALIDOS, FECHAS_INVALIDAS, VALOR_INVALIDO]}
+                                      PREMIOS_INVALIDOS, FECHAS_INVALIDAS, REPARTO_INVALIDO,
+                                      COMISION_EXCEDIDA, VALOR_INVALIDO]}
         mensaje: {type: string, description: Orientativo; el front muestra el suyo según `codigo`}
     ProblemDetail:
       type: object
@@ -1695,7 +1783,7 @@ components:
         nominaMaxima: {type: [integer, 'null'], minimum: 1, description: Con suplentes; solo por equipos}
     TorneoInformacion:
       type: object
-      required: [id, estado, nombre, disciplina, formato, canchas, creadoEn, modificadoEn]
+      required: [id, estado, nombre, disciplina, formato, canchas, economia, creadoEn, modificadoEn]
       description: Un torneo propio como lo ve su organizador en el asistente; lo que falta viene en null.
       properties:
         id: {$ref: '#/components/schemas/Id'}
@@ -1718,8 +1806,75 @@ components:
         cupoMinimo: {type: [integer, 'null']}
         tamanioEquipo: {type: [integer, 'null']}
         nominaMaxima: {type: [integer, 'null']}
+        economia: {$ref: '#/components/schemas/EconomiaTorneo'}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: string, format: date-time}
+    EconomiaTorneoRequest:
+      type: object
+      required: [valorInscripcion, pctPozoCompetidores, pctPremioRifa, pctComision, premios]
+      description: >-
+        Paso 3. Lo recaudado (inscripciones y la rifa del torneo) es una sola bolsa que se reparte en pozo de
+        competidores, premio de la rifa y comisión de la plataforma: los tres % tienen que sumar exactamente 100 y la
+        comisión no puede pasar `OpcionesTorneo.comisionMaxima`. Los premios reparten el pozo de competidores (menos
+        los gastos) por puesto; en BORRADOR pueden sumar menos de 100 y para publicar tienen que sumar 100.
+      properties:
+        valorInscripcion: {type: number, exclusiveMinimum: 0, description: 'En ARS, hasta 2 decimales'}
+        pctPozoCompetidores: {type: number, minimum: 0, maximum: 100}
+        pctPremioRifa: {type: number, minimum: 0, maximum: 100, description: 'Sin rifa, 0'}
+        pctComision: {type: number, minimum: 0, maximum: 100}
+        premios: {type: array, items: {type: number, exclusiveMinimum: 0, maximum: 100}, description: '% de cada puesto, en orden: el primero es el 1.º'}
+    EconomiaTorneo:
+      type: object
+      required: [moneda, premios]
+      description: Lo guardado del paso 3; lo que falta viene en null. La comisión no se guarda, es el resto.
+      properties:
+        valorInscripcion: {type: [number, 'null']}
+        moneda: {type: string, examples: [ARS]}
+        pctPozoCompetidores: {type: [number, 'null']}
+        pctPremioRifa: {type: [number, 'null']}
+        pctComision: {type: [number, 'null'], description: 100 menos los otros dos}
+        premios:
+          type: array
+          items: {type: object, required: [puesto, pct], properties: {puesto: {type: integer, minimum: 1}, pct: {type: number}}}
+    GastoRequest:
+      type: object
+      required: [descripcion, monto]
+      properties:
+        descripcion: {type: string, maxLength: 255, examples: [Honorarios de árbitros]}
+        monto: {type: number, exclusiveMinimum: 0, description: En ARS}
+    GastoDetalle:
+      type: object
+      required: [gastoId, descripcion, monto]
+      properties:
+        gastoId: {type: integer, minimum: 1, description: Numera los gastos dentro del torneo}
+        descripcion: {type: string}
+        monto: {type: number}
+    ResumenEconomico:
+      type: object
+      required: [gastos, premios]
+      description: >-
+        Estimado con el cupo completo y sin la rifa. recaudacion = valorInscripcion × participantes; comision,
+        premioRifa y pozoCompetidores son sus % de la recaudación; pozoNeto = pozoCompetidores − gastos (puede quedar
+        negativo); el monto de cada puesto es su % del pozo neto. Lo que no se puede calcular va en null.
+      properties:
+        participantes: {type: [integer, 'null'], description: El cupo máximo}
+        valorInscripcion: {type: [number, 'null']}
+        moneda: {type: string, examples: [ARS]}
+        recaudacion: {type: [number, 'null']}
+        comision: {type: [number, 'null']}
+        premioRifa: {type: [number, 'null']}
+        pozoCompetidores: {type: [number, 'null']}
+        gastos: {type: number}
+        pozoNeto: {type: [number, 'null']}
+        premios:
+          type: array
+          items:
+            type: object
+            required: [puesto, pct]
+            properties:
+              puesto: {type: integer}
+              pct: {type: number}
+              monto: {type: [number, 'null']}
     MiTorneoResumen:
       type: object
       required: [id, nombre, disciplina, estado, inscriptos, pozoEstimado, moneda, modificadoEn]
@@ -1751,7 +1906,7 @@ components:
         disciplinas: {type: array, items: {type: string}, description: 'Las de los torneos del organizador, para el filtro'}
     OpcionesTorneo:
       type: object
-      required: [disciplinas, formatos, modalidades, cupoMaximo, canchas]
+      required: [disciplinas, formatos, modalidades, cupoMaximo, comisionMaxima, canchas]
       properties:
         disciplinas:
           type: array
@@ -1777,6 +1932,7 @@ components:
               disponible: {type: boolean, description: 'false: se muestra como próximamente y no se puede elegir'}
         modalidades: {type: array, items: {$ref: '#/components/schemas/Modalidad'}}
         cupoMaximo: {type: integer, description: Máximo de participantes que admite la plataforma, examples: [64]}
+        comisionMaxima: {type: number, description: Tope del % de comisión de la plataforma en el paso 3, examples: [10]}
         canchas: {type: array, items: {type: string}, description: Las que ya existen en la `sede` pedida}
     # --- rifas ---------------------------------------------------------------
     EstadoRifa: {type: string, enum: [BORRADOR, EN_VENTA, CERRADA, SORTEADA, EN_REVISION, LIQUIDADA, CANCELADA]}
