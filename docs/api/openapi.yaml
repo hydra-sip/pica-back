@@ -1599,7 +1599,8 @@ components:
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
         JUGADOR_YA_INSCRIPTO (figura en otra inscripción activa del torneo, como capitán o en la nómina) ·
         NOMINA_INVALIDA (al confirmar: menos jugadores que el tamaño de equipo, más que el máximo de nómina, o
-        sin el capitán) ·
+        sin el capitán) · REEMPLAZO_INVALIDO (el jugador que sale no está en la nómina, es el capitán, el que entra
+        ya está en la nómina o la inscripción es individual) ·
         USUARIO_NO_ES_ARBITRO (no está activo o no tiene el rol ÁRBITRO) · ARBITRO_DUPLICADO (ya está designado en el
         torneo) · ARBITRO_NO_PERMITIDO (es el organizador o juega el torneo) · ARBITRO_CON_PARTIDOS (quitar a un
         árbitro con partidos asignados) · ARBITRO_NO_HABILITADO (asignarle un partido a quien no aceptó la
