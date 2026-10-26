@@ -334,6 +334,236 @@ class InscripcionEquipoServiceIntegracionTest {
     }
 
     @Test
+    void soloSeReemplazaEnUnaInscripcionConfirmada() {
+        Long sale = integranteNuevo("sale_pendiente_reemplazo_eq");
+        Long entra = integranteNuevo("entra_pendiente_reemplazo_eq");
+        long id = inscripcionDeEquipo(torneo, equipo, "PENDIENTE_PAGO");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+
+        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+                HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
+    }
+
+    @Test
+    void noPermiteReemplazarConElTorneoYaCerrado() {
+        Long sale = integranteNuevo("sale_cerrado_reemplazo_eq");
+        Long entra = integranteNuevo("entra_cerrado_reemplazo_eq");
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+        jdbc.update("UPDATE torneo SET estado = 'INSCRIPCION_CERRADA' WHERE id = ?", torneo);
+
+        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+                HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+    }
+
+    @Test
+    void noPermiteReemplazarConElCierreDeInscripcionVencido() {
+        Long sale = integranteNuevo("sale_vencido_reemplazo_eq");
+        Long entra = integranteNuevo("entra_vencido_reemplazo_eq");
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+        jdbc.update("UPDATE torneo SET cierre_inscripcion_en = now() - interval '1 hour' WHERE id = ?", torneo);
+
+        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+                HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+    }
+
+    @Test
+    void soloElCapitanReemplazaYParaLosDemasLaInscripcionNoExiste() {
+        Long jugador = integranteNuevo("jugador_ajeno_reemplazo_eq");
+        Long sale = integranteNuevo("sale_ajeno_reemplazo_eq");
+        Long entra = integranteNuevo("entra_ajeno_reemplazo_eq");
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, jugador, equipo);
+        enNomina(id, sale, equipo);
+
+        assertError(() -> inscripcionService.reemplazar(jugador, id, new ReemplazoRequest(sale, entra)),
+                HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+    }
+
+    @Test
+    void unaInscripcionIndividualNoTieneNominaParaReemplazar() {
+        Long jugador = usuario("indiv_reemplazo_eq").getId();
+        Long entra = usuario("entra_indiv_reemplazo_eq").getId();
+        long individual = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion, pct_pozo_competidores,
+                                    pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
+                VALUES (?, 'Individual', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL', 8, 2, 1000,
+                        50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        long id = jdbc.queryForObject("""
+                INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
+                VALUES (?, ?, 'CONFIRMADA', now())
+                RETURNING id
+                """, Long.class, individual, jugador);
+
+        assertError(() -> inscripcionService.reemplazar(jugador, id, new ReemplazoRequest(jugador, entra)),
+                HttpStatus.CONFLICT, CodigoError.REEMPLAZO_INVALIDO);
+    }
+
+    @Test
+    void elQueEntraNoPuedeEstarYaEnLaNomina() {
+        Long sale = integranteNuevo("sale_repetido_reemplazo_eq");
+        Long entra = integranteNuevo("entra_repetido_reemplazo_eq");
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+        enNomina(id, entra, equipo);
+
+        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+                HttpStatus.CONFLICT, CodigoError.REEMPLAZO_INVALIDO);
+    }
+
+    @Test
+    void elQueEntraNoPuedeFigurarEnOtraInscripcionActivaDelTorneo() {
+        Long sale = integranteNuevo("sale_otro_reemplazo_eq");
+        Long entra = usuario("entra_otro_reemplazo_eq").getId();
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+        inscripcionActivaDeOtroEquipoCon(entra, "PENDIENTE_PAGO");
+
+        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+                HttpStatus.CONFLICT, CodigoError.JUGADOR_YA_INSCRIPTO);
+    }
+
+    @Test
+    void elQueEntraConUnBloqueoVigenteSeRechazaYNoSeSumaAlEquipo() {
+        Long sale = integranteNuevo("sale_bloq_reemplazo_eq");
+        Usuario entra = usuario("entra_bloq_reemplazo_eq");
+        bloqueoService.bloquear(entra, "Mala conducta", Instant.now().plus(5, ChronoUnit.DAYS));
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+
+        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra.getId())),
+                HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO);
+        assertThat(integranteActivo(entra.getId(), equipo)).isFalse();
+    }
+
+    @Test
+    void elQueEntraNoActivoSeRechazaYNoSeSumaAlEquipo() {
+        Long sale = integranteNuevo("sale_pend_reemplazo_eq");
+        Usuario entra = usuario("entra_pend_reemplazo_eq");
+        entra.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
+        usuarioRepository.saveAndFlush(entra);
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+
+        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra.getId())),
+                HttpStatus.CONFLICT, CodigoError.USUARIO_NO_ACTIVO);
+        assertThat(integranteActivo(entra.getId(), equipo)).isFalse();
+    }
+
+    @Test
+    void elOrganizadorDelTorneoNoEntraEnUnaNomina() {
+        Long sale = integranteNuevo("sale_org_reemplazo_eq");
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+
+        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, organizador)),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+    }
+
+    @Test
+    void unArbitroDelTorneoNoEntraEnUnaNomina() {
+        Long sale = integranteNuevo("sale_arbitro_reemplazo_eq");
+        Long arbitro = integranteNuevo("arbitro_reemplazo_eq");
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", torneo, arbitro);
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+
+        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, arbitro)),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+    }
+
+    @Test
+    void elIntegranteDadoDeBajaQueEntraSeReactiva() {
+        Long sale = integranteNuevo("sale_baja_reemplazo_eq");
+        Long exIntegrante = integranteNuevo("ex_baja_reemplazo_eq");
+        jdbc.update("UPDATE usuario_equipo SET eliminado_en = now() WHERE usuario_id = ? AND equipo_id = ?", exIntegrante, equipo);
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+
+        InscripcionDetalle reemplazada = inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, exIntegrante));
+
+        assertThat(integranteActivo(exIntegrante, equipo)).isTrue();
+        assertThat(reemplazada.nomina()).extracting(UsuarioPublico::id).containsExactlyInAnyOrder(capitan, exIntegrante);
+    }
+
+    @Test
+    void unReemplazoRechazadoNoTocaLaNominaNiElEquipoNiElHistorial() {
+        Long sale = integranteNuevo("sale_rechazo_reemplazo_eq");
+        Long entra = usuario("entra_rechazo_reemplazo_eq").getId();
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+        inscripcionActivaDeOtroEquipoCon(entra, "CONFIRMADA");
+
+        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+                HttpStatus.CONFLICT, CodigoError.JUGADOR_YA_INSCRIPTO);
+
+        assertThat(jdbc.queryForList("SELECT usuario_id FROM nomina WHERE inscripcion_id = ?", Long.class, id))
+                .containsExactlyInAnyOrder(capitan, sale);
+        assertThat(integranteActivo(entra, equipo)).isFalse();
+        assertThat(inscripcionService.reemplazos(capitan, id)).isEmpty();
+    }
+
+    @Test
+    void elOrganizadorYLosDeLaNominaVenElHistorial() {
+        Long jugador = integranteNuevo("jugador_historial_eq");
+        Long sale = integranteNuevo("sale_historial_eq");
+        Long entra = integranteNuevo("entra_historial_eq");
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, jugador, equipo);
+        enNomina(id, sale, equipo);
+        inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra));
+
+        assertThat(inscripcionService.reemplazos(organizador, id)).extracting(r -> r.entra().id()).containsExactly(entra);
+        assertThat(inscripcionService.reemplazos(jugador, id)).extracting(r -> r.entra().id()).containsExactly(entra);
+        assertThat(inscripcionService.reemplazos(entra, id)).extracting(r -> r.entra().id()).containsExactly(entra);
+    }
+
+    @Test
+    void paraQuienNoEstaEnLaInscripcionElHistorialNoExiste() {
+        Long ajeno = usuario("ajeno_historial_eq").getId();
+        Long fueraDeLaNomina = integranteNuevo("fuera_historial_eq");
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+
+        assertError(() -> inscripcionService.reemplazos(ajeno, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.reemplazos(fueraDeLaNomina, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+    }
+
+    @Test
+    void sinReemplazosElHistorialEstaVacioAunqueOtraInscripcionLosTenga() {
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        Long otroCapitan = usuario("cap_otro_historial_eq").getId();
+        Long otroEquipo = equipo("Otro historial", otroCapitan);
+        Long sale = usuario("sale_otro_historial_eq").getId();
+        Long entra = usuario("entra_otro_historial_eq").getId();
+        integrante(otroEquipo, sale);
+        long otra = inscripcionDeEquipo(torneo, otroEquipo, "CONFIRMADA");
+        enNomina(otra, otroCapitan, otroEquipo);
+        enNomina(otra, sale, otroEquipo);
+        inscripcionService.reemplazar(otroCapitan, otra, new ReemplazoRequest(sale, entra));
+
+        assertThat(inscripcionService.reemplazos(capitan, id)).isEmpty();
+    }
+
+    @Test
     void unEquipoNuevoSumaALosJugadoresDeLaNomina() {
         Long jugador = usuario("jug_nuevo_eq").getId();
 
