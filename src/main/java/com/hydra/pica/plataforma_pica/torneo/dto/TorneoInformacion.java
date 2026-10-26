@@ -9,16 +9,25 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Cancha;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
+<<<<<<< HEAD
 import com.hydra.pica.plataforma_pica.torneo.domain.Premio;
+=======
+>>>>>>> origin/dev
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
 /**
  * Un torneo propio como lo ve su organizador en el asistente, incluso en BORRADOR (PICA-199): los datos de los
+<<<<<<< HEAD
  * tres pasos, con lo que falta en null. La vista pública es otra.
  *
  * @param pasoPendiente en BORRADOR, el paso donde reabrir el asistente (ver {@link AsistenteTorneo}); si no, null
  * @param economia el paso 3 (PICA-203)
+=======
+ * pasos 1 y 2, con lo que falta en null. La vista pública es otra.
+ *
+ * @param pasoPendiente en BORRADOR, el paso donde reabrir el asistente (ver {@link AsistenteTorneo}); si no, null
+>>>>>>> origin/dev
  */
 public record TorneoInformacion(
         Long id,
@@ -41,11 +50,18 @@ public record TorneoInformacion(
         Integer cupoMinimo,
         Integer tamanioEquipo,
         Integer nominaMaxima,
+<<<<<<< HEAD
         EconomiaTorneo economia,
         Instant creadoEn,
         Instant modificadoEn) {
 
     public static TorneoInformacion de(Torneo t, List<Premio> premios) {
+=======
+        Instant creadoEn,
+        Instant modificadoEn) {
+
+    public static TorneoInformacion de(Torneo t) {
+>>>>>>> origin/dev
         List<String> canchas = t.getCanchas().stream()
                 .map(Cancha::getNombre)
                 .sorted(Comparator.comparing(String::toLowerCase))
@@ -54,7 +70,11 @@ public record TorneoInformacion(
                 t.getDisciplina(), t.getDescripcion(), t.getFormato(), t.getModalidad(), t.getTipoParticipante(),
                 t.getSede(), canchas, t.getFechaInicio(), t.getFechaFin(), t.getCierreInscripcionEn(),
                 t.getReglamentoTexto(), t.getReglamentoUrl(), t.getCupoMaximo(), t.getCupoMinimo(),
+<<<<<<< HEAD
                 t.getTamanioEquipo(), t.getNominaMaxima(), EconomiaTorneo.de(t, premios), t.getCreadoEn(),
                 t.getModificadoEn());
+=======
+                t.getTamanioEquipo(), t.getNominaMaxima(), t.getCreadoEn(), t.getModificadoEn());
+>>>>>>> origin/dev
     }
 }
