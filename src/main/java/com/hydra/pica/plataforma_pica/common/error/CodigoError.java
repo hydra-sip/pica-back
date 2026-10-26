@@ -80,6 +80,7 @@ public enum CodigoError {
     PARTIDO_CERRADO,
     RESULTADO_NO_PENDIENTE,
     RESULTADO_PROPIO,
+    PLAZO_OBJECION_VENCIDO,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,

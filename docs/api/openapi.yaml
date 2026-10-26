@@ -1190,6 +1190,36 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/partidos/{id}/objecion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Partidos]
+      summary: Objetar el resultado que cargó el rival
+      x-jira: PICA-244
+      x-owner: Tomás
+      description: >-
+        HU-302. Lo objeta el capitán del lado que no cargó el resultado (403 `NO_ES_CAPITAN` si no es capitán de
+        ninguno, 409 `RESULTADO_PROPIO` si es el que lo cargó), con el partido en RESULTADO_CARGADO (si no, 409
+        `RESULTADO_NO_PENDIENTE`) y antes de `objecionVenceEn` (si no, 409 `PLAZO_OBJECION_VENCIDO`). Trae el motivo y
+        el resultado que propone, con las reglas de la carga para los penales; la evidencia se sube antes por `POST
+        /partidos/{id}/evidencias` y tiene que haber al menos una de su lado. 400 `VALIDACION`: `REQUERIDO` en
+        `motivo` si no viene o está en blanco, `LONGITUD` si pasa los 1000 caracteres, `REQUERIDO` en `evidencia` si
+        su lado no subió ninguna, y los de los penales como en la carga. El partido queda OBJETADO hasta el laudo
+        (HU-304): no se confirma solo, la llave no avanza y el que cargó el resultado ya no lo cambia. Se avisa por mail
+        al organizador y a los árbitros que aceptaron la designación con permiso para resolver objeciones. Queda en la
+        auditoría (MODIFICACION, entidad PARTIDO). 404 `PARTIDO_NO_ENCONTRADO`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ObjecionRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/Partido'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/partidos/{id}/evidencias:
     parameters: [{$ref: '#/components/parameters/id'}]
     post:
@@ -1798,7 +1828,8 @@ components:
         SIN_ARBITROS (cada partido necesita un árbitro designado) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
         regenera) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
         sin resultado) · PARTIDO_CERRADO (ya no se le suma evidencia) · RESULTADO_NO_PENDIENTE (no hay un resultado
-        cargado para aceptar) · RESULTADO_PROPIO (el resultado lo acepta el rival, no quien lo cargó). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
+        cargado para aceptar u objetar) · RESULTADO_PROPIO (el resultado lo acepta u objeta el rival, no quien lo
+        cargó) · PLAZO_OBJECION_VENCIDO (venció el plazo para objetar el resultado). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
         403 SIN_PERMISO.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
@@ -1819,7 +1850,7 @@ components:
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
              ARBITRO_NO_HABILITADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
-             RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO,
+             RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN]
     ErrorCampo:
@@ -2308,7 +2339,7 @@ components:
         estado: {$ref: '#/components/schemas/EstadoPartido'}
         bye: {type: boolean, description: El local pasa sin jugar}
         local: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}]}
-        visitante: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}], description: Null hasta que se sabe quién juega, o en un BYE}
+        visitante: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}], description: 'Null hasta que se sabe quién juega, o en un BYE'}
         cancha: {type: [string, 'null']}
         fechaProgramada: {type: [string, 'null'], format: date-time}
         arbitro: {type: [string, 'null'], description: Nombre y apellido}
@@ -2347,6 +2378,28 @@ components:
         resultadoCargadoEn: {type: [string, 'null'], format: date-time}
         objecionVenceEn: {type: [string, 'null'], format: date-time, description: Hasta cuándo el rival puede objetar el resultado}
         miLado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}], description: El lado del que es capitán quien consulta}
+        objecion: {oneOf: [{$ref: '#/components/schemas/ObjecionDetalle'}, {type: 'null'}], description: Con el partido OBJETADO o CORREGIDO}
+    ObjecionDetalle:
+      type: object
+      required: [lado, motivo, puntajeLocal, puntajeVisitante, creadaEn]
+      properties:
+        lado: {$ref: '#/components/schemas/Lado'}
+        motivo: {type: string}
+        puntajeLocal: {type: integer, minimum: 0, description: El resultado que propone quien objeta}
+        puntajeVisitante: {type: integer, minimum: 0}
+        penalesLocal: {type: [integer, 'null'], minimum: 0}
+        penalesVisitante: {type: [integer, 'null'], minimum: 0}
+        creadaEn: {type: string, format: date-time}
+    ObjecionRequest:
+      type: object
+      required: [motivo, puntajeLocal, puntajeVisitante]
+      description: El resultado que propone sigue las reglas de la carga.
+      properties:
+        motivo: {type: string, minLength: 1, maxLength: 1000}
+        puntajeLocal: {type: integer, minimum: 0}
+        puntajeVisitante: {type: integer, minimum: 0}
+        penalesLocal: {type: [integer, 'null'], minimum: 0}
+        penalesVisitante: {type: [integer, 'null'], minimum: 0}
     ResultadoRequest:
       type: object
       required: [puntajeLocal, puntajeVisitante]

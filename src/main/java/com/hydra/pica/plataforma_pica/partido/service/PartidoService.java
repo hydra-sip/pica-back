@@ -5,13 +5,16 @@ import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.dto.LadoBracket;
+import com.hydra.pica.plataforma_pica.partido.dto.ObjecionDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
+import com.hydra.pica.plataforma_pica.partido.repository.ObjecionRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -28,6 +31,7 @@ public class PartidoService {
     private final PartidoRepository partidoRepository;
     private final JuegaRepository juegaRepository;
     private final TorneoRepository torneoRepository;
+    private final ObjecionRepository objecionRepository;
 
     @Transactional(readOnly = true)
     public PartidoDetalle ver(Long usuarioId, Long partidoId) {
@@ -66,6 +70,21 @@ public class PartidoService {
                 partido.getPosicion(), partido.getEstado(), bye, local, visitante,
                 partido.getCancha() == null ? null : partido.getCancha().getNombre(), partido.getFechaProgramada(),
                 Partidos.nombre(partido.getArbitro()), cargadoPor, partido.getResultadoCargadoEn(),
-                partido.getObjecionVenceEn(), Partidos.deCapitan(lados, usuarioId).map(Juega::getLado).orElse(null));
+                partido.getObjecionVenceEn(), Partidos.deCapitan(lados, usuarioId).map(Juega::getLado).orElse(null),
+                objecion(partido, lados));
+    }
+
+    private ObjecionDetalle objecion(Partido partido, List<Juega> lados) {
+        if (partido.getEstado() != EstadoPartido.OBJETADO && partido.getEstado() != EstadoPartido.CORREGIDO) {
+            return null;
+        }
+        return objecionRepository.findById(partido.getId())
+                .map(o -> new ObjecionDetalle(lados.stream()
+                        .filter(j -> j.getId().getInscripcionId().equals(o.getInscripcion().getId()))
+                        .map(Juega::getLado)
+                        .findFirst()
+                        .orElse(null), o.getMotivo(), o.getPuntajeLocal(), o.getPuntajeVisitante(),
+                        o.getPenalesLocal(), o.getPenalesVisitante(), o.getCreadoEn()))
+                .orElse(null);
     }
 }

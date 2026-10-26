@@ -9,4 +9,6 @@ public interface EvidenciaRepository extends JpaRepository<Evidencia, Long> {
 
     /** En el orden en que se subieron. */
     List<Evidencia> findByPartidoIdOrderByCreadoEnAscIdAsc(Long partidoId);
+
+    boolean existsByPartidoIdAndInscripcionId(Long partidoId, Long inscripcionId);
 }

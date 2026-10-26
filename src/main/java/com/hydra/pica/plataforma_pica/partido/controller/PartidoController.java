@@ -7,6 +7,7 @@ import java.util.List;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
+import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.service.EvidenciaService;
@@ -64,6 +65,12 @@ public class PartidoController {
     @PostMapping("/partidos/{id}/resultado/aceptar")
     public PartidoDetalle aceptarResultado(@PathVariable Long id) {
         return resultadoService.aceptar(usuarioActual(), id);
+    }
+
+    /** La evidencia de quien objeta se sube antes, por {@code POST /partidos/{id}/evidencias}. */
+    @PostMapping("/partidos/{id}/objecion")
+    public PartidoDetalle objetarResultado(@PathVariable Long id, @Valid @RequestBody ObjecionRequest request) {
+        return resultadoService.objetar(usuarioActual(), id, request);
     }
 
     /** Multipart con el archivo en la parte {@code archivo}. */

@@ -4,6 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.Assertions.within;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -15,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.common.email.EmailService;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
@@ -24,9 +30,12 @@ import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionReposito
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
+import com.hydra.pica.plataforma_pica.partido.dto.ObjecionDetalle;
+import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
+import com.hydra.pica.plataforma_pica.partido.event.ResultadoObjetado;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
@@ -53,6 +62,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,8 +70,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Cargar el resultado y la evidencia (HU-301, PICA-241) contra Postgres: una prueba por criterio de aceptación, más
  * penales, el próximo cruce y quién ve la evidencia. Aceptarlo, la confirmación al vencer el plazo y el avance de la
- * llave hasta la final (PICA-242). Un torneo individual de 4 con el bracket generado; cada test hace rollback al
- * terminar.
+ * llave hasta la final (PICA-242). Objetarlo y el aviso (PICA-244). Un torneo individual de 4 con el bracket
+ * generado; cada test hace rollback al terminar.
  */
 @SpringBootTest
 @ActiveProfiles("dev")
@@ -80,6 +90,8 @@ class ResultadoServiceIntegracionTest {
     @Autowired private EvidenciaService evidenciaService;
     @Autowired private BracketService bracketService;
     @Autowired private ConfirmacionAutomatica confirmacionAutomatica;
+    @Autowired private AvisoObjecion avisoObjecion;
+    @MockitoBean private EmailService emailService;
     @Autowired private ApplicationEvents eventos;
     @Autowired private TorneoService torneoService;
     @Autowired private ArbitrosTorneoService arbitrosService;
@@ -340,6 +352,100 @@ class ResultadoServiceIntegracionTest {
                 .isEqualTo(new ResultadoConfirmado(torneo, finalId, campeon, true));
     }
 
+    // --- objetar (PICA-244) ---------------------------------------------------
+
+    @Test
+    void soloSeObjetaUnResultadoPendienteYLoObjetaElRival() {
+        assertThatThrownBy(() -> resultadoService.objetar(visitante, partido, objecion(1, 1, 4, 2)))
+                .extracting("codigo").isEqualTo(CodigoError.RESULTADO_NO_PENDIENTE);
+        resultadoService.cargar(local, partido, resultado(2, 0));
+
+        assertThatThrownBy(() -> resultadoService.objetar(local, partido, objecion(1, 1, 4, 2)))
+                .extracting("codigo").isEqualTo(CodigoError.RESULTADO_PROPIO);
+        assertThatThrownBy(() -> resultadoService.objetar(arbitro, partido, objecion(1, 1, 4, 2)))
+                .extracting("codigo").isEqualTo(CodigoError.NO_ES_CAPITAN);
+    }
+
+    @Test
+    void sinEvidenciaPropiaNoSeObjetaYElResultadoSigueLasReglasDeLaCarga() {
+        resultadoService.cargar(local, partido, resultado(2, 0));
+        evidenciaService.subir(local, partido, JPG, URL);
+
+        assertThatThrownBy(() -> resultadoService.objetar(visitante, partido, objecion(1, 1, null, null)))
+                .satisfies(e -> assertThat(campos(e))
+                        .containsExactly("penalesLocal", "penalesVisitante", "evidencia"));
+    }
+
+    @Test
+    void conMotivoYEvidenciaElPartidoQuedaObjetadoYNoAvanza() {
+        resultadoService.cargar(local, partido, resultado(2, 0));
+        evidenciaService.subir(visitante, partido, JPG, URL);
+
+        PartidoDetalle objetado = resultadoService.objetar(visitante, partido, objecion(1, 1, 4, 2));
+
+        assertThat(objetado.estado()).isEqualTo(EstadoPartido.OBJETADO);
+        assertThat(objetado.objecion()).extracting(ObjecionDetalle::lado, ObjecionDetalle::motivo,
+                        ObjecionDetalle::puntajeLocal, ObjecionDetalle::penalesLocal)
+                .containsExactly(Lado.VISITANTE, "Terminó 1-1 y se definió por penales", 1, 4);
+        assertThat(eventos.stream(ResultadoObjetado.class))
+                .containsExactly(new ResultadoObjetado(torneo, partido));
+        assertThat(partidoService.ver(local, partido).objecion().lado()).isEqualTo(Lado.VISITANTE);
+        entityManager.flush();
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM auditoria WHERE entidad = 'PARTIDO' AND entidad_id = ?
+                  AND detalle ->> 'resultado' = 'OBJETADO' AND detalle ->> 'lado' = 'VISITANTE'""",
+                Integer.class, String.valueOf(partido))).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM juega WHERE partido_id IN (SELECT id FROM partido"
+                + " WHERE torneo_id = ? AND ronda = 2)", Integer.class, torneo)).isZero();
+    }
+
+    @Test
+    void unaVezObjetadoQuienLoCargoNoLoCambiaYNoSeConfirmaSolo() {
+        resultadoService.cargar(local, partido, resultado(2, 0));
+        evidenciaService.subir(visitante, partido, JPG, URL);
+        resultadoService.objetar(visitante, partido, objecion(0, 1, null, null));
+        jdbc.update("UPDATE partido SET objecion_vence_en = now() - interval '1 second' WHERE id = ?", partido);
+        entityManager.clear();
+
+        assertThatThrownBy(() -> resultadoService.cargar(local, partido, resultado(3, 0)))
+                .extracting("codigo").isEqualTo(CodigoError.PARTIDO_NO_EN_JUEGO);
+        assertThatThrownBy(() -> resultadoService.aceptar(visitante, partido))
+                .extracting("codigo").isEqualTo(CodigoError.RESULTADO_NO_PENDIENTE);
+        assertThat(confirmacionAutomatica.confirmarVencidos()).isZero();
+        assertThat(evidenciaService.subir(local, partido, JPG, URL).lado()).isEqualTo(Lado.LOCAL);
+    }
+
+    @Test
+    void vencidoElPlazoYaNoSeObjeta() {
+        resultadoService.cargar(local, partido, resultado(2, 0));
+        evidenciaService.subir(visitante, partido, JPG, URL);
+        jdbc.update("UPDATE partido SET objecion_vence_en = now() - interval '1 second' WHERE id = ?", partido);
+        entityManager.clear();
+
+        assertThatThrownBy(() -> resultadoService.objetar(visitante, partido, objecion(0, 1, null, null)))
+                .extracting("codigo").isEqualTo(CodigoError.PLAZO_OBJECION_VENCIDO);
+    }
+
+    @Test
+    void laObjecionSeAvisaAlOrganizadorYALosArbitrosQueLaPuedenResolver() {
+        resultadoService.cargar(local, partido, resultado(2, 0));
+        evidenciaService.subir(visitante, partido, JPG, URL);
+        resultadoService.objetar(visitante, partido, objecion(0, 1, null, null));
+        entityManager.flush();
+        ResultadoObjetado evento = new ResultadoObjetado(torneo, partido);
+
+        avisoObjecion.avisar(evento);
+        verify(emailService).enviarAviso(eq("org_resultado@example.com"), eq("Resultado objetado en Copa Ajedrez"),
+                contains("Motivo: Terminó 1-1"));
+        verifyNoMoreInteractions(emailService);
+
+        jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO', resuelve_objeciones = true WHERE torneo_id = ?",
+                torneo);
+        entityManager.clear();
+        avisoObjecion.avisar(evento);
+        verify(emailService).enviarAviso(eq("juez_resultado@example.com"), any(), contains("/partidos/" + partido));
+    }
+
     // --- helpers --------------------------------------------------------------
 
     /** Carga el resultado desde el local y lo acepta el visitante. */
@@ -356,6 +462,11 @@ class ResultadoServiceIntegracionTest {
 
     private static ResultadoRequest resultado(int local, int visitante) {
         return new ResultadoRequest(local, visitante, null, null);
+    }
+
+    private static ObjecionRequest objecion(int local, int visitante, Integer penalesLocal, Integer penalesVisitante) {
+        return new ObjecionRequest("Terminó 1-1 y se definió por penales", local, visitante, penalesLocal,
+                penalesVisitante);
     }
 
     /** La firma y después ceros hasta el tamaño pedido. */

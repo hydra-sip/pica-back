@@ -44,8 +44,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * El partido, su resultado y su evidencia (PICA-241 y PICA-242): con sesión y sin permiso propio. Las reglas están en
- * los servicios.
+ * El partido, su resultado y su evidencia (PICA-241, PICA-242 y PICA-244): con sesión y sin permiso propio. Las
+ * reglas están en los servicios.
  */
 @WebMvcTest(PartidoController.class)
 @ActiveProfiles("dev")
@@ -56,7 +56,7 @@ class PartidoControllerTest {
     private static final PartidoDetalle CARGADO = new PartidoDetalle(3L, 9L, "Copa", "copa", 1, "Semifinal", 1,
             EstadoPartido.RESULTADO_CARGADO, false, new LadoBracket(11L, "Los Galácticos", 3, null, true),
             new LadoBracket(12L, "Dep. Luján", 1, null, false), null, null, "Mario Gómez", Lado.LOCAL,
-            Instant.parse("2026-10-26T18:00:00Z"), Instant.parse("2026-10-26T18:15:00Z"), Lado.LOCAL);
+            Instant.parse("2026-10-26T18:00:00Z"), Instant.parse("2026-10-26T18:15:00Z"), Lado.LOCAL, null);
 
     @Autowired
     private MockMvc mockMvc;
@@ -126,6 +126,32 @@ class PartidoControllerTest {
         mockMvc.perform(post("/api/v1/partidos/3/resultado/aceptar"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.codigo").value("RESULTADO_PROPIO"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Objetar sin motivo responde 400 sin llegar al servicio")
+    void objecionSinMotivo() throws Exception {
+        mockMvc.perform(post("/api/v1/partidos/3/objecion").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\":\"  \",\"puntajeLocal\":1,\"puntajeVisitante\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[?(@.campo == 'motivo')].codigo").value("REQUERIDO"));
+        verifyNoInteractions(resultadoService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Objetar fuera de plazo responde 409 PLAZO_OBJECION_VENCIDO")
+    void objecionVencida() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(CAPITAN));
+        when(resultadoService.objetar(eq(CAPITAN), eq(3L), any()))
+                .thenThrow(new ConflictoException(CodigoError.PLAZO_OBJECION_VENCIDO, "venció"));
+
+        mockMvc.perform(post("/api/v1/partidos/3/objecion").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\":\"Fue 1-1\",\"puntajeLocal\":1,\"puntajeVisitante\":1,"
+                                + "\"penalesLocal\":4,\"penalesVisitante\":2}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("PLAZO_OBJECION_VENCIDO"));
     }
 
     @Test
