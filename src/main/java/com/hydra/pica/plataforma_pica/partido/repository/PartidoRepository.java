@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.repository;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -27,6 +28,17 @@ public interface PartidoRepository extends JpaRepository<Partido, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Partido p where p.id = :id")
     Optional<Partido> buscarBloqueado(@Param("id") Long id);
+
+    /** Donde sigue el ganador: el partido de la ronda siguiente que le toca. */
+    Optional<Partido> findByTorneoIdAndRondaAndPosicion(Long torneoId, int ronda, int posicion);
+
+    /** Los que tienen un resultado cargado que nadie objetó y cuyo plazo ya venció: se confirman solos. */
+    @Query("""
+            select p.id from Partido p
+            where p.estado = com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido.RESULTADO_CARGADO
+              and p.objecionVenceEn <= :ahora
+            order by p.objecionVenceEn""")
+    List<Long> conPlazoVencido(@Param("ahora") Instant ahora);
 
     /** Cuántas rondas tiene el bracket: con eso se nombra cada una ("Final", "Semifinal"...). */
     @Query("select coalesce(max(p.ronda), 0) from Partido p where p.torneo.id = :torneoId")

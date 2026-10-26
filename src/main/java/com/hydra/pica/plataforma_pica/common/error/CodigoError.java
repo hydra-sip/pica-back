@@ -78,6 +78,8 @@ public enum CodigoError {
     BRACKET_CON_RESULTADOS,
     PARTIDO_NO_EN_JUEGO,
     PARTIDO_CERRADO,
+    RESULTADO_NO_PENDIENTE,
+    RESULTADO_PROPIO,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,

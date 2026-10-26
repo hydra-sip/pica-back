@@ -30,8 +30,8 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
- * El partido, su resultado y su evidencia (HU-301, PICA-241). Con sesión y sin permiso propio: quién puede cargar, subir
- * o ver lo decide cada servicio según el lado del que es capitán.
+ * El partido, su resultado y su evidencia (HU-301, PICA-241 y PICA-242). Con sesión y sin permiso propio: quién puede
+ * cargar, aceptar, subir o ver lo decide cada servicio según el lado del que es capitán.
  */
 @RestController
 @RequiredArgsConstructor
@@ -59,6 +59,11 @@ public class PartidoController {
     @PostMapping("/partidos/{id}/resultado")
     public PartidoDetalle cargarResultado(@PathVariable Long id, @Valid @RequestBody ResultadoRequest request) {
         return resultadoService.cargar(usuarioActual(), id, request);
+    }
+
+    @PostMapping("/partidos/{id}/resultado/aceptar")
+    public PartidoDetalle aceptarResultado(@PathVariable Long id) {
+        return resultadoService.aceptar(usuarioActual(), id);
     }
 
     /** Multipart con el archivo en la parte {@code archivo}. */

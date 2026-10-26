@@ -26,6 +26,7 @@ import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
+import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
@@ -52,17 +53,21 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Cargar el resultado y la evidencia (HU-301, PICA-241) contra Postgres: una prueba por criterio de aceptación, más
- * penales, el próximo cruce y quién ve la evidencia. Un torneo individual de 4 con el bracket generado; cada test hace
- * rollback al terminar.
+ * penales, el próximo cruce y quién ve la evidencia. Aceptarlo, la confirmación al vencer el plazo y el avance de la
+ * llave hasta la final (PICA-242). Un torneo individual de 4 con el bracket generado; cada test hace rollback al
+ * terminar.
  */
 @SpringBootTest
 @ActiveProfiles("dev")
 @Import(TestcontainersConfiguration.class)
 @Transactional
+@RecordApplicationEvents
 class ResultadoServiceIntegracionTest {
 
     private static final Instant EN_UNA_SEMANA = Instant.now().plus(7, ChronoUnit.DAYS);
@@ -74,6 +79,8 @@ class ResultadoServiceIntegracionTest {
     @Autowired private PartidoService partidoService;
     @Autowired private EvidenciaService evidenciaService;
     @Autowired private BracketService bracketService;
+    @Autowired private ConfirmacionAutomatica confirmacionAutomatica;
+    @Autowired private ApplicationEvents eventos;
     @Autowired private TorneoService torneoService;
     @Autowired private ArbitrosTorneoService arbitrosService;
     @Autowired private TorneoRepository torneoRepository;
@@ -254,7 +261,98 @@ class ResultadoServiceIntegracionTest {
                 .extracting("codigo").isEqualTo(CodigoError.PARTIDO_NO_EN_JUEGO);
     }
 
+    // --- aceptar y avanzar (PICA-242) ------------------------------------------
+
+    @Test
+    void elRivalLoAceptaYElGanadorPasaALaRondaSiguiente() {
+        Long ganador = inscripcionDe(partido, "VISITANTE");
+        resultadoService.cargar(local, partido, resultado(0, 2));
+
+        PartidoDetalle aceptado = resultadoService.aceptar(visitante, partido);
+
+        assertThat(aceptado.estado()).isEqualTo(EstadoPartido.CONFIRMADO);
+        entityManager.flush();
+        assertThat(jdbc.queryForMap("""
+                SELECT j.inscripcion_id, j.lado FROM juega j JOIN partido p ON p.id = j.partido_id
+                WHERE p.torneo_id = ? AND p.ronda = 2 AND p.posicion = 1""", torneo))
+                .isEqualTo(Map.of("inscripcion_id", ganador, "lado", "LOCAL"));
+        assertThat(eventos.stream(ResultadoConfirmado.class))
+                .containsExactly(new ResultadoConfirmado(torneo, partido, ganador, false));
+        assertThat(partidoService.miProximo(visitante, torneo)).get()
+                .extracting(PartidoDetalle::nombreRonda).isEqualTo("Final");
+        assertThat(partidoService.miProximo(local, torneo)).isEmpty();
+    }
+
+    @Test
+    void loAceptaSoloElRivalYSoloSiHayUnResultadoPendiente() {
+        assertThatThrownBy(() -> resultadoService.aceptar(visitante, partido))
+                .extracting("codigo").isEqualTo(CodigoError.RESULTADO_NO_PENDIENTE);
+        resultadoService.cargar(local, partido, resultado(2, 0));
+
+        assertThatThrownBy(() -> resultadoService.aceptar(local, partido))
+                .extracting("codigo").isEqualTo(CodigoError.RESULTADO_PROPIO);
+        assertThatThrownBy(() -> resultadoService.aceptar(arbitro, partido))
+                .extracting("codigo").isEqualTo(CodigoError.NO_ES_CAPITAN);
+    }
+
+    @Test
+    void alVencerElPlazoSeConfirmaSoloYAntesNo() {
+        resultadoService.cargar(local, partido, resultado(2, 0));
+        entityManager.flush();
+        assertThat(confirmacionAutomatica.confirmarVencidos()).isZero();
+
+        jdbc.update("UPDATE partido SET objecion_vence_en = now() - interval '1 second' WHERE id = ?", partido);
+        entityManager.clear();
+
+        assertThat(confirmacionAutomatica.confirmarVencidos()).isEqualTo(1);
+        entityManager.flush();
+        assertThat(jdbc.queryForObject("SELECT estado FROM partido WHERE id = ?", String.class, partido))
+                .isEqualTo("CONFIRMADO");
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM auditoria WHERE entidad = 'PARTIDO' AND entidad_id = ? AND usuario_id IS NULL
+                  AND detalle ->> 'resultado' = 'CONFIRMADO_POR_PLAZO'""", Integer.class, String.valueOf(partido)))
+                .isEqualTo(1);
+        assertThat(eventos.stream(ResultadoConfirmado.class)).hasSize(1);
+    }
+
+    @Test
+    void alConfirmarseLaFinalElTorneoTerminaConLasPosiciones() {
+        Long otraSemi = jdbc.queryForObject(
+                "SELECT id FROM partido WHERE torneo_id = ? AND ronda = 1 AND posicion = 2", Long.class, torneo);
+        Long campeon = inscripcionDe(partido, "LOCAL");
+        Long finalista = inscripcionDe(otraSemi, "VISITANTE");
+        jugar(partido, 3, 1);
+        jugar(otraSemi, 0, 1);
+        Long finalId = jdbc.queryForObject("SELECT id FROM partido WHERE torneo_id = ? AND ronda = 2", Long.class,
+                torneo);
+
+        jugar(finalId, 2, 1);
+
+        assertThat(jdbc.queryForObject("SELECT estado FROM torneo WHERE id = ?", String.class, torneo))
+                .isEqualTo("FINALIZADO");
+        assertThat(jdbc.queryForList("SELECT posicion FROM inscripcion WHERE torneo_id = ? ORDER BY posicion",
+                Integer.class, torneo)).containsExactly(1, 2, 3, 3);
+        assertThat(jdbc.queryForObject("SELECT posicion FROM inscripcion WHERE id = ?", Integer.class, campeon))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT posicion FROM inscripcion WHERE id = ?", Integer.class, finalista))
+                .isEqualTo(2);
+        assertThat(eventos.stream(ResultadoConfirmado.class).toList()).last()
+                .isEqualTo(new ResultadoConfirmado(torneo, finalId, campeon, true));
+    }
+
     // --- helpers --------------------------------------------------------------
+
+    /** Carga el resultado desde el local y lo acepta el visitante. */
+    private void jugar(Long partidoId, int golesLocal, int golesVisitante) {
+        resultadoService.cargar(jugadorDelLado(partidoId, "LOCAL"), partidoId, resultado(golesLocal, golesVisitante));
+        resultadoService.aceptar(jugadorDelLado(partidoId, "VISITANTE"), partidoId);
+        entityManager.flush();
+    }
+
+    private Long inscripcionDe(Long partidoId, String lado) {
+        return jdbc.queryForObject("SELECT inscripcion_id FROM juega WHERE partido_id = ? AND lado = ?", Long.class,
+                partidoId, lado);
+    }
 
     private static ResultadoRequest resultado(int local, int visitante) {
         return new ResultadoRequest(local, visitante, null, null);
