@@ -180,8 +180,20 @@ class InscripcionServiceIntegracionTest {
     }
 
     @Test
-    void unBorradorNoImpideCrearOtro() {
-        inscripcionDe(jugador, "BORRADOR");
+    void conUnBorradorEnElTorneoNoSeCreaOtroYElErrorTraeElIdDelExistente() {
+        long existente = inscripcionDe(jugador, "BORRADOR");
+
+        ApiException error = catchThrowableOfType(ApiException.class, () -> inscripcionService.crear(jugador, torneo, null));
+
+        assertThat(error).isNotNull();
+        assertThat(error.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(error.getCodigo()).isEqualTo(CodigoError.INSCRIPCION_DUPLICADA);
+        assertThat(error.getMessage()).contains("borrador " + existente);
+    }
+
+    @Test
+    void elBorradorDeOtroUsuarioNoImpideCrearElPropio() {
+        inscripcionDe(usuario("otro_borr").getId(), "BORRADOR");
 
         assertThat(inscripcionService.crear(jugador, torneo, null).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
     }
@@ -204,6 +216,18 @@ class InscripcionServiceIntegracionTest {
         assertThat(vista.id()).isEqualTo(id);
         assertThat(vista.usuarioId()).isEqualTo(jugador);
         assertThat(vista.estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+    }
+
+    @Test
+    void elDetalleTraeElTorneoConSuNombreYSuSlug() {
+        jdbc.update("UPDATE torneo SET slug = ? WHERE id = ?", "torneo-de-prueba", torneo);
+        long id = inscripcionDe(jugador, "BORRADOR");
+
+        InscripcionDetalle vista = inscripcionService.detalle(jugador, id);
+
+        assertThat(vista.torneo().id()).isEqualTo(torneo);
+        assertThat(vista.torneo().nombre()).isEqualTo("Torneo");
+        assertThat(vista.torneo().slug()).isEqualTo("torneo-de-prueba");
     }
 
     @Test
@@ -667,6 +691,67 @@ class InscripcionServiceIntegracionTest {
         assertError(() -> inscripcionService.resumenPago(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
         assertError(() -> inscripcionService.resumenPago(usuario("otro_res").getId(), id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
         assertError(() -> inscripcionService.resumenPago(jugador, 999_999L), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+    }
+
+    // --- reabrir ------------------------------------------------------------
+
+    @Test
+    void reabrirVuelveUnaPendienteDePagoAEnBorradorSinReglamentoAceptadoYLoGuardaEnLaBase() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        InscripcionDetalle reabierta = inscripcionService.reabrir(jugador, id);
+
+        assertThat(reabierta.id()).isEqualTo(id);
+        assertThat(reabierta.estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+        assertThat(reabierta.reglamentoAceptadoEn()).isNull();
+        Map<String, Object> guardada = jdbc.queryForMap("SELECT estado, reglamento_aceptado_en FROM inscripcion WHERE id = ?", id);
+        assertThat(guardada).containsEntry("estado", "BORRADOR").containsEntry("reglamento_aceptado_en", null);
+    }
+
+    @Test
+    void soloSeReabreUnaPendienteDePagoYLasDemasQuedanComoEstaban() {
+        for (String estado : new String[] {"BORRADOR", "CONFIRMADA", "CANCELADA"}) {
+            Long dueno = usuario("reabrir_" + estado.toLowerCase()).getId();
+            long id = inscripcionDe(dueno, estado);
+
+            assertError(() -> inscripcionService.reabrir(dueno, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
+
+            assertThat(jdbc.queryForObject("SELECT estado FROM inscripcion WHERE id = ?", String.class, id)).isEqualTo(estado);
+        }
+    }
+
+    @Test
+    void soloElParticipanteReabreSuInscripcionYParaLosDemasNoExiste() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        assertError(() -> inscripcionService.reabrir(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.reabrir(usuario("otro_reabrir").getId(), id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> inscripcionService.reabrir(jugador, 999_999L), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+
+        assertThat(jdbc.queryForObject("SELECT estado FROM inscripcion WHERE id = ?", String.class, id)).isEqualTo("PENDIENTE_PAGO");
+    }
+
+    @Test
+    void reabrirNoLiberaNiOcupaCupoNiTocaLosMovimientos() {
+        jdbc.update("UPDATE torneo SET cupo_maximo = 2 WHERE id = ?", torneo);
+        inscripcionDe(usuario("conf_reabrir").getId(), "CONFIRMADA");
+        inscripcionDe(usuario("pend_reabrir").getId(), "PENDIENTE_PAGO");
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        inscripcionService.reabrir(jugador, id);
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inscripcion WHERE torneo_id = ? AND estado = 'CONFIRMADA'", Integer.class, torneo))
+                .isEqualTo(1);
+        assertThat(movimientosDe(id)).isZero();
+        verify(cobroService, never()).cobrar(any());
+    }
+
+    @Test
+    void reabrirNoPideCupoAunqueElTorneoYaEsteLleno() {
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+        llenarElCupo(2);
+
+        assertThat(inscripcionService.reabrir(jugador, id).estado()).isEqualTo(EstadoInscripcion.BORRADOR);
     }
 
     // --- reglas de la base --------------------------------------------------
