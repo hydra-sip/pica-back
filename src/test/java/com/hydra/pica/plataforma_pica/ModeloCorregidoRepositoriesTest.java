@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
+import java.util.Set;
 
 import jakarta.persistence.EntityManager;
 
@@ -66,6 +67,9 @@ import com.hydra.pica.plataforma_pica.rifa.repository.PremioRifaRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.ReclamoRifaRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.TicketRepository;
+import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignado;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoDesignacion;
+import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancha;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Gasto;
@@ -73,6 +77,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.Premio;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.repository.ArbitroDesignadoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.CanchaRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.GastoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.PremioRepository;
@@ -105,6 +110,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 })
 class ModeloCorregidoRepositoriesTest {
 
+    @Autowired private ArbitroDesignadoRepository arbitroDesignadoRepository;
     @Autowired private EntityManager entityManager;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private PersonaRepository personaRepository;
@@ -155,8 +161,9 @@ class ModeloCorregidoRepositoriesTest {
 
         Torneo torneo = torneo(TipoParticipante.INDIVIDUAL);
         torneo.getCanchas().add(cancha);
-        torneo.getArbitros().add(arbitro);
         torneoRepository.saveAndFlush(torneo);
+        arbitroDesignadoRepository.saveAndFlush(
+                new ArbitroDesignado(torneo, arbitro, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
 
         Premio premio = new Premio(torneo, 1);
         premio.setPct(new BigDecimal("100.00"));
@@ -173,7 +180,12 @@ class ModeloCorregidoRepositoriesTest {
         assertThat(leido.getMoneda()).isEqualTo("ARS");
         assertThat(leido.getCreadoEn()).isNotNull();
         assertThat(leido.getCanchas()).extracting(Cancha::getNombre).containsExactly("Cancha 1");
-        assertThat(leido.getArbitros()).extracting(Usuario::getId).containsExactly(arbitro.getId());
+        assertThat(arbitroDesignadoRepository.delTorneo(torneo.getId())).singleElement()
+                .satisfies(a -> {
+                    assertThat(a.getUsuario().getId()).isEqualTo(arbitro.getId());
+                    assertThat(a.getEstado()).isEqualTo(EstadoDesignacion.PENDIENTE);
+                    assertThat(a.getPermisos()).containsExactly(PermisoArbitro.CARGAR_RESULTADOS);
+                });
         assertThat(premioRepository.findById(premio.getId()).orElseThrow().getPct()).isEqualByComparingTo("100");
         assertThat(gastoRepository.findById(gasto.getId()).orElseThrow().getMontoAbonado()).isEqualByComparingTo("0");
     }
@@ -181,10 +193,9 @@ class ModeloCorregidoRepositoriesTest {
     @Test
     void partidoConSusPartesObjecionEvidenciaYPronostico() {
         Torneo torneo = torneo(TipoParticipante.INDIVIDUAL);
-        torneo.getArbitros().add(arbitro);
-        // Las filas de torneo_arbitro salen al final del flush: sin este flush, el INSERT del partido
-        // llega antes y la FK compuesta lo rechaza
         torneoRepository.saveAndFlush(torneo);
+        arbitroDesignadoRepository.saveAndFlush(
+                new ArbitroDesignado(torneo, arbitro, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
         Inscripcion local = inscripcion(torneo, jugador);
         Inscripcion visitante = inscripcion(torneo, rival);
 
@@ -241,10 +252,9 @@ class ModeloCorregidoRepositoriesTest {
     @Test
     void equipoInscriptoYQuienesJugaronElPartido() {
         Torneo torneo = torneo(TipoParticipante.EQUIPO);
-        torneo.getArbitros().add(arbitro);
-        // Las filas de torneo_arbitro salen al final del flush: sin este flush, el INSERT del partido
-        // llega antes y la FK compuesta lo rechaza
         torneoRepository.saveAndFlush(torneo);
+        arbitroDesignadoRepository.saveAndFlush(
+                new ArbitroDesignado(torneo, arbitro, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
 
         Equipo equipo = new Equipo();
         equipo.setCapitan(jugador);

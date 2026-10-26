@@ -164,21 +164,10 @@ public class Torneo extends AuditableEntity {
     @Column(name = "eliminado_en")
     private Instant eliminadoEn;
 
-    // torneo_cancha y torneo_arbitro no tienen columnas propias, como rol_permiso
+    // torneo_cancha no tiene columnas propias, como rol_permiso; torneo_arbitro sí (ArbitroDesignado)
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(name = "torneo_cancha",
             joinColumns = @JoinColumn(name = "torneo_id"),
             inverseJoinColumns = @JoinColumn(name = "cancha_id"))
     private Set<Cancha> canchas = new HashSet<>();
-
-    /**
-     * Árbitros designados; el árbitro de cada partido tiene que ser uno de ellos. Hibernate inserta
-     * estas filas al final del flush, después de las entidades: hay que hacer flush antes de crear
-     * partidos con un árbitro recién designado (y lo mismo con las canchas).
-     */
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(name = "torneo_arbitro",
-            joinColumns = @JoinColumn(name = "torneo_id"),
-            inverseJoinColumns = @JoinColumn(name = "usuario_id"))
-    private Set<Usuario> arbitros = new HashSet<>();
 }

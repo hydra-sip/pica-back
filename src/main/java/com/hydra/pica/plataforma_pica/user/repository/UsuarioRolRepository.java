@@ -25,6 +25,16 @@ public interface UsuarioRolRepository extends JpaRepository<UsuarioRol, UsuarioR
             """)
     boolean existsByUsuarioIdAndRolId(@Param("usuarioId") Long usuarioId, @Param("rolId") Long rolId);
 
+    /** Si tiene asignado ese rol y el rol está activo; las asignaciones dadas de baja no cuentan. */
+    @Query("""
+            select count(usuarioRol) > 0
+            from UsuarioRol usuarioRol
+            where usuarioRol.id.usuarioId = :usuarioId
+              and usuarioRol.rol.nombre = :nombreRol
+              and usuarioRol.rol.estado = com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral.ACTIVO
+            """)
+    boolean tieneRolActivo(@Param("usuarioId") Long usuarioId, @Param("nombreRol") String nombreRol);
+
     /**
      * Vuelve a dar un rol que se le había quitado al usuario. La PK es (usuario_id, rol_id), así que
      * no se puede insertar otra fila: se revive la dada de baja. Es nativa porque el

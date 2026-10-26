@@ -130,8 +130,9 @@ FROM torneo t, cancha c
 WHERE t.slug = 'dev-torneo-cerrado' AND c.nombre = 'Mesa 1' AND c.sede = 'Club UNLu'
 ON CONFLICT DO NOTHING;
 
-INSERT INTO torneo_arbitro (torneo_id, usuario_id)
-SELECT t.id, u.id
+-- aceptado: la aceptación es de HU-807 y sin ella no arbitra
+INSERT INTO torneo_arbitro (torneo_id, usuario_id, estado)
+SELECT t.id, u.id, 'ACEPTADO'
 FROM torneo t, usuario u
 WHERE t.slug IN ('dev-copa-abierta', 'dev-torneo-cerrado') AND u.username = 'dev_arbitro'
 ON CONFLICT DO NOTHING;
