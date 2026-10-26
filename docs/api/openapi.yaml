@@ -1037,6 +1037,57 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/bracket:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Torneos]
+      summary: Generar el bracket de eliminación directa
+      x-jira: PICA-215
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        HU-207. Con la inscripción cerrada sortea las inscripciones CONFIRMADA con una semilla nueva (`semilla`, se
+        guarda): el orden es el SHA-256 en hexadecimal de `semilla:inscripcionId`, de menor a mayor, así que cualquiera
+        lo puede recalcular. El cuadro es la potencia de dos que alcanza; los lugares de más son BYE y los reciben los
+        primeros del sorteo, uno por partido de primera ronda (primero en posiciones impares). Se crean los partidos de
+        todas las rondas: un BYE es un partido de primera ronda con solo `local`, CONFIRMADO, y ese participante ya
+        figura en la segunda ronda. Cada partido lleva un árbitro designado, en rueda entre los que aceptaron (si
+        ninguno aceptó todavía, entre los pendientes). El torneo pasa a EN_CURSO y el sorteo queda en la auditoría
+        (SORTEO). 409 `INSCRIPCION_NO_CERRADA` si la inscripción no está cerrada, `PARTICIPANTES_INSUFICIENTES` con
+        menos de 2 confirmadas, `BRACKET_YA_GENERADO` si ya lo tiene, `SIN_ARBITROS` sin árbitros que no hayan
+        rechazado. Solo el organizador del torneo; para otro, 404 `TORNEO_NO_ENCONTRADO`.
+      responses:
+        '201':
+          description: El bracket generado
+          headers:
+            Location: {schema: {type: string}, description: Este mismo recurso}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BracketTorneo'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/torneos/{id}/bracket/regenerar:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Torneos]
+      summary: Volver a sortear el bracket
+      x-jira: PICA-215
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        Otro sorteo con otra semilla, con las mismas reglas que el alta, mientras no haya ningún resultado cargado
+        (409 `BRACKET_CON_RESULTADOS`). La auditoría guarda también la semilla anterior. Sin bracket todavía, lo
+        genera. 409 `TORNEO_NO_EDITABLE` si el torneo terminó o se canceló.
+      responses:
+        '200':
+          description: El bracket nuevo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BracketTorneo'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/torneos/{id}/economia:
     put:
       tags: [Torneos]
@@ -1566,7 +1617,10 @@ components:
         USUARIO_NO_ES_ARBITRO (no está activo o no tiene el rol ÁRBITRO) · ARBITRO_DUPLICADO (ya está designado en el
         torneo) · ARBITRO_NO_PERMITIDO (es el organizador o juega el torneo) · ARBITRO_CON_PARTIDOS (quitar a un
         árbitro con partidos asignados) · ARBITRO_NO_HABILITADO (asignarle un partido a quien no aceptó la
-        designación). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
+        designación) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
+        PARTICIPANTES_INSUFICIENTES (menos de 2 inscripciones confirmadas) · BRACKET_YA_GENERADO (se puede regenerar) ·
+        SIN_ARBITROS (cada partido necesita un árbitro designado) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
+        regenera). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
         403 SIN_PERMISO.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
@@ -1584,7 +1638,8 @@ components:
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA,
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
-             ARBITRO_NO_HABILITADO,
+             ARBITRO_NO_HABILITADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
+             SIN_ARBITROS, BRACKET_CON_RESULTADOS,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO]
     ErrorCampo:
@@ -2047,6 +2102,48 @@ components:
         estado: {$ref: '#/components/schemas/EstadoDesignacion'}
         permisos: {type: array, items: {$ref: '#/components/schemas/PermisoArbitro'}}
         designadoEn: {type: string, format: date-time}
+    BracketTorneo:
+      type: object
+      required: [torneoId, rondas]
+      description: Las rondas de la primera a la final. Sin generar, `rondas` vacío y `semilla` null.
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        semilla: {type: [string, 'null'], description: 'Con la que se sorteó: 64 caracteres hexadecimales'}
+        listaHash: {type: [string, 'null'], description: SHA-256 de la lista de inscriptos, sellada al cerrar la inscripción}
+        rondas: {type: array, items: {$ref: '#/components/schemas/RondaBracket'}}
+    RondaBracket:
+      type: object
+      required: [numero, nombre, partidos]
+      properties:
+        numero: {type: integer, minimum: 1}
+        nombre: {type: string, description: '"Final", "Semifinal", "Cuartos de final", "Octavos de final" o "Ronda n"'}
+        partidos: {type: array, items: {$ref: '#/components/schemas/PartidoBracket'}}
+    PartidoBracket:
+      type: object
+      required: [id, ronda, posicion, estado, bye]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        ronda: {type: integer, minimum: 1}
+        posicion: {type: integer, minimum: 1, description: 'El ganador sigue en la posición (posicion + 1) / 2 de la ronda siguiente; de posición impar, como local'}
+        estado: {$ref: '#/components/schemas/EstadoPartido'}
+        bye: {type: boolean, description: El local pasa sin jugar}
+        local: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}]}
+        visitante: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}], description: Null hasta que se sabe quién juega, o en un BYE}
+        cancha: {type: [string, 'null']}
+        fechaProgramada: {type: [string, 'null'], format: date-time}
+        arbitro: {type: [string, 'null'], description: Nombre y apellido}
+    LadoBracket:
+      type: object
+      required: [inscripcionId, nombre]
+      properties:
+        inscripcionId: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string, description: 'El del equipo o, si se inscribe un jugador, su nombre y apellido'}
+        puntaje: {type: [integer, 'null']}
+        penales: {type: [integer, 'null']}
+        ganador: {type: [boolean, 'null']}
+    EstadoPartido:
+      type: string
+      enum: [PROGRAMADO, CHECK_IN, EN_JUEGO, RESULTADO_CARGADO, CONFIRMADO, OBJETADO, CORREGIDO, WALKOVER]
     PublicarTorneoRequest:
       type: object
       required: [aceptaTerminos]
