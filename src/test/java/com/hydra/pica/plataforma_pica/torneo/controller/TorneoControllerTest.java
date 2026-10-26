@@ -24,6 +24,7 @@ import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
@@ -122,6 +123,45 @@ class TorneoControllerTest {
         assertThat(captor.getValue()).isEqualTo(new InformacionTorneoRequest("Apertura F5", "Fútbol 5", null, null,
                 Modalidad.PRESENCIAL, null, "Club Mercedes", List.of("Cancha 1"), null, null, null, null, null, null,
                 null, null));
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("PUT /api/v1/torneos/{id}/informacion no ignora lo que no es de los pasos 1 y 2: se lo pasa al servicio")
+    void noIgnoraLaParteEconomica() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(torneoService.actualizarInformacion(eq(ORGANIZADOR), eq(9L), any(InformacionTorneoRequest.class)))
+                .thenReturn(borrador());
+
+        mockMvc.perform(put("/api/v1/torneos/9/informacion")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"nombre": "Apertura F5", "disciplina": "Fútbol 5", "valorInscripcion": 5000}
+                                """))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<InformacionTorneoRequest> captor = ArgumentCaptor.forClass(InformacionTorneoRequest.class);
+        verify(torneoService).actualizarInformacion(eq(ORGANIZADOR), eq(9L), captor.capture());
+        assertThat(captor.getValue().otros()).containsOnlyKeys("valorInscripcion");
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("PUT /api/v1/torneos/{id}/informacion con campos bloqueados responde 409 con la lista")
+    void camposBloqueados() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(torneoService.actualizarInformacion(eq(ORGANIZADOR), eq(9L), any(InformacionTorneoRequest.class)))
+                .thenThrow(new ConflictoException(CodigoError.CAMPOS_BLOQUEADOS, "bloqueados")
+                        .con("campos", List.of("sede", "fechaInicio")));
+
+        mockMvc.perform(put("/api/v1/torneos/9/informacion")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"nombre": "Apertura F5", "disciplina": "Fútbol 5", "sede": "Club Luján"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("CAMPOS_BLOQUEADOS"))
+                .andExpect(jsonPath("$.campos[1]").value("fechaInicio"));
     }
 
     @Test
@@ -234,6 +274,7 @@ class TorneoControllerTest {
     private static TorneoInformacion borrador() {
         return new TorneoInformacion(9L, EstadoTorneo.BORRADOR, 1, "Apertura F5", "Fútbol 5", null,
                 Formato.ELIMINACION_DIRECTA, Modalidad.PRESENCIAL, null, "Club Mercedes", List.of("Cancha 1"), null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, CREADO, CREADO);
+                null, null, null, null, null, null, null, null, null, null, null, null, null, CREADO, CREADO,
+                List.of());
     }
 }

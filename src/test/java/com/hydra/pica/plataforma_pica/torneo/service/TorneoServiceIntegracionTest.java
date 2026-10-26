@@ -240,11 +240,11 @@ class TorneoServiceIntegracionTest {
     }
 
     @Test
-    void fueraDeBorradorNoSeModifica() {
+    void empezadoNoSeModifica() {
         Long id = torneoService.crear(organizador, completo()).id();
         jdbc.update("""
                 UPDATE torneo SET valor_inscripcion = 1000, pct_pozo_competidores = 70, pct_premio_rifa = 20,
-                                  estado = 'INSCRIPCION_ABIERTA'
+                                  estado = 'EN_CURSO'
                 WHERE id = ?""", id);
         // el UPDATE no pasa por JPA: sin esto el servicio ve el torneo en BORRADOR que tiene en memoria
         entityManager.clear();
