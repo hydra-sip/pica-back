@@ -884,6 +884,67 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/reglamento:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Torneos]
+      summary: Subir el reglamento en PDF (en BORRADOR)
+      x-jira: PICA-200
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        Paso 1 del asistente. Alcanza como reglamento, igual que `reglamentoTexto`, y reemplaza al PDF anterior.
+        Queda en `reglamentoUrl` (este mismo endpoint, para el GET) y su SHA-256 en `reglamentoHash`, que es lo que
+        se sella al publicar en lugar del texto. Hasta 5 MB y tiene que ser un PDF de verdad: se mira el contenido,
+        no la extensión. 400 `VALIDACION` en `archivo`: `REQUERIDO` si no viene, `FORMATO_INVALIDO` si no es un PDF,
+        `LONGITUD` si pasa los 5 MB. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivo]
+              properties:
+                archivo: {type: string, format: binary, description: El PDF}
+            encoding:
+              archivo: {contentType: application/pdf}
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    get:
+      tags: [Torneos]
+      summary: Ver el reglamento en PDF
+      x-jira: PICA-200
+      x-owner: Tomás
+      security: [{}, {bearerAuth: []}]
+      description: >-
+        Sin sesión si el torneo está publicado, como su ficha. En BORRADOR lo ve solo su organizador (con el token);
+        para cualquier otro el torneo no existe: 404 `TORNEO_NO_ENCONTRADO`. 404 `REGLAMENTO_NO_ENCONTRADO` si no se
+        subió el PDF. Va con `Content-Disposition: inline`, para abrirlo en el navegador.
+      responses:
+        '200':
+          description: El PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+        '404': {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Torneos]
+      summary: Quitar el reglamento en PDF (en BORRADOR)
+      x-jira: PICA-200
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        Borra el archivo y deja `reglamentoUrl` y `reglamentoHash` en null; sin PDF no hace nada. Si tampoco hay
+        `reglamentoTexto`, el paso 1 vuelve a quedar incompleto. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/torneos/{id}/economia:
     put:
       tags: [Torneos]
@@ -979,8 +1040,8 @@ paths:
       x-owner: Tomás
       description: >-
         El último paso del asistente. Sella con SHA-256 el esquema económico (`esquemaHash`, ver
-        `TorneoInformacion`) y el reglamento escrito, genera el `slug` del enlace público (el nombre en minúsculas, sin
-        tildes y con guiones; `-2`, `-3`... si ya existe o choca con una ruta, como `nuevo`), pasa a INSCRIPCION_ABIERTA y guarda `publicadoEn`. Después
+        `TorneoInformacion`) y el reglamento escrito si no hay PDF (el del PDF ya está desde la subida), genera el `slug` del enlace público (el nombre en minúsculas, sin
+        tildes y con guiones; `-2`, `-3`... si ya existe o choca con una ruta, como `nuevo` o `reglamento`), pasa a INSCRIPCION_ABIERTA y guarda `publicadoEn`. Después
         ya no se tocan los pasos ni los gastos. 400 `VALIDACION` con `REQUERIDO` en `aceptaTerminos` si no viene en
         `true`. 409 `TORNEO_INCOMPLETO` si le falta algo: la lista va en `faltantes` (ver `FaltanteTorneo`) y la suma
         de los premios en `sumaPremios`. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
@@ -1415,6 +1476,7 @@ components:
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
+             REGLAMENTO_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
@@ -1828,7 +1890,13 @@ components:
         fechaFin: {type: [string, 'null'], format: date-time}
         cierreInscripcionEn: {type: [string, 'null'], format: date-time}
         reglamentoTexto: {type: [string, 'null']}
-        reglamentoUrl: {type: [string, 'null'], description: 'El PDF, si se subió'}
+        reglamentoUrl: {type: [string, 'null'], description: 'El PDF, si se subió: `GET /torneos/{id}/reglamento`, absoluta'}
+        reglamentoHash:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
+          description: >-
+            SHA-256 en hexadecimal del reglamento: el del PDF desde que se sube; sin PDF, el de `reglamentoTexto` en
+            UTF-8, sellado al publicar.
         cupoMaximo: {type: [integer, 'null']}
         cupoMinimo: {type: [integer, 'null']}
         tamanioEquipo: {type: [integer, 'null']}

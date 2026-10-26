@@ -67,7 +67,9 @@ public class SecurityConfig {
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/v1/torneos/resumen",
-                                "/api/v1/torneos/slug/*")
+                                "/api/v1/torneos/slug/*",
+                                // el servicio decide: el de un borrador lo ve solo su organizador
+                                "/api/v1/torneos/*/reglamento")
                         .permitAll()
                         .anyRequest().authenticated());
 

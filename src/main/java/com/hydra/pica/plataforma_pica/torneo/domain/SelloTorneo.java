@@ -50,9 +50,13 @@ public final class SelloTorneo {
     }
 
     public static String sha256(String texto) {
+        return sha256(texto.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** El del PDF del reglamento (PICA-200): sobre el archivo tal cual se subió. */
+    public static String sha256(byte[] contenido) {
         try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(texto.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(contenido));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 no disponible", exception);
         }

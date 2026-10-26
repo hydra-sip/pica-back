@@ -42,7 +42,7 @@ public class PublicacionTorneoService {
      * Slugs que chocan con rutas: /torneos/nuevo del front y los GET /torneos/{id}/... del back, que con el slug en
      * lugar del id empatan con /torneos/slug/{slug}. Se tratan como tomados.
      */
-    private static final Set<String> SLUGS_RESERVADOS = Set.of("nuevo", "gastos", "resumen-economico");
+    private static final Set<String> SLUGS_RESERVADOS = Set.of("nuevo", "gastos", "resumen-economico", "reglamento");
 
     private final TorneosPropios torneosPropios;
     private final TorneoRepository torneoRepository;
@@ -59,7 +59,7 @@ public class PublicacionTorneoService {
         validar(torneo, premios, gastos, ahora);
 
         torneo.setEsquemaHash(SelloTorneo.esquema(torneo, premios, gastos));
-        // el del PDF lo pone la subida del reglamento (T201-2)
+        // si hay PDF, el hash es el suyo y lo puso la subida (ReglamentoTorneoService)
         if (torneo.getReglamentoHash() == null && torneo.getReglamentoTexto() != null) {
             torneo.setReglamentoHash(SelloTorneo.sha256(torneo.getReglamentoTexto()));
         }
