@@ -1021,8 +1021,9 @@ paths:
       x-permiso: TORNEO_GESTIONAR
       x-owner: Tomás
       description: >-
-        Deja de figurar en el torneo y pierde sus permisos. 404 `ARBITRO_NO_ENCONTRADO` si no está designado. 409
-        `TORNEO_NO_EDITABLE` si el torneo ya terminó.
+        Deja de figurar en el torneo y pierde sus permisos en el momento. 404 `ARBITRO_NO_ENCONTRADO` si no está
+        designado. 409 `TORNEO_NO_EDITABLE` si el torneo ya terminó y `ARBITRO_CON_PARTIDOS` si tiene partidos
+        asignados (PICA-237): primero se reasignan.
       responses:
         '204': {description: Quitado}
         '404': {$ref: '#/components/responses/Error'}
@@ -1554,7 +1555,10 @@ components:
         NOMINA_INVALIDA (al confirmar: menos jugadores que el tamaño de equipo, más que el máximo de nómina, o
         sin el capitán) ·
         USUARIO_NO_ES_ARBITRO (no está activo o no tiene el rol ÁRBITRO) · ARBITRO_DUPLICADO (ya está designado en el
-        torneo) · ARBITRO_NO_PERMITIDO (es el organizador o juega el torneo).
+        torneo) · ARBITRO_NO_PERMITIDO (es el organizador o juega el torneo) · ARBITRO_CON_PARTIDOS (quitar a un
+        árbitro con partidos asignados) · ARBITRO_NO_HABILITADO (asignarle un partido a quien no aceptó la
+        designación). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
+        403 SIN_PERMISO.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él).
@@ -1570,7 +1574,8 @@ components:
              COBRO_RECHAZADO,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA,
-             USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO,
+             USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
+             ARBITRO_NO_HABILITADO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO]
     ErrorCampo:
