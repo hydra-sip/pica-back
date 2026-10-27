@@ -5,8 +5,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * Tareas programadas: por ahora, confirmar los resultados con el plazo vencido (PICA-242). Los tests la apagan para que
- * nada cambie la base por su cuenta.
+ * Tareas programadas: confirmar los resultados con el plazo vencido (PICA-242) y cerrar las inscripciones vencidas
+ * (PICA-213, que además se apaga sola con {@code app.torneos.cierre-automatico}). Los tests las apagan para que nada
+ * cambie la base por su cuenta.
  */
 @Configuration
 @EnableScheduling

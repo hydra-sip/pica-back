@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -16,6 +17,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.service.CierreInscripcion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -26,7 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * La inscripción de un torneo vista desde su organizador (HU-206): la lista de inscripciones y cerrarla a mano. Para
- * cualquier otro usuario el torneo no existe.
+ * cualquier otro usuario el torneo no existe. También la cierra la tarea programada cuando vence la fecha
+ * ({@link CierreAutomatico}).
  */
 @Service
 @RequiredArgsConstructor
@@ -36,6 +39,7 @@ public class InscripcionTorneoService {
     private final CierreInscripcion cierreInscripcion;
     private final InscripcionRepository inscripcionRepository;
     private final NominaRepository nominaRepository;
+    private final TorneoRepository torneoRepository;
 
     /** Todas menos los borradores, de la más vieja a la más nueva; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
@@ -60,5 +64,22 @@ public class InscripcionTorneoService {
         }
         cierreInscripcion.cerrar(torneo, MotivoCierre.MANUAL, organizadorId);
         return torneosPropios.informacion(torneo);
+    }
+
+    /**
+     * Cierra con el motivo FECHA si el torneo sigue con la inscripción abierta y la fecha vencida. Bloquea la fila y
+     * vuelve a mirar: otra réplica, el organizador o el último pago pudieron cerrarla mientras tanto.
+     *
+     * @return si la cerró
+     */
+    @Transactional
+    public boolean cerrarSiVencio(Long id, Instant ahora) {
+        Torneo torneo = torneoRepository.buscarBloqueado(id).orElse(null);
+        if (torneo == null || torneo.getEliminadoEn() != null || torneo.getEstado() != EstadoTorneo.INSCRIPCION_ABIERTA
+                || torneo.getCierreInscripcionEn().isAfter(ahora)) {
+            return false;
+        }
+        cierreInscripcion.cerrar(torneo, MotivoCierre.FECHA, null);
+        return true;
     }
 }
