@@ -94,6 +94,9 @@ app:
     access-ttl: ${APP_AUTH_ACCESS_TTL:15m}        # vida del access token
     refresh-ttl: ${APP_AUTH_REFRESH_TTL:24h}      # inactividad: el refresh rota en cada uso
     sesion-maxima: ${APP_AUTH_SESION_MAXIMA:7d}   # tope desde el login, aunque se use
+    intentos-login:   # RNF-SEG-06: con este máximo de fallidos en la ventana, 429 hasta que se libere
+      maximo: ${APP_AUTH_INTENTOS_LOGIN_MAXIMO:5}
+      ventana: ${APP_AUTH_INTENTOS_LOGIN_VENTANA:15m}
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   torneos:

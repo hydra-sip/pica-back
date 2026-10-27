@@ -179,6 +179,9 @@ CREATE TEMP TABLE humo_t ON COMMIT DROP AS
 SELECT (SELECT count(*) FROM humo_u), (SELECT count(*) FROM humo_p),
        (SELECT count(*) FROM humo_r), (SELECT count(*) FROM humo_t);
 DELETE FROM refresh_token WHERE id IN (SELECT id FROM humo_t);
+DELETE FROM reemplazo
+    WHERE inscripcion_id IN (SELECT id FROM inscripcion
+        WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u));
 DELETE FROM movimiento
     WHERE inscripcion_id IN (SELECT id FROM inscripcion
         WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u));
@@ -394,12 +397,30 @@ SELECT id FROM e;
 SQL
 )
 [[ $EQUIPO_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudo cargar el equipo de la prueba"; exit 1; }
+SALE_ID=$(sql <<SQL
+WITH p AS (INSERT INTO persona (nombres, apellidos) VALUES ('Sale', 'Humo') RETURNING id)
+INSERT INTO usuario (username, email, estado, email_verificado, persona_id)
+SELECT '$CORRIDA-sale', '$CORRIDA-sale@example.com', 'ACTIVO', true, id FROM p
+RETURNING id;
+SQL
+)
+ENTRA_ID=$(sql <<SQL
+WITH p AS (INSERT INTO persona (nombres, apellidos) VALUES ('Entra', 'Humo') RETURNING id)
+INSERT INTO usuario (username, email, estado, email_verificado, persona_id)
+SELECT '$CORRIDA-entra', '$CORRIDA-entra@example.com', 'ACTIVO', true, id FROM p
+RETURNING id;
+SQL
+)
+[[ $SALE_ID =~ ^[0-9]+$ && $ENTRA_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudieron cargar los jugadores de reemplazo"; exit 1; }
+sql <<SQL >/dev/null
+INSERT INTO usuario_equipo (usuario_id, equipo_id) VALUES ($SALE_ID, $EQUIPO_ID);
+SQL
 pedir 200 GET /api/v1/equipos/mios "/api/v1/equipos/mios" "$USUARIO"
 en_listado "$EQUIPO_ID"
 pedir 400:VALIDACION POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIPO_ID/inscripciones" "$USUARIO"
 pedir 404:EQUIPO_NO_ENCONTRADO POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIPO_ID/inscripciones" "$USUARIO" '{"equipoId":0,"nomina":[]}'
 pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIPO_ID/inscripciones" "$USUARIO" \
-    "$(jq -nc --argjson e "$EQUIPO_ID" '{equipoId: $e, nomina: []}')"
+    "$(jq -nc --argjson e "$EQUIPO_ID" --argjson s "$SALE_ID" '{equipoId: $e, nomina: [$s]}')"
 INSCRIPCION_ID=$(campo .id)
 pedir 200 GET /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
 pedir 200 PUT /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO" \
@@ -411,13 +432,15 @@ pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIP
     "$(jq -nc --arg n "$CORRIDA dos" '{nombreEquipoNuevo: $n, nomina: []}')"
 INSCRIPCION_ID=$(campo .id)
 pedir 409:NOMINA_INVALIDA PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
-# con un solo usuario de prueba no hay forma de armar una nómina de 2: se baja el mínimo del torneo
-sql <<SQL >/dev/null
-UPDATE torneo SET tamanio_equipo = 1 WHERE id = $TORNEO_EQUIPO_ID;
-SQL
+EQUIPO_ID=$(campo .equipo.id)
+pedir 200 PUT /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO" \
+    "$(jq -nc --argjson e "$EQUIPO_ID" --argjson s "$SALE_ID" '{equipoId: $e, nomina: [$s]}')"
 pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
 pedir 200 GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
 pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
+pedir 200 POST /api/v1/inscripciones/{id}/reemplazos "/api/v1/inscripciones/$INSCRIPCION_ID/reemplazos" "$USUARIO" \
+    "$(jq -nc --argjson s "$SALE_ID" --argjson e "$ENTRA_ID" '{saleUsuarioId: $s, entraUsuarioId: $e}')"
+pedir 200 GET /api/v1/inscripciones/{id}/reemplazos "/api/v1/inscripciones/$INSCRIPCION_ID/reemplazos" "$USUARIO"
 pedir 200 GET /api/v1/inscripciones/mias "/api/v1/inscripciones/mias" "$USUARIO"
 en_listado "$INSCRIPCION_ID"
 pedir 200 GET /api/v1/inscripciones/mias "/api/v1/inscripciones/mias?torneoId=$TORNEO_EQUIPO_ID" "$USUARIO"

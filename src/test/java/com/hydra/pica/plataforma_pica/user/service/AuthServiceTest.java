@@ -53,6 +53,7 @@ class AuthServiceTest {
     @Mock private UsuarioService usuarioService;
     @Mock private OAuthCodeStore oAuthCodeStore;
     @Mock private BloqueoService bloqueoService;
+    @Mock private IntentosLogin intentosLogin;
 
     private AuthService authService;
     private Usuario usuario;
@@ -60,7 +61,8 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(usuarioRepository, refreshTokenRepository, passwordEncoder, jwtService,
-                permisoService, usuarioService, oAuthCodeStore, SesionProperties.porDefecto(), bloqueoService);
+                permisoService, usuarioService, oAuthCodeStore, SesionProperties.porDefecto(), bloqueoService,
+                intentosLogin);
         usuario = new Usuario();
         ReflectionTestUtils.setField(usuario, "id", 42L);
         usuario.setUsername("jperez");
@@ -236,7 +238,7 @@ class AuthServiceTest {
     private AuthService conSesion(Duration access, Duration inactividad, Duration maxima) {
         return new AuthService(usuarioRepository, refreshTokenRepository, passwordEncoder, jwtService,
                 permisoService, usuarioService, oAuthCodeStore, new SesionProperties(access, inactividad, maxima),
-                bloqueoService);
+                bloqueoService, intentosLogin);
     }
 
     @Test
