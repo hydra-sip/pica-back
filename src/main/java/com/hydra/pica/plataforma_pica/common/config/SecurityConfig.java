@@ -62,7 +62,8 @@ public class SecurityConfig {
                                 "/api/v1/auth/**",
                                 "/oauth2/**",
                                 "/login/oauth2/**",
-                                "/.well-known/**")
+                                "/.well-known/**",
+                                "/ws/**")
                         .permitAll()
                         .requestMatchers(
                                 HttpMethod.GET,
