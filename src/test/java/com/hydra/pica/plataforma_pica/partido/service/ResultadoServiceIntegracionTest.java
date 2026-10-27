@@ -13,20 +13,16 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
+import com.hydra.pica.plataforma_pica.EscenarioTorneo;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.email.EmailService;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
-import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
-import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
-import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.Decision;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
@@ -39,23 +35,6 @@ import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoObjetado;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
-import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
-import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
-import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
-import com.hydra.pica.plataforma_pica.torneo.dto.DesignarArbitroRequest;
-import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
-import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
-import com.hydra.pica.plataforma_pica.torneo.service.ArbitrosTorneoService;
-import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
-import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
-import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
-import com.hydra.pica.plataforma_pica.user.domain.Persona;
-import com.hydra.pica.plataforma_pica.user.domain.Usuario;
-import com.hydra.pica.plataforma_pica.user.domain.UsuarioRol;
-import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
-import com.hydra.pica.plataforma_pica.user.repository.RolRepository;
-import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
-import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -77,40 +56,29 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @SpringBootTest
 @ActiveProfiles("dev")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, EscenarioTorneo.class})
 @Transactional
 @RecordApplicationEvents
 class ResultadoServiceIntegracionTest {
 
-    private static final Instant EN_UNA_SEMANA = Instant.now().plus(7, ChronoUnit.DAYS);
-    private static final Instant EN_DOS_SEMANAS = Instant.now().plus(14, ChronoUnit.DAYS);
     private static final byte[] JPG = foto(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0}, 2048);
     private static final String URL = "http://localhost/api/v1/partidos/1/evidencias";
 
     @Autowired private ResultadoService resultadoService;
     @Autowired private PartidoService partidoService;
     @Autowired private EvidenciaService evidenciaService;
-    @Autowired private BracketService bracketService;
     @Autowired private ConfirmacionAutomatica confirmacionAutomatica;
     @Autowired private AvisoObjecion avisoObjecion;
     @Autowired private LaudoService laudoService;
     @MockitoBean private EmailService emailService;
     @Autowired private ApplicationEvents eventos;
-    @Autowired private TorneoService torneoService;
-    @Autowired private ArbitrosTorneoService arbitrosService;
-    @Autowired private TorneoRepository torneoRepository;
-    @Autowired private InscripcionRepository inscripcionRepository;
-    @Autowired private UsuarioRepository usuarioRepository;
-    @Autowired private PersonaRepository personaRepository;
-    @Autowired private RolRepository rolRepository;
-    @Autowired private UsuarioRolRepository usuarioRolRepository;
+    @Autowired private EscenarioTorneo escenario;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
 
     private Long organizador;
     private Long arbitro;
     private Long torneo;
-    private int jugadores;
     /** El primer partido de la primera ronda y los usuarios de cada lado. */
     private Long partido;
     private Long local;
@@ -118,27 +86,13 @@ class ResultadoServiceIntegracionTest {
 
     @BeforeEach
     void enCurso() {
-        organizador = usuario("org_resultado", "ORGANIZADOR").getId();
-        arbitro = usuario("juez_resultado", "ARBITRO").getId();
-        torneo = torneoService.crear(organizador, new InformacionTorneoRequest("Copa Ajedrez", "Ajedrez", null,
-                null, Modalidad.ONLINE, TipoParticipante.INDIVIDUAL, null, null, EN_DOS_SEMANAS, null, EN_UNA_SEMANA,
-                "Partidas de 10 minutos", 16, 2, null, null)).id();
-        arbitrosService.designar(organizador, torneo,
-                new DesignarArbitroRequest(arbitro, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
-        jdbc.update("""
-                UPDATE torneo SET valor_inscripcion = 1000, pct_pozo_competidores = 90, pct_premio_rifa = 0,
-                                  estado = 'INSCRIPCION_CERRADA', publicado_en = now()
-                WHERE id = ?""", torneo);
-        entityManager.clear();
-        inscribir(4);
-        bracketService.generar(organizador, torneo);
-        entityManager.flush();
-        entityManager.clear();
+        organizador = escenario.usuario("org_resultado", "ORGANIZADOR").getId();
+        arbitro = escenario.usuario("juez_resultado", "ARBITRO").getId();
+        torneo = escenario.individualEnCurso(organizador, arbitro, "Copa Ajedrez", "jugador_resultado_", 4);
 
-        partido = jdbc.queryForObject("SELECT id FROM partido WHERE torneo_id = ? AND ronda = 1 AND posicion = 1",
-                Long.class, torneo);
-        local = jugadorDelLado(partido, "LOCAL");
-        visitante = jugadorDelLado(partido, "VISITANTE");
+        partido = escenario.partido(torneo, 1, 1);
+        local = escenario.jugador(partido, "LOCAL");
+        visitante = escenario.jugador(partido, "VISITANTE");
     }
 
     // --- criterios de aceptación ----------------------------------------------
@@ -155,7 +109,7 @@ class ResultadoServiceIntegracionTest {
 
     @Test
     void sinSerCapitanDeAlgunoDeLosDosLadosNoSeCarga() {
-        Long deOtroPartido = jugadorDelLado(
+        Long deOtroPartido = escenario.jugador(
                 jdbc.queryForObject("SELECT id FROM partido WHERE torneo_id = ? AND ronda = 1 AND posicion = 2",
                         Long.class, torneo), "LOCAL");
 
@@ -247,7 +201,7 @@ class ResultadoServiceIntegracionTest {
     @Test
     void laEvidenciaLaVenLasPartesLosArbitrosYElOrganizadorNoUnTercero() {
         evidenciaService.subir(visitante, partido, JPG, URL);
-        Long tercero = usuario("curioso_resultado", "PARTICIPANTE").getId();
+        Long tercero = escenario.usuario("curioso_resultado", "PARTICIPANTE").getId();
 
         for (Long puede : List.of(local, visitante, arbitro, organizador)) {
             assertThat(evidenciaService.listar(puede, partido)).hasSize(1);
@@ -475,7 +429,7 @@ class ResultadoServiceIntegracionTest {
         objetado();
         Long otroPartido = jdbc.queryForObject(
                 "SELECT id FROM partido WHERE torneo_id = ? AND ronda = 1 AND posicion = 2", Long.class, torneo);
-        Long ajena = evidenciaService.subir(jugadorDelLado(otroPartido, "LOCAL"), otroPartido, JPG, URL).id();
+        Long ajena = evidenciaService.subir(escenario.jugador(otroPartido, "LOCAL"), otroPartido, JPG, URL).id();
 
         assertThatThrownBy(() -> laudoService.laudar(organizador, partido,
                 new LaudoRequest(1, 1, null, null, "Planilla", ajena)))
@@ -486,7 +440,7 @@ class ResultadoServiceIntegracionTest {
     @Test
     void unLaudoQueCorrigeDejaElResultadoOficialYAvanzaElGanador() {
         Long evidencia = objetado();
-        habilitarArbitro();
+        escenario.habilitarArbitro(torneo);
         Long ganador = inscripcionDe(partido, "VISITANTE");
 
         PartidoDetalle laudado = laudoService.laudar(arbitro, partido, laudo(0, 1, evidencia));
@@ -538,21 +492,15 @@ class ResultadoServiceIntegracionTest {
         return evidencia;
     }
 
-    /** El árbitro del torneo acepta la designación con permiso para resolver objeciones. */
-    private void habilitarArbitro() {
-        jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO', resuelve_objeciones = true WHERE torneo_id = ?",
-                torneo);
-        entityManager.clear();
-    }
-
     private static LaudoRequest laudo(int local, int visitante, Long evidenciaId) {
         return new LaudoRequest(local, visitante, null, null, "  La planilla dice 0-1 ", evidenciaId);
     }
 
     /** Carga el resultado desde el local y lo acepta el visitante. */
     private void jugar(Long partidoId, int golesLocal, int golesVisitante) {
-        resultadoService.cargar(jugadorDelLado(partidoId, "LOCAL"), partidoId, resultado(golesLocal, golesVisitante));
-        resultadoService.aceptar(jugadorDelLado(partidoId, "VISITANTE"), partidoId);
+        resultadoService.cargar(escenario.jugador(partidoId, "LOCAL"), partidoId,
+                resultado(golesLocal, golesVisitante));
+        resultadoService.aceptar(escenario.jugador(partidoId, "VISITANTE"), partidoId);
         entityManager.flush();
     }
 
@@ -588,44 +536,5 @@ class ResultadoServiceIntegracionTest {
 
     private static List<String> campos(Throwable e) {
         return errores(e).stream().map(ErrorCampo::campo).toList();
-    }
-
-    private Long jugadorDelLado(Long partidoId, String lado) {
-        return jdbc.queryForObject("""
-                SELECT i.usuario_id FROM juega j JOIN inscripcion i ON i.id = j.inscripcion_id
-                WHERE j.partido_id = ? AND j.lado = ?""", Long.class, partidoId, lado);
-    }
-
-    private List<Long> inscribir(int cantidad) {
-        List<Long> ids = new ArrayList<>();
-        for (int i = 0; i < cantidad; i++) {
-            Inscripcion inscripcion = new Inscripcion();
-            inscripcion.setTorneo(torneoRepository.findById(torneo).orElseThrow());
-            inscripcion.setUsuario(usuario("jugador_resultado_" + jugadores++, "PARTICIPANTE"));
-            inscripcion.setEstado(EstadoInscripcion.CONFIRMADA);
-            inscripcion.setReglamentoAceptadoEn(Instant.now());
-            ids.add(inscripcionRepository.saveAndFlush(inscripcion).getId());
-        }
-        return ids;
-    }
-
-    private Usuario usuario(String nombre, String rol) {
-        Persona persona = new Persona();
-        persona.setNombres(nombre);
-        persona.setApellidos("Test");
-        persona.setEstado(EstadoGeneral.ACTIVO);
-        persona = personaRepository.save(persona);
-
-        Usuario usuario = new Usuario();
-        usuario.setUsername(nombre);
-        usuario.setEmail(nombre + "@example.com");
-        usuario.setEstado(EstadoUsuario.ACTIVO);
-        usuario.setEmailVerificado(true);
-        usuario.setPersona(persona);
-        usuario = usuarioRepository.save(usuario);
-        UsuarioRol asignacion = new UsuarioRol(usuario, rolRepository.findByNombre(rol).orElseThrow());
-        asignacion.setAsignadoEn(Instant.now());
-        usuarioRolRepository.save(asignacion);
-        return usuario;
     }
 }

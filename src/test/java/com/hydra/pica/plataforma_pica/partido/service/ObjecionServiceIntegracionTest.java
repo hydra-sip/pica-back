@@ -8,14 +8,11 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
 
+import com.hydra.pica.plataforma_pica.EscenarioTorneo;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.email.EmailService;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
-import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
-import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
-import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.Decision;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
@@ -29,22 +26,9 @@ import com.hydra.pica.plataforma_pica.partido.dto.ObjecionResumen;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.VersionResultado;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
-import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
-import com.hydra.pica.plataforma_pica.torneo.dto.DesignarArbitroRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
-import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
-import com.hydra.pica.plataforma_pica.torneo.service.ArbitrosTorneoService;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
-import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
-import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
-import com.hydra.pica.plataforma_pica.user.domain.Persona;
-import com.hydra.pica.plataforma_pica.user.domain.Usuario;
-import com.hydra.pica.plataforma_pica.user.domain.UsuarioRol;
-import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
-import com.hydra.pica.plataforma_pica.user.repository.RolRepository;
-import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
-import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -63,7 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @SpringBootTest
 @ActiveProfiles("dev")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, EscenarioTorneo.class})
 @Transactional
 class ObjecionServiceIntegracionTest {
 
@@ -77,42 +61,21 @@ class ObjecionServiceIntegracionTest {
     @Autowired private ResultadoService resultadoService;
     @Autowired private EvidenciaService evidenciaService;
     @Autowired private LaudoService laudoService;
-    @Autowired private BracketService bracketService;
     @MockitoBean private EmailService emailService;
     @Autowired private TorneoService torneoService;
-    @Autowired private ArbitrosTorneoService arbitrosService;
-    @Autowired private TorneoRepository torneoRepository;
-    @Autowired private InscripcionRepository inscripcionRepository;
-    @Autowired private UsuarioRepository usuarioRepository;
-    @Autowired private PersonaRepository personaRepository;
-    @Autowired private RolRepository rolRepository;
-    @Autowired private UsuarioRolRepository usuarioRolRepository;
+    @Autowired private EscenarioTorneo escenario;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
 
     private Long organizador;
     private Long arbitro;
     private Long torneo;
-    private int jugadores;
 
     @BeforeEach
     void enCurso() {
-        organizador = usuario("org_objeciones", "ORGANIZADOR").getId();
-        arbitro = usuario("juez_objeciones", "ARBITRO").getId();
-        torneo = torneoService.crear(organizador, new InformacionTorneoRequest("Copa Objeciones", "Ajedrez", null,
-                null, Modalidad.ONLINE, TipoParticipante.INDIVIDUAL, null, null, EN_DOS_SEMANAS, null, EN_UNA_SEMANA,
-                "Partidas de 10 minutos", 16, 2, null, null)).id();
-        arbitrosService.designar(organizador, torneo,
-                new DesignarArbitroRequest(arbitro, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
-        jdbc.update("""
-                UPDATE torneo SET valor_inscripcion = 1000, pct_pozo_competidores = 90, pct_premio_rifa = 0,
-                                  estado = 'INSCRIPCION_CERRADA', publicado_en = now()
-                WHERE id = ?""", torneo);
-        entityManager.clear();
-        inscribir(8);
-        bracketService.generar(organizador, torneo);
-        entityManager.flush();
-        entityManager.clear();
+        organizador = escenario.usuario("org_objeciones", "ORGANIZADOR").getId();
+        arbitro = escenario.usuario("juez_objeciones", "ARBITRO").getId();
+        torneo = escenario.individualEnCurso(organizador, arbitro, "Copa Objeciones", "jugador_objeciones_", 8);
     }
 
     // --- listado del torneo ---------------------------------------------------
@@ -124,14 +87,15 @@ class ObjecionServiceIntegracionTest {
         Long arbitroAceptadoSinPermiso = arbitro;
         jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO' WHERE torneo_id = ?", torneo);
         entityManager.clear();
+        Long cualquiera = escenario.usuario("cualquiera_objeciones", "PARTICIPANTE").getId();
 
-        for (Long sinPermiso : List.of(jugador(partido, "LOCAL"), jugador(partido, "VISITANTE"),
-                arbitroAceptadoSinPermiso, usuario("cualquiera_objeciones", "PARTICIPANTE").getId())) {
+        for (Long sinPermiso : List.of(escenario.jugador(partido, "LOCAL"), escenario.jugador(partido, "VISITANTE"),
+                arbitroAceptadoSinPermiso, cualquiera)) {
             assertThatThrownBy(() -> objecionService.delTorneo(sinPermiso, torneo))
                     .extracting("codigo").isEqualTo(CodigoError.SIN_PERMISO);
         }
         assertThat(objecionService.delTorneo(organizador, torneo)).hasSize(1);
-        habilitarArbitro();
+        escenario.habilitarArbitro(torneo);
         assertThat(objecionService.delTorneo(arbitro, torneo)).hasSize(1);
     }
 
@@ -196,7 +160,7 @@ class ObjecionServiceIntegracionTest {
         Long borrador = torneoService.crear(organizador, new InformacionTorneoRequest("Copa Borrador", "Ajedrez",
                 null, null, Modalidad.ONLINE, TipoParticipante.INDIVIDUAL, null, null, EN_DOS_SEMANAS, null,
                 EN_UNA_SEMANA, "Partidas de 10 minutos", 16, 2, null, null)).id();
-        Long cualquiera = usuario("cualquiera_objeciones", "PARTICIPANTE").getId();
+        Long cualquiera = escenario.usuario("cualquiera_objeciones", "PARTICIPANTE").getId();
 
         for (Long inexistente : List.of(999_999L, borrador)) {
             assertThatThrownBy(() -> objecionService.delTorneo(cualquiera, inexistente))
@@ -213,7 +177,7 @@ class ObjecionServiceIntegracionTest {
     @Test
     void cadaVersionTraeLaEvidenciaQueSubioSuLado() {
         Long partido = partido(1);
-        Long fotoDelLocal = evidenciaService.subir(jugador(partido, "LOCAL"), partido, JPG, URL).id();
+        Long fotoDelLocal = evidenciaService.subir(escenario.jugador(partido, "LOCAL"), partido, JPG, URL).id();
         Long fotoDelVisitante = objetar(partido);
 
         ObjecionComparada comparada = objecionService.comparar(organizador, partido);
@@ -256,7 +220,8 @@ class ObjecionServiceIntegracionTest {
     @Test
     void unPartidoInexistenteOSinObjecionNoTieneComparativo() {
         Long sinObjecion = partido(2);
-        resultadoService.cargar(jugador(sinObjecion, "LOCAL"), sinObjecion, new ResultadoRequest(2, 0, null, null));
+        resultadoService.cargar(escenario.jugador(sinObjecion, "LOCAL"), sinObjecion,
+                new ResultadoRequest(2, 0, null, null));
 
         assertThatThrownBy(() -> objecionService.comparar(organizador, 999_999L))
                 .extracting("codigo").isEqualTo(CodigoError.PARTIDO_NO_ENCONTRADO);
@@ -271,11 +236,12 @@ class ObjecionServiceIntegracionTest {
         jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO' WHERE torneo_id = ?", torneo);
         entityManager.clear();
 
-        for (Long sinPermiso : List.of(jugador(partido, "LOCAL"), jugador(partido, "VISITANTE"), arbitro)) {
+        for (Long sinPermiso : List.of(escenario.jugador(partido, "LOCAL"), escenario.jugador(partido, "VISITANTE"),
+                arbitro)) {
             assertThatThrownBy(() -> objecionService.comparar(sinPermiso, partido))
                     .extracting("codigo").isEqualTo(CodigoError.SIN_PERMISO);
         }
-        habilitarArbitro();
+        escenario.habilitarArbitro(torneo);
         assertThat(objecionService.comparar(arbitro, partido).partidoId()).isEqualTo(partido);
     }
 
@@ -301,15 +267,14 @@ class ObjecionServiceIntegracionTest {
 
     /** El partido de la primera ronda en esa posición. */
     private Long partido(int posicion) {
-        return jdbc.queryForObject("SELECT id FROM partido WHERE torneo_id = ? AND ronda = 1 AND posicion = ?",
-                Long.class, torneo, posicion);
+        return escenario.partido(torneo, 1, posicion);
     }
 
     /** El local carga 2-0 y el visitante lo objeta, con una foto, proponiendo 0-1: devuelve la foto. */
     private Long objetar(Long partido) {
-        resultadoService.cargar(jugador(partido, "LOCAL"), partido, new ResultadoRequest(2, 0, null, null));
-        Long evidencia = evidenciaService.subir(jugador(partido, "VISITANTE"), partido, JPG, URL).id();
-        resultadoService.objetar(jugador(partido, "VISITANTE"), partido,
+        resultadoService.cargar(escenario.jugador(partido, "LOCAL"), partido, new ResultadoRequest(2, 0, null, null));
+        Long evidencia = evidenciaService.subir(escenario.jugador(partido, "VISITANTE"), partido, JPG, URL).id();
+        resultadoService.objetar(escenario.jugador(partido, "VISITANTE"), partido,
                 new ObjecionRequest("El rival no se presentó al segundo tiempo", 0, 1, null, null));
         entityManager.flush();
         entityManager.clear();
@@ -323,54 +288,10 @@ class ObjecionServiceIntegracionTest {
         entityManager.clear();
     }
 
-    /** El árbitro del torneo acepta la designación con permiso para resolver objeciones. */
-    private void habilitarArbitro() {
-        jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO', resuelve_objeciones = true WHERE torneo_id = ?",
-                torneo);
-        entityManager.clear();
-    }
-
-    private Long jugador(Long partido, String lado) {
-        return jdbc.queryForObject("""
-                SELECT i.usuario_id FROM juega j JOIN inscripcion i ON i.id = j.inscripcion_id
-                WHERE j.partido_id = ? AND j.lado = ?""", Long.class, partido, lado);
-    }
-
     private String nombre(Long partido, String lado) {
         return jdbc.queryForObject("""
                 SELECT p.nombres || ' ' || p.apellidos FROM juega j JOIN inscripcion i ON i.id = j.inscripcion_id
                 JOIN usuario u ON u.id = i.usuario_id JOIN persona p ON p.id = u.persona_id
                 WHERE j.partido_id = ? AND j.lado = ?""", String.class, partido, lado);
-    }
-
-    private void inscribir(int cantidad) {
-        for (int i = 0; i < cantidad; i++) {
-            Inscripcion inscripcion = new Inscripcion();
-            inscripcion.setTorneo(torneoRepository.findById(torneo).orElseThrow());
-            inscripcion.setUsuario(usuario("jugador_objeciones_" + jugadores++, "PARTICIPANTE"));
-            inscripcion.setEstado(EstadoInscripcion.CONFIRMADA);
-            inscripcion.setReglamentoAceptadoEn(Instant.now());
-            inscripcionRepository.saveAndFlush(inscripcion);
-        }
-    }
-
-    private Usuario usuario(String nombre, String rol) {
-        Persona persona = new Persona();
-        persona.setNombres(nombre);
-        persona.setApellidos("Test");
-        persona.setEstado(EstadoGeneral.ACTIVO);
-        persona = personaRepository.save(persona);
-
-        Usuario usuario = new Usuario();
-        usuario.setUsername(nombre);
-        usuario.setEmail(nombre + "@example.com");
-        usuario.setEstado(EstadoUsuario.ACTIVO);
-        usuario.setEmailVerificado(true);
-        usuario.setPersona(persona);
-        usuario = usuarioRepository.save(usuario);
-        UsuarioRol asignacion = new UsuarioRol(usuario, rolRepository.findByNombre(rol).orElseThrow());
-        asignacion.setAsignadoEn(Instant.now());
-        usuarioRolRepository.save(asignacion);
-        return usuario;
     }
 }
