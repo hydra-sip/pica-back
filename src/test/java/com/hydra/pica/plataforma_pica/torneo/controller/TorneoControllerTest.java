@@ -27,6 +27,9 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDelTorneo;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle.EquipoInscripto;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
@@ -38,12 +41,14 @@ import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
 import com.hydra.pica.plataforma_pica.torneo.service.InscripcionTorneoService;
 import com.hydra.pica.plataforma_pica.torneo.service.MisTorneosService;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
+import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PagedModel.PageMetadata;
@@ -308,6 +313,40 @@ class TorneoControllerTest {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
 
         mockMvc.perform(post("/api/v1/torneos/9/cerrar-inscripcion"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(inscripcionTorneoService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("GET /api/v1/torneos/{id}/inscripciones pasa el filtro y la página, y devuelve las filas")
+    void inscripcionesDelTorneo() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        InscripcionDelTorneo fila = new InscripcionDelTorneo(31L, EstadoInscripcion.CONFIRMADA, CREADO, null,
+                new EquipoInscripto(4L, "Los Halcones"), new UsuarioPublico(7L, "cap", "Ana", "Paz"), 5);
+        when(inscripcionTorneoService.listar(eq(ORGANIZADOR), eq(9L), eq(EstadoInscripcion.CONFIRMADA), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(fila), PageRequest.of(0, 10), 1));
+
+        mockMvc.perform(get("/api/v1/torneos/9/inscripciones").param("estado", "CONFIRMADA").param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(31))
+                .andExpect(jsonPath("$.content[0].equipo.nombre").value("Los Halcones"))
+                .andExpect(jsonPath("$.content[0].capitan.username").value("cap"))
+                .andExpect(jsonPath("$.content[0].jugadores").value(5))
+                .andExpect(jsonPath("$.page.totalElements").value(1));
+
+        ArgumentCaptor<Pageable> pagina = ArgumentCaptor.forClass(Pageable.class);
+        verify(inscripcionTorneoService).listar(eq(ORGANIZADOR), eq(9L), eq(EstadoInscripcion.CONFIRMADA), pagina.capture());
+        assertThat(pagina.getValue().getPageSize()).isEqualTo(10);
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("Las inscripciones del torneo sin TORNEO_GESTIONAR responden 403 sin llamar al servicio")
+    void inscripcionesDelTorneoSinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+
+        mockMvc.perform(get("/api/v1/torneos/9/inscripciones"))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(inscripcionTorneoService);
     }
