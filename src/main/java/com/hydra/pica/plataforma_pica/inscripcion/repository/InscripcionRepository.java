@@ -25,6 +25,9 @@ public interface InscripcionRepository extends JpaRepository<Inscripcion, Long> 
             + "and (i.usuario.id = :usuarioId or e.capitan.id = :usuarioId) order by i.id")
     List<Long> borradoresDe(@Param("torneoId") Long torneoId, @Param("usuarioId") Long usuarioId);
 
+    /** Una inscripción activa del usuario en el torneo: sirve para decir cuál es cuando choca con otra. */
+    Optional<Inscripcion> findFirstByTorneoIdAndUsuarioIdAndEstadoIn(Long torneoId, Long usuarioId, Collection<EstadoInscripcion> estados);
+
     /** La inscripción del equipo en el torneo: por la clave única de V9 hay una sola, en cualquier estado. */
     Optional<Inscripcion> findByTorneoIdAndEquipoId(Long torneoId, Long equipoId);
 

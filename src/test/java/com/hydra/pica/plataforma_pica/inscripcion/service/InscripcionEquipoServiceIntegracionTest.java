@@ -624,6 +624,23 @@ class InscripcionEquipoServiceIntegracionTest {
     }
 
     @Test
+    void elErrorPorElBorradorDelCapitanTraeSuIdEnUnCampoAparte() {
+        Long otroEquipo = equipo("Los Halcones del Sur", capitan);
+        long idDelBorrador = inscripcionDeEquipo(torneo, equipo, "BORRADOR");
+
+        assertThat(inscripcionIdDelError(() -> inscripcionService.crear(capitan, torneo, existente(otroEquipo))))
+                .isEqualTo(idDelBorrador);
+    }
+
+    @Test
+    void elErrorPorUnaCanceladaDelEquipoTraeSuIdEnUnCampoAparte() {
+        long cancelada = inscripcionDeEquipo(torneo, equipo, "CANCELADA");
+
+        assertThat(inscripcionIdDelError(() -> inscripcionService.crear(capitan, torneo, existente(equipo))))
+                .isEqualTo(cancelada);
+    }
+
+    @Test
     void elBorradorRechazadoNoDejaUnEquipoNuevoCreado() {
         inscripcionDeEquipo(torneo, equipo, "BORRADOR");
 
@@ -1311,6 +1328,14 @@ class InscripcionEquipoServiceIntegracionTest {
     }
 
     // --- escenario ----------------------------------------------------------
+
+    /** El inscripcionId que el 409 INSCRIPCION_DUPLICADA agrega al ProblemDetail para no parsear el detail. */
+    private Object inscripcionIdDelError(ThrowingCallable accion) {
+        ApiException error = catchThrowableOfType(ApiException.class, accion);
+        assertThat(error).isNotNull();
+        assertThat(error.getCodigo()).isEqualTo(CodigoError.INSCRIPCION_DUPLICADA);
+        return error.getPropiedades().get("inscripcionId");
+    }
 
     private void assertError(ThrowingCallable accion, HttpStatus status, CodigoError codigo) {
         ApiException error = catchThrowableOfType(ApiException.class, accion);
