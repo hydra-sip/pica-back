@@ -597,6 +597,51 @@ class InscripcionEquipoServiceIntegracionTest {
         assertThat(integranteActivo(bloqueado.getId(), equipo)).isFalse();
     }
 
+    // --- organizador y árbitros en la nómina (PICA-280) ---------------------
+
+    @Test
+    void elOrganizadorNoSeCargaEnLaNominaDelBorradorYNoQuedaNadaGuardado() {
+        assertError(() -> inscripcionService.crear(capitan, torneo, nuevo("Los Zorros", organizador)),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inscripcion WHERE torneo_id = ?", Integer.class, torneo)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM equipo WHERE nombre = 'Los Zorros'", Integer.class)).isZero();
+    }
+
+    @Test
+    void unArbitroQueTodaviaNoAceptoTampocoSeCargaEnLaNomina() {
+        Long arbitro = integranteNuevo("arbitro_pend_borrador_eq");
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id, estado) VALUES (?, ?, 'PENDIENTE')", torneo, arbitro);
+
+        assertError(() -> inscripcionService.crear(capitan, torneo, existente(equipo, arbitro)),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+    }
+
+    @Test
+    void alEditarNoSeSumaUnArbitroYLaNominaAnteriorQuedaIgual() {
+        Long jugador = integranteNuevo("jug_editar_arbitro_eq");
+        Long arbitro = integranteNuevo("arbitro_editar_eq");
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", torneo, arbitro);
+        long id = inscripcionService.crear(capitan, torneo, existente(equipo, jugador)).id();
+
+        assertError(() -> inscripcionService.editar(capitan, id, existente(equipo, jugador, arbitro)),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+
+        assertThat(inscripcionService.detalle(capitan, id).nomina()).extracting(UsuarioPublico::id)
+                .containsExactlyInAnyOrder(capitan, jugador);
+    }
+
+    @Test
+    void unArbitroQueAdemasFiguraEnOtraInscripcionActivaRecibeElErrorDeArbitro() {
+        Long arbitro = usuario("arbitro_inscripto_eq").getId();
+        integrante(equipo, arbitro);
+        inscripcionActivaDeOtroEquipoCon(arbitro, "CONFIRMADA");
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", torneo, arbitro);
+
+        assertError(() -> inscripcionService.crear(capitan, torneo, existente(equipo, arbitro)),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+    }
+
     // --- duplicados ---------------------------------------------------------
 
     @Test

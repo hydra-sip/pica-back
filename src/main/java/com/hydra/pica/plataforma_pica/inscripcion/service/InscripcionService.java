@@ -186,9 +186,11 @@ public class InscripcionService {
                 });
     }
 
-    // un jugador figura en una sola inscripción activa por torneo: pendiente de pago o confirmada
+    // un jugador figura en una sola inscripción activa por torneo: pendiente de pago o confirmada. El organizador
+    // y los árbitros del torneo no figuran en ninguna, como en el reemplazo
     private void validarJugadoresLibres(Torneo torneo, List<Usuario> jugadores, Long editada) {
         for (Usuario jugador : jugadores) {
+            validarQueNoOrganiza(torneo, jugador.getId());
             if (nominaRepository.figuraEnOtraInscripcion(torneo.getId(), jugador.getId(), ACTIVAS, editada)) {
                 throw new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO,
                         "El jugador " + jugador.getId() + " ya figura en otra inscripción activa del torneo " + torneo.getId());
