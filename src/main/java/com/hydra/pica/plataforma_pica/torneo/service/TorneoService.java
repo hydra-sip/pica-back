@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -17,12 +18,16 @@ import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
+import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancha;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.dto.CheckinTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.OpcionesTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
@@ -56,6 +61,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class TorneoService {
 
     private static final int CUPO_MINIMO = 2;
+    private static final Set<EstadoTorneo> CHECKIN_CONFIGURABLE =
+            EnumSet.of(EstadoTorneo.INSCRIPCION_ABIERTA, EstadoTorneo.INSCRIPCION_CERRADA, EstadoTorneo.EN_CURSO);
 
     private final TorneoRepository torneoRepository;
     private final TorneosPropios torneosPropios;
@@ -64,6 +71,7 @@ public class TorneoService {
     private final UsuarioRepository usuarioRepository;
     private final TorneoProperties torneoProperties;
     private final AuditingHandler auditingHandler;
+    private final AuditoriaRepository auditoriaRepository;
 
     /** {@code sede} es opcional: con ella vienen también las canchas que ya existen ahí. */
     @Transactional(readOnly = true)
@@ -165,6 +173,58 @@ public class TorneoService {
         Map<String, String> porClave = new LinkedHashMap<>();
         canchas.forEach(c -> porClave.putIfAbsent(c.strip().toLowerCase(Locale.ROOT), c.strip()));
         return List.copyOf(porClave.values());
+    }
+
+    /**
+     * La ventana de check-in de todos los cruces (HU-308): abre {@code minAntes} minutos antes y dura
+     * {@code duracion}, sin llegar al horario del partido. Con el torneo publicado y sin terminar; rige desde ahora,
+     * aun para una ventana abierta, y los check-ins hechos quedan.
+     */
+    @Transactional
+    public TorneoInformacion configurarCheckin(Long organizadorId, Long id, CheckinTorneoRequest request) {
+        Torneo torneo = torneosPropios.buscarBloqueado(organizadorId, id);
+        if (!CHECKIN_CONFIGURABLE.contains(torneo.getEstado())) {
+            throw new ConflictoException(CodigoError.TORNEO_NO_EDITABLE,
+                    "El torneo " + id + " está " + torneo.getEstado() + ": el check-in se configura publicado");
+        }
+        validarCheckin(request);
+        torneo.setCheckinMinAntes(request.minAntes());
+        torneo.setCheckinDuracionMin(request.duracion());
+
+        Map<String, Object> detalle = new LinkedHashMap<>();
+        detalle.put("cambio", "CHECKIN");
+        detalle.put("minAntes", request.minAntes());
+        detalle.put("duracion", request.duracion());
+        Auditoria auditoria = new Auditoria();
+        auditoria.setUsuario(usuarioRepository.getReferenceById(organizadorId));
+        auditoria.setAccion(AccionAuditoria.MODIFICACION);
+        auditoria.setEntidad("TORNEO");
+        auditoria.setEntidadId(String.valueOf(id));
+        auditoria.setDetalle(detalle);
+        auditoriaRepository.save(auditoria);
+        return torneosPropios.informacion(torneo);
+    }
+
+    private static void validarCheckin(CheckinTorneoRequest request) {
+        List<ErrorCampo> errores = new ArrayList<>();
+        positivo("minAntes", request.minAntes(), errores);
+        positivo("duracion", request.duracion(), errores);
+        if (errores.isEmpty() && request.duracion() > request.minAntes()) {
+            errores.add(new ErrorCampo("duracion", ErrorCampo.Codigo.VENTANA_INVALIDA,
+                    "La ventana se superpondría con el cruce: tiene que durar como mucho lo que anticipa"));
+        }
+        if (!errores.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay campos inválidos")
+                    .con("errores", errores);
+        }
+    }
+
+    private static void positivo(String campo, Integer valor, List<ErrorCampo> errores) {
+        if (valor == null) {
+            errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.REQUERIDO, "Falta en minutos"));
+        } else if (valor <= 0) {
+            errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que ser mayor que 0"));
+        }
     }
 
     // --- qué cambia en un torneo publicado ------------------------------------

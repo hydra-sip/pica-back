@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -31,6 +32,7 @@ import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.service.EvidenciaService;
 import com.hydra.pica.plataforma_pica.partido.service.LaudoService;
 import com.hydra.pica.plataforma_pica.partido.service.PartidoService;
+import com.hydra.pica.plataforma_pica.partido.service.ProgramacionService;
 import com.hydra.pica.plataforma_pica.partido.service.ResultadoService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -66,6 +68,7 @@ class PartidoControllerTest {
     @MockitoBean private ResultadoService resultadoService;
     @MockitoBean private EvidenciaService evidenciaService;
     @MockitoBean private LaudoService laudoService;
+    @MockitoBean private ProgramacionService programacionService;
     @MockitoBean private CurrentUserProvider currentUserProvider;
 
     @Test
@@ -101,6 +104,19 @@ class PartidoControllerTest {
                 .andExpect(jsonPath("$.errores[?(@.campo == 'puntajeVisitante')].codigo").value("REQUERIDO"))
                 .andExpect(jsonPath("$.errores[?(@.campo == 'puntajeLocal')].codigo").value("VALOR_INVALIDO"));
         verifyNoInteractions(resultadoService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Programar el partido pasa la fecha y el usuario de la sesión")
+    void programa() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(CAPITAN));
+        when(programacionService.programar(CAPITAN, 3L, Instant.parse("2026-11-03T18:00:00Z"))).thenReturn(CARGADO);
+
+        mockMvc.perform(put("/api/v1/partidos/3/programacion").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"fechaProgramada\":\"2026-11-03T18:00:00Z\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(3));
     }
 
     @Test
