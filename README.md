@@ -61,6 +61,8 @@ Todos los usuarios tienen la contraseña `PicaDev2026`, también el `admin` (sal
 
 El seed es repetible: si se modifica, Flyway lo vuelve a correr en el próximo arranque y solo agrega lo que falta.
 
+Para probar las objeciones (HU-303 y HU-304), `scripts/escenario-objeciones.sh` pone el Torneo cerrado en curso y, por la API, deja sus dos semifinales objetadas, con evidencia; con `--laudar`, además lauda la primera. Va por la API para que queden los archivos de evidencia y la auditoría como en uso real, y no toca una semifinal que ya tiene resultado.
+
 ### Probar que levantó
 
 Una vez levantada la aplicación en `http://localhost:8080`:
