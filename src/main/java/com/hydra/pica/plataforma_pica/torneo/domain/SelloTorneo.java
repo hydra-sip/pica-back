@@ -8,6 +8,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Los sellos SHA-256 que se fijan al publicar el torneo (PICA-204), en hexadecimal como las columnas {@code *_hash}.
@@ -24,6 +25,14 @@ import java.util.List;
  * gasto:1:20000.00:Honorarios árbitros
  * </pre>
  * Lo que se paga de un gasto después no entra: pagarlo no cambia el sello.
+ *
+ * <p>El de la lista de inscriptos se fija al cerrar la inscripción (HU-206): una línea por inscripción confirmada,
+ * ordenadas por id y separadas con {@code \n}, sin salto al final. La individual lleva el usuario; la de equipo, el
+ * equipo y su nómina con el capitán, de menor a mayor. Sin confirmadas, el texto es vacío.
+ * <pre>
+ * 31;U;7
+ * 32;E;4;7,9,12
+ * </pre>
  */
 public final class SelloTorneo {
 
@@ -47,6 +56,22 @@ public final class SelloTorneo {
         gastos.forEach(g -> lineas.add("gasto:" + g.getId().getGastoId() + ":" + decimal(g.getMonto()) + ":"
                 + g.getDescripcion()));
         return String.join("\n", lineas);
+    }
+
+    /** Una línea de la lista de inscriptos: la de una inscripción individual. */
+    public static String lineaIndividual(Long inscripcionId, Long usuarioId) {
+        return inscripcionId + ";U;" + usuarioId;
+    }
+
+    /** Una línea de la lista de inscriptos: la de una inscripción de equipo, con la nómina en cualquier orden. */
+    public static String lineaDeEquipo(Long inscripcionId, Long equipoId, List<Long> nomina) {
+        return inscripcionId + ";E;" + equipoId + ";"
+                + nomina.stream().sorted().map(String::valueOf).collect(Collectors.joining(","));
+    }
+
+    /** El sello de la lista con las líneas ya en el orden de las inscripciones. */
+    public static String lista(List<String> lineas) {
+        return sha256(String.join("\n", lineas));
     }
 
     public static String sha256(String texto) {

@@ -889,7 +889,7 @@ paths:
         Reemplaza los datos de los pasos 1 y 2 con lo que viene (lo que falta queda vacío), canchas incluidas.
         Mismas validaciones que el alta. Con la inscripción abierta o cerrada también se edita (HU-202), salvo lo que
         dice `camposBloqueados` del torneo: nunca la disciplina, si es individual o por equipos ni el reglamento; con
-        la inscripción cerrada, tampoco el cierre; y con al menos una inscripción paga, solo el nombre, la descripción y
+        la inscripción cerrada, tampoco el cierre ni el cupo máximo (HU-206: el cierre es definitivo); y con al menos una inscripción paga, solo el nombre, la descripción y
         el cupo máximo. Se rechaza solo lo que cambia: 409 `CAMPOS_BLOQUEADOS` con la lista en `campos`. Publicado,
         "no puede ser anterior a hoy" se mira solo en las fechas que cambian, no se puede vaciar lo que pidió la
         publicación (400 `REQUERIDO`) y el cupo máximo no baja de los inscriptos (pendientes de pago y confirmados;
@@ -1583,6 +1583,35 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/cerrar-inscripcion:
+    post:
+      tags: [Torneos]
+      summary: Cerrar la inscripción del torneo
+      x-jira: PICA-212
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        HU-206. Sin cuerpo. Solo el organizador del torneo, en cualquier momento mientras la inscripción está abierta,
+        aunque no se haya llegado al cupo mínimo ni haya confirmadas. La inscripción también se cierra sola: cuando la
+        última confirmación completa el cupo (al pagar, o al confirmar en un torneo gratis) y cuando llega la fecha de
+        cierre, con una tarea programada. En los tres casos pasa lo mismo, bloqueando la fila del torneo: el torneo
+        pasa a INSCRIPCION_CERRADA; los borradores y las pendientes de pago pasan a CANCELADA (no se cobró nada); se
+        sella la lista de confirmadas en `listaHash` (ver `TorneoInformacion`) con la fecha y hora en
+        `inscripcionCerradaEn`; y queda en la auditoría (CIERRE_INSCRIPCION) con el motivo (CUPO, FECHA o MANUAL) y
+        cuántas se cancelaron (el cierre a mano lleva al organizador; el automático, ningún usuario). El cierre es
+        definitivo y no se cambia el cupo máximo: crear y pagar una inscripción y reemplazar un jugador responden 409
+        `INSCRIPCION_NO_ABIERTA` (pagar lo chequea antes que el estado, porque la pendiente ya quedó cancelada), y
+        editar o confirmar un borrador cancelado, `INSCRIPCION_NO_EDITABLE`. 404
+        `TORNEO_NO_ENCONTRADO` si no existe, está dado de baja o quien llama no es el organizador. 409
+        `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA.
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   # --- Inscripciones -----------------------------------------------------------
   # Crear, confirmar, reabrir, ver el resumen de pago, pagar y cancelar exigen INSCRIPCION_GESTIONAR (PARTICIPANTE, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO.
   # Ver alcanza con estar logueado: la ven quien se inscribió y el organizador del torneo. Para cualquier otro usuario
@@ -1604,8 +1633,8 @@ paths:
         reactiva. En el borrador la nómina puede estar incompleta: su tamaño se valida al confirmar.
         Nace en BORRADOR, sin el reglamento aceptado y sin ocupar cupo. Quien se inscribe tiene un solo borrador
         por torneo: el suyo en uno individual, o el de cualquiera de sus equipos si es capitán. Si ya lo tiene,
-        el mensaje del error trae el id del borrador existente para retomarlo (en uno por equipos, con `PUT`) o
-        cancelarlo; una cancelada no cuenta. Además, un equipo tiene una sola inscripción por torneo, en
+        el error trae en `inscripcionId` el id del borrador existente (también está en el mensaje) para retomarlo
+        (en uno por equipos, con `PUT`) o cancelarlo; una cancelada no cuenta. Además, un equipo tiene una sola inscripción por torneo, en
         cualquier estado.
         404 `TORNEO_NO_ENCONTRADO` si el torneo no existe o está dado de baja; `EQUIPO_NO_ENCONTRADO` si el
         equipo no existe, está dado de baja o no es del capitán; `USUARIO_NO_ENCONTRADO` si un jugador no existe.
@@ -1616,7 +1645,8 @@ paths:
         jugador, el capitán incluido, figura en otra inscripción activa (pendiente de pago o confirmada) del
         torneo.
         403 `USUARIO_BLOQUEADO` si el capitán o un jugador tiene un bloqueo vigente;
-        `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si el capitán es el organizador o un árbitro designado del torneo.
+        `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si el capitán o un jugador de la nómina es el organizador o un árbitro
+        designado del torneo, en cualquier estado de la designación.
         400 `VALIDACION` si un torneo por equipos llega sin cuerpo, si un torneo individual llega con cuerpo, si
         no viene exactamente uno de `equipoId` y `nombreEquipoNuevo`, o si el nombre del equipo nuevo está en blanco
         o pasa los 100 caracteres.
@@ -1683,7 +1713,9 @@ paths:
         descarta. 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (un jugador de la nómina o
         el organizador tampoco la edita); `EQUIPO_NO_ENCONTRADO`; `USUARIO_NO_ENCONTRADO`. 409
         `INSCRIPCION_NO_EDITABLE` si no está en BORRADOR; `INSCRIPCION_NO_ABIERTA`; `USUARIO_NO_ACTIVO`;
-        `INSCRIPCION_DUPLICADA`; `JUGADOR_YA_INSCRIPTO`. 403 `USUARIO_BLOQUEADO`. 400 `VALIDACION` si la inscripción
+        `INSCRIPCION_DUPLICADA`; `JUGADOR_YA_INSCRIPTO`. 403 `USUARIO_BLOQUEADO`;
+        `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si el capitán o un jugador de la nómina es el organizador o un árbitro
+        designado del torneo. 400 `VALIDACION` si la inscripción
         es individual (no tiene equipo ni nómina) o por las mismas reglas del cuerpo que al crear.
       requestBody:
         required: true
@@ -1722,11 +1754,13 @@ paths:
       description: >-
         Solo quien se inscribió (el capitán, en una de equipo), y solo un borrador. Guarda la fecha y hora en que
         aceptó el reglamento y la inscripción pasa a PENDIENTE_PAGO; si el torneo es gratis (valor de inscripción 0)
-        pasa directo a CONFIRMADA y ocupa un lugar del cupo. Sin cuerpo, sin el campo o con `false` el reglamento
+        pasa directo a CONFIRMADA y ocupa un lugar del cupo; si con ella las confirmadas llegan al cupo máximo, en la
+        misma operación se cierra la inscripción del torneo (HU-206) y la respuesta no cambia. Sin cuerpo, sin el campo o con `false` el reglamento
         cuenta como no aceptado. Vuelve a chequear el torneo, el usuario y la inscripción duplicada, como al crear.
         En una de equipo valida además la nómina: la cantidad de jugadores, con el capitán incluido, tiene que
         estar entre el tamaño de equipo y el máximo de nómina del torneo, y cada jugador tiene que seguir activo,
-        sin bloqueo vigente y sin otra inscripción activa en el torneo. Se bloquea la fila del torneo para que dos
+        sin bloqueo vigente, no ser el organizador ni un árbitro designado del torneo (lo pueden haber designado
+        mientras el borrador estaba guardado) y no figurar en otra inscripción activa del torneo. Se bloquea la fila del torneo para que dos
         equipos con un jugador en común no confirmen a la vez.
         404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador);
         `TORNEO_NO_ENCONTRADO` si el torneo fue dado de baja.
@@ -1738,7 +1772,9 @@ paths:
         confirmadas ya completan el cupo (la inscripción sigue en BORRADOR). En un torneo con costo es un aviso
         temprano: el cupo se chequea en firme al pagar. En uno gratis es el chequeo en firme, con la fila del
         torneo bloqueada.
-        403 `USUARIO_BLOQUEADO` si el capitán o un jugador de la nómina tiene un bloqueo vigente.
+        403 `USUARIO_BLOQUEADO` si el capitán o un jugador de la nómina tiene un bloqueo vigente;
+        `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si el capitán o un jugador de la nómina es el organizador o un árbitro
+        designado del torneo (la inscripción sigue en BORRADOR).
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
         required: false
@@ -1856,7 +1892,9 @@ paths:
         del torneo, cuenta las inscripciones confirmadas y,
         si no queda lugar, responde `CUPO_COMPLETO` sin cobrar. Con lugar, cobra el valor de la inscripción con
         la misma clave de idempotencia por inscripción y la deja en CONFIRMADA. En un torneo sin costo
-        (valor 0) la confirma sin pasar por el cobro. Reintentar el pago de una inscripción ya CONFIRMADA
+        (valor 0) la confirma sin pasar por el cobro. Si con esta las confirmadas llegan al cupo máximo, en la misma
+        operación se cierra la inscripción del torneo (HU-206, ver `POST /torneos/{id}/cerrar-inscripcion`); la
+        respuesta no cambia. Reintentar el pago de una inscripción ya CONFIRMADA
         responde 200 sin cobrar de nuevo. Si el cobro se rechaza, la inscripción sigue en PENDIENTE_PAGO.
         404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario; `TORNEO_NO_ENCONTRADO` si el
         torneo fue dado de baja.
@@ -2067,7 +2105,8 @@ components:
         403 SIN_PERMISO.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
-        INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él) ·
+        INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
+        figuran en una nómina) ·
         NO_ES_CAPITAN (cargar el resultado o subir evidencia sin ser el capitán de uno de los dos lados).
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
@@ -2124,6 +2163,14 @@ components:
         errores: {type: array, items: {$ref: '#/components/schemas/ErrorCampo'}}
         invalidos: {type: array, items: {type: string}, description: 'Solo en PERMISO_NO_ENCONTRADO: los códigos que no existen'}
         roles: {type: array, items: {type: string}, description: 'Solo en SIN_PERMISO al asignar roles (alta o PUT de roles): los que tienen permisos que quien llama no tiene'}
+        inscripcionId:
+          type: integer
+          format: int64
+          minimum: 1
+          description: >-
+            Solo en INSCRIPCION_DUPLICADA: el id de la inscripción que ya existe (un borrador se retoma con
+            GET y PUT /inscripciones/{id}). Falta cuando el choque lo detecta recién la base ante dos pedidos
+            simultáneos, que no dejan ver cuál ganó.
         faltantes:
           type: array
           items: {anyOf: [{$ref: '#/components/schemas/FaltantePublicacion'}, {$ref: '#/components/schemas/FaltanteTorneo'}]}
@@ -2522,6 +2569,19 @@ components:
             puesto y `gasto:<n>:<monto>:<descripción>` por gasto previsto, los dos en orden. Lo que se pague de un
             gasto después no entra.
         publicadoEn: {type: [string, 'null'], format: date-time}
+        inscripcionCerradaEn:
+          type: [string, 'null']
+          format: date-time
+          description: Fecha y hora del cierre de la inscripción (HU-206); null mientras no se cerró
+        listaHash:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
+          description: >-
+            SHA-256 en hexadecimal de la lista de inscriptos, sellada al cerrar la inscripción; null mientras no se
+            cerró. Se calcula sobre un texto en UTF-8 con una línea por inscripción CONFIRMADA, ordenadas por id y
+            separadas con `\n`, sin salto al final: `<inscripcionId>;U;<usuarioId>` en una individual y
+            `<inscripcionId>;E;<equipoId>;<ids>` en una de equipo, con los ids de la nómina (el capitán incluido) de
+            menor a mayor separados por comas. Sin confirmadas el texto es vacío.
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: string, format: date-time}
         camposBloqueados:

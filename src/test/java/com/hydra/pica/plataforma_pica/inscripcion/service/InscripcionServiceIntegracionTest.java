@@ -180,6 +180,28 @@ class InscripcionServiceIntegracionTest {
     }
 
     @Test
+    void elErrorPorUnaActivaTraeElIdDeEsaInscripcionEnUnCampoAparte() {
+        long activa = inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        assertThat(inscripcionIdDelError(() -> inscripcionService.crear(jugador, torneo, null))).isEqualTo(activa);
+    }
+
+    @Test
+    void elErrorPorUnBorradorExistenteTraeSuIdEnUnCampoAparte() {
+        long existente = inscripcionDe(jugador, "BORRADOR");
+
+        assertThat(inscripcionIdDelError(() -> inscripcionService.crear(jugador, torneo, null))).isEqualTo(existente);
+    }
+
+    @Test
+    void alConfirmarConOtraActivaElErrorTraeElIdDeLaOtra() {
+        long borrador = inscripcionDe(jugador, "BORRADOR");
+        long otra = inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        assertThat(inscripcionIdDelError(() -> inscripcionService.confirmar(jugador, borrador, true))).isEqualTo(otra);
+    }
+
+    @Test
     void conUnBorradorEnElTorneoNoSeCreaOtroYElErrorTraeElIdDelExistente() {
         long existente = inscripcionDe(jugador, "BORRADOR");
 
@@ -774,6 +796,14 @@ class InscripcionServiceIntegracionTest {
     }
 
     // --- escenario ----------------------------------------------------------
+
+    /** El inscripcionId que el 409 INSCRIPCION_DUPLICADA agrega al ProblemDetail para no parsear el detail. */
+    private Object inscripcionIdDelError(ThrowingCallable accion) {
+        ApiException error = catchThrowableOfType(ApiException.class, accion);
+        assertThat(error).isNotNull();
+        assertThat(error.getCodigo()).isEqualTo(CodigoError.INSCRIPCION_DUPLICADA);
+        return error.getPropiedades().get("inscripcionId");
+    }
 
     private void assertError(ThrowingCallable accion, HttpStatus status, CodigoError codigo) {
         ApiException error = catchThrowableOfType(ApiException.class, accion);

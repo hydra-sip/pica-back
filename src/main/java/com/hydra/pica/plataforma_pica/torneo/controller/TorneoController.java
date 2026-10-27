@@ -9,6 +9,7 @@ import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.MisTorneos;
 import com.hydra.pica.plataforma_pica.torneo.dto.OpcionesTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
+import com.hydra.pica.plataforma_pica.torneo.service.InscripcionTorneoService;
 import com.hydra.pica.plataforma_pica.torneo.service.MisTorneosService;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
 import jakarta.validation.Valid;
@@ -38,12 +39,14 @@ public class TorneoController {
 
     private final TorneoService torneoService;
     private final MisTorneosService misTorneosService;
+    private final InscripcionTorneoService inscripcionTorneoService;
     private final CurrentUserProvider currentUserProvider;
 
     public TorneoController(TorneoService torneoService, MisTorneosService misTorneosService,
-            CurrentUserProvider currentUserProvider) {
+            InscripcionTorneoService inscripcionTorneoService, CurrentUserProvider currentUserProvider) {
         this.torneoService = torneoService;
         this.misTorneosService = misTorneosService;
+        this.inscripcionTorneoService = inscripcionTorneoService;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -79,6 +82,12 @@ public class TorneoController {
     public TorneoInformacion actualizarInformacion(@PathVariable Long id,
             @Valid @RequestBody InformacionTorneoRequest request) {
         return torneoService.actualizarInformacion(usuarioActual(), id, request);
+    }
+
+    /** HU-206: cierra la inscripción antes de la fecha; el cierre es definitivo. */
+    @PostMapping("/{id}/cerrar-inscripcion")
+    public TorneoInformacion cerrarInscripcion(@PathVariable Long id) {
+        return inscripcionTorneoService.cerrar(usuarioActual(), id);
     }
 
     /** La ventana de check-in de todos los cruces (HU-308); con el torneo publicado y sin terminar. */

@@ -16,7 +16,8 @@ import org.springframework.stereotype.Component;
  * <ul>
  * <li>En BORRADOR, todos.</li>
  * <li>Publicado (inscripción abierta o cerrada): nunca la disciplina, si es individual o por equipos ni el reglamento,
- * que quedó sellado; con la inscripción cerrada, tampoco el cierre. Con al menos una inscripción paga, además, nada
+ * que quedó sellado; con la inscripción cerrada, tampoco el cierre ni el cupo máximo (el cierre es definitivo,
+ * HU-206). Con al menos una inscripción paga, además, nada
  * de sede, fechas, formato ni cupo mínimo: quedan el nombre, la descripción y el cupo máximo.</li>
  * <li>En curso, finalizado o cancelado, ninguno.</li>
  * </ul>
@@ -55,6 +56,7 @@ class EdicionTorneo {
         List<String> bloqueados = new ArrayList<>(SELLADOS);
         if (estado == EstadoTorneo.INSCRIPCION_CERRADA) {
             bloqueados.add("cierreInscripcionEn");
+            bloqueados.add("cupoMaximo");
         }
         if (inscripcionRepository.countByTorneoIdAndEstado(torneo.getId(), EstadoInscripcion.CONFIRMADA) > 0) {
             CON_INSCRIPCIONES_PAGAS.stream().filter(c -> !bloqueados.contains(c)).forEach(bloqueados::add);

@@ -25,6 +25,7 @@ import com.hydra.pica.plataforma_pica.equipo.repository.NominaRepository;
 import com.hydra.pica.plataforma_pica.equipo.repository.UsuarioEquipoRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.domain.MotivoCierre;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Reemplazo;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
@@ -78,6 +79,7 @@ public class InscripcionService {
     private final NominaRepository nominaRepository;
     private final UsuarioEquipoRepository usuarioEquipoRepository;
     private final ReemplazoRepository reemplazoRepository;
+    private final CierreInscripcion cierreInscripcion;
 
     /**
      * Crea el borrador. En un torneo individual se inscribe el usuario y no lleva cuerpo; en uno por equipos
@@ -103,11 +105,24 @@ public class InscripcionService {
 
     // quien se inscribe tiene un solo borrador por torneo (el suyo o, si es capitán, el de cualquiera de sus
     // equipos): si ya hay uno, lo retoma en vez de abrir otro
+    /**
+     * 409 porque el usuario ya tiene una inscripción activa en el torneo; si se la encuentra, el error trae su id
+     * en {@code inscripcionId} para que el front no tenga que leerlo del detalle.
+     */
+    private ApiException duplicadaPorActiva(Long torneoId, Long usuarioId) {
+        ApiException error = new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
+                "Ya tenés una inscripción activa en el torneo " + torneoId);
+        inscripcionRepository.findFirstByTorneoIdAndUsuarioIdAndEstadoIn(torneoId, usuarioId, ACTIVAS)
+                .ifPresent(activa -> error.con("inscripcionId", activa.getId()));
+        return error;
+    }
+
     private void exigirSinBorrador(Long torneoId, Long usuarioId) {
         List<Long> borradores = inscripcionRepository.borradoresDe(torneoId, usuarioId);
         if (!borradores.isEmpty()) {
             throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA, "Ya tenés el borrador " + borradores.get(0)
-                    + " en el torneo " + torneoId + ": retomalo o cancelalo antes de crear otro");
+                    + " en el torneo " + torneoId + ": retomalo o cancelalo antes de crear otro")
+                    .con("inscripcionId", borradores.get(0));
         }
     }
 
@@ -117,8 +132,7 @@ public class InscripcionService {
                     "Un torneo individual no lleva equipo ni nómina");
         }
         if (inscripcionRepository.existsByTorneoIdAndUsuarioIdAndEstadoIn(torneo.getId(), usuario.getId(), ACTIVAS)) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
-                    "Ya tenés una inscripción activa en el torneo " + torneo.getId());
+            throw duplicadaPorActiva(torneo.getId(), usuario.getId());
         }
 
         Inscripcion inscripcion = new Inscripcion();
@@ -182,13 +196,16 @@ public class InscripcionService {
                 .filter(otra -> !otra.getId().equals(editada))
                 .ifPresent(otra -> {
                     throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA, "El equipo " + equipo.getId()
-                            + " ya tiene la inscripción " + otra.getId() + " en el torneo (" + otra.getEstado() + ")");
+                            + " ya tiene la inscripción " + otra.getId() + " en el torneo (" + otra.getEstado() + ")")
+                            .con("inscripcionId", otra.getId());
                 });
     }
 
-    // un jugador figura en una sola inscripción activa por torneo: pendiente de pago o confirmada
+    // un jugador figura en una sola inscripción activa por torneo: pendiente de pago o confirmada. El organizador
+    // y los árbitros del torneo no figuran en ninguna, como en el reemplazo
     private void validarJugadoresLibres(Torneo torneo, List<Usuario> jugadores, Long editada) {
         for (Usuario jugador : jugadores) {
+            validarQueNoOrganiza(torneo, jugador.getId());
             if (nominaRepository.figuraEnOtraInscripcion(torneo.getId(), jugador.getId(), ACTIVAS, editada)) {
                 throw new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO,
                         "El jugador " + jugador.getId() + " ya figura en otra inscripción activa del torneo " + torneo.getId());
@@ -332,14 +349,14 @@ public class InscripcionService {
         if (inscripcion.esDeEquipo()) {
             validarNomina(inscripcion, torneo);
         } else if (inscripcionRepository.existsByTorneoIdAndUsuarioIdAndEstadoIn(torneoId, usuarioId, ACTIVAS)) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
-                    "Ya tenés una inscripción activa en el torneo " + torneoId);
+            throw duplicadaPorActiva(torneoId, usuarioId);
         }
         validarCupo(torneo);
         inscripcion.setEstado(gratis ? EstadoInscripcion.CONFIRMADA : EstadoInscripcion.PENDIENTE_PAGO);
         inscripcion.setReglamentoAceptadoEn(Instant.now());
+        Inscripcion guardada;
         try {
-            return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
+            guardada = inscripcionRepository.saveAndFlush(inscripcion);
         } catch (DataIntegrityViolationException e) {
             // otra confirmación individual del mismo usuario ganó la carrera entre el chequeo de arriba y este flush
             if (UQ_ACTIVA.equals(nombreDeConstraint(e))) {
@@ -348,6 +365,10 @@ public class InscripcionService {
             }
             throw e;
         }
+        if (gratis) {
+            cerrarSiSeCompletoElCupo(torneo);
+        }
+        return detalleDe(guardada);
     }
 
     private void exigirBorrador(Long id, EstadoInscripcion estado) {
@@ -440,13 +461,14 @@ public class InscripcionService {
         if (inscripcion.getEstado() == EstadoInscripcion.CONFIRMADA) {
             return detalleDe(inscripcion);
         }
+        // antes que el estado: el cierre cancela las pendientes, y a quien llega tarde le sirve saber que cerró
+        validarTorneoAbierto(torneo);
         if (inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
                     "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se paga en PENDIENTE_PAGO");
         }
         validarUsuario(usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + usuarioId)));
-        validarTorneoAbierto(torneo);
         validarCupo(torneo);
         // un torneo sin costo no pasa por el cobro: V9 exige monto > 0
         if (torneo.getValorInscripcion().signum() > 0) {
@@ -454,7 +476,17 @@ public class InscripcionService {
                     torneoId, id, "inscripcion-" + id, "Inscripción al torneo " + torneo.getNombre()));
         }
         inscripcion.setEstado(EstadoInscripcion.CONFIRMADA);
-        return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
+        Inscripcion pagada = inscripcionRepository.saveAndFlush(inscripcion);
+        cerrarSiSeCompletoElCupo(torneo);
+        return detalleDe(pagada);
+    }
+
+    // HU-206: la confirmación que completa el cupo cierra la inscripción en la misma transacción, con el torneo ya
+    // bloqueado; así nadie más llega a pagar. El cierre es automático: no lo hace quien paga
+    private void cerrarSiSeCompletoElCupo(Torneo torneo) {
+        if (confirmadas(torneo.getId()) >= torneo.getCupoMaximo()) {
+            cierreInscripcion.cerrar(torneo, MotivoCierre.CUPO, null);
+        }
     }
 
     /** Las que armó el usuario, la más nueva primero; el orden no se elige desde afuera. */
@@ -506,7 +538,7 @@ public class InscripcionService {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
                     "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se reemplaza en CONFIRMADA");
         }
-        validarTorneoAbiertoParaReemplazo(torneo);
+        validarTorneoAbierto(torneo);
 
         Long capitanId = inscripcion.titular().getId();
         Usuario entra = usuarioRepository.findById(request.entraUsuarioId())
@@ -586,14 +618,6 @@ public class InscripcionService {
         if (torneo.getEstado() != EstadoTorneo.INSCRIPCION_ABIERTA || !torneo.getCierreInscripcionEn().isAfter(Instant.now())) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
                     "El torneo " + torneo.getId() + " no tiene la inscripción abierta");
-        }
-    }
-
-    private void validarTorneoAbiertoParaReemplazo(Torneo torneo) {
-        validarTorneoAbierto(torneo);
-        if (confirmadas(torneo.getId()) >= torneo.getCupoMaximo()) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
-                    "El torneo " + torneo.getId() + " ya cerró la inscripción por cupo completo");
         }
     }
 
