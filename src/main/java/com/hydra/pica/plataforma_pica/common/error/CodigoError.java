@@ -83,6 +83,7 @@ public enum CodigoError {
     RESULTADO_NO_PENDIENTE,
     RESULTADO_PROPIO,
     PLAZO_OBJECION_VENCIDO,
+    PARTIDO_NO_OBJETADO,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,

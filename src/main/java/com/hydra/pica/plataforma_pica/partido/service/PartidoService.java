@@ -17,12 +17,14 @@ import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.ObjecionRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
+import com.hydra.pica.plataforma_pica.torneo.service.Arbitraje;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Ver un partido y el próximo cruce de quien consulta (HU-301, PICA-241). */
+/** Ver un partido y el próximo cruce de quien consulta (HU-301, PICA-241), con su objeción y su laudo. */
 @Service
 @RequiredArgsConstructor
 public class PartidoService {
@@ -32,6 +34,7 @@ public class PartidoService {
     private final JuegaRepository juegaRepository;
     private final TorneoRepository torneoRepository;
     private final ObjecionRepository objecionRepository;
+    private final Arbitraje arbitraje;
 
     @Transactional(readOnly = true)
     public PartidoDetalle ver(Long usuarioId, Long partidoId) {
@@ -71,11 +74,20 @@ public class PartidoService {
                 partido.getCancha() == null ? null : partido.getCancha().getNombre(), partido.getFechaProgramada(),
                 Partidos.nombre(partido.getArbitro()), cargadoPor, partido.getResultadoCargadoEn(),
                 partido.getObjecionVenceEn(), Partidos.deCapitan(lados, usuarioId).map(Juega::getLado).orElse(null),
-                objecion(partido, lados));
+                objecion(partido, lados),
+                partido.getEstado() == EstadoPartido.OBJETADO && puedeResolver(partido, usuarioId));
+    }
+
+    /** El organizador o un árbitro aceptado del torneo con permiso para resolver objeciones. */
+    boolean puedeResolver(Partido partido, Long usuarioId) {
+        return usuarioId != null
+                && (partido.getTorneo().getOrganizador().getId().equals(usuarioId) || arbitraje.puedeArbitrar(
+                        partido.getTorneo().getId(), usuarioId, PermisoArbitro.RESOLVER_OBJECIONES));
     }
 
     private ObjecionDetalle objecion(Partido partido, List<Juega> lados) {
-        if (partido.getEstado() != EstadoPartido.OBJETADO && partido.getEstado() != EstadoPartido.CORREGIDO) {
+        // Hasta que la cargan no hay nada que objetar; después puede quedar CONFIRMADO por laudo.
+        if (partido.getResultadoCargadoEn() == null) {
             return null;
         }
         return objecionRepository.findById(partido.getId())
@@ -84,7 +96,10 @@ public class PartidoService {
                         .map(Juega::getLado)
                         .findFirst()
                         .orElse(null), o.getMotivo(), o.getPuntajeLocal(), o.getPuntajeVisitante(),
-                        o.getPenalesLocal(), o.getPenalesVisitante(), o.getCreadoEn()))
+                        o.getPenalesLocal(), o.getPenalesVisitante(), o.getCreadoEn(), o.getDecision(),
+                        o.getJustificacion(), o.getResueltaPor() == null ? null : Partidos.nombre(o.getResueltaPor()),
+                        o.getResueltaEn(), o.getEvidencia() == null ? null : o.getEvidencia().getId(),
+                        o.getLaudoHash()))
                 .orElse(null);
     }
 }

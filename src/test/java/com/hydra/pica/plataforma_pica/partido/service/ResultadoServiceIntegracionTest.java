@@ -27,9 +27,11 @@ import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
+import com.hydra.pica.plataforma_pica.partido.domain.Decision;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
+import com.hydra.pica.plataforma_pica.partido.dto.LaudoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
@@ -70,8 +72,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Cargar el resultado y la evidencia (HU-301, PICA-241) contra Postgres: una prueba por criterio de aceptación, más
  * penales, el próximo cruce y quién ve la evidencia. Aceptarlo, la confirmación al vencer el plazo y el avance de la
- * llave hasta la final (PICA-242). Objetarlo y el aviso (PICA-244). Un torneo individual de 4 con el bracket
- * generado; cada test hace rollback al terminar.
+ * llave hasta la final (PICA-242). Objetarlo y el aviso (PICA-244), y el laudo (PICA-248). Un torneo individual de
+ * 4 con el bracket generado; cada test hace rollback al terminar.
  */
 @SpringBootTest
 @ActiveProfiles("dev")
@@ -91,6 +93,7 @@ class ResultadoServiceIntegracionTest {
     @Autowired private BracketService bracketService;
     @Autowired private ConfirmacionAutomatica confirmacionAutomatica;
     @Autowired private AvisoObjecion avisoObjecion;
+    @Autowired private LaudoService laudoService;
     @MockitoBean private EmailService emailService;
     @Autowired private ApplicationEvents eventos;
     @Autowired private TorneoService torneoService;
@@ -446,7 +449,105 @@ class ResultadoServiceIntegracionTest {
         verify(emailService).enviarAviso(eq("juez_resultado@example.com"), any(), contains("/partidos/" + partido));
     }
 
+    // --- laudo (PICA-248) -------------------------------------------------------
+
+    @Test
+    void sinSerOrganizadorNiArbitroConPermisoNoSeLauda() {
+        Long evidencia = objetado();
+
+        for (Long sinPermiso : List.of(local, visitante, arbitro)) {
+            assertThatThrownBy(() -> laudoService.laudar(sinPermiso, partido, laudo(0, 1, evidencia)))
+                    .extracting("codigo").isEqualTo(CodigoError.SIN_PERMISO);
+        }
+    }
+
+    @Test
+    void unPartidoQueNoEstaObjetadoNoSeLauda() {
+        resultadoService.cargar(local, partido, resultado(2, 0));
+        Long evidencia = evidenciaService.subir(local, partido, JPG, URL).id();
+
+        assertThatThrownBy(() -> laudoService.laudar(organizador, partido, laudo(2, 0, evidencia)))
+                .extracting("codigo").isEqualTo(CodigoError.PARTIDO_NO_OBJETADO);
+    }
+
+    @Test
+    void elLaudoCitaUnaEvidenciaDelPartidoYSigueLasReglasDelMarcador() {
+        objetado();
+        Long otroPartido = jdbc.queryForObject(
+                "SELECT id FROM partido WHERE torneo_id = ? AND ronda = 1 AND posicion = 2", Long.class, torneo);
+        Long ajena = evidenciaService.subir(jugadorDelLado(otroPartido, "LOCAL"), otroPartido, JPG, URL).id();
+
+        assertThatThrownBy(() -> laudoService.laudar(organizador, partido,
+                new LaudoRequest(1, 1, null, null, "Planilla", ajena)))
+                .satisfies(e -> assertThat(campos(e))
+                        .containsExactly("penalesLocal", "penalesVisitante", "evidenciaId"));
+    }
+
+    @Test
+    void unLaudoQueCorrigeDejaElResultadoOficialYAvanzaElGanador() {
+        Long evidencia = objetado();
+        habilitarArbitro();
+        Long ganador = inscripcionDe(partido, "VISITANTE");
+
+        PartidoDetalle laudado = laudoService.laudar(arbitro, partido, laudo(0, 1, evidencia));
+
+        assertThat(laudado.estado()).isEqualTo(EstadoPartido.CORREGIDO);
+        assertThat(laudado.visitante().ganador()).isTrue();
+        assertThat(laudado.puedoResolver()).isFalse();
+        String hashEvidencia = jdbc.queryForObject("SELECT hash FROM evidencia WHERE id = ?", String.class,
+                evidencia);
+        String sello = LaudoService.sello(partido, 0, 1, null, null, hashEvidencia, "La planilla dice 0-1");
+        assertThat(laudado.objecion()).extracting(ObjecionDetalle::decision, ObjecionDetalle::justificacion,
+                        ObjecionDetalle::resueltaPor, ObjecionDetalle::evidenciaId, ObjecionDetalle::laudoHash)
+                .containsExactly(Decision.CORREGIDO, "La planilla dice 0-1", "juez_resultado Test", evidencia, sello);
+        entityManager.flush();
+        assertThat(jdbc.queryForMap("""
+                SELECT usuario_id, detalle ->> 'evidenciaId' AS evidencia, detalle ->> 'evidenciaHash' AS hash,
+                       detalle ->> 'laudoHash' AS sello, creado_en IS NOT NULL AS con_fecha
+                FROM auditoria WHERE accion = 'LAUDO' AND entidad = 'PARTIDO' AND entidad_id = ?""",
+                String.valueOf(partido))).isEqualTo(Map.of("usuario_id", arbitro, "evidencia",
+                String.valueOf(evidencia), "hash", hashEvidencia, "sello", sello, "con_fecha", true));
+        assertThat(jdbc.queryForObject("""
+                SELECT j.inscripcion_id FROM juega j JOIN partido p ON p.id = j.partido_id
+                WHERE p.torneo_id = ? AND p.ronda = 2""", Long.class, torneo)).isEqualTo(ganador);
+        assertThat(eventos.stream(ResultadoConfirmado.class))
+                .containsExactly(new ResultadoConfirmado(torneo, partido, ganador, false));
+    }
+
+    @Test
+    void unLaudoQueMantieneElResultadoCargadoLoDejaConfirmado() {
+        Long evidencia = objetado();
+        assertThat(partidoService.ver(organizador, partido).puedoResolver()).isTrue();
+        assertThat(partidoService.ver(local, partido).puedoResolver()).isFalse();
+
+        PartidoDetalle laudado = laudoService.laudar(organizador, partido, laudo(2, 0, evidencia));
+
+        assertThat(laudado.estado()).isEqualTo(EstadoPartido.CONFIRMADO);
+        assertThat(laudado.objecion().decision()).isEqualTo(Decision.CONFIRMADO);
+        assertThat(laudado.local().ganador()).isTrue();
+    }
+
     // --- helpers --------------------------------------------------------------
+
+    /** El local carga 2-0 y el visitante lo objeta con una foto: devuelve la foto. */
+    private Long objetado() {
+        resultadoService.cargar(local, partido, resultado(2, 0));
+        Long evidencia = evidenciaService.subir(visitante, partido, JPG, URL).id();
+        resultadoService.objetar(visitante, partido, objecion(0, 1, null, null));
+        entityManager.flush();
+        return evidencia;
+    }
+
+    /** El árbitro del torneo acepta la designación con permiso para resolver objeciones. */
+    private void habilitarArbitro() {
+        jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO', resuelve_objeciones = true WHERE torneo_id = ?",
+                torneo);
+        entityManager.clear();
+    }
+
+    private static LaudoRequest laudo(int local, int visitante, Long evidenciaId) {
+        return new LaudoRequest(local, visitante, null, null, "  La planilla dice 0-1 ", evidenciaId);
+    }
 
     /** Carga el resultado desde el local y lo acepta el visitante. */
     private void jugar(Long partidoId, int golesLocal, int golesVisitante) {
