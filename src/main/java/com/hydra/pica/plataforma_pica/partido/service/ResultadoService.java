@@ -2,11 +2,9 @@ package com.hydra.pica.plataforma_pica.partido.service;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.common.config.PartidoConfig.PartidoProperties;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
@@ -28,7 +26,6 @@ import com.hydra.pica.plataforma_pica.partido.event.ResultadoObjetado;
 import com.hydra.pica.plataforma_pica.partido.repository.EvidenciaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.ObjecionRepository;
-import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -57,9 +54,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ResultadoService {
 
-    static final Set<EstadoPartido> EN_JUEGO =
-            EnumSet.of(EstadoPartido.PROGRAMADO, EstadoPartido.CHECK_IN, EstadoPartido.EN_JUEGO);
-
     private final Partidos partidos;
     private final PartidoService partidoService;
     private final JuegaRepository juegaRepository;
@@ -76,12 +70,7 @@ public class ResultadoService {
         Partido partido = partidos.buscarBloqueado(partidoId);
         List<Juega> lados = juegaRepository.delPartido(partidoId);
         Juega mio = Partidos.exigirCapitan(lados, usuarioId, partidoId);
-        if (partido.getTorneo().getEstado() != EstadoTorneo.EN_CURSO || lados.size() < 2
-                || !EN_JUEGO.contains(partido.getEstado())) {
-            throw new ConflictoException(CodigoError.PARTIDO_NO_EN_JUEGO,
-                    "El partido " + partidoId + " está " + partido.getEstado()
-                            + (lados.size() < 2 ? " y sin rival definido" : "") + ": no se le carga resultado");
-        }
+        Partidos.exigirEnJuego(partido, lados, "le carga resultado");
         validar(request);
 
         fijarMarcador(lados, request.puntajeLocal(), request.puntajeVisitante(), request.penalesLocal(),

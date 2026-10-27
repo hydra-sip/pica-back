@@ -16,7 +16,6 @@ import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.EstadoVentana;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.LadoCheckin;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.VentanaCheckin;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
-import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -47,12 +46,7 @@ public class CheckinService {
         Partido partido = partidos.buscarBloqueado(partidoId);
         List<Juega> lados = juegaRepository.delPartido(partidoId);
         Juega mio = Partidos.exigirCapitan(lados, usuarioId, partidoId);
-        if (partido.getTorneo().getEstado() != EstadoTorneo.EN_CURSO || lados.size() < 2
-                || !ResultadoService.EN_JUEGO.contains(partido.getEstado())) {
-            throw new ConflictoException(CodigoError.PARTIDO_NO_EN_JUEGO,
-                    "El partido " + partidoId + " está " + partido.getEstado()
-                            + (lados.size() < 2 ? " y sin rival definido" : "") + ": no se hace check-in");
-        }
+        Partidos.exigirEnJuego(partido, lados, "hace check-in");
         if (mio.getCheckinEn() != null) {
             // por si toca el botón de nuevo o se cortó la conexión: aunque la ventana ya haya cerrado
             return checkin(partido, lados, usuarioId);
@@ -62,14 +56,15 @@ public class CheckinService {
             throw new ConflictoException(CodigoError.CHECKIN_SIN_VENTANA, "El partido " + partidoId
                     + " no tiene ventana de check-in: el torneo no la configuró o el partido no tiene fecha");
         }
-        if (estado(ventana, Instant.now()) != EstadoVentana.ABIERTA) {
+        Instant ahora = Instant.now();
+        if (estado(ventana, ahora) != EstadoVentana.ABIERTA) {
             throw new ConflictoException(CodigoError.CHECKIN_FUERA_DE_VENTANA,
                     "La ventana de check-in del partido " + partidoId + " va de " + ventana.abreEn() + " a "
                             + ventana.cierraEn())
                     .con("abreEn", ventana.abreEn())
                     .con("cierraEn", ventana.cierraEn());
         }
-        mio.setCheckinEn(Instant.now());
+        mio.setCheckinEn(ahora);
         boolean losDos = lados.stream().allMatch(j -> j.getCheckinEn() != null);
         partido.setEstado(losDos ? EstadoPartido.EN_JUEGO : EstadoPartido.CHECK_IN);
         resultadoService.auditar(partido, usuarioId, ResultadoService.detalle("CHECKIN", mio));
