@@ -10,10 +10,12 @@ import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
+import com.hydra.pica.plataforma_pica.partido.domain.Decision;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Objecion;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
+import com.hydra.pica.plataforma_pica.partido.dto.EventoPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.LaudoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionComparada;
@@ -110,7 +112,7 @@ public class ObjecionService {
         VersionResultado cargada = cargada(partido, lados, historial, evidencias);
         VersionResultado objetada = objetada(objecion, lados, evidencias);
         return new ObjecionComparada(partidoId, partido.getTorneo().getId(), partido.getEstado(), cargada, objetada,
-                objecion.getMotivo(), laudo(objecion), List.of());
+                objecion.getMotivo(), laudo(objecion), historial.stream().map(a -> evento(a, lados)).toList());
     }
 
     private static ObjecionResumen resumen(Objecion objecion, List<Juega> lados, List<Auditoria> historial,
@@ -152,6 +154,20 @@ public class ObjecionService {
     /** Null en el listado, que no trae evidencias. */
     private static List<EvidenciaDetalle> deLado(Map<Long, List<EvidenciaDetalle>> evidencias, Juega lado) {
         return evidencias == null ? null : evidencias.getOrDefault(lado.getId().getInscripcionId(), List.of());
+    }
+
+    /** El lado y el equipo, cuando el registro los tiene: el laudo y la confirmación por plazo no son de un lado. */
+    private static EventoPartido evento(Auditoria registro, List<Juega> lados) {
+        Map<String, Object> detalle = registro.getDetalle();
+        Object lado = detalle.get("lado");
+        Object inscripcionId = detalle.get("inscripcionId");
+        Object decision = detalle.get("decision");
+        return new EventoPartido((String) detalle.get("resultado"),
+                registro.getUsuario() == null ? null : Partidos.nombre(registro.getUsuario()),
+                lado == null ? null : Lado.valueOf((String) lado),
+                inscripcionId == null ? null
+                        : Partidos.nombre(deInscripcion(lados, ((Number) inscripcionId).longValue()).getInscripcion()),
+                registro.getCreadoEn(), decision == null ? null : Decision.valueOf((String) decision));
     }
 
     private static LaudoDetalle laudo(Objecion objecion) {

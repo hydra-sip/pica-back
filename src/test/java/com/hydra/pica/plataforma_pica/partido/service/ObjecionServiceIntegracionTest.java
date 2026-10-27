@@ -19,6 +19,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionReposito
 import com.hydra.pica.plataforma_pica.partido.domain.Decision;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
+import com.hydra.pica.plataforma_pica.partido.dto.EventoPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.LaudoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.LaudoRequest;
@@ -276,6 +277,24 @@ class ObjecionServiceIntegracionTest {
         }
         habilitarArbitro();
         assertThat(objecionService.comparar(arbitro, partido).partidoId()).isEqualTo(partido);
+    }
+
+    @Test
+    void elHistorialDiceQuienCargoQuienObjetoYQuienLaudoYCuando() {
+        Long partido = partido(1);
+        laudar(partido, 0, 1, objetar(partido));
+        objetar(partido(2));
+
+        List<EventoPartido> historial = objecionService.comparar(organizador, partido).historial();
+
+        assertThat(historial).extracting(EventoPartido::evento, EventoPartido::usuario, EventoPartido::lado,
+                        EventoPartido::equipo, EventoPartido::decision)
+                .containsExactly(
+                        tuple("CARGADO", nombre(partido, "LOCAL"), Lado.LOCAL, nombre(partido, "LOCAL"), null),
+                        tuple("OBJETADO", nombre(partido, "VISITANTE"), Lado.VISITANTE, nombre(partido, "VISITANTE"),
+                                null),
+                        tuple("LAUDO", "org_objeciones Test", null, null, Decision.CORREGIDO));
+        assertThat(historial).extracting(EventoPartido::fecha).isSorted().doesNotContainNull();
     }
 
     // --- helpers --------------------------------------------------------------
