@@ -25,6 +25,7 @@ import com.hydra.pica.plataforma_pica.equipo.repository.NominaRepository;
 import com.hydra.pica.plataforma_pica.equipo.repository.UsuarioEquipoRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.domain.MotivoCierre;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Reemplazo;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
@@ -78,6 +79,7 @@ public class InscripcionService {
     private final NominaRepository nominaRepository;
     private final UsuarioEquipoRepository usuarioEquipoRepository;
     private final ReemplazoRepository reemplazoRepository;
+    private final CierreInscripcion cierreInscripcion;
 
     /**
      * Crea el borrador. En un torneo individual se inscribe el usuario y no lleva cuerpo; en uno por equipos
@@ -352,8 +354,9 @@ public class InscripcionService {
         validarCupo(torneo);
         inscripcion.setEstado(gratis ? EstadoInscripcion.CONFIRMADA : EstadoInscripcion.PENDIENTE_PAGO);
         inscripcion.setReglamentoAceptadoEn(Instant.now());
+        Inscripcion guardada;
         try {
-            return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
+            guardada = inscripcionRepository.saveAndFlush(inscripcion);
         } catch (DataIntegrityViolationException e) {
             // otra confirmación individual del mismo usuario ganó la carrera entre el chequeo de arriba y este flush
             if (UQ_ACTIVA.equals(nombreDeConstraint(e))) {
@@ -362,6 +365,10 @@ public class InscripcionService {
             }
             throw e;
         }
+        if (gratis) {
+            cerrarSiSeCompletoElCupo(torneo);
+        }
+        return detalleDe(guardada);
     }
 
     private void exigirBorrador(Long id, EstadoInscripcion estado) {
@@ -454,13 +461,14 @@ public class InscripcionService {
         if (inscripcion.getEstado() == EstadoInscripcion.CONFIRMADA) {
             return detalleDe(inscripcion);
         }
+        // antes que el estado: el cierre cancela las pendientes, y a quien llega tarde le sirve saber que cerró
+        validarTorneoAbierto(torneo);
         if (inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
                     "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se paga en PENDIENTE_PAGO");
         }
         validarUsuario(usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + usuarioId)));
-        validarTorneoAbierto(torneo);
         validarCupo(torneo);
         // un torneo sin costo no pasa por el cobro: V9 exige monto > 0
         if (torneo.getValorInscripcion().signum() > 0) {
@@ -468,7 +476,17 @@ public class InscripcionService {
                     torneoId, id, "inscripcion-" + id, "Inscripción al torneo " + torneo.getNombre()));
         }
         inscripcion.setEstado(EstadoInscripcion.CONFIRMADA);
-        return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
+        Inscripcion pagada = inscripcionRepository.saveAndFlush(inscripcion);
+        cerrarSiSeCompletoElCupo(torneo);
+        return detalleDe(pagada);
+    }
+
+    // HU-206: la confirmación que completa el cupo cierra la inscripción en la misma transacción, con el torneo ya
+    // bloqueado; así nadie más llega a pagar. El cierre es automático: no lo hace quien paga
+    private void cerrarSiSeCompletoElCupo(Torneo torneo) {
+        if (confirmadas(torneo.getId()) >= torneo.getCupoMaximo()) {
+            cierreInscripcion.cerrar(torneo, MotivoCierre.CUPO, null);
+        }
     }
 
     /** Las que armó el usuario, la más nueva primero; el orden no se elige desde afuera. */
@@ -520,7 +538,7 @@ public class InscripcionService {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
                     "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se reemplaza en CONFIRMADA");
         }
-        validarTorneoAbiertoParaReemplazo(torneo);
+        validarTorneoAbierto(torneo);
 
         Long capitanId = inscripcion.titular().getId();
         Usuario entra = usuarioRepository.findById(request.entraUsuarioId())
@@ -600,14 +618,6 @@ public class InscripcionService {
         if (torneo.getEstado() != EstadoTorneo.INSCRIPCION_ABIERTA || !torneo.getCierreInscripcionEn().isAfter(Instant.now())) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
                     "El torneo " + torneo.getId() + " no tiene la inscripción abierta");
-        }
-    }
-
-    private void validarTorneoAbiertoParaReemplazo(Torneo torneo) {
-        validarTorneoAbierto(torneo);
-        if (confirmadas(torneo.getId()) >= torneo.getCupoMaximo()) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
-                    "El torneo " + torneo.getId() + " ya cerró la inscripción por cupo completo");
         }
     }
 

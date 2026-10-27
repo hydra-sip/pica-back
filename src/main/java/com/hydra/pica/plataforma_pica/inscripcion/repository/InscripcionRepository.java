@@ -31,6 +31,9 @@ public interface InscripcionRepository extends JpaRepository<Inscripcion, Long> 
     /** La inscripción del equipo en el torneo: por la clave única de V9 hay una sola, en cualquier estado. */
     Optional<Inscripcion> findByTorneoIdAndEquipoId(Long torneoId, Long equipoId);
 
+    /** Las del torneo en esos estados, por id: las confirmadas que se sellan al cerrar y las que se cancelan. */
+    List<Inscripcion> findByTorneoIdAndEstadoInOrderByIdAsc(Long torneoId, Collection<EstadoInscripcion> estados);
+
     long countByTorneoIdAndEstado(Long torneoId, EstadoInscripcion estado);
 
     /** Las que entran al sorteo del bracket (PICA-215), por id. */

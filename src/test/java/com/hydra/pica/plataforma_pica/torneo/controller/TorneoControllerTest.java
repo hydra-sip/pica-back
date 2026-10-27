@@ -35,6 +35,7 @@ import com.hydra.pica.plataforma_pica.torneo.dto.MiTorneoResumen;
 import com.hydra.pica.plataforma_pica.torneo.dto.MisTorneos;
 import com.hydra.pica.plataforma_pica.torneo.dto.OpcionesTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
+import com.hydra.pica.plataforma_pica.torneo.service.InscripcionTorneoService;
 import com.hydra.pica.plataforma_pica.torneo.service.MisTorneosService;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
 import org.junit.jupiter.api.DisplayName;
@@ -69,6 +70,9 @@ class TorneoControllerTest {
 
     @MockitoBean
     private MisTorneosService misTorneosService;
+
+    @MockitoBean
+    private InscripcionTorneoService inscripcionTorneoService;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
@@ -271,10 +275,47 @@ class TorneoControllerTest {
         assertThat(pagina.getValue()).isEqualTo(PageRequest.of(1, 5));
     }
 
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("POST /api/v1/torneos/{id}/cerrar-inscripcion cierra con el usuario de la sesión y devuelve el torneo")
+    void cierraLaInscripcion() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(inscripcionTorneoService.cerrar(ORGANIZADOR, 9L)).thenReturn(borrador());
+
+        mockMvc.perform(post("/api/v1/torneos/9/cerrar-inscripcion"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(9));
+        verify(inscripcionTorneoService).cerrar(ORGANIZADOR, 9L);
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("Cerrar una inscripción que ya no está abierta responde 409 INSCRIPCION_NO_ABIERTA")
+    void cerrarYaCerrada() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(inscripcionTorneoService.cerrar(ORGANIZADOR, 9L))
+                .thenThrow(new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA, "cerrada"));
+
+        mockMvc.perform(post("/api/v1/torneos/9/cerrar-inscripcion"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("INSCRIPCION_NO_ABIERTA"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("Cerrar la inscripción sin TORNEO_GESTIONAR responde 403 sin llamar al servicio")
+    void cerrarSinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+
+        mockMvc.perform(post("/api/v1/torneos/9/cerrar-inscripcion"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(inscripcionTorneoService);
+    }
+
     private static TorneoInformacion borrador() {
         return new TorneoInformacion(9L, EstadoTorneo.BORRADOR, 1, "Apertura F5", "Fútbol 5", null,
                 Formato.ELIMINACION_DIRECTA, Modalidad.PRESENCIAL, null, "Club Mercedes", List.of("Cancha 1"), null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, CREADO, CREADO,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, CREADO, CREADO,
                 List.of());
     }
 }
