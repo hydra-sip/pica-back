@@ -1115,6 +1115,34 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/checkin:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      tags: [Torneos]
+      summary: Configurar la ventana de check-in del torneo
+      x-jira: PICA-250
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        HU-308. Una sola ventana para todos los cruces: abre `minAntes` minutos antes de la fecha del partido y dura
+        `duracion` minutos, así que nunca llega al horario del cruce. Solo el organizador (si no, 404
+        `TORNEO_NO_ENCONTRADO`), con el torneo publicado y sin terminar ni cancelar (si no, 409 `TORNEO_NO_EDITABLE`).
+        400 `VALIDACION`: `REQUERIDO` o `RANGO_INVALIDO` en `minAntes` y `duracion` si faltan o no son mayores que 0, y
+        `VENTANA_INVALIDA` en `duracion` si pasa a `minAntes` (la ventana se superpondría con el cruce). Rige desde
+        ese momento para todas las ventanas, aun una ya abierta; los check-ins hechos quedan. Queda en la auditoría
+        (MODIFICACION, entidad TORNEO).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CheckinTorneoRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/torneos/{id}/objeciones:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -1169,6 +1197,79 @@ paths:
       responses:
         '200': {$ref: '#/components/responses/Partido'}
         '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/partidos/{id}/programacion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      tags: [Partidos]
+      summary: Programar el partido (fecha y hora)
+      x-jira: PICA-250
+      x-owner: Mateo
+      description: >-
+        HU-308. Solo el organizador del torneo (si no, 404 `PARTIDO_NO_ENCONTRADO`), con el torneo INSCRIPCION_CERRADA
+        o EN_CURSO y el partido PROGRAMADO, aunque todavía falte el rival (si no, 409 `PARTIDO_NO_PROGRAMABLE`: con un
+        check-in hecho la fecha queda fija). Se puede reprogramar, pero no sacarle la fecha. 400 `VALIDACION` en
+        `fechaProgramada`: `REQUERIDO` si no viene y `RANGO_INVALIDO` si es pasada, anterior a `fechaInicio` o
+        posterior a `fechaFin` del torneo. Queda en la auditoría (MODIFICACION, entidad PARTIDO) y en el historial del
+        partido como PROGRAMADO.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fechaProgramada]
+              properties:
+                fechaProgramada: {type: string, format: date-time}
+      responses:
+        '200': {$ref: '#/components/responses/Partido'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/partidos/{id}/checkin:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Partidos]
+      summary: Ver la ventana de check-in del partido
+      x-jira: PICA-250
+      x-owner: Mateo
+      description: >-
+        HU-308. Cualquiera con sesión, si el partido es visible (si no, 404 `PARTIDO_NO_ENCONTRADO`). La ventana va de
+        `fechaProgramada − minAntes` a `+ duracion` (ver `PUT /torneos/{id}/checkin`) y se calcula al consultar;
+        `estadoVentana` aplica una tolerancia de `app.partidos.tolerancia-checkin` (2 minutos por defecto) en cada
+        extremo. Sin configuración en el torneo o sin fecha en el partido, `ventana` es null y `estadoVentana`
+        SIN_VENTANA.
+      responses:
+        '200':
+          description: La ventana y el check-in de cada lado
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CheckinPartido'}
+        '404': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Partidos]
+      summary: Confirmar la presencia de mi lado
+      x-jira: PICA-250
+      x-owner: Mateo
+      description: >-
+        HU-308. Lo hace el capitán de uno de los dos lados, sin cuerpo. Controla, en orden: 404
+        `PARTIDO_NO_ENCONTRADO`; 403 `NO_ES_CAPITAN`; 409 `PARTIDO_NO_EN_JUEGO` si el torneo no está EN_CURSO, falta el
+        rival o el partido no está PROGRAMADO, CHECK_IN ni EN_JUEGO; si su lado ya hizo check-in, 200 con el estado sin
+        cambios (aunque la ventana haya cerrado); 409 `CHECKIN_SIN_VENTANA` si el torneo no la configuró o el partido
+        no tiene fecha; 409 `CHECKIN_FUERA_DE_VENTANA` antes o después de la ventana, con la tolerancia, y con
+        `abreEn` y `cierraEn` en el problem detail. El primer check-in pasa el partido a CHECK_IN y el segundo a
+        EN_JUEGO. No es requisito para cargar el resultado. Queda en la auditoría (MODIFICACION, entidad PARTIDO) y en
+        el historial del partido como CHECKIN.
+      responses:
+        '200':
+          description: La ventana y el check-in de cada lado, con el propio
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CheckinPartido'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
 
   /api/v1/partidos/{id}/resultado:
     parameters: [{$ref: '#/components/parameters/id'}]
@@ -1959,7 +2060,10 @@ components:
         sin resultado) · PARTIDO_CERRADO (ya no se le suma evidencia) · RESULTADO_NO_PENDIENTE (no hay un resultado
         cargado para aceptar u objetar) · RESULTADO_PROPIO (el resultado lo acepta u objeta el rival, no quien lo
         cargó) · PLAZO_OBJECION_VENCIDO (venció el plazo para objetar el resultado) · PARTIDO_NO_OBJETADO
-        (solo se lauda un partido objetado). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
+        (solo se lauda un partido objetado) · PARTIDO_NO_PROGRAMABLE (la fecha se pone con el partido PROGRAMADO y el
+        torneo con la inscripción cerrada o en curso) · CHECKIN_SIN_VENTANA (el torneo no configuró el check-in o el
+        partido no tiene fecha) · CHECKIN_FUERA_DE_VENTANA (antes o después de la ventana; trae `abreEn` y
+        `cierraEn`). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
         403 SIN_PERMISO.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
@@ -1983,7 +2087,7 @@ components:
              ARBITRO_NO_HABILITADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
-             PARTIDO_NO_OBJETADO,
+             PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN]
     ErrorCampo:
@@ -2402,6 +2506,8 @@ components:
         cupoMinimo: {type: [integer, 'null']}
         tamanioEquipo: {type: [integer, 'null']}
         nominaMaxima: {type: [integer, 'null']}
+        checkinMinAntes: {type: [integer, 'null'], description: 'Ventana de check-in: cuántos minutos antes del cruce abre (HU-308); null sin configurar'}
+        checkinDuracion: {type: [integer, 'null'], description: Cuántos minutos dura la ventana de check-in}
         economia: {$ref: '#/components/schemas/EconomiaTorneo'}
         slug: {type: [string, 'null'], description: 'El enlace público (`GET /torneos/slug/{slug}`); se genera al publicar', examples: [apertura-f5-2026]}
         esquemaHash:
@@ -2584,12 +2690,41 @@ components:
         resueltaEn: {type: string, format: date-time}
         evidenciaId: {$ref: '#/components/schemas/Id'}
         laudoHash: {type: string, description: Sello SHA-256 del laudo}
+    CheckinTorneoRequest:
+      type: object
+      required: [minAntes, duracion]
+      properties:
+        minAntes: {type: integer, minimum: 1, description: Cuántos minutos antes del cruce abre la ventana}
+        duracion: {type: integer, minimum: 1, description: 'Cuántos minutos dura; no más que `minAntes`'}
+    CheckinPartido:
+      type: object
+      required: [estadoVentana]
+      properties:
+        ventana:
+          oneOf:
+            - type: object
+              required: [abreEn, cierraEn]
+              properties:
+                abreEn: {type: string, format: date-time}
+                cierraEn: {type: string, format: date-time}
+            - {type: 'null'}
+          description: Sin la tolerancia; null sin configuración o sin fecha
+        estadoVentana: {type: string, enum: [SIN_VENTANA, ANTES, ABIERTA, CERRADA], description: Con la tolerancia}
+        local: {oneOf: [{$ref: '#/components/schemas/LadoCheckin'}, {type: 'null'}]}
+        visitante: {oneOf: [{$ref: '#/components/schemas/LadoCheckin'}, {type: 'null'}], description: Null hasta que se sabe quién juega}
+        miLado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}], description: El lado del que es capitán quien consulta}
+    LadoCheckin:
+      type: object
+      required: [nombre]
+      properties:
+        nombre: {type: string, description: 'El del equipo o, si se inscribe un jugador, su nombre y apellido'}
+        checkinEn: {type: [string, 'null'], format: date-time}
     EventoPartido:
       type: object
       required: [evento, fecha]
       description: Un registro de la auditoría del partido
       properties:
-        evento: {type: string, enum: [CARGADO, ACEPTADO, OBJETADO, CONFIRMADO_POR_PLAZO, LAUDO]}
+        evento: {type: string, enum: [PROGRAMADO, CHECKIN, CARGADO, ACEPTADO, OBJETADO, CONFIRMADO_POR_PLAZO, LAUDO]}
         usuario: {type: [string, 'null'], description: 'Nombre y apellido; null si lo hizo el sistema'}
         lado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}]}
         equipo: {type: [string, 'null']}
