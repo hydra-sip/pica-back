@@ -39,6 +39,7 @@ public enum CodigoError {
     TOKEN_USADO,
     CODIGO_INVALIDO,
     PASSWORD_ACTUAL_INCORRECTA,
+    DEMASIADOS_INTENTOS,
 
     // Reglas de negocio (409)
     USERNAME_DUPLICADO,
