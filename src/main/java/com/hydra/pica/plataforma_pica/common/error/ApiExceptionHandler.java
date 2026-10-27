@@ -51,6 +51,14 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return pd;
     }
 
+    /** 429 con Retry-After (RNF-SEG-06). */
+    @ExceptionHandler(DemasiadosIntentosException.class)
+    ResponseEntity<ProblemDetail> manejarDemasiadosIntentos(DemasiadosIntentosException ex) {
+        return ResponseEntity.status(ex.getStatus())
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getSegundos()))
+                .body(manejarApiException(ex));
+    }
+
     /** @PreAuthorize sin el permiso necesario. Sin esto caería en el 500 genérico de abajo. */
     @ExceptionHandler(AccessDeniedException.class)
     ProblemDetail manejarAccesoDenegado(AccessDeniedException ex) {
