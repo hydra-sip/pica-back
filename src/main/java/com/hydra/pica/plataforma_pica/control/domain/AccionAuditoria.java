@@ -11,5 +11,6 @@ public enum AccionAuditoria {
     DESBLOQUEO,
     PAGO,
     LAUDO,
-    SORTEO
+    SORTEO,
+    CIERRE_INSCRIPCION
 }
