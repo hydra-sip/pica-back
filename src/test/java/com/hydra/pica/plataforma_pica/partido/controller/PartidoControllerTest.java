@@ -19,6 +19,7 @@ import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
@@ -43,8 +44,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * El partido, su resultado y su evidencia (PICA-241): con sesión y sin permiso propio. Las reglas están en los
- * servicios.
+ * El partido, su resultado y su evidencia (PICA-241 y PICA-242): con sesión y sin permiso propio. Las reglas están en
+ * los servicios.
  */
 @WebMvcTest(PartidoController.class)
 @ActiveProfiles("dev")
@@ -112,6 +113,19 @@ class PartidoControllerTest {
                         .content("{\"puntajeLocal\":3,\"puntajeVisitante\":1}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("NO_ES_CAPITAN"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Aceptar el propio resultado responde 409 RESULTADO_PROPIO")
+    void aceptarPropio() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(CAPITAN));
+        when(resultadoService.aceptar(CAPITAN, 3L))
+                .thenThrow(new ConflictoException(CodigoError.RESULTADO_PROPIO, "lo acepta el rival"));
+
+        mockMvc.perform(post("/api/v1/partidos/3/resultado/aceptar"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("RESULTADO_PROPIO"));
     }
 
     @Test

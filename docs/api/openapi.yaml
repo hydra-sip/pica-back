@@ -1177,6 +1177,29 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/partidos/{id}/resultado/aceptar:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Partidos]
+      summary: Aceptar el resultado que cargó el rival
+      x-jira: PICA-242
+      x-owner: Tomás
+      description: >-
+        HU-301. Lo acepta el capitán del lado que no cargó el resultado (403 `NO_ES_CAPITAN` si no es capitán de
+        ninguno, 409 `RESULTADO_PROPIO` si es el que lo cargó), con el partido en RESULTADO_CARGADO (si no, 409
+        `RESULTADO_NO_PENDIENTE`). Si nadie lo acepta ni lo objeta, al vencer `objecionVenceEn` se confirma solo (una
+        tarea revisa cada `app.partidos.revision-plazos`, 30 segundos por defecto). En los dos casos el partido queda
+        CONFIRMADO y el ganador pasa al partido de la ronda siguiente que le toca (posición `(posicion + 1) / 2`, de
+        local si venía de una posición impar). Si era la final, el torneo pasa a FINALIZADO y cada inscripción queda
+        con su `posicion`: el campeón 1, el finalista 2 y el que perdió en la ronda r de n, 2^(n - r) + 1 (los dos
+        semifinalistas, 3). Queda en la auditoría (MODIFICACION, entidad PARTIDO; la confirmación por plazo, sin
+        usuario). 404 `PARTIDO_NO_ENCONTRADO`.
+      responses:
+        '200': {$ref: '#/components/responses/Partido'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/partidos/{id}/evidencias:
     parameters: [{$ref: '#/components/parameters/id'}]
     post:
@@ -1832,7 +1855,8 @@ components:
         PARTICIPANTES_INSUFICIENTES (menos de 2 inscripciones confirmadas) · BRACKET_YA_GENERADO (se puede regenerar) ·
         SIN_ARBITROS (cada partido necesita un árbitro designado) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
         regenera) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
-        sin resultado) · PARTIDO_CERRADO (ya no se le suma evidencia). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
+        sin resultado) · PARTIDO_CERRADO (ya no se le suma evidencia) · RESULTADO_NO_PENDIENTE (no hay un resultado
+        cargado para aceptar) · RESULTADO_PROPIO (el resultado lo acepta el rival, no quien lo cargó). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
         403 SIN_PERMISO.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
@@ -1854,6 +1878,7 @@ components:
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
              ARBITRO_NO_HABILITADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
+             RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN]
     ErrorCampo:

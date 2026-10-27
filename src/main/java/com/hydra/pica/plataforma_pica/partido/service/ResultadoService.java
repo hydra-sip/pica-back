@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Cargar el resultado de un partido (HU-301, PICA-241).
+ * Cargar el resultado de un partido (HU-301, PICA-241), aceptarlo y confirmarlo al vencer el plazo (PICA-242).
  *
  * <ul>
  * <li>Lo carga el capitán de uno de los dos lados: el jugador inscripto o el capitán del equipo.</li>
@@ -40,6 +40,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <li>Es eliminación directa: un empate se define por penales, y los penales no pueden empatar.</li>
  * <li>El partido queda RESULTADO_CARGADO y el rival tiene {@code app.partidos.plazo-objecion} para aceptarlo u
  * objetarlo.</li>
+ * <li>Lo acepta el capitán del otro lado, el que no lo cargó. Si nadie lo objeta (HU-302) en el plazo, se confirma
+ * solo ({@link ConfirmacionAutomatica}). En los dos casos el partido queda CONFIRMADO y el ganador avanza
+ * ({@link AvanceLlave}).</li>
  * </ul>
  */
 @Service
@@ -55,6 +58,7 @@ public class ResultadoService {
     private final AuditoriaRepository auditoriaRepository;
     private final UsuarioRepository usuarioRepository;
     private final PartidoProperties partidoProperties;
+    private final AvanceLlave avanceLlave;
 
     @Transactional
     public PartidoDetalle cargar(Long usuarioId, Long partidoId, ResultadoRequest request) {
@@ -86,8 +90,52 @@ public class ResultadoService {
         partido.setResultadoCargadoEn(ahora);
         partido.setObjecionVenceEn(ahora.plus(partidoProperties.plazoObjecion()));
         partido.setResultadoCargadoPor(mio.getInscripcion());
-        auditar(partido, usuarioId, mio, request);
+        Map<String, Object> detalle = detalle("CARGADO", mio);
+        detalle.put("puntajeLocal", request.puntajeLocal());
+        detalle.put("puntajeVisitante", request.puntajeVisitante());
+        detalle.put("penalesLocal", request.penalesLocal());
+        detalle.put("penalesVisitante", request.penalesVisitante());
+        auditar(partido, usuarioId, detalle);
         return partidoService.detalle(partido, usuarioId);
+    }
+
+    /** El rival da por bueno el resultado antes de que venza el plazo: no hace falta esperarlo. */
+    @Transactional
+    public PartidoDetalle aceptar(Long usuarioId, Long partidoId) {
+        Partido partido = partidos.buscarBloqueado(partidoId);
+        List<Juega> lados = juegaRepository.delPartido(partidoId);
+        Juega mio = Partidos.exigirCapitan(lados, usuarioId, partidoId);
+        if (partido.getEstado() != EstadoPartido.RESULTADO_CARGADO) {
+            throw new ConflictoException(CodigoError.RESULTADO_NO_PENDIENTE,
+                    "El partido " + partidoId + " está " + partido.getEstado() + ": no hay resultado para aceptar");
+        }
+        if (partido.getResultadoCargadoPor().getId().equals(mio.getId().getInscripcionId())) {
+            throw new ConflictoException(CodigoError.RESULTADO_PROPIO,
+                    "El resultado del partido " + partidoId + " lo cargó este lado: lo acepta el rival");
+        }
+        avanceLlave.confirmar(partido, lados, EstadoPartido.CONFIRMADO);
+        auditar(partido, usuarioId, detalle("ACEPTADO", mio));
+        return partidoService.detalle(partido, usuarioId);
+    }
+
+    /**
+     * Lo llama {@link ConfirmacionAutomatica} por cada partido con el plazo vencido. Vuelve a mirar con la fila
+     * bloqueada: entre la consulta y acá el rival pudo haberlo aceptado u objetado.
+     *
+     * @return si lo confirmó
+     */
+    @Transactional
+    public boolean confirmarSiVencio(Long partidoId, Instant ahora) {
+        Partido partido = partidos.buscarBloqueado(partidoId);
+        if (partido.getEstado() != EstadoPartido.RESULTADO_CARGADO || partido.getObjecionVenceEn().isAfter(ahora)) {
+            return false;
+        }
+        avanceLlave.confirmar(partido, juegaRepository.delPartido(partidoId), EstadoPartido.CONFIRMADO);
+        Map<String, Object> detalle = new LinkedHashMap<>();
+        detalle.put("resultado", "CONFIRMADO_POR_PLAZO");
+        detalle.put("objecionVenceEn", partido.getObjecionVenceEn().toString());
+        auditar(partido, null, detalle);
+        return true;
     }
 
     /** Todos los errores juntos en un 400, como el resto de las validaciones. */
@@ -123,17 +171,18 @@ public class ResultadoService {
         }
     }
 
-    private void auditar(Partido partido, Long usuarioId, Juega mio, ResultadoRequest request) {
+    private static Map<String, Object> detalle(String resultado, Juega lado) {
         Map<String, Object> detalle = new LinkedHashMap<>();
-        detalle.put("resultado", "CARGADO");
-        detalle.put("inscripcionId", mio.getId().getInscripcionId());
-        detalle.put("lado", mio.getLado().name());
-        detalle.put("puntajeLocal", request.puntajeLocal());
-        detalle.put("puntajeVisitante", request.puntajeVisitante());
-        detalle.put("penalesLocal", request.penalesLocal());
-        detalle.put("penalesVisitante", request.penalesVisitante());
+        detalle.put("resultado", resultado);
+        detalle.put("inscripcionId", lado.getId().getInscripcionId());
+        detalle.put("lado", lado.getLado().name());
+        return detalle;
+    }
+
+    /** @param usuarioId null si lo hizo el sistema (el plazo venció) */
+    private void auditar(Partido partido, Long usuarioId, Map<String, Object> detalle) {
         Auditoria auditoria = new Auditoria();
-        auditoria.setUsuario(usuarioRepository.getReferenceById(usuarioId));
+        auditoria.setUsuario(usuarioId == null ? null : usuarioRepository.getReferenceById(usuarioId));
         auditoria.setAccion(AccionAuditoria.MODIFICACION);
         auditoria.setEntidad("PARTIDO");
         auditoria.setEntidadId(String.valueOf(partido.getId()));
