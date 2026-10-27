@@ -2732,6 +2732,7 @@ components:
         equipo: {type: [string, 'null']}
         fecha: {type: string, format: date-time}
         decision: {oneOf: [{type: string, enum: [CONFIRMADO, CORREGIDO]}, {type: 'null'}], description: Solo en el laudo}
+        fechaProgramada: {type: [string, 'null'], format: date-time, description: 'Solo en PROGRAMADO: para cuándo se programó el partido'}
     LaudoRequest:
       type: object
       required: [puntajeLocal, puntajeVisitante, justificacion, evidenciaId]

@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -162,12 +163,14 @@ public class ObjecionService {
         Object lado = detalle.get("lado");
         Object inscripcionId = detalle.get("inscripcionId");
         Object decision = detalle.get("decision");
+        Object fechaProgramada = detalle.get("fechaProgramada");
         return new EventoPartido((String) detalle.get("resultado"),
                 registro.getUsuario() == null ? null : Partidos.nombre(registro.getUsuario()),
                 lado == null ? null : Lado.valueOf((String) lado),
                 inscripcionId == null ? null
                         : Partidos.nombre(deInscripcion(lados, ((Number) inscripcionId).longValue()).getInscripcion()),
-                registro.getCreadoEn(), decision == null ? null : Decision.valueOf((String) decision));
+                registro.getCreadoEn(), decision == null ? null : Decision.valueOf((String) decision),
+                fechaProgramada == null ? null : Instant.parse((String) fechaProgramada));
     }
 
     private static LaudoDetalle laudo(Objecion objecion) {

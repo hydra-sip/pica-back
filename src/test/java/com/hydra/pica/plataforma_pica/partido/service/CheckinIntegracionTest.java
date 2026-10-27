@@ -168,8 +168,10 @@ class CheckinIntegracionTest {
         List<EventoPartido> historial = objecionService.comparar(organizador, partido).historial();
 
         assertThat(historial).extracting(EventoPartido::evento).containsExactly("PROGRAMADO", "CARGADO", "OBJETADO");
-        assertThat(historial.getFirst()).extracting(EventoPartido::usuario, EventoPartido::lado)
-                .containsExactly("org_checkin Test", null);
+        assertThat(historial.getFirst())
+                .extracting(EventoPartido::usuario, EventoPartido::lado, EventoPartido::fechaProgramada)
+                .containsExactly("org_checkin Test", null, FECHA);
+        assertThat(historial.get(1).fechaProgramada()).isNull();
     }
 
     // --- configurar la ventana del torneo -----------------------------------------

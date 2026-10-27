@@ -8,9 +8,10 @@ import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 /**
  * Un registro del historial del partido, sacado de la auditoría (HU-303).
  *
- * @param evento   PROGRAMADO, CHECKIN, CARGADO, ACEPTADO, OBJETADO, CONFIRMADO_POR_PLAZO o LAUDO
- * @param usuario  nombre y apellido; null si lo hizo el sistema
- * @param decision solo en el laudo
+ * @param evento          PROGRAMADO, CHECKIN, CARGADO, ACEPTADO, OBJETADO, CONFIRMADO_POR_PLAZO o LAUDO
+ * @param usuario         nombre y apellido; null si lo hizo el sistema
+ * @param decision        solo en el laudo
+ * @param fechaProgramada solo al programar el partido: para cuándo
  */
 public record EventoPartido(
         String evento,
@@ -18,5 +19,6 @@ public record EventoPartido(
         Lado lado,
         String equipo,
         Instant fecha,
-        Decision decision) {
+        Decision decision,
+        Instant fechaProgramada) {
 }
