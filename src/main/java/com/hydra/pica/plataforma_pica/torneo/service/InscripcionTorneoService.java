@@ -7,7 +7,6 @@ import com.hydra.pica.plataforma_pica.inscripcion.service.CierreInscripcion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
-import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,7 +20,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class InscripcionTorneoService {
 
     private final TorneosPropios torneosPropios;
-    private final TorneoRepository torneoRepository;
     private final CierreInscripcion cierreInscripcion;
 
     /** En cualquier momento mientras la inscripción está abierta, sin mínimo de inscriptos. */
@@ -33,6 +31,6 @@ public class InscripcionTorneoService {
                     "El torneo " + id + " está " + torneo.getEstado() + ": solo se cierra con la inscripción abierta");
         }
         cierreInscripcion.cerrar(torneo, MotivoCierre.MANUAL, organizadorId);
-        return torneosPropios.informacion(torneoRepository.saveAndFlush(torneo));
+        return torneosPropios.informacion(torneo);
     }
 }

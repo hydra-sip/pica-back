@@ -12,6 +12,8 @@ import java.util.Map;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
@@ -109,7 +111,7 @@ class CierreInscripcionIntegracionTest {
         inscripcionTorneoService.cerrar(organizador, individual);
 
         assertError(() -> inscripcionService.crear(nuevo, individual, null), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
-        assertError(() -> inscripcionService.pagar(pendiente, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
+        assertError(() -> inscripcionService.pagar(pendiente, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
     }
 
     @Test
@@ -127,6 +129,50 @@ class CierreInscripcionIntegracionTest {
 
         assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
                 HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+    }
+
+    // --- por cupo --------------------------------------------------------------
+
+    @Test
+    void elPagoQueCompletaElCupoCierraLaInscripcionEnEseMomento() {
+        long individual = torneo("INDIVIDUAL", 1000, 2);
+        inscripcionIndividual(individual, usuario("cupo_ya_confirmada").getId(), "CONFIRMADA");
+        Long ultimo = usuario("cupo_ultimo").getId();
+        long id = inscripcionIndividual(individual, ultimo, "PENDIENTE_PAGO");
+        long borrador = inscripcionIndividual(individual, usuario("cupo_borrador").getId(), "BORRADOR");
+
+        InscripcionDetalle pagada = inscripcionService.pagar(ultimo, id);
+
+        assertThat(pagada.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(estadoDelTorneo(individual)).isEqualTo("INSCRIPCION_CERRADA");
+        assertThat(estadoDe(borrador)).isEqualTo("CANCELADA");
+        assertThat(jdbc.queryForObject("SELECT lista_hash IS NOT NULL FROM torneo WHERE id = ?", Boolean.class, individual)).isTrue();
+        assertThat(auditoriaDelCierre(individual)).containsEntry("motivo", "CUPO").containsEntry("usuario_id", null);
+    }
+
+    @Test
+    void enUnTorneoGratisLaConfirmacionQueCompletaElCupoCierraLaInscripcion() {
+        long gratis = torneo("INDIVIDUAL", 0, 2);
+        inscripcionIndividual(gratis, usuario("gratis_ya_confirmada").getId(), "CONFIRMADA");
+        Long ultimo = usuario("gratis_ultimo").getId();
+        long id = inscripcionIndividual(gratis, ultimo, "BORRADOR");
+
+        assertThat(inscripcionService.confirmar(ultimo, id, true).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+
+        assertThat(estadoDelTorneo(gratis)).isEqualTo("INSCRIPCION_CERRADA");
+        assertThat(auditoriaDelCierre(gratis)).containsEntry("motivo", "CUPO");
+    }
+
+    @Test
+    void unPagoQueNoCompletaElCupoDejaLaInscripcionAbierta() {
+        long individual = torneo("INDIVIDUAL", 1000, 2);
+        Long primero = usuario("cupo_primero").getId();
+        long id = inscripcionIndividual(individual, primero, "PENDIENTE_PAGO");
+        inscripcionIndividual(individual, usuario("cupo_otra_pendiente").getId(), "PENDIENTE_PAGO");
+
+        inscripcionService.pagar(primero, id);
+
+        assertThat(estadoDelTorneo(individual)).isEqualTo("INSCRIPCION_ABIERTA");
     }
 
     // --- sello de la lista ---------------------------------------------------
@@ -218,6 +264,17 @@ class CierreInscripcionIntegracionTest {
 
     // --- ayudas -------------------------------------------------------------
 
+    private String estadoDelTorneo(long torneoId) {
+        return jdbc.queryForObject("SELECT estado FROM torneo WHERE id = ?", String.class, torneoId);
+    }
+
+    private Map<String, Object> auditoriaDelCierre(long torneoId) {
+        return jdbc.queryForMap("""
+                SELECT usuario_id, detalle->>'motivo' AS motivo FROM auditoria
+                WHERE accion = 'CIERRE_INSCRIPCION' AND entidad_id = ?
+                """, String.valueOf(torneoId));
+    }
+
     private String estadoDe(long inscripcionId) {
         return jdbc.queryForObject("SELECT estado FROM inscripcion WHERE id = ?", String.class, inscripcionId);
     }
@@ -269,16 +326,21 @@ class CierreInscripcionIntegracionTest {
     }
 
     private long torneo(String tipoParticipante, int valorInscripcion) {
+        return torneo(tipoParticipante, valorInscripcion, 8);
+    }
+
+    private long torneo(String tipoParticipante, int valorInscripcion, int cupoMaximo) {
         return jdbc.queryForObject("""
                 INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
                                     tipo_participante, cupo_maximo, cupo_minimo, tamanio_equipo, nomina_maxima,
                                     valor_inscripcion, pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en,
                                     fecha_inicio, estado)
-                VALUES (?, 'Torneo', 'https://r', 'Futbol', 'ELIMINACION_DIRECTA', 'PRESENCIAL', ?, 8, 2,
+                VALUES (?, 'Torneo', 'https://r', 'Futbol', 'ELIMINACION_DIRECTA', 'PRESENCIAL', ?, ?, 2,
                         CASE WHEN ? = 'EQUIPO' THEN 1 END, CASE WHEN ? = 'EQUIPO' THEN 5 END,
                         ?, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
                 RETURNING id
-                """, Long.class, organizador, tipoParticipante, tipoParticipante, tipoParticipante, valorInscripcion);
+                """, Long.class, organizador, tipoParticipante, cupoMaximo, tipoParticipante, tipoParticipante,
+                valorInscripcion);
     }
 
     private Usuario usuario(String nombre) {

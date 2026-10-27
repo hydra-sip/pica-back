@@ -327,7 +327,13 @@ class InscripcionEquipoServiceIntegracionTest {
         long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
         enNomina(id, capitan, equipo);
         enNomina(id, sale, equipo);
-        confirmarEquipos(torneo, 7);
+        confirmarEquipos(torneo, 6);
+        // el pago del último lugar completa el cupo y cierra la inscripción (HU-206)
+        Long ultimoCapitan = usuario("cap_ultimo_cupo_eq").getId();
+        long ultimoEquipo = equipo("Los Últimos", ultimoCapitan);
+        long ultima = inscripcionDeEquipo(torneo, ultimoEquipo, "PENDIENTE_PAGO");
+        enNomina(ultima, ultimoCapitan, ultimoEquipo);
+        inscripcionService.pagar(ultimoCapitan, ultima);
 
         assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
                 HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);

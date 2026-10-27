@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionReposito
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.SelloTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -33,14 +34,16 @@ public class CierreInscripcion {
     private final NominaRepository nominaRepository;
     private final AuditoriaRepository auditoriaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final TorneoRepository torneoRepository;
 
-    /** @param actorId quien cierra a mano o con su pago; null si lo cierra el sistema por la fecha */
+    /** @param actorId el organizador que cierra a mano; null si se cierra sola, por cupo o por fecha */
     public void cerrar(Torneo torneo, MotivoCierre motivo, Long actorId) {
         torneo.setEstado(EstadoTorneo.INSCRIPCION_CERRADA);
         int canceladas = cancelarLasQueQuedanEnCurso(torneo);
         torneo.setListaHash(SelloTorneo.lista(lineas(torneo)));
         torneo.setListaSelladaEn(Instant.now());
         auditar(torneo, motivo, actorId, canceladas);
+        torneoRepository.saveAndFlush(torneo);
     }
 
     // los borradores y las pendientes de pago no llegaron a pagar: no hay nada que devolver

@@ -3,8 +3,12 @@ package com.hydra.pica.plataforma_pica.inscripcion.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
@@ -20,6 +24,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
+import com.hydra.pica.plataforma_pica.torneo.service.InscripcionTorneoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -47,6 +52,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class InscripcionPagoConcurrenteIntegracionTest {
 
     @Autowired private InscripcionService inscripcionService;
+    @Autowired private InscripcionTorneoService inscripcionTorneoService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
@@ -82,7 +88,7 @@ class InscripcionPagoConcurrenteIntegracionTest {
     }
 
     @RepeatedTest(5)
-    void dosPagosPorElUltimoLugarConfirmanUnoYElOtroRecibeCupoCompleto() throws Exception {
+    void dosPagosPorElUltimoLugarConfirmanUnoYElOtroLlegaConLaInscripcionCerrada() throws Exception {
         Long organizador = usuario("org_conc");
         torneo = jdbc.queryForObject("""
                 INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
@@ -116,17 +122,63 @@ class InscripcionPagoConcurrenteIntegracionTest {
             }
 
             assertThat(confirmados).containsExactly(EstadoInscripcion.CONFIRMADA);
-            assertThat(rechazos).containsExactly(CodigoError.CUPO_COMPLETO);
+            // el primer pago completó el cupo y cerró la inscripción, que canceló la otra pendiente (HU-206)
+            assertThat(rechazos).containsExactly(CodigoError.INSCRIPCION_NO_ABIERTA);
         } finally {
             hilos.shutdownNow();
         }
+        assertThat(jdbc.queryForObject("SELECT estado FROM torneo WHERE id = ?", String.class, torneo))
+                .isEqualTo("INSCRIPCION_CERRADA");
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM inscripcion WHERE torneo_id = ? AND estado = 'CONFIRMADA'", Integer.class, torneo)).isEqualTo(2);
         assertThat(jdbc.queryForObject(
-                "SELECT count(*) FROM inscripcion WHERE torneo_id = ? AND estado = 'PENDIENTE_PAGO'", Integer.class, torneo)).isEqualTo(1);
+                "SELECT count(*) FROM inscripcion WHERE torneo_id = ? AND estado = 'CANCELADA'", Integer.class, torneo)).isEqualTo(1);
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM movimiento WHERE inscripcion_id IN (SELECT id FROM inscripcion WHERE torneo_id = ?)",
                 Integer.class, torneo)).isEqualTo(1);
+    }
+
+    @RepeatedTest(5)
+    void unCierreAManoYUnPagoSimultaneosNoDejanUnaConfirmadaFueraDeLaListaSellada() throws Exception {
+        Long organizador = organizadorQueQuedaEnLaAuditoria();
+        torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion,
+                                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
+                VALUES (?, 'Torneo', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL', 8, 2,
+                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        Long jugador = usuario("j_cierre_pago");
+        long inscripcion = inscripcion(jugador, "PENDIENTE_PAGO");
+
+        CyclicBarrier salida = new CyclicBarrier(2);
+        ExecutorService hilos = Executors.newFixedThreadPool(2);
+        try {
+            Future<EstadoInscripcion> pago = hilos.submit(pago(salida, jugador, inscripcion));
+            Future<?> cierre = hilos.submit(() -> {
+                salida.await();
+                return inscripcionTorneoService.cerrar(organizador, torneo);
+            });
+
+            cierre.get(30, TimeUnit.SECONDS);
+            try {
+                assertThat(pago.get(30, TimeUnit.SECONDS)).isEqualTo(EstadoInscripcion.CONFIRMADA);
+            } catch (ExecutionException e) {
+                assertThat(((ApiException) e.getCause()).getCodigo()).isEqualTo(CodigoError.INSCRIPCION_NO_ABIERTA);
+            }
+        } finally {
+            hilos.shutdownNow();
+        }
+        String estado = jdbc.queryForObject("SELECT estado FROM inscripcion WHERE id = ?", String.class, inscripcion);
+        String sello = jdbc.queryForObject("SELECT lista_hash FROM torneo WHERE id = ?", String.class, torneo);
+        // o pagó antes del cierre y figura en el sello, o llegó después y quedó cancelada con la lista vacía
+        if (estado.equals("CONFIRMADA")) {
+            assertThat(sello).isEqualTo(sha256(inscripcion + ";U;" + jugador));
+        } else {
+            assertThat(estado).isEqualTo("CANCELADA");
+            assertThat(sello).isEqualTo(sha256(""));
+        }
     }
 
     @RepeatedTest(5)
@@ -554,6 +606,21 @@ class InscripcionPagoConcurrenteIntegracionTest {
                 VALUES (?, ?, ?, now())
                 RETURNING id
                 """, Long.class, torneo, usuario, estado);
+    }
+
+    // la auditoría no se borra y guarda a quien cerró a mano: este organizador queda en la base con un nombre único
+    private Long organizadorQueQuedaEnLaAuditoria() {
+        String nombre = "org_cierre_" + UUID.randomUUID();
+        return jdbc.queryForObject("""
+                WITH p AS (INSERT INTO persona (nombres, apellidos) VALUES ('Org', 'Cierre') RETURNING id)
+                INSERT INTO usuario (username, email, estado, email_verificado, persona_id)
+                SELECT ?, ? || '@example.com', 'ACTIVO', true, id FROM p
+                RETURNING id
+                """, Long.class, nombre, nombre);
+    }
+
+    private static String sha256(String texto) throws Exception {
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(texto.getBytes(StandardCharsets.UTF_8)));
     }
 
     private Long usuario(String nombre) {
