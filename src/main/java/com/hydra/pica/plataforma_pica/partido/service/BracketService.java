@@ -17,7 +17,6 @@ import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
-import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
@@ -38,7 +37,6 @@ import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.ArbitroDesignadoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
-import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
@@ -230,30 +228,12 @@ public class BracketService {
     }
 
     private static PartidoBracket partidoBracket(Partido partido, List<Juega> lados) {
-        LadoBracket local = lado(lados, Lado.LOCAL);
-        LadoBracket visitante = lado(lados, Lado.VISITANTE);
+        LadoBracket local = Partidos.ladoBracket(lados, Lado.LOCAL);
+        LadoBracket visitante = Partidos.ladoBracket(lados, Lado.VISITANTE);
         boolean bye = partido.getRonda() == 1 && local != null && visitante == null;
         return new PartidoBracket(partido.getId(), partido.getRonda(), partido.getPosicion(), partido.getEstado(), bye,
                 local, visitante, partido.getCancha() == null ? null : partido.getCancha().getNombre(),
-                partido.getFechaProgramada(), nombre(partido.getArbitro()));
-    }
-
-    private static LadoBracket lado(List<Juega> lados, Lado lado) {
-        return lados.stream()
-                .filter(j -> j.getLado() == lado)
-                .findFirst()
-                .map(j -> new LadoBracket(j.getId().getInscripcionId(), nombre(j.getInscripcion()), j.getPuntaje(),
-                        j.getPenales(), j.getEsGanador()))
-                .orElse(null);
-    }
-
-    private static String nombre(Inscripcion inscripcion) {
-        return inscripcion.getEquipo() != null ? inscripcion.getEquipo().getNombre() : nombre(inscripcion.getUsuario());
-    }
-
-    private static String nombre(Usuario usuario) {
-        Persona persona = usuario.getPersona();
-        return persona == null ? usuario.getUsername() : persona.getNombres() + " " + persona.getApellidos();
+                partido.getFechaProgramada(), Partidos.nombre(partido.getArbitro()));
     }
 
     // --- dueño ------------------------------------------------------------------

@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.partido.domain;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.common.domain.AuditableEntity;
+import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancha;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
@@ -71,4 +72,9 @@ public class Partido extends AuditableEntity {
 
     @Column(name = "objecion_vence_en")
     private Instant objecionVenceEn;
+
+    /** La parte que cargó el resultado (V22); la otra es la que lo acepta u objeta. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "resultado_cargado_por")
+    private Inscripcion resultadoCargadoPor;
 }
