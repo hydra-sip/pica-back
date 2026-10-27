@@ -10,6 +10,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
+import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.partido.domain.Decision;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Evidencia;
@@ -97,7 +98,7 @@ public class LaudoService {
         detalle.put("evidenciaId", evidencia.getId());
         detalle.put("evidenciaHash", evidencia.getHash());
         detalle.put("laudoHash", sello);
-        resultadoService.auditar(partido, usuarioId, detalle);
+        resultadoService.auditar(partido, usuarioId, AccionAuditoria.LAUDO, detalle);
         return partidoService.detalle(partido, usuarioId);
     }
 

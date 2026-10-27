@@ -257,9 +257,13 @@ public class ResultadoService {
 
     /** @param usuarioId null si lo hizo el sistema (el plazo venció) */
     void auditar(Partido partido, Long usuarioId, Map<String, Object> detalle) {
+        auditar(partido, usuarioId, AccionAuditoria.MODIFICACION, detalle);
+    }
+
+    void auditar(Partido partido, Long usuarioId, AccionAuditoria accion, Map<String, Object> detalle) {
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(usuarioId == null ? null : usuarioRepository.getReferenceById(usuarioId));
-        auditoria.setAccion(AccionAuditoria.MODIFICACION);
+        auditoria.setAccion(accion);
         auditoria.setEntidad("PARTIDO");
         auditoria.setEntidadId(String.valueOf(partido.getId()));
         auditoria.setDetalle(detalle);

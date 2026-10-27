@@ -504,7 +504,7 @@ class ResultadoServiceIntegracionTest {
         assertThat(jdbc.queryForMap("""
                 SELECT usuario_id, detalle ->> 'evidenciaId' AS evidencia, detalle ->> 'evidenciaHash' AS hash,
                        detalle ->> 'laudoHash' AS sello, creado_en IS NOT NULL AS con_fecha
-                FROM auditoria WHERE entidad = 'PARTIDO' AND entidad_id = ? AND detalle ->> 'resultado' = 'LAUDO'""",
+                FROM auditoria WHERE accion = 'LAUDO' AND entidad = 'PARTIDO' AND entidad_id = ?""",
                 String.valueOf(partido))).isEqualTo(Map.of("usuario_id", arbitro, "evidencia",
                 String.valueOf(evidencia), "hash", hashEvidencia, "sello", sello, "con_fecha", true));
         assertThat(jdbc.queryForObject("""

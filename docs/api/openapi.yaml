@@ -1237,7 +1237,7 @@ paths:
         aceptar. El laudo queda en `objecion` con su sello: SHA-256 de
         `laudo:<partido>:<puntajeLocal>:<puntajeVisitante>:<penalesLocal>:<penalesVisitante>:<hash de la
         evidencia>:<justificacion>` (penales vacíos si no hay, justificación sin espacios a los costados), que el front
-        puede calcular antes de confirmar. Queda en la auditoría (MODIFICACION, entidad PARTIDO) con quién, cuándo, la
+        puede calcular antes de confirmar. Queda en la auditoría (LAUDO, entidad PARTIDO) con quién, cuándo, la
         evidencia citada y su hash. 404 `PARTIDO_NO_ENCONTRADO`.
       requestBody:
         required: true
