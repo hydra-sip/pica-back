@@ -14,9 +14,13 @@ import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
+import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
+import com.hydra.pica.plataforma_pica.partido.dto.ObjecionComparada;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionResumen;
 import com.hydra.pica.plataforma_pica.partido.dto.VersionResultado;
 import com.hydra.pica.plataforma_pica.partido.service.ObjecionService;
@@ -86,5 +90,39 @@ class ObjecionControllerTest {
         mockMvc.perform(get("/api/v1/torneos/9/objeciones"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("El comparativo responde 200 con las dos versiones, su evidencia y el historial")
+    void comparativo() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ARBITRO));
+        EvidenciaDetalle foto = new EvidenciaDetalle(21L, Lado.VISITANTE, "Dep. Luján", "image/jpeg", 2048, "ab12",
+                "http://localhost/api/v1/partidos/3/evidencias/21/archivo", Instant.parse("2026-10-26T18:04:00Z"));
+        when(objecionService.comparar(ARBITRO, 3L)).thenReturn(new ObjecionComparada(3L, 9L, EstadoPartido.OBJETADO,
+                PENDIENTE.cargada(), new VersionResultado(Lado.VISITANTE, "Dep. Luján", 1, 1, 4, 2,
+                        Instant.parse("2026-10-26T18:05:00Z"), List.of(foto)),
+                "Terminó empatado", null, List.of()));
+
+        mockMvc.perform(get("/api/v1/partidos/3/objecion"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("OBJETADO"))
+                .andExpect(jsonPath("$.objetada.evidencias[0].id").value(21))
+                .andExpect(jsonPath("$.objetada.evidencias[0].equipo").value("Dep. Luján"))
+                .andExpect(jsonPath("$.laudo").isEmpty())
+                .andExpect(jsonPath("$.historial").isArray());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Un partido sin objeción responde 404 OBJECION_NO_ENCONTRADA")
+    void sinObjecion() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ARBITRO));
+        when(objecionService.comparar(ARBITRO, 3L))
+                .thenThrow(new NoEncontradoException(CodigoError.OBJECION_NO_ENCONTRADA, "nadie lo objetó"));
+
+        mockMvc.perform(get("/api/v1/partidos/3/objecion"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("OBJECION_NO_ENCONTRADA"));
     }
 }

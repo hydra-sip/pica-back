@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.partido.controller;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.partido.dto.ObjecionComparada;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionResumen;
 import com.hydra.pica.plataforma_pica.partido.service.ObjecionService;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,12 @@ public class ObjecionController {
     @GetMapping("/torneos/{id}/objeciones")
     public List<ObjecionResumen> delTorneo(@PathVariable Long id) {
         return objecionService.delTorneo(usuarioActual(), id);
+    }
+
+    /** Las dos versiones lado a lado, cada una con su evidencia, el laudo y el historial del partido. */
+    @GetMapping("/partidos/{id}/objecion")
+    public ObjecionComparada comparar(@PathVariable Long id) {
+        return objecionService.comparar(usuarioActual(), id);
     }
 
     private Long usuarioActual() {

@@ -14,9 +14,13 @@ import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Objecion;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
+import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
+import com.hydra.pica.plataforma_pica.partido.dto.LaudoDetalle;
+import com.hydra.pica.plataforma_pica.partido.dto.ObjecionComparada;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionResumen;
 import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.VersionResultado;
+import com.hydra.pica.plataforma_pica.partido.repository.EvidenciaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.ObjecionRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
@@ -50,10 +54,12 @@ public class ObjecionService {
                 : b.getResueltaEn().compareTo(a.getResueltaEn());
     };
 
+    private final Partidos partidos;
     private final TorneoRepository torneoRepository;
     private final PartidoRepository partidoRepository;
     private final JuegaRepository juegaRepository;
     private final ObjecionRepository objecionRepository;
+    private final EvidenciaRepository evidenciaRepository;
     private final AuditoriaRepository auditoriaRepository;
     private final PartidoService partidoService;
 
@@ -83,12 +89,36 @@ public class ObjecionService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public ObjecionComparada comparar(Long usuarioId, Long partidoId) {
+        Partido partido = partidos.buscar(partidoId);
+        if (!partidoService.puedeResolver(partido, usuarioId)) {
+            throw new ProhibidoException(CodigoError.SIN_PERMISO,
+                    "El usuario " + usuarioId + " no puede resolver objeciones en el partido " + partidoId);
+        }
+        Objecion objecion = objecionRepository.findById(partidoId)
+                .orElseThrow(() -> new NoEncontradoException(CodigoError.OBJECION_NO_ENCONTRADA,
+                        "Nadie objetó el partido " + partidoId));
+        List<Juega> lados = juegaRepository.delPartido(partidoId);
+        List<Auditoria> historial = auditoriaRepository.findByEntidadAndEntidadIdInOrderByCreadoEnAscIdAsc(ENTIDAD,
+                List.of(String.valueOf(partidoId)));
+        Map<Long, List<EvidenciaDetalle>> evidencias = evidenciaRepository
+                .findByPartidoIdOrderByCreadoEnAscIdAsc(partidoId).stream()
+                .collect(Collectors.groupingBy(e -> e.getInscripcion().getId(),
+                        Collectors.mapping(e -> EvidenciaService.detalle(e,
+                                deInscripcion(lados, e.getInscripcion().getId())), Collectors.toList())));
+        VersionResultado cargada = cargada(partido, lados, historial, evidencias);
+        VersionResultado objetada = objetada(objecion, lados, evidencias);
+        return new ObjecionComparada(partidoId, partido.getTorneo().getId(), partido.getEstado(), cargada, objetada,
+                objecion.getMotivo(), laudo(objecion), List.of());
+    }
+
     private static ObjecionResumen resumen(Objecion objecion, List<Juega> lados, List<Auditoria> historial,
             int rondas) {
         Partido partido = objecion.getPartido();
         return new ObjecionResumen(partido.getId(), partido.getRonda(), RondaBracket.nombre(partido.getRonda(), rondas),
-                nombre(lados, Lado.LOCAL), nombre(lados, Lado.VISITANTE), cargada(partido, lados, historial),
-                objetada(objecion, lados), objecion.getMotivo(), objecion.getCreadoEn(), objecion.getDecision(),
+                nombre(lados, Lado.LOCAL), nombre(lados, Lado.VISITANTE), cargada(partido, lados, historial, null),
+                objetada(objecion, lados, null), objecion.getMotivo(), objecion.getCreadoEn(), objecion.getDecision(),
                 objecion.getResueltaEn());
     }
 
@@ -96,7 +126,8 @@ public class ObjecionService {
      * La del último CARGADO de la auditoría y no la del marcador del partido, que un laudo CORREGIDO pisa con el
      * resultado oficial.
      */
-    private static VersionResultado cargada(Partido partido, List<Juega> lados, List<Auditoria> historial) {
+    private static VersionResultado cargada(Partido partido, List<Juega> lados, List<Auditoria> historial,
+            Map<Long, List<EvidenciaDetalle>> evidencias) {
         Map<String, Object> carga = historial.reversed().stream()
                 .map(Auditoria::getDetalle)
                 .filter(d -> CARGADO.equals(d.get("resultado")))
@@ -107,14 +138,29 @@ public class ObjecionService {
         return new VersionResultado(quien.getLado(), Partidos.nombre(quien.getInscripcion()),
                 entero(carga.get("puntajeLocal")), entero(carga.get("puntajeVisitante")),
                 enteroONull(carga.get("penalesLocal")), enteroONull(carga.get("penalesVisitante")),
-                partido.getResultadoCargadoEn(), null);
+                partido.getResultadoCargadoEn(), deLado(evidencias, quien));
     }
 
-    private static VersionResultado objetada(Objecion objecion, List<Juega> lados) {
+    private static VersionResultado objetada(Objecion objecion, List<Juega> lados,
+            Map<Long, List<EvidenciaDetalle>> evidencias) {
         Juega quien = deInscripcion(lados, objecion.getInscripcion().getId());
         return new VersionResultado(quien.getLado(), Partidos.nombre(quien.getInscripcion()),
                 objecion.getPuntajeLocal(), objecion.getPuntajeVisitante(), objecion.getPenalesLocal(),
-                objecion.getPenalesVisitante(), objecion.getCreadoEn(), null);
+                objecion.getPenalesVisitante(), objecion.getCreadoEn(), deLado(evidencias, quien));
+    }
+
+    /** Null en el listado, que no trae evidencias. */
+    private static List<EvidenciaDetalle> deLado(Map<Long, List<EvidenciaDetalle>> evidencias, Juega lado) {
+        return evidencias == null ? null : evidencias.getOrDefault(lado.getId().getInscripcionId(), List.of());
+    }
+
+    private static LaudoDetalle laudo(Objecion objecion) {
+        if (objecion.getDecision() == null) {
+            return null;
+        }
+        return new LaudoDetalle(objecion.getDecision(), objecion.getJustificacion(),
+                Partidos.nombre(objecion.getResueltaPor()), objecion.getResueltaEn(),
+                objecion.getEvidencia().getId(), objecion.getLaudoHash());
     }
 
     private static Juega deInscripcion(List<Juega> lados, Long inscripcionId) {

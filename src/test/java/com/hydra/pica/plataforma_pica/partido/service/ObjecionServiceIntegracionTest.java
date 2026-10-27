@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.partido.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -16,8 +17,12 @@ import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.Decision;
+import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
+import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
+import com.hydra.pica.plataforma_pica.partido.dto.LaudoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.LaudoRequest;
+import com.hydra.pica.plataforma_pica.partido.dto.ObjecionComparada;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionResumen;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
@@ -200,6 +205,77 @@ class ObjecionServiceIntegracionTest {
         entityManager.clear();
         assertThatThrownBy(() -> objecionService.delTorneo(organizador, torneo))
                 .extracting("codigo").isEqualTo(CodigoError.TORNEO_NO_ENCONTRADO);
+    }
+
+    // --- comparativo de un partido ----------------------------------------------
+
+    @Test
+    void cadaVersionTraeLaEvidenciaQueSubioSuLado() {
+        Long partido = partido(1);
+        Long fotoDelLocal = evidenciaService.subir(jugador(partido, "LOCAL"), partido, JPG, URL).id();
+        Long fotoDelVisitante = objetar(partido);
+
+        ObjecionComparada comparada = objecionService.comparar(organizador, partido);
+
+        assertThat(comparada).extracting(ObjecionComparada::partidoId, ObjecionComparada::torneoId,
+                        ObjecionComparada::estado, ObjecionComparada::motivo, ObjecionComparada::laudo)
+                .containsExactly(partido, torneo, EstadoPartido.OBJETADO, "El rival no se presentó al segundo tiempo",
+                        null);
+        assertThat(comparada.cargada()).extracting(VersionResultado::lado, VersionResultado::equipo,
+                        VersionResultado::puntajeLocal, VersionResultado::puntajeVisitante)
+                .containsExactly(Lado.LOCAL, nombre(partido, "LOCAL"), 2, 0);
+        assertThat(comparada.cargada().evidencias()).extracting(EvidenciaDetalle::id, EvidenciaDetalle::lado)
+                .containsExactly(tuple(fotoDelLocal, Lado.LOCAL));
+        assertThat(comparada.objetada()).extracting(VersionResultado::lado, VersionResultado::equipo,
+                        VersionResultado::puntajeLocal, VersionResultado::puntajeVisitante)
+                .containsExactly(Lado.VISITANTE, nombre(partido, "VISITANTE"), 0, 1);
+        assertThat(comparada.objetada().evidencias()).extracting(EvidenciaDetalle::id, EvidenciaDetalle::lado)
+                .containsExactly(tuple(fotoDelVisitante, Lado.VISITANTE));
+    }
+
+    @Test
+    void unaObjecionLaudadaTraeElLaudoYLaVersionCargadaOriginal() {
+        Long partido = partido(1);
+        Long foto = objetar(partido);
+        laudar(partido, 0, 1, foto);
+        String sello = jdbc.queryForObject("SELECT laudo_hash FROM objecion WHERE partido_id = ?", String.class,
+                partido);
+
+        ObjecionComparada comparada = objecionService.comparar(organizador, partido);
+
+        assertThat(comparada.estado()).isEqualTo(EstadoPartido.CORREGIDO);
+        assertThat(comparada.laudo()).extracting(LaudoDetalle::decision, LaudoDetalle::justificacion,
+                        LaudoDetalle::resueltaPor, LaudoDetalle::evidenciaId, LaudoDetalle::laudoHash)
+                .containsExactly(Decision.CORREGIDO, "Según la planilla", "org_objeciones Test", foto, sello);
+        assertThat(comparada.laudo().resueltaEn()).isNotNull();
+        assertThat(comparada.cargada()).extracting(VersionResultado::puntajeLocal, VersionResultado::puntajeVisitante)
+                .containsExactly(2, 0);
+    }
+
+    @Test
+    void unPartidoInexistenteOSinObjecionNoTieneComparativo() {
+        Long sinObjecion = partido(2);
+        resultadoService.cargar(jugador(sinObjecion, "LOCAL"), sinObjecion, new ResultadoRequest(2, 0, null, null));
+
+        assertThatThrownBy(() -> objecionService.comparar(organizador, 999_999L))
+                .extracting("codigo").isEqualTo(CodigoError.PARTIDO_NO_ENCONTRADO);
+        assertThatThrownBy(() -> objecionService.comparar(organizador, sinObjecion))
+                .extracting("codigo").isEqualTo(CodigoError.OBJECION_NO_ENCONTRADA);
+    }
+
+    @Test
+    void elComparativoLoVenLosMismosQueElListado() {
+        Long partido = partido(1);
+        objetar(partido);
+        jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO' WHERE torneo_id = ?", torneo);
+        entityManager.clear();
+
+        for (Long sinPermiso : List.of(jugador(partido, "LOCAL"), jugador(partido, "VISITANTE"), arbitro)) {
+            assertThatThrownBy(() -> objecionService.comparar(sinPermiso, partido))
+                    .extracting("codigo").isEqualTo(CodigoError.SIN_PERMISO);
+        }
+        habilitarArbitro();
+        assertThat(objecionService.comparar(arbitro, partido).partidoId()).isEqualTo(partido);
     }
 
     // --- helpers --------------------------------------------------------------
