@@ -102,6 +102,8 @@ app:
   torneos:
     cupo-maximo: ${APP_TORNEOS_CUPO_MAXIMO:64}   # tope de participantes por torneo (HU-201)
     comision-maxima: ${APP_TORNEOS_COMISION_MAXIMA:10}   # tope del % de comisión de la plataforma (HU-601)
+    cierre-automatico: ${APP_TORNEOS_CIERRE_AUTOMATICO:true}   # cerrar las inscripciones vencidas (HU-206)
+    revision-cierres: ${APP_TORNEOS_REVISION_CIERRES:60s}   # cada cuánto se buscan
   partidos:
     plazo-objecion: ${APP_PARTIDOS_PLAZO_OBJECION:15m}   # para aceptar u objetar un resultado cargado (HU-301)
     confirmacion-automatica: ${APP_PARTIDOS_CONFIRMACION_AUTOMATICA:true}   # confirmar los que vencieron (PICA-242)
