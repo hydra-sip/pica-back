@@ -603,6 +603,51 @@ class InscripcionEquipoServiceIntegracionTest {
         assertThat(integranteActivo(bloqueado.getId(), equipo)).isFalse();
     }
 
+    // --- organizador y árbitros en la nómina (PICA-280) ---------------------
+
+    @Test
+    void elOrganizadorNoSeCargaEnLaNominaDelBorradorYNoQuedaNadaGuardado() {
+        assertError(() -> inscripcionService.crear(capitan, torneo, nuevo("Los Zorros", organizador)),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM inscripcion WHERE torneo_id = ?", Integer.class, torneo)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM equipo WHERE nombre = 'Los Zorros'", Integer.class)).isZero();
+    }
+
+    @Test
+    void unArbitroQueTodaviaNoAceptoTampocoSeCargaEnLaNomina() {
+        Long arbitro = integranteNuevo("arbitro_pend_borrador_eq");
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id, estado) VALUES (?, ?, 'PENDIENTE')", torneo, arbitro);
+
+        assertError(() -> inscripcionService.crear(capitan, torneo, existente(equipo, arbitro)),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+    }
+
+    @Test
+    void alEditarNoSeSumaUnArbitroYLaNominaAnteriorQuedaIgual() {
+        Long jugador = integranteNuevo("jug_editar_arbitro_eq");
+        Long arbitro = integranteNuevo("arbitro_editar_eq");
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", torneo, arbitro);
+        long id = inscripcionService.crear(capitan, torneo, existente(equipo, jugador)).id();
+
+        assertError(() -> inscripcionService.editar(capitan, id, existente(equipo, jugador, arbitro)),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+
+        assertThat(inscripcionService.detalle(capitan, id).nomina()).extracting(UsuarioPublico::id)
+                .containsExactlyInAnyOrder(capitan, jugador);
+    }
+
+    @Test
+    void unArbitroQueAdemasFiguraEnOtraInscripcionActivaRecibeElErrorDeArbitro() {
+        Long arbitro = usuario("arbitro_inscripto_eq").getId();
+        integrante(equipo, arbitro);
+        inscripcionActivaDeOtroEquipoCon(arbitro, "CONFIRMADA");
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", torneo, arbitro);
+
+        assertError(() -> inscripcionService.crear(capitan, torneo, existente(equipo, arbitro)),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+    }
+
     // --- duplicados ---------------------------------------------------------
 
     @Test
@@ -627,6 +672,23 @@ class InscripcionEquipoServiceIntegracionTest {
         assertThat(error.getStatus()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(error.getCodigo()).isEqualTo(CodigoError.INSCRIPCION_DUPLICADA);
         assertThat(error.getMessage()).contains("borrador " + idDelBorrador);
+    }
+
+    @Test
+    void elErrorPorElBorradorDelCapitanTraeSuIdEnUnCampoAparte() {
+        Long otroEquipo = equipo("Los Halcones del Sur", capitan);
+        long idDelBorrador = inscripcionDeEquipo(torneo, equipo, "BORRADOR");
+
+        assertThat(inscripcionIdDelError(() -> inscripcionService.crear(capitan, torneo, existente(otroEquipo))))
+                .isEqualTo(idDelBorrador);
+    }
+
+    @Test
+    void elErrorPorUnaCanceladaDelEquipoTraeSuIdEnUnCampoAparte() {
+        long cancelada = inscripcionDeEquipo(torneo, equipo, "CANCELADA");
+
+        assertThat(inscripcionIdDelError(() -> inscripcionService.crear(capitan, torneo, existente(equipo))))
+                .isEqualTo(cancelada);
     }
 
     @Test
@@ -1018,6 +1080,46 @@ class InscripcionEquipoServiceIntegracionTest {
     }
 
     @Test
+    void unJugadorDesignadoArbitroDespuesDelBorradorNoDejaConfirmar() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("arbitro_despues_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", dosATres, jugador);
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, true),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+
+        InscripcionDetalle vista = inscripcionService.detalle(capitan, id);
+        assertThat(vista.estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+        assertThat(vista.reglamentoAceptadoEn()).isNull();
+    }
+
+    @Test
+    void unCapitanDesignadoArbitroDespuesDelBorradorNoConfirma() {
+        long unoADos = torneoPorEquipos(1, 2);
+        long id = inscripcionService.crear(capitan, unoADos, existente(equipo)).id();
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", unoADos, capitan);
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, true),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+    }
+
+    @Test
+    void sacandoAlArbitroDeLaNominaElBorradorSeConfirma() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long arbitro = integranteNuevo("arbitro_sacado_eq");
+        Long reemplazo = integranteNuevo("reemplazo_arbitro_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, arbitro)).id();
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", dosATres, arbitro);
+        assertError(() -> inscripcionService.confirmar(capitan, id, true),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+
+        inscripcionService.editar(capitan, id, existente(equipo, reemplazo));
+
+        assertThat(inscripcionService.confirmar(capitan, id, true).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+    }
+
+    @Test
     void unJugadorQueQuedoInscriptoEnOtroEquipoMientrasTantoNoDejaConfirmar() {
         long dosATres = torneoPorEquipos(2, 3);
         Long compartido = usuario("compartido6_eq").getId();
@@ -1317,6 +1419,14 @@ class InscripcionEquipoServiceIntegracionTest {
     }
 
     // --- escenario ----------------------------------------------------------
+
+    /** El inscripcionId que el 409 INSCRIPCION_DUPLICADA agrega al ProblemDetail para no parsear el detail. */
+    private Object inscripcionIdDelError(ThrowingCallable accion) {
+        ApiException error = catchThrowableOfType(ApiException.class, accion);
+        assertThat(error).isNotNull();
+        assertThat(error.getCodigo()).isEqualTo(CodigoError.INSCRIPCION_DUPLICADA);
+        return error.getPropiedades().get("inscripcionId");
+    }
 
     private void assertError(ThrowingCallable accion, HttpStatus status, CodigoError codigo) {
         ApiException error = catchThrowableOfType(ApiException.class, accion);

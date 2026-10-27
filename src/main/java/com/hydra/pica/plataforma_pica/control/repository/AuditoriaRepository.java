@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.control.repository;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
@@ -25,4 +26,7 @@ public interface AuditoriaRepository extends JpaRepository<Auditoria, Long> {
             where a.accion = com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria.LOGIN
               and a.usuario.id = :usuarioId""")
     Instant ultimoLogin(@Param("usuarioId") Long usuarioId);
+
+    /** Los registros de unas entidades (por ejemplo, de los partidos de un torneo), del más viejo al más nuevo. */
+    List<Auditoria> findByEntidadAndEntidadIdInOrderByCreadoEnAscIdAsc(String entidad, Collection<String> entidadIds);
 }

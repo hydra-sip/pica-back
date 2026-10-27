@@ -18,6 +18,7 @@ import com.hydra.pica.plataforma_pica.partido.repository.ObjecionRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
+import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.torneo.service.Arbitraje;
 import lombok.RequiredArgsConstructor;
@@ -80,9 +81,14 @@ public class PartidoService {
 
     /** El organizador o un árbitro aceptado del torneo con permiso para resolver objeciones. */
     boolean puedeResolver(Partido partido, Long usuarioId) {
+        return puedeResolver(partido.getTorneo(), usuarioId);
+    }
+
+    /** Lo mismo, para todas las objeciones del torneo (HU-303). */
+    boolean puedeResolver(Torneo torneo, Long usuarioId) {
         return usuarioId != null
-                && (partido.getTorneo().getOrganizador().getId().equals(usuarioId) || arbitraje.puedeArbitrar(
-                        partido.getTorneo().getId(), usuarioId, PermisoArbitro.RESOLVER_OBJECIONES));
+                && (torneo.getOrganizador().getId().equals(usuarioId)
+                        || arbitraje.puedeArbitrar(torneo.getId(), usuarioId, PermisoArbitro.RESOLVER_OBJECIONES));
     }
 
     private ObjecionDetalle objecion(Partido partido, List<Juega> lados) {
