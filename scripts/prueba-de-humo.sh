@@ -341,6 +341,10 @@ SQL
 )
 [[ $TORNEO_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudo cargar el torneo de la prueba"; exit 1; }
 pedir 404:TORNEO_NO_ENCONTRADO POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/0/inscripciones" "$USUARIO"
+# las objeciones del torneo las ve el organizador o un árbitro con permiso para resolverlas
+pedir 404:TORNEO_NO_ENCONTRADO GET /api/v1/torneos/{id}/objeciones "/api/v1/torneos/0/objeciones" "$USUARIO"
+pedir 403:SIN_PERMISO GET /api/v1/torneos/{id}/objeciones "/api/v1/torneos/$TORNEO_ID/objeciones" "$USUARIO"
+pedir 404:PARTIDO_NO_ENCONTRADO GET /api/v1/partidos/{id}/objecion "/api/v1/partidos/0/objecion" "$USUARIO"
 pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
 INSCRIPCION_ID=$(campo .id)
 pedir 200 GET /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
@@ -377,6 +381,10 @@ pedir 200 GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$IN
 pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
 pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
 pedir 409:INSCRIPCION_NO_EDITABLE GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
+# el organizador cierra la inscripción a mano (HU-206): es definitivo y nadie más se inscribe
+pedir 200 POST /api/v1/torneos/{id}/cerrar-inscripcion "/api/v1/torneos/$TORNEO_PAGO_ID/cerrar-inscripcion" "$ADMIN"
+pedir 409:INSCRIPCION_NO_ABIERTA POST /api/v1/torneos/{id}/cerrar-inscripcion "/api/v1/torneos/$TORNEO_PAGO_ID/cerrar-inscripcion" "$ADMIN"
+pedir 409:INSCRIPCION_NO_ABIERTA POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_PAGO_ID/inscripciones" "$USUARIO"
 # un torneo por equipos y un equipo del usuario de prueba (tampoco hay API de equipos): borrador, edición,
 # confirmación y pago. El torneo pide una nómina de 2 a 4 jugadores y el usuario de prueba está solo.
 TORNEO_EQUIPO_ID=$(sql <<SQL

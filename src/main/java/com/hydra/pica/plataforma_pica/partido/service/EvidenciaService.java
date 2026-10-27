@@ -118,7 +118,7 @@ public class EvidenciaService {
         }
     }
 
-    private static EvidenciaDetalle detalle(Evidencia evidencia, Juega lado) {
+    static EvidenciaDetalle detalle(Evidencia evidencia, Juega lado) {
         Lado deQuien = lado == null ? null : lado.getLado();
         String nombre = lado == null ? null : Partidos.nombre(lado.getInscripcion());
         return new EvidenciaDetalle(evidencia.getId(), deQuien, nombre, evidencia.getTipoContenido(),
