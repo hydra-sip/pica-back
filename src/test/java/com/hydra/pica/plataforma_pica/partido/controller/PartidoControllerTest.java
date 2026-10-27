@@ -25,10 +25,15 @@ import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
+import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido;
+import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.EstadoVentana;
+import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.LadoCheckin;
+import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.VentanaCheckin;
 import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.LadoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
+import com.hydra.pica.plataforma_pica.partido.service.CheckinService;
 import com.hydra.pica.plataforma_pica.partido.service.EvidenciaService;
 import com.hydra.pica.plataforma_pica.partido.service.LaudoService;
 import com.hydra.pica.plataforma_pica.partido.service.PartidoService;
@@ -69,6 +74,7 @@ class PartidoControllerTest {
     @MockitoBean private EvidenciaService evidenciaService;
     @MockitoBean private LaudoService laudoService;
     @MockitoBean private ProgramacionService programacionService;
+    @MockitoBean private CheckinService checkinService;
     @MockitoBean private CurrentUserProvider currentUserProvider;
 
     @Test
@@ -91,6 +97,44 @@ class PartidoControllerTest {
                 .andExpect(jsonPath("$.estado").value("RESULTADO_CARGADO"))
                 .andExpect(jsonPath("$.cargadoPor").value("LOCAL"))
                 .andExpect(jsonPath("$.objecionVenceEn").value("2026-10-26T18:15:00Z"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("La ventana de check-in responde 200 con el estado de cada lado")
+    void verCheckin() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(CAPITAN));
+        when(checkinService.ver(CAPITAN, 3L)).thenReturn(new CheckinPartido(
+                new VentanaCheckin(Instant.parse("2026-11-03T17:30:00Z"), Instant.parse("2026-11-03T17:50:00Z")),
+                EstadoVentana.ABIERTA, new LadoCheckin("Los Galácticos", Instant.parse("2026-11-03T17:35:00Z")),
+                null, Lado.LOCAL));
+
+        mockMvc.perform(get("/api/v1/partidos/3/checkin"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ventana.abreEn").value("2026-11-03T17:30:00Z"))
+                .andExpect(jsonPath("$.ventana.cierraEn").value("2026-11-03T17:50:00Z"))
+                .andExpect(jsonPath("$.estadoVentana").value("ABIERTA"))
+                .andExpect(jsonPath("$.local.nombre").value("Los Galácticos"))
+                .andExpect(jsonPath("$.local.checkinEn").value("2026-11-03T17:35:00Z"))
+                .andExpect(jsonPath("$.visitante").isEmpty())
+                .andExpect(jsonPath("$.miLado").value("LOCAL"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Un check-in fuera de la ventana responde 409 con cuándo abre y cuándo cierra")
+    void checkinFueraDeVentana() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(CAPITAN));
+        when(checkinService.hacer(CAPITAN, 3L)).thenThrow(
+                new ConflictoException(CodigoError.CHECKIN_FUERA_DE_VENTANA, "Fuera de la ventana")
+                        .con("abreEn", Instant.parse("2026-11-03T17:30:00Z"))
+                        .con("cierraEn", Instant.parse("2026-11-03T17:50:00Z")));
+
+        mockMvc.perform(post("/api/v1/partidos/3/checkin"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("CHECKIN_FUERA_DE_VENTANA"))
+                .andExpect(jsonPath("$.abreEn").value("2026-11-03T17:30:00Z"))
+                .andExpect(jsonPath("$.cierraEn").value("2026-11-03T17:50:00Z"));
     }
 
     @Test

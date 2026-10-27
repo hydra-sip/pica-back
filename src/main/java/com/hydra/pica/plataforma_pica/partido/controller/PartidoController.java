@@ -6,12 +6,14 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.LaudoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ProgramacionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
+import com.hydra.pica.plataforma_pica.partido.service.CheckinService;
 import com.hydra.pica.plataforma_pica.partido.service.EvidenciaService;
 import com.hydra.pica.plataforma_pica.partido.service.LaudoService;
 import com.hydra.pica.plataforma_pica.partido.service.PartidoService;
@@ -49,6 +51,7 @@ public class PartidoController {
     private final EvidenciaService evidenciaService;
     private final LaudoService laudoService;
     private final ProgramacionService programacionService;
+    private final CheckinService checkinService;
     private final CurrentUserProvider currentUserProvider;
 
     @GetMapping("/partidos/{id}")
@@ -90,6 +93,18 @@ public class PartidoController {
     @PutMapping("/partidos/{id}/programacion")
     public PartidoDetalle programar(@PathVariable Long id, @RequestBody ProgramacionRequest request) {
         return programacionService.programar(usuarioActual(), id, request.fechaProgramada());
+    }
+
+    /** Cualquiera con sesión: la ventana y si cada lado hizo check-in (HU-308). */
+    @GetMapping("/partidos/{id}/checkin")
+    public CheckinPartido verCheckin(@PathVariable Long id) {
+        return checkinService.ver(usuarioActual(), id);
+    }
+
+    /** El capitán de un lado confirma su presencia, sin cuerpo; repetirlo no cambia nada. */
+    @PostMapping("/partidos/{id}/checkin")
+    public CheckinPartido hacerCheckin(@PathVariable Long id) {
+        return checkinService.hacer(usuarioActual(), id);
     }
 
     /** Multipart con el archivo en la parte {@code archivo}. */

@@ -1281,7 +1281,7 @@ paths:
       description: >-
         HU-301. Lo carga el capitán de uno de los dos lados: el jugador inscripto o el capitán del equipo (si no, 403
         `NO_ES_CAPITAN`). El partido tiene que estar en juego: torneo EN_CURSO, los dos rivales definidos y estado
-        PROGRAMADO, CHECK_IN o EN_JUEGO (mientras no haya check-in, PROGRAMADO cuenta como en juego); si no, 409
+        PROGRAMADO, CHECK_IN o EN_JUEGO (el check-in de HU-308 no es requisito); si no, 409
         `PARTIDO_NO_EN_JUEGO`. Es eliminación directa: con empate van los dos penales y tienen que definir un ganador;
         sin empate, sin penales (400 `VALIDACION`: `REQUERIDO` o `VALOR_INVALIDO` en `penalesLocal` /
         `penalesVisitante`). El partido queda RESULTADO_CARGADO, con `cargadoPor` y `objecionVenceEn` (ahora más
@@ -2131,6 +2131,8 @@ components:
         sumaPremios: {type: number, description: 'Solo en RIFA_INCOMPLETA y TORNEO_INCOMPLETO: cuánto suman hoy los premios (en la rifa, un entero)'}
         reintentarEnSegundos: {type: integer, description: 'Solo en DEMASIADOS_INTENTOS: lo mismo que el header Retry-After'}
         campos: {type: array, items: {type: string}, description: 'Solo en CAMPOS_BLOQUEADOS: los campos de InformacionTorneoRequest que cambiaban y ya no se pueden cambiar'}
+        abreEn: {type: string, format: date-time, description: 'Solo en CHECKIN_FUERA_DE_VENTANA: cuándo abre la ventana, sin la tolerancia'}
+        cierraEn: {type: string, format: date-time, description: 'Solo en CHECKIN_FUERA_DE_VENTANA: cuándo cierra la ventana, sin la tolerancia'}
       examples:
         - {type: 'about:blank', title: Bad Request, status: 400, detail: Hay campos inválidos, instance: /api/v1/auth/registro,
          codigo: VALIDACION, errores: [{campo: password, codigo: PASSWORD_DEBIL, mensaje: 'Mínimo 8, una mayúscula y un número'}]}

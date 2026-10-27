@@ -349,6 +349,9 @@ pedir 404:PARTIDO_NO_ENCONTRADO GET /api/v1/partidos/{id}/objecion "/api/v1/part
 pedir 404:PARTIDO_NO_ENCONTRADO PUT /api/v1/partidos/{id}/programacion "/api/v1/partidos/0/programacion" "$USUARIO" \
     '{"fechaProgramada":"2031-03-10T18:00:00Z"}'
 pedir 403:SIN_PERMISO PUT /api/v1/torneos/{id}/checkin "/api/v1/torneos/0/checkin" "$USUARIO" '{"minAntes":30,"duracion":20}'
+# el check-in lo ve cualquiera con sesión y lo hace el capitán de cada lado
+pedir 404:PARTIDO_NO_ENCONTRADO GET /api/v1/partidos/{id}/checkin "/api/v1/partidos/0/checkin" "$USUARIO"
+pedir 404:PARTIDO_NO_ENCONTRADO POST /api/v1/partidos/{id}/checkin "/api/v1/partidos/0/checkin" "$USUARIO"
 pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
 INSCRIPCION_ID=$(campo .id)
 pedir 200 GET /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"

@@ -42,8 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <ul>
  * <li>Lo carga el capitán de uno de los dos lados: el jugador inscripto o el capitán del equipo.</li>
- * <li>Solo con el partido en juego: el torneo en curso, los dos rivales definidos y el resultado sin cargar. Mientras
- * no haya check-in (HU-308), PROGRAMADO también cuenta como en juego.</li>
+ * <li>Solo con el partido en juego: el torneo en curso, los dos rivales definidos y el resultado sin cargar. El
+ * check-in (HU-308) no es requisito: PROGRAMADO también cuenta como en juego.</li>
  * <li>Es eliminación directa: un empate se define por penales, y los penales no pueden empatar.</li>
  * <li>El partido queda RESULTADO_CARGADO y el rival tiene {@code app.partidos.plazo-objecion} para aceptarlo u
  * objetarlo.</li>
@@ -247,7 +247,8 @@ public class ResultadoService {
         }
     }
 
-    private static Map<String, Object> detalle(String resultado, Juega lado) {
+    /** El registro de algo que hizo un lado: el capitán de esa inscripción. */
+    static Map<String, Object> detalle(String resultado, Juega lado) {
         Map<String, Object> detalle = new LinkedHashMap<>();
         detalle.put("resultado", resultado);
         detalle.put("inscripcionId", lado.getId().getInscripcionId());

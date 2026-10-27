@@ -104,6 +104,7 @@ app:
     comision-maxima: ${APP_TORNEOS_COMISION_MAXIMA:10}   # tope del % de comisión de la plataforma (HU-601)
   partidos:
     plazo-objecion: ${APP_PARTIDOS_PLAZO_OBJECION:15m}   # para aceptar u objetar un resultado cargado (HU-301)
+    tolerancia-checkin: ${APP_PARTIDOS_TOLERANCIA_CHECKIN:2m}   # margen en cada extremo de la ventana de check-in (HU-308)
     confirmacion-automatica: ${APP_PARTIDOS_CONFIRMACION_AUTOMATICA:true}   # confirmar los que vencieron (PICA-242)
     revision-plazos: ${APP_PARTIDOS_REVISION_PLAZOS:30s}   # cada cuánto se buscan
   # Los archivos que se suben (PICA-200): local, en una carpeta, o supabase, en un bucket privado de Storage
