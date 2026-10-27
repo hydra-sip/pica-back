@@ -72,7 +72,7 @@ public class Rifa extends AuditableEntity {
     @Column(name = "moneda", length = 3, nullable = false)
     private String moneda = "ARS";
 
-    /** % de lo recaudado que va al pozo del torneo (V24); no es un premio. Sin torneo es 0. */
+    /** % de lo recaudado que va al pozo del torneo (V25); no es un premio. Sin torneo es 0. */
     @Column(name = "pct_destinado_torneo", nullable = false)
     private int pctDestinadoTorneo;
 
