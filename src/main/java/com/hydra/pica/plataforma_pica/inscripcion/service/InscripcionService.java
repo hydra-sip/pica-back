@@ -105,11 +105,24 @@ public class InscripcionService {
 
     // quien se inscribe tiene un solo borrador por torneo (el suyo o, si es capitán, el de cualquiera de sus
     // equipos): si ya hay uno, lo retoma en vez de abrir otro
+    /**
+     * 409 porque el usuario ya tiene una inscripción activa en el torneo; si se la encuentra, el error trae su id
+     * en {@code inscripcionId} para que el front no tenga que leerlo del detalle.
+     */
+    private ApiException duplicadaPorActiva(Long torneoId, Long usuarioId) {
+        ApiException error = new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
+                "Ya tenés una inscripción activa en el torneo " + torneoId);
+        inscripcionRepository.findFirstByTorneoIdAndUsuarioIdAndEstadoIn(torneoId, usuarioId, ACTIVAS)
+                .ifPresent(activa -> error.con("inscripcionId", activa.getId()));
+        return error;
+    }
+
     private void exigirSinBorrador(Long torneoId, Long usuarioId) {
         List<Long> borradores = inscripcionRepository.borradoresDe(torneoId, usuarioId);
         if (!borradores.isEmpty()) {
             throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA, "Ya tenés el borrador " + borradores.get(0)
-                    + " en el torneo " + torneoId + ": retomalo o cancelalo antes de crear otro");
+                    + " en el torneo " + torneoId + ": retomalo o cancelalo antes de crear otro")
+                    .con("inscripcionId", borradores.get(0));
         }
     }
 
@@ -119,8 +132,7 @@ public class InscripcionService {
                     "Un torneo individual no lleva equipo ni nómina");
         }
         if (inscripcionRepository.existsByTorneoIdAndUsuarioIdAndEstadoIn(torneo.getId(), usuario.getId(), ACTIVAS)) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
-                    "Ya tenés una inscripción activa en el torneo " + torneo.getId());
+            throw duplicadaPorActiva(torneo.getId(), usuario.getId());
         }
 
         Inscripcion inscripcion = new Inscripcion();
@@ -184,13 +196,16 @@ public class InscripcionService {
                 .filter(otra -> !otra.getId().equals(editada))
                 .ifPresent(otra -> {
                     throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA, "El equipo " + equipo.getId()
-                            + " ya tiene la inscripción " + otra.getId() + " en el torneo (" + otra.getEstado() + ")");
+                            + " ya tiene la inscripción " + otra.getId() + " en el torneo (" + otra.getEstado() + ")")
+                            .con("inscripcionId", otra.getId());
                 });
     }
 
-    // un jugador figura en una sola inscripción activa por torneo: pendiente de pago o confirmada
+    // un jugador figura en una sola inscripción activa por torneo: pendiente de pago o confirmada. El organizador
+    // y los árbitros del torneo no figuran en ninguna, como en el reemplazo
     private void validarJugadoresLibres(Torneo torneo, List<Usuario> jugadores, Long editada) {
         for (Usuario jugador : jugadores) {
+            validarQueNoOrganiza(torneo, jugador.getId());
             if (nominaRepository.figuraEnOtraInscripcion(torneo.getId(), jugador.getId(), ACTIVAS, editada)) {
                 throw new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO,
                         "El jugador " + jugador.getId() + " ya figura en otra inscripción activa del torneo " + torneo.getId());
@@ -334,8 +349,7 @@ public class InscripcionService {
         if (inscripcion.esDeEquipo()) {
             validarNomina(inscripcion, torneo);
         } else if (inscripcionRepository.existsByTorneoIdAndUsuarioIdAndEstadoIn(torneoId, usuarioId, ACTIVAS)) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
-                    "Ya tenés una inscripción activa en el torneo " + torneoId);
+            throw duplicadaPorActiva(torneoId, usuarioId);
         }
         validarCupo(torneo);
         inscripcion.setEstado(gratis ? EstadoInscripcion.CONFIRMADA : EstadoInscripcion.PENDIENTE_PAGO);
