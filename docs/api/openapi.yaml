@@ -1115,6 +1115,28 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/objeciones:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Partidos]
+      summary: Objeciones del torneo
+      x-jira: PICA-246
+      x-owner: Mateo
+      description: >-
+        HU-303. Las ve el organizador o un árbitro que aceptó la designación con permiso para resolver objeciones (si
+        no, 403 `SIN_PERMISO`). Primero las pendientes, de la más vieja a la más nueva, y después las laudadas, de la
+        más reciente a la más vieja. La versión cargada es la que cargó el capitán, aunque un laudo CORREGIDO haya
+        cambiado el resultado del partido. Sin evidencias: están en `GET /partidos/{id}/objecion`. 404
+        `TORNEO_NO_ENCONTRADO` si no existe o está en BORRADOR.
+      responses:
+        '200':
+          description: Las objeciones del torneo
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/ObjecionResumen'}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/torneos/{id}/mi-proximo-partido:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -1202,6 +1224,24 @@ paths:
 
   /api/v1/partidos/{id}/objecion:
     parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Partidos]
+      summary: Comparar las dos versiones de un partido objetado
+      x-jira: PICA-246
+      x-owner: Mateo
+      description: >-
+        HU-303. Los mismos que ven las objeciones del torneo (si no, 403 `SIN_PERMISO`). La versión cargada y la
+        objetada, cada una con la evidencia que subió su lado; el laudo si ya se resolvió; y el historial del partido,
+        sacado de la auditoría en orden cronológico (la subida de evidencia no se audita). 404 `PARTIDO_NO_ENCONTRADO`
+        u `OBJECION_NO_ENCONTRADA` si nadie lo objetó.
+      responses:
+        '200':
+          description: Las dos versiones, el laudo y el historial
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ObjecionComparada'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
     post:
       tags: [Partidos]
       summary: Objetar el resultado que cargó el rival
@@ -1968,6 +2008,7 @@ components:
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
+             OBJECION_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
@@ -2550,6 +2591,70 @@ components:
         resueltaEn: {type: [string, 'null'], format: date-time}
         evidenciaId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: La evidencia que citó el laudo}
         laudoHash: {type: [string, 'null'], description: Sello SHA-256 del laudo}
+    ObjecionResumen:
+      type: object
+      required: [partidoId, ronda, nombreRonda, local, visitante, cargada, objetada, motivo, creadaEn]
+      properties:
+        partidoId: {$ref: '#/components/schemas/Id'}
+        ronda: {type: integer, minimum: 1}
+        nombreRonda: {type: string}
+        local: {type: string, description: 'El equipo o, si se inscribe un jugador, su nombre y apellido'}
+        visitante: {type: string}
+        cargada: {$ref: '#/components/schemas/VersionResultado'}
+        objetada: {$ref: '#/components/schemas/VersionResultado'}
+        motivo: {type: string}
+        creadaEn: {type: string, format: date-time}
+        decision: {oneOf: [{type: string, enum: [CONFIRMADO, CORREGIDO]}, {type: 'null'}], description: Null mientras está pendiente}
+        resueltaEn: {type: [string, 'null'], format: date-time}
+    VersionResultado:
+      type: object
+      required: [lado, equipo, puntajeLocal, puntajeVisitante, fecha]
+      description: 'El resultado que sostiene una de las partes: la que lo cargó o la que lo objetó'
+      properties:
+        lado: {$ref: '#/components/schemas/Lado'}
+        equipo: {type: string}
+        puntajeLocal: {type: integer, minimum: 0}
+        puntajeVisitante: {type: integer, minimum: 0}
+        penalesLocal: {type: [integer, 'null'], minimum: 0}
+        penalesVisitante: {type: [integer, 'null'], minimum: 0}
+        fecha: {type: string, format: date-time, description: Cuándo se cargó o se objetó}
+        evidencias:
+          type: [array, 'null']
+          items: {$ref: '#/components/schemas/EvidenciaDetalle'}
+          description: 'La que subió ese lado, en el orden en que se subió. Null en el listado del torneo'
+    ObjecionComparada:
+      type: object
+      required: [partidoId, torneoId, estado, cargada, objetada, motivo, historial]
+      properties:
+        partidoId: {$ref: '#/components/schemas/Id'}
+        torneoId: {$ref: '#/components/schemas/Id'}
+        estado: {$ref: '#/components/schemas/EstadoPartido'}
+        cargada: {$ref: '#/components/schemas/VersionResultado'}
+        objetada: {$ref: '#/components/schemas/VersionResultado'}
+        motivo: {type: string}
+        laudo: {oneOf: [{$ref: '#/components/schemas/LaudoDetalle'}, {type: 'null'}], description: Null mientras está pendiente}
+        historial: {type: array, items: {$ref: '#/components/schemas/EventoPartido'}}
+    LaudoDetalle:
+      type: object
+      required: [decision, justificacion, resueltaPor, resueltaEn, evidenciaId, laudoHash]
+      properties:
+        decision: {type: string, enum: [CONFIRMADO, CORREGIDO]}
+        justificacion: {type: string}
+        resueltaPor: {type: string, description: Nombre y apellido de quien laudó}
+        resueltaEn: {type: string, format: date-time}
+        evidenciaId: {$ref: '#/components/schemas/Id'}
+        laudoHash: {type: string, description: Sello SHA-256 del laudo}
+    EventoPartido:
+      type: object
+      required: [evento, fecha]
+      description: Un registro de la auditoría del partido
+      properties:
+        evento: {type: string, enum: [CARGADO, ACEPTADO, OBJETADO, CONFIRMADO_POR_PLAZO, LAUDO]}
+        usuario: {type: [string, 'null'], description: 'Nombre y apellido; null si lo hizo el sistema'}
+        lado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}]}
+        equipo: {type: [string, 'null']}
+        fecha: {type: string, format: date-time}
+        decision: {oneOf: [{type: string, enum: [CONFIRMADO, CORREGIDO]}, {type: 'null'}], description: Solo en el laudo}
     LaudoRequest:
       type: object
       required: [puntajeLocal, puntajeVisitante, justificacion, evidenciaId]

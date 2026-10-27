@@ -341,6 +341,10 @@ SQL
 )
 [[ $TORNEO_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudo cargar el torneo de la prueba"; exit 1; }
 pedir 404:TORNEO_NO_ENCONTRADO POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/0/inscripciones" "$USUARIO"
+# las objeciones del torneo las ve el organizador o un árbitro con permiso para resolverlas
+pedir 404:TORNEO_NO_ENCONTRADO GET /api/v1/torneos/{id}/objeciones "/api/v1/torneos/0/objeciones" "$USUARIO"
+pedir 403:SIN_PERMISO GET /api/v1/torneos/{id}/objeciones "/api/v1/torneos/$TORNEO_ID/objeciones" "$USUARIO"
+pedir 404:PARTIDO_NO_ENCONTRADO GET /api/v1/partidos/{id}/objecion "/api/v1/partidos/0/objecion" "$USUARIO"
 pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
 INSCRIPCION_ID=$(campo .id)
 pedir 200 GET /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
