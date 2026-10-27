@@ -1057,6 +1057,46 @@ class InscripcionEquipoServiceIntegracionTest {
     }
 
     @Test
+    void unJugadorDesignadoArbitroDespuesDelBorradorNoDejaConfirmar() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long jugador = integranteNuevo("arbitro_despues_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", dosATres, jugador);
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, true),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+
+        InscripcionDetalle vista = inscripcionService.detalle(capitan, id);
+        assertThat(vista.estado()).isEqualTo(EstadoInscripcion.BORRADOR);
+        assertThat(vista.reglamentoAceptadoEn()).isNull();
+    }
+
+    @Test
+    void unCapitanDesignadoArbitroDespuesDelBorradorNoConfirma() {
+        long unoADos = torneoPorEquipos(1, 2);
+        long id = inscripcionService.crear(capitan, unoADos, existente(equipo)).id();
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", unoADos, capitan);
+
+        assertError(() -> inscripcionService.confirmar(capitan, id, true),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+    }
+
+    @Test
+    void sacandoAlArbitroDeLaNominaElBorradorSeConfirma() {
+        long dosATres = torneoPorEquipos(2, 3);
+        Long arbitro = integranteNuevo("arbitro_sacado_eq");
+        Long reemplazo = integranteNuevo("reemplazo_arbitro_eq");
+        long id = inscripcionService.crear(capitan, dosATres, existente(equipo, arbitro)).id();
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id) VALUES (?, ?)", dosATres, arbitro);
+        assertError(() -> inscripcionService.confirmar(capitan, id, true),
+                HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
+
+        inscripcionService.editar(capitan, id, existente(equipo, reemplazo));
+
+        assertThat(inscripcionService.confirmar(capitan, id, true).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
+    }
+
+    @Test
     void unJugadorQueQuedoInscriptoEnOtroEquipoMientrasTantoNoDejaConfirmar() {
         long dosATres = torneoPorEquipos(2, 3);
         Long compartido = usuario("compartido6_eq").getId();
