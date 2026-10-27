@@ -34,6 +34,8 @@ import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.TorneoDeInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoDetalle;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
@@ -74,6 +76,8 @@ class InscripcionControllerTest {
         mockMvc.perform(post("/api/v1/torneos/3/inscripciones")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/v1/inscripciones/7")).andExpect(status().isUnauthorized());
         mockMvc.perform(delete("/api/v1/inscripciones/7")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/inscripciones/7/reemplazos")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/inscripciones/7/reemplazos")).andExpect(status().isUnauthorized());
         verifyNoInteractions(inscripcionService);
     }
 
@@ -87,6 +91,11 @@ class InscripcionControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
         mockMvc.perform(delete("/api/v1/inscripciones/7"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
+        mockMvc.perform(post("/api/v1/inscripciones/7/reemplazos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"saleUsuarioId\":8,\"entraUsuarioId\":9}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
         verifyNoInteractions(inscripcionService);
@@ -134,6 +143,57 @@ class InscripcionControllerTest {
                 .andExpect(jsonPath("$.torneo.nombre").value("Torneo Apertura F5"))
                 .andExpect(jsonPath("$.torneo.slug").value("torneo-apertura-f5"))
                 .andExpect(jsonPath("$.usuarioId").value(PARTICIPANTE));
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("POST /inscripciones/{id}/reemplazos usa la sesión y devuelve la inscripción actualizada")
+    void reemplaza() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        when(inscripcionService.reemplazar(PARTICIPANTE, 7L, new ReemplazoRequest(8L, 9L)))
+                .thenReturn(detalle());
+
+        mockMvc.perform(post("/api/v1/inscripciones/7/reemplazos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"saleUsuarioId\":8,\"entraUsuarioId\":9}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(7));
+
+        verify(inscripcionService).reemplazar(PARTICIPANTE, 7L, new ReemplazoRequest(8L, 9L));
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("Los dos ids del reemplazo son obligatorios")
+    void reemplazoValidaElCuerpo() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+
+        mockMvc.perform(post("/api/v1/inscripciones/7/reemplazos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"saleUsuarioId\":8}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+
+        verifyNoInteractions(inscripcionService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("GET /inscripciones/{id}/reemplazos devuelve el historial")
+    void historialDeReemplazos() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
+        UsuarioPublico sale = new UsuarioPublico(8L, "sale", "Sale", "Jugador");
+        UsuarioPublico entra = new UsuarioPublico(9L, "entra", "Entra", "Jugador");
+        when(inscripcionService.reemplazos(PARTICIPANTE, 7L))
+                .thenReturn(List.of(new ReemplazoDetalle(sale, entra, CREADA, new UsuarioPublico(PARTICIPANTE,
+                        "capitan", "Capitán", "Test"))));
+
+        mockMvc.perform(get("/api/v1/inscripciones/7/reemplazos"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].sale.id").value(8))
+                .andExpect(jsonPath("$[0].entra.username").value("entra"))
+                .andExpect(jsonPath("$[0].reemplazadoEn").value("2026-10-24T12:00:00Z"))
+                .andExpect(jsonPath("$[0].realizadoPor.id").value(PARTICIPANTE));
     }
 
     @Test

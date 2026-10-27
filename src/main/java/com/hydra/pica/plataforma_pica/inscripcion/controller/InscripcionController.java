@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.inscripcion.controller;
 
 import java.net.URI;
+import java.util.List;
 
 import jakarta.validation.Valid;
 
@@ -9,6 +10,8 @@ import com.hydra.pica.plataforma_pica.inscripcion.dto.ConfirmarInscripcionReques
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionResumen;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoDetalle;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
 import org.springframework.data.domain.Page;
@@ -86,6 +89,17 @@ public class InscripcionController {
     @PreAuthorize("hasAuthority('INSCRIPCION_GESTIONAR')")
     public InscripcionDetalle reabrir(@PathVariable Long id) {
         return inscripcionService.reabrir(usuarioActual(), id);
+    }
+
+    @PostMapping("/inscripciones/{id}/reemplazos")
+    @PreAuthorize("hasAuthority('INSCRIPCION_GESTIONAR')")
+    public InscripcionDetalle reemplazar(@PathVariable Long id, @Valid @RequestBody ReemplazoRequest request) {
+        return inscripcionService.reemplazar(usuarioActual(), id, request);
+    }
+
+    @GetMapping("/inscripciones/{id}/reemplazos")
+    public List<ReemplazoDetalle> reemplazos(@PathVariable Long id) {
+        return inscripcionService.reemplazos(usuarioActual(), id);
     }
 
     @GetMapping("/inscripciones/{id}/resumen-pago")

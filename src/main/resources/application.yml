@@ -14,11 +14,12 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
-  # El PDF del reglamento (PICA-200): el tope del archivo es el de ReglamentoTorneoService
+  # El PDF del reglamento (PICA-200) y la evidencia de los partidos (PICA-241): el tope de cada archivo lo controla
+  # su servicio; este es el del más grande, un video de evidencia
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 6MB
+      max-file-size: 20MB
+      max-request-size: 21MB
 
   jpa:
     hibernate:
@@ -93,11 +94,18 @@ app:
     access-ttl: ${APP_AUTH_ACCESS_TTL:15m}        # vida del access token
     refresh-ttl: ${APP_AUTH_REFRESH_TTL:24h}      # inactividad: el refresh rota en cada uso
     sesion-maxima: ${APP_AUTH_SESION_MAXIMA:7d}   # tope desde el login, aunque se use
+    intentos-login:   # RNF-SEG-06: con este máximo de fallidos en la ventana, 429 hasta que se libere
+      maximo: ${APP_AUTH_INTENTOS_LOGIN_MAXIMO:5}
+      ventana: ${APP_AUTH_INTENTOS_LOGIN_VENTANA:15m}
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   torneos:
     cupo-maximo: ${APP_TORNEOS_CUPO_MAXIMO:64}   # tope de participantes por torneo (HU-201)
     comision-maxima: ${APP_TORNEOS_COMISION_MAXIMA:10}   # tope del % de comisión de la plataforma (HU-601)
+  partidos:
+    plazo-objecion: ${APP_PARTIDOS_PLAZO_OBJECION:15m}   # para aceptar u objetar un resultado cargado (HU-301)
+    confirmacion-automatica: ${APP_PARTIDOS_CONFIRMACION_AUTOMATICA:true}   # confirmar los que vencieron (PICA-242)
+    revision-plazos: ${APP_PARTIDOS_REVISION_PLAZOS:30s}   # cada cuánto se buscan
   # Los archivos que se suben (PICA-200): local, en una carpeta, o supabase, en un bucket privado de Storage
   almacenamiento:
     tipo: ${APP_ALMACENAMIENTO_TIPO:local}

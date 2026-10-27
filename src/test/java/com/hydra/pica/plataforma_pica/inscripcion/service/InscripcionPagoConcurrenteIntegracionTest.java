@@ -17,7 +17,9 @@ import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -57,6 +59,7 @@ class InscripcionPagoConcurrenteIntegracionTest {
     @AfterEach
     void limpiar() {
         if (torneo != null) {
+            jdbc.update("DELETE FROM reemplazo WHERE inscripcion_id IN (SELECT id FROM inscripcion WHERE torneo_id = ?)", torneo);
             jdbc.update("DELETE FROM movimiento WHERE inscripcion_id IN (SELECT id FROM inscripcion WHERE torneo_id = ?)", torneo);
             jdbc.update("DELETE FROM nomina WHERE inscripcion_id IN (SELECT id FROM inscripcion WHERE torneo_id = ?)", torneo);
             jdbc.update("DELETE FROM inscripcion WHERE torneo_id = ?", torneo);
@@ -240,6 +243,51 @@ class InscripcionPagoConcurrenteIntegracionTest {
         }
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM inscripcion WHERE torneo_id = ? AND estado = 'PENDIENTE_PAGO'", Integer.class, torneo)).isEqualTo(1);
+    }
+
+    @RepeatedTest(5)
+    void dosCapitanesQueReemplazanAlMismoJugadorSoloDejanUnaNomina() throws Exception {
+        Long organizador = usuario("org_reemplazo_conc");
+        torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, tamanio_equipo, nomina_maxima,
+                                    valor_inscripcion, pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en,
+                                    fecha_inicio, estado)
+                VALUES (?, 'Torneo', 'https://r', 'Futbol', 'ELIMINACION_DIRECTA', 'PRESENCIAL', 'EQUIPO', 8, 2, 2, 3,
+                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        Long capitanA = usuario("cap_reemplazo_a");
+        Long capitanB = usuario("cap_reemplazo_b");
+        Long saleA = usuario("sale_reemplazo_a");
+        Long saleB = usuario("sale_reemplazo_b");
+        Long entra = usuario("entra_reemplazo_conc");
+        long inscripcionA = inscripcionConfirmadaDeEquipo(capitanA, saleA, "A");
+        long inscripcionB = inscripcionConfirmadaDeEquipo(capitanB, saleB, "B");
+
+        CyclicBarrier salida = new CyclicBarrier(2);
+        ExecutorService hilos = Executors.newFixedThreadPool(2);
+        try {
+            Future<InscripcionDetalle> reemplazoA = hilos.submit(reemplazo(salida, capitanA, inscripcionA, saleA, entra));
+            Future<InscripcionDetalle> reemplazoB = hilos.submit(reemplazo(salida, capitanB, inscripcionB, saleB, entra));
+
+            List<InscripcionDetalle> exitos = new ArrayList<>();
+            List<CodigoError> rechazos = new ArrayList<>();
+            for (Future<InscripcionDetalle> reemplazo : List.of(reemplazoA, reemplazoB)) {
+                try {
+                    exitos.add(reemplazo.get(30, TimeUnit.SECONDS));
+                } catch (ExecutionException e) {
+                    assertThat(e.getCause()).isInstanceOf(ApiException.class);
+                    rechazos.add(((ApiException) e.getCause()).getCodigo());
+                }
+            }
+
+            assertThat(exitos).hasSize(1);
+            assertThat(rechazos).containsExactly(CodigoError.JUGADOR_YA_INSCRIPTO);
+        } finally {
+            hilos.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM nomina WHERE usuario_id = ?", Integer.class, entra)).isEqualTo(1);
     }
 
     @RepeatedTest(5)
@@ -450,6 +498,29 @@ class InscripcionPagoConcurrenteIntegracionTest {
             salida.await();
             return inscripcionService.confirmar(capitan, inscripcion, true).estado();
         };
+    }
+
+    private Callable<InscripcionDetalle> reemplazo(CyclicBarrier salida, Long capitan, long inscripcion,
+            Long sale, Long entra) {
+        return () -> {
+            salida.await();
+            return inscripcionService.reemplazar(capitan, inscripcion, new ReemplazoRequest(sale, entra));
+        };
+    }
+
+    private long inscripcionConfirmadaDeEquipo(Long capitan, Long jugador, String nombre) {
+        long equipo = jdbc.queryForObject("""
+                WITH e AS (INSERT INTO equipo (capitan_id, nombre) VALUES (?, ?) RETURNING id),
+                     i AS (INSERT INTO usuario_equipo (usuario_id, equipo_id)
+                           SELECT u, e.id FROM e, (VALUES (CAST(? AS BIGINT)), (CAST(? AS BIGINT))) AS m (u))
+                SELECT id FROM e
+                """, Long.class, capitan, "Equipo reemplazo " + nombre, capitan, jugador);
+        long inscripcion = jdbc.queryForObject(
+                "INSERT INTO inscripcion (torneo_id, equipo_id, estado, reglamento_aceptado_en) VALUES (?, ?, 'CONFIRMADA', now()) RETURNING id",
+                Long.class, torneo, equipo);
+        jdbc.update("INSERT INTO nomina (inscripcion_id, usuario_id, equipo_id) VALUES (?, ?, ?), (?, ?, ?)",
+                inscripcion, capitan, equipo, inscripcion, jugador, equipo);
+        return inscripcion;
     }
 
     // un equipo del capitán con otro jugador, y su borrador con los dos en la nómina; si se le pasa el mismo

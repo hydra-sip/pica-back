@@ -30,7 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ReglamentoTorneoService {
 
-    /** También es el tope de {@code spring.servlet.multipart.max-file-size}. */
+    /** El multipart admite más (los videos de evidencia, PICA-241): el tope del PDF es este. */
     public static final int TAMANIO_MAXIMO = 5 * 1024 * 1024;
     private static final byte[] FIRMA_PDF = "%PDF-".getBytes(StandardCharsets.US_ASCII);
 

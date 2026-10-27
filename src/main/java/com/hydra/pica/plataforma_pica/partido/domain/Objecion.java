@@ -61,6 +61,13 @@ public class Objecion {
     @Column(name = "puntaje_visitante", nullable = false)
     private Integer puntajeVisitante;
 
+    /** Solo con empate. */
+    @Column(name = "penales_local")
+    private Integer penalesLocal;
+
+    @Column(name = "penales_visitante")
+    private Integer penalesVisitante;
+
     @Column(name = "creado_en", nullable = false, updatable = false)
     private Instant creadoEn;
 

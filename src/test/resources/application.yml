@@ -12,6 +12,9 @@ spring:
         max-page-size: 100
 
 app:
+  partidos:
+    # Sin tareas programadas: los tests llaman a ConfirmacionAutomatica a mano.
+    confirmacion-automatica: false
   cors:
     allowed-origins:
       - http://localhost:3000

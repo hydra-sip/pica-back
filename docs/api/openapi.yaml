@@ -51,6 +51,7 @@ tags:
   - {name: Equipos, description: 'Equipos del capitán para elegir al inscribirse. HU-204 (PICA-234), Mateo.'}
   - {name: Inscripciones, description: 'Inscripción de un participante a un torneo. HU-204 (PICA-50), Mateo.'}
   - {name: Torneos, description: 'Catálogo público y detalle de torneos. HU-208, Tomás.'}
+  - {name: Partidos, description: 'Resultado y evidencia de cada partido. HU-301 (PICA-23), Tomás.'}
 
 security:
   - bearerAuth: []
@@ -117,6 +118,11 @@ paths:
         Username o email en el mismo campo. Access dura 15 min, refresh 7 días.
         401 `CREDENCIALES_INVALIDAS` (no existe, clave incorrecta o eliminado).
         403 `EMAIL_NO_VERIFICADO`, `USUARIO_BLOQUEADO`.
+        429 `DEMASIADOS_INTENTOS` (RNF-SEG-06, PICA-278): con 5 fallidos del mismo identificador (sin distinguir
+        mayúsculas, exista o no) en 15 minutos posteriores a su último login correcto, se responde 429 antes de mirar
+        la clave, con `reintentarEnSegundos` y el header `Retry-After`. Se configuran con
+        `app.auth.intentos-login.maximo` y `.ventana`. Cada intento queda en la auditoría (LOGIN o LOGIN_FALLIDO, con
+        la IP).
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}}
@@ -124,6 +130,11 @@ paths:
         '200': {$ref: '#/components/responses/Tokens'}
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
+        '429':
+          description: Demasiados intentos fallidos
+          headers:
+            Retry-After: {description: Segundos hasta poder volver a intentar, schema: {type: integer}}
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetail'}}}
 
   /api/v1/auth/refresh:
     post:
@@ -1114,6 +1125,225 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/mi-proximo-partido:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Partidos]
+      summary: Mi próximo cruce en el torneo
+      x-jira: PICA-241
+      x-owner: Tomás
+      description: >-
+        HU-301. El primer partido sin cerrar (ni CONFIRMADO, ni CORREGIDO, ni WALKOVER) en el que juega quien consulta,
+        como jugador inscripto o como integrante del equipo, aunque el rival todavía no esté definido. 204 si no juega
+        el torneo, si quedó afuera o si el torneo terminó. 404 `TORNEO_NO_ENCONTRADO` si no existe o está en BORRADOR.
+      responses:
+        '200': {$ref: '#/components/responses/Partido'}
+        '204': {description: No tiene partidos pendientes en el torneo}
+        '404': {$ref: '#/components/responses/Error'}
+
+  # --- Partidos ------------------------------------------------------------------
+
+  /api/v1/partidos/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Partidos]
+      summary: Ver un partido
+      x-jira: PICA-241
+      x-owner: Tomás
+      description: >-
+        HU-301. Cualquiera con sesión, si el torneo está publicado. `miLado` dice de qué lado es capitán quien consulta
+        (null si no juega o no es el capitán) y `cargadoPor` qué lado cargó el resultado. 404 `PARTIDO_NO_ENCONTRADO`
+        si no existe o su torneo está en BORRADOR.
+      responses:
+        '200': {$ref: '#/components/responses/Partido'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/partidos/{id}/resultado:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Partidos]
+      summary: Cargar el resultado
+      x-jira: PICA-241
+      x-owner: Tomás
+      description: >-
+        HU-301. Lo carga el capitán de uno de los dos lados: el jugador inscripto o el capitán del equipo (si no, 403
+        `NO_ES_CAPITAN`). El partido tiene que estar en juego: torneo EN_CURSO, los dos rivales definidos y estado
+        PROGRAMADO, CHECK_IN o EN_JUEGO (mientras no haya check-in, PROGRAMADO cuenta como en juego); si no, 409
+        `PARTIDO_NO_EN_JUEGO`. Es eliminación directa: con empate van los dos penales y tienen que definir un ganador;
+        sin empate, sin penales (400 `VALIDACION`: `REQUERIDO` o `VALOR_INVALIDO` en `penalesLocal` /
+        `penalesVisitante`). El partido queda RESULTADO_CARGADO, con `cargadoPor` y `objecionVenceEn` (ahora más
+        `app.partidos.plazo-objecion`, 15 minutos por defecto): hasta entonces el rival lo acepta o lo objeta. Queda en
+        la auditoría (MODIFICACION, entidad PARTIDO). La evidencia es opcional y va aparte, en
+        `POST /partidos/{id}/evidencias`. 404 `PARTIDO_NO_ENCONTRADO`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResultadoRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/Partido'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/partidos/{id}/resultado/aceptar:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Partidos]
+      summary: Aceptar el resultado que cargó el rival
+      x-jira: PICA-242
+      x-owner: Tomás
+      description: >-
+        HU-301. Lo acepta el capitán del lado que no cargó el resultado (403 `NO_ES_CAPITAN` si no es capitán de
+        ninguno, 409 `RESULTADO_PROPIO` si es el que lo cargó), con el partido en RESULTADO_CARGADO (si no, 409
+        `RESULTADO_NO_PENDIENTE`). Si nadie lo acepta ni lo objeta, al vencer `objecionVenceEn` se confirma solo (una
+        tarea revisa cada `app.partidos.revision-plazos`, 30 segundos por defecto). En los dos casos el partido queda
+        CONFIRMADO y el ganador pasa al partido de la ronda siguiente que le toca (posición `(posicion + 1) / 2`, de
+        local si venía de una posición impar). Si era la final, el torneo pasa a FINALIZADO y cada inscripción queda
+        con su `posicion`: el campeón 1, el finalista 2 y el que perdió en la ronda r de n, 2^(n - r) + 1 (los dos
+        semifinalistas, 3). Queda en la auditoría (MODIFICACION, entidad PARTIDO; la confirmación por plazo, sin
+        usuario). 404 `PARTIDO_NO_ENCONTRADO`.
+      responses:
+        '200': {$ref: '#/components/responses/Partido'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/partidos/{id}/objecion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Partidos]
+      summary: Objetar el resultado que cargó el rival
+      x-jira: PICA-244
+      x-owner: Tomás
+      description: >-
+        HU-302. Lo objeta el capitán del lado que no cargó el resultado (403 `NO_ES_CAPITAN` si no es capitán de
+        ninguno, 409 `RESULTADO_PROPIO` si es el que lo cargó), con el partido en RESULTADO_CARGADO (si no, 409
+        `RESULTADO_NO_PENDIENTE`) y antes de `objecionVenceEn` (si no, 409 `PLAZO_OBJECION_VENCIDO`). Trae el motivo y
+        el resultado que propone, con las reglas de la carga para los penales; la evidencia se sube antes por `POST
+        /partidos/{id}/evidencias` y tiene que haber al menos una de su lado. 400 `VALIDACION`: `REQUERIDO` en
+        `motivo` si no viene o está en blanco, `LONGITUD` si pasa los 1000 caracteres, `REQUERIDO` en `evidencia` si
+        su lado no subió ninguna, y los de los penales como en la carga. El partido queda OBJETADO hasta el laudo
+        (HU-304): no se confirma solo, la llave no avanza y el que cargó el resultado ya no lo cambia. Se avisa por mail
+        al organizador y a los árbitros que aceptaron la designación con permiso para resolver objeciones. Queda en la
+        auditoría (MODIFICACION, entidad PARTIDO). 404 `PARTIDO_NO_ENCONTRADO`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ObjecionRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/Partido'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/partidos/{id}/laudo:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Partidos]
+      summary: Laudar un partido objetado
+      x-jira: PICA-248
+      x-owner: Tomás
+      description: >-
+        HU-304. Lo emite el organizador o un árbitro que aceptó la designación con permiso para resolver objeciones
+        (si no, 403 `SIN_PERMISO`), con el partido OBJETADO (si no, 409 `PARTIDO_NO_OBJETADO`). Trae el resultado
+        oficial, con las reglas de la carga para los penales, la justificación y una evidencia del partido en la que
+        se basa. 400 `VALIDACION`: `REQUERIDO` en `justificacion` si no viene o está en blanco (`LONGITUD` si pasa los
+        2000 caracteres), `REQUERIDO` en `evidenciaId` si no viene y `VALOR_INVALIDO` si no es del partido. El partido
+        queda CONFIRMADO si el resultado es el que se había cargado o CORREGIDO si cambió, y la llave avanza como al
+        aceptar. El laudo queda en `objecion` con su sello: SHA-256 de
+        `laudo:<partido>:<puntajeLocal>:<puntajeVisitante>:<penalesLocal>:<penalesVisitante>:<hash de la
+        evidencia>:<justificacion>` (penales vacíos si no hay, justificación sin espacios a los costados), que el front
+        puede calcular antes de confirmar. Queda en la auditoría (LAUDO, entidad PARTIDO) con quién, cuándo, la
+        evidencia citada y su hash. 404 `PARTIDO_NO_ENCONTRADO`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LaudoRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/Partido'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/partidos/{id}/evidencias:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Partidos]
+      summary: Subir evidencia (foto, captura o video corto)
+      x-jira: PICA-241
+      x-owner: Tomás
+      description: >-
+        HU-301. La sube el capitán de uno de los dos lados (si no, 403 `NO_ES_CAPITAN`) y queda de su lado, con su
+        SHA-256. Antes o después de cargar el resultado, mientras el partido no esté cerrado: 409 `PARTIDO_CERRADO` si
+        está CONFIRMADO, CORREGIDO o WALKOVER, si el torneo no está EN_CURSO o si falta el rival. El formato se reconoce
+        por el contenido, no por la extensión: JPG, PNG o WEBP hasta 5 MB; MP4, MOV o WEBM hasta 20 MB. 400
+        `VALIDACION` en `archivo`: `REQUERIDO` si no viene, `FORMATO_INVALIDO` si no es uno de esos, `LONGITUD` si pasa
+        su tope. 404 `PARTIDO_NO_ENCONTRADO`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivo]
+              properties:
+                archivo: {type: string, format: binary}
+      responses:
+        '201':
+          description: La evidencia subida
+          headers:
+            Location: {schema: {type: string}, description: 'Donde se lee el archivo (`url`)'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EvidenciaDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    get:
+      tags: [Partidos]
+      summary: Ver la evidencia del partido
+      x-jira: PICA-241
+      x-owner: Tomás
+      description: >-
+        HU-301. La de los dos lados, en el orden en que se subió. La ven los capitanes de los dos lados, los árbitros
+        del torneo y su organizador; los demás, 403 `SIN_PERMISO`. 404 `PARTIDO_NO_ENCONTRADO`.
+      responses:
+        '200':
+          description: La evidencia
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/EvidenciaDetalle'}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/partidos/{id}/evidencias/{evidenciaId}/archivo:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {name: evidenciaId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+    get:
+      tags: [Partidos]
+      summary: Abrir un archivo de evidencia
+      x-jira: PICA-241
+      x-owner: Tomás
+      description: >-
+        Los mismos que ven la lista (si no, 403 `SIN_PERMISO`). Con su `tipoContenido` y `Content-Disposition: inline`.
+        404 `PARTIDO_NO_ENCONTRADO` o `EVIDENCIA_NO_ENCONTRADA`.
+      responses:
+        '200':
+          description: El archivo
+          content:
+            image/*: {schema: {type: string, format: binary}}
+            video/*: {schema: {type: string, format: binary}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/torneos/{id}/economia:
     put:
       tags: [Torneos]
@@ -1415,6 +1645,52 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/inscripciones/{id}/reemplazos:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Inscripciones]
+      summary: Reemplazar un jugador de una inscripción confirmada
+      x-jira: PICA-239
+      x-permiso: INSCRIPCION_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        Solo el capitán, y solo en una inscripción CONFIRMADA de un torneo por equipos cuya inscripción siga
+        abierta. Borra de la nómina al usuario indicado por `saleUsuarioId`, suma a la nómina al indicado por
+        `entraUsuarioId` y devuelve la inscripción actualizada. El que sale sigue siendo integrante del equipo y el
+        que entra se suma o se reactiva como integrante. No cambia el estado, el pago, la aceptación del reglamento
+        ni el cupo. 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si quien llama no es el capitán;
+        `USUARIO_NO_ENCONTRADO` si no existe el que entra. 409 `INSCRIPCION_NO_EDITABLE` si no está CONFIRMADA;
+        `INSCRIPCION_NO_ABIERTA` si el torneo cerró; `JUGADOR_YA_INSCRIPTO` si el que entra figura en otra
+        inscripción activa; `REEMPLAZO_INVALIDO` si el que sale no está en la nómina, es el capitán, el que entra
+        ya está en la nómina o la inscripción es individual. 403 `USUARIO_BLOQUEADO` si el que entra está bloqueado;
+        `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si es el organizador o un árbitro del torneo. 400 `VALIDACION` si falta
+        alguno de los ids o son iguales. La operación bloquea el torneo para evitar que dos reemplazos simultáneos
+        incorporen al mismo jugador o se ejecuten después del cierre.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ReemplazoRequest'}}}
+      responses:
+        '200': {description: Inscripción actualizada, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    get:
+      tags: [Inscripciones]
+      summary: Ver el historial de reemplazos
+      x-jira: PICA-239
+      x-owner: Mateo
+      description: >-
+        Devuelve los reemplazos de la inscripción del más viejo al más nuevo. Lo ven el capitán, los jugadores de
+        la nómina vigente y el organizador del torneo. Para cualquier otro usuario responde 404
+        `INSCRIPCION_NO_ENCONTRADA`. Una inscripción sin reemplazos devuelve una lista vacía. Cada elemento trae el
+        usuario que salió, el que entró, cuándo ocurrió y quién hizo el reemplazo.
+      responses:
+        '200': {description: Historial, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Reemplazo'}}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/inscripciones/{id}/resumen-pago:
     get:
       tags: [Inscripciones]
@@ -1561,6 +1837,7 @@ components:
     Rol: {description: Rol con permisos, content: {application/json: {schema: {$ref: '#/components/schemas/RolDetalle'}}}}
     Rifa: {description: Rifa con premios, content: {application/json: {schema: {$ref: '#/components/schemas/RifaDetalle'}}}}
     TorneoInformacion: {description: Torneo propio, content: {application/json: {schema: {$ref: '#/components/schemas/TorneoInformacion'}}}}
+    Partido: {description: Partido, content: {application/json: {schema: {$ref: '#/components/schemas/PartidoDetalle'}}}}
     Error: {description: Ver códigos en la descripción de la operación, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetail'}}}}
     Conflicto: {description: Regla de negocio que no se cumple; el código dice cuál, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetail'}}}}
 
@@ -1625,7 +1902,8 @@ components:
         backend lo agrega acá.
         Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO / SESION_REVOCADA 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404.
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
-        REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400.
+        REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
+        DEMASIADOS_INTENTOS 429 (login).
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
@@ -1640,36 +1918,45 @@ components:
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
         JUGADOR_YA_INSCRIPTO (figura en otra inscripción activa del torneo, como capitán o en la nómina) ·
         NOMINA_INVALIDA (al confirmar: menos jugadores que el tamaño de equipo, más que el máximo de nómina, o
-        sin el capitán) ·
+        sin el capitán) · REEMPLAZO_INVALIDO (el jugador que sale no está en la nómina, es el capitán, el que entra
+        ya está en la nómina o la inscripción es individual) ·
         USUARIO_NO_ES_ARBITRO (no está activo o no tiene el rol ÁRBITRO) · ARBITRO_DUPLICADO (ya está designado en el
         torneo) · ARBITRO_NO_PERMITIDO (es el organizador o juega el torneo) · ARBITRO_CON_PARTIDOS (quitar a un
         árbitro con partidos asignados) · ARBITRO_NO_HABILITADO (asignarle un partido a quien no aceptó la
         designación) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
         PARTICIPANTES_INSUFICIENTES (menos de 2 inscripciones confirmadas) · BRACKET_YA_GENERADO (se puede regenerar) ·
         SIN_ARBITROS (cada partido necesita un árbitro designado) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
-        regenera). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
+        regenera) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
+        sin resultado) · PARTIDO_CERRADO (ya no se le suma evidencia) · RESULTADO_NO_PENDIENTE (no hay un resultado
+        cargado para aceptar u objetar) · RESULTADO_PROPIO (el resultado lo acepta u objeta el rival, no quien lo
+        cargó) · PLAZO_OBJECION_VENCIDO (venció el plazo para objetar el resultado) · PARTIDO_NO_OBJETADO
+        (solo se lauda un partido objetado). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
         403 SIN_PERMISO.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
-        INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él).
+        INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él) ·
+        NO_ES_CAPITAN (cargar el resultado o subir evidencia sin ser el capitán de uno de los dos lados).
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
-             REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO,
+             REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
+             DEMASIADOS_INTENTOS,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
              USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_CON_RIFA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
              TORNEO_INCOMPLETO,
              CAMPOS_BLOQUEADOS, COBRO_RECHAZADO,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
-             CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA,
+             CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
              ARBITRO_NO_HABILITADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
-             SIN_ARBITROS, BRACKET_CON_RESULTADOS,
+             SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
+             RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
+             PARTIDO_NO_OBJETADO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
-             INSCRIPCION_NO_PERMITIDA_EN_TORNEO]
+             INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN]
     ErrorCampo:
       type: object
       required: [campo, codigo]
@@ -1709,6 +1996,7 @@ components:
           items: {anyOf: [{$ref: '#/components/schemas/FaltantePublicacion'}, {$ref: '#/components/schemas/FaltanteTorneo'}]}
           description: 'Solo en RIFA_INCOMPLETA (ver `FaltantePublicacion`) y TORNEO_INCOMPLETO (ver `FaltanteTorneo`): lo que le falta para publicarse'
         sumaPremios: {type: number, description: 'Solo en RIFA_INCOMPLETA y TORNEO_INCOMPLETO: cuánto suman hoy los premios (en la rifa, un entero)'}
+        reintentarEnSegundos: {type: integer, description: 'Solo en DEMASIADOS_INTENTOS: lo mismo que el header Retry-After'}
         campos: {type: array, items: {type: string}, description: 'Solo en CAMPOS_BLOQUEADOS: los campos de InformacionTorneoRequest que cambiaban y ya no se pueden cambiar'}
       examples:
         - {type: 'about:blank', title: Bad Request, status: 400, detail: Hay campos inválidos, instance: /api/v1/auth/registro,
@@ -2156,7 +2444,7 @@ components:
         estado: {$ref: '#/components/schemas/EstadoPartido'}
         bye: {type: boolean, description: El local pasa sin jugar}
         local: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}]}
-        visitante: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}], description: Null hasta que se sabe quién juega, o en un BYE}
+        visitante: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}], description: 'Null hasta que se sabe quién juega, o en un BYE'}
         cancha: {type: [string, 'null']}
         fechaProgramada: {type: [string, 'null'], format: date-time}
         arbitro: {type: [string, 'null'], description: Nombre y apellido}
@@ -2172,6 +2460,90 @@ components:
     EstadoPartido:
       type: string
       enum: [PROGRAMADO, CHECK_IN, EN_JUEGO, RESULTADO_CARGADO, CONFIRMADO, OBJETADO, CORREGIDO, WALKOVER]
+    Lado: {type: string, enum: [LOCAL, VISITANTE]}
+    PartidoDetalle:
+      type: object
+      required: [id, torneoId, torneo, ronda, nombreRonda, posicion, estado, bye]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {type: string, description: Nombre del torneo}
+        torneoSlug: {type: [string, 'null'], description: El del enlace de la ficha pública}
+        ronda: {type: integer, minimum: 1}
+        nombreRonda: {type: string, description: 'Como en `RondaBracket.nombre`'}
+        posicion: {type: integer, minimum: 1}
+        estado: {$ref: '#/components/schemas/EstadoPartido'}
+        bye: {type: boolean}
+        local: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}]}
+        visitante: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}]}
+        cancha: {type: [string, 'null']}
+        fechaProgramada: {type: [string, 'null'], format: date-time}
+        arbitro: {type: [string, 'null'], description: Nombre y apellido}
+        cargadoPor: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}], description: El lado que cargó el resultado; el otro lo acepta u objeta}
+        resultadoCargadoEn: {type: [string, 'null'], format: date-time}
+        objecionVenceEn: {type: [string, 'null'], format: date-time, description: Hasta cuándo el rival puede objetar el resultado}
+        miLado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}], description: El lado del que es capitán quien consulta}
+        objecion: {oneOf: [{$ref: '#/components/schemas/ObjecionDetalle'}, {type: 'null'}], description: 'Si lo objetaron, con su laudo si ya se resolvió'}
+        puedoResolver: {type: boolean, description: 'Con el partido OBJETADO, si quien consulta lo puede laudar'}
+    ObjecionDetalle:
+      type: object
+      required: [lado, motivo, puntajeLocal, puntajeVisitante, creadaEn]
+      properties:
+        lado: {$ref: '#/components/schemas/Lado'}
+        motivo: {type: string}
+        puntajeLocal: {type: integer, minimum: 0, description: El resultado que propone quien objeta}
+        puntajeVisitante: {type: integer, minimum: 0}
+        penalesLocal: {type: [integer, 'null'], minimum: 0}
+        penalesVisitante: {type: [integer, 'null'], minimum: 0}
+        creadaEn: {type: string, format: date-time}
+        decision: {oneOf: [{type: string, enum: [CONFIRMADO, CORREGIDO]}, {type: 'null'}], description: 'Null hasta el laudo; CORREGIDO si cambió el resultado'}
+        justificacion: {type: [string, 'null']}
+        resueltaPor: {type: [string, 'null'], description: Nombre y apellido de quien laudó}
+        resueltaEn: {type: [string, 'null'], format: date-time}
+        evidenciaId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: La evidencia que citó el laudo}
+        laudoHash: {type: [string, 'null'], description: Sello SHA-256 del laudo}
+    LaudoRequest:
+      type: object
+      required: [puntajeLocal, puntajeVisitante, justificacion, evidenciaId]
+      description: El resultado oficial sigue las reglas de la carga.
+      properties:
+        puntajeLocal: {type: integer, minimum: 0}
+        puntajeVisitante: {type: integer, minimum: 0}
+        penalesLocal: {type: [integer, 'null'], minimum: 0}
+        penalesVisitante: {type: [integer, 'null'], minimum: 0}
+        justificacion: {type: string, minLength: 1, maxLength: 2000}
+        evidenciaId: {$ref: '#/components/schemas/Id'}
+    ObjecionRequest:
+      type: object
+      required: [motivo, puntajeLocal, puntajeVisitante]
+      description: El resultado que propone sigue las reglas de la carga.
+      properties:
+        motivo: {type: string, minLength: 1, maxLength: 1000}
+        puntajeLocal: {type: integer, minimum: 0}
+        puntajeVisitante: {type: integer, minimum: 0}
+        penalesLocal: {type: [integer, 'null'], minimum: 0}
+        penalesVisitante: {type: [integer, 'null'], minimum: 0}
+    ResultadoRequest:
+      type: object
+      required: [puntajeLocal, puntajeVisitante]
+      description: Los penales solo con empate, y tienen que definir un ganador.
+      properties:
+        puntajeLocal: {type: integer, minimum: 0}
+        puntajeVisitante: {type: integer, minimum: 0}
+        penalesLocal: {type: [integer, 'null'], minimum: 0}
+        penalesVisitante: {type: [integer, 'null'], minimum: 0}
+    EvidenciaDetalle:
+      type: object
+      required: [id, tipoContenido, tamanioBytes, hash, url, subidaEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        lado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}], description: El de quien la subió}
+        equipo: {type: [string, 'null'], description: 'Nombre del equipo o del jugador que la subió'}
+        tipoContenido: {type: string, enum: [image/jpeg, image/png, image/webp, video/mp4, video/quicktime, video/webm]}
+        tamanioBytes: {type: integer, format: int64}
+        hash: {type: string, description: SHA-256 del archivo en hexadecimal}
+        url: {type: string, description: '`GET /partidos/{id}/evidencias/{evidenciaId}/archivo`, absoluta'}
+        subidaEn: {type: string, format: date-time}
     PublicarTorneoRequest:
       type: object
       required: [aceptaTerminos]
@@ -2481,6 +2853,21 @@ components:
           type: [array, 'null']
           description: Solo en la de equipo; incluye siempre al capitán
           items: {$ref: '#/components/schemas/UsuarioPublico'}
+    ReemplazoRequest:
+      type: object
+      required: [saleUsuarioId, entraUsuarioId]
+      properties:
+        saleUsuarioId: {$ref: '#/components/schemas/Id'}
+        entraUsuarioId: {$ref: '#/components/schemas/Id'}
+      description: Usuario que sale y usuario que entra en la nómina; no pueden ser el mismo.
+    Reemplazo:
+      type: object
+      required: [sale, entra, reemplazadoEn, realizadoPor]
+      properties:
+        sale: {$ref: '#/components/schemas/UsuarioPublico'}
+        entra: {$ref: '#/components/schemas/UsuarioPublico'}
+        reemplazadoEn: {type: string, format: date-time}
+        realizadoPor: {$ref: '#/components/schemas/UsuarioPublico'}
     RifaDetalle:
       type: object
       required: [id, titulo, pctDestinadoTorneo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, creadoEn]
