@@ -118,6 +118,11 @@ paths:
         Username o email en el mismo campo. Access dura 15 min, refresh 7 días.
         401 `CREDENCIALES_INVALIDAS` (no existe, clave incorrecta o eliminado).
         403 `EMAIL_NO_VERIFICADO`, `USUARIO_BLOQUEADO`.
+        429 `DEMASIADOS_INTENTOS` (RNF-SEG-06, PICA-278): con 5 fallidos del mismo identificador (sin distinguir
+        mayúsculas, exista o no) en 15 minutos posteriores a su último login correcto, se responde 429 antes de mirar
+        la clave, con `reintentarEnSegundos` y el header `Retry-After`. Se configuran con
+        `app.auth.intentos-login.maximo` y `.ventana`. Cada intento queda en la auditoría (LOGIN o LOGIN_FALLIDO, con
+        la IP).
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}}
@@ -125,6 +130,11 @@ paths:
         '200': {$ref: '#/components/responses/Tokens'}
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
+        '429':
+          description: Demasiados intentos fallidos
+          headers:
+            Retry-After: {description: Segundos hasta poder volver a intentar, schema: {type: integer}}
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetail'}}}
 
   /api/v1/auth/refresh:
     post:
@@ -1625,6 +1635,52 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/inscripciones/{id}/reemplazos:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Inscripciones]
+      summary: Reemplazar un jugador de una inscripción confirmada
+      x-jira: PICA-239
+      x-permiso: INSCRIPCION_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        Solo el capitán, y solo en una inscripción CONFIRMADA de un torneo por equipos cuya inscripción siga
+        abierta. Borra de la nómina al usuario indicado por `saleUsuarioId`, suma a la nómina al indicado por
+        `entraUsuarioId` y devuelve la inscripción actualizada. El que sale sigue siendo integrante del equipo y el
+        que entra se suma o se reactiva como integrante. No cambia el estado, el pago, la aceptación del reglamento
+        ni el cupo. 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si quien llama no es el capitán;
+        `USUARIO_NO_ENCONTRADO` si no existe el que entra. 409 `INSCRIPCION_NO_EDITABLE` si no está CONFIRMADA;
+        `INSCRIPCION_NO_ABIERTA` si el torneo cerró; `JUGADOR_YA_INSCRIPTO` si el que entra figura en otra
+        inscripción activa; `REEMPLAZO_INVALIDO` si el que sale no está en la nómina, es el capitán, el que entra
+        ya está en la nómina o la inscripción es individual. 403 `USUARIO_BLOQUEADO` si el que entra está bloqueado;
+        `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si es el organizador o un árbitro del torneo. 400 `VALIDACION` si falta
+        alguno de los ids o son iguales. La operación bloquea el torneo para evitar que dos reemplazos simultáneos
+        incorporen al mismo jugador o se ejecuten después del cierre.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ReemplazoRequest'}}}
+      responses:
+        '200': {description: Inscripción actualizada, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    get:
+      tags: [Inscripciones]
+      summary: Ver el historial de reemplazos
+      x-jira: PICA-239
+      x-owner: Mateo
+      description: >-
+        Devuelve los reemplazos de la inscripción del más viejo al más nuevo. Lo ven el capitán, los jugadores de
+        la nómina vigente y el organizador del torneo. Para cualquier otro usuario responde 404
+        `INSCRIPCION_NO_ENCONTRADA`. Una inscripción sin reemplazos devuelve una lista vacía. Cada elemento trae el
+        usuario que salió, el que entró, cuándo ocurrió y quién hizo el reemplazo.
+      responses:
+        '200': {description: Historial, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Reemplazo'}}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/inscripciones/{id}/resumen-pago:
     get:
       tags: [Inscripciones]
@@ -1836,7 +1892,8 @@ components:
         backend lo agrega acá.
         Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO / SESION_REVOCADA 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404.
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
-        REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400.
+        REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
+        DEMASIADOS_INTENTOS 429 (login).
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
@@ -1850,7 +1907,8 @@ components:
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
         JUGADOR_YA_INSCRIPTO (figura en otra inscripción activa del torneo, como capitán o en la nómina) ·
         NOMINA_INVALIDA (al confirmar: menos jugadores que el tamaño de equipo, más que el máximo de nómina, o
-        sin el capitán) ·
+        sin el capitán) · REEMPLAZO_INVALIDO (el jugador que sale no está en la nómina, es el capitán, el que entra
+        ya está en la nómina o la inscripción es individual) ·
         USUARIO_NO_ES_ARBITRO (no está activo o no tiene el rol ÁRBITRO) · ARBITRO_DUPLICADO (ya está designado en el
         torneo) · ARBITRO_NO_PERMITIDO (es el organizador o juega el torneo) · ARBITRO_CON_PARTIDOS (quitar a un
         árbitro con partidos asignados) · ARBITRO_NO_HABILITADO (asignarle un partido a quien no aceptó la
@@ -1873,12 +1931,13 @@ components:
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
+             DEMASIADOS_INTENTOS,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
              USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_EDITABLE, TORNEO_INCOMPLETO,
              CAMPOS_BLOQUEADOS, COBRO_RECHAZADO,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
-             CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA,
+             CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
              ARBITRO_NO_HABILITADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
@@ -1925,6 +1984,7 @@ components:
           items: {anyOf: [{$ref: '#/components/schemas/FaltantePublicacion'}, {$ref: '#/components/schemas/FaltanteTorneo'}]}
           description: 'Solo en RIFA_INCOMPLETA (ver `FaltantePublicacion`) y TORNEO_INCOMPLETO (ver `FaltanteTorneo`): lo que le falta para publicarse'
         sumaPremios: {type: number, description: 'Solo en RIFA_INCOMPLETA y TORNEO_INCOMPLETO: cuánto suman hoy los premios (en la rifa, un entero)'}
+        reintentarEnSegundos: {type: integer, description: 'Solo en DEMASIADOS_INTENTOS: lo mismo que el header Retry-After'}
         campos: {type: array, items: {type: string}, description: 'Solo en CAMPOS_BLOQUEADOS: los campos de InformacionTorneoRequest que cambiaban y ya no se pueden cambiar'}
       examples:
         - {type: 'about:blank', title: Bad Request, status: 400, detail: Hay campos inválidos, instance: /api/v1/auth/registro,
@@ -2767,6 +2827,21 @@ components:
           type: [array, 'null']
           description: Solo en la de equipo; incluye siempre al capitán
           items: {$ref: '#/components/schemas/UsuarioPublico'}
+    ReemplazoRequest:
+      type: object
+      required: [saleUsuarioId, entraUsuarioId]
+      properties:
+        saleUsuarioId: {$ref: '#/components/schemas/Id'}
+        entraUsuarioId: {$ref: '#/components/schemas/Id'}
+      description: Usuario que sale y usuario que entra en la nómina; no pueden ser el mismo.
+    Reemplazo:
+      type: object
+      required: [sale, entra, reemplazadoEn, realizadoPor]
+      properties:
+        sale: {$ref: '#/components/schemas/UsuarioPublico'}
+        entra: {$ref: '#/components/schemas/UsuarioPublico'}
+        reemplazadoEn: {type: string, format: date-time}
+        realizadoPor: {$ref: '#/components/schemas/UsuarioPublico'}
     RifaDetalle:
       type: object
       required: [id, titulo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, creadoEn]
