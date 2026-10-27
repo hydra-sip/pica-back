@@ -1475,7 +1475,8 @@ paths:
         jugador, el capitán incluido, figura en otra inscripción activa (pendiente de pago o confirmada) del
         torneo.
         403 `USUARIO_BLOQUEADO` si el capitán o un jugador tiene un bloqueo vigente;
-        `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si el capitán es el organizador o un árbitro designado del torneo.
+        `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si el capitán o un jugador de la nómina es el organizador o un árbitro
+        designado del torneo, en cualquier estado de la designación.
         400 `VALIDACION` si un torneo por equipos llega sin cuerpo, si un torneo individual llega con cuerpo, si
         no viene exactamente uno de `equipoId` y `nombreEquipoNuevo`, o si el nombre del equipo nuevo está en blanco
         o pasa los 100 caracteres.
@@ -1542,7 +1543,9 @@ paths:
         descarta. 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (un jugador de la nómina o
         el organizador tampoco la edita); `EQUIPO_NO_ENCONTRADO`; `USUARIO_NO_ENCONTRADO`. 409
         `INSCRIPCION_NO_EDITABLE` si no está en BORRADOR; `INSCRIPCION_NO_ABIERTA`; `USUARIO_NO_ACTIVO`;
-        `INSCRIPCION_DUPLICADA`; `JUGADOR_YA_INSCRIPTO`. 403 `USUARIO_BLOQUEADO`. 400 `VALIDACION` si la inscripción
+        `INSCRIPCION_DUPLICADA`; `JUGADOR_YA_INSCRIPTO`. 403 `USUARIO_BLOQUEADO`;
+        `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si el capitán o un jugador de la nómina es el organizador o un árbitro
+        designado del torneo. 400 `VALIDACION` si la inscripción
         es individual (no tiene equipo ni nómina) o por las mismas reglas del cuerpo que al crear.
       requestBody:
         required: true
@@ -1585,7 +1588,8 @@ paths:
         cuenta como no aceptado. Vuelve a chequear el torneo, el usuario y la inscripción duplicada, como al crear.
         En una de equipo valida además la nómina: la cantidad de jugadores, con el capitán incluido, tiene que
         estar entre el tamaño de equipo y el máximo de nómina del torneo, y cada jugador tiene que seguir activo,
-        sin bloqueo vigente y sin otra inscripción activa en el torneo. Se bloquea la fila del torneo para que dos
+        sin bloqueo vigente, no ser el organizador ni un árbitro designado del torneo (lo pueden haber designado
+        mientras el borrador estaba guardado) y no figurar en otra inscripción activa del torneo. Se bloquea la fila del torneo para que dos
         equipos con un jugador en común no confirmen a la vez.
         404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador);
         `TORNEO_NO_ENCONTRADO` si el torneo fue dado de baja.
@@ -1597,7 +1601,9 @@ paths:
         confirmadas ya completan el cupo (la inscripción sigue en BORRADOR). En un torneo con costo es un aviso
         temprano: el cupo se chequea en firme al pagar. En uno gratis es el chequeo en firme, con la fila del
         torneo bloqueada.
-        403 `USUARIO_BLOQUEADO` si el capitán o un jugador de la nómina tiene un bloqueo vigente.
+        403 `USUARIO_BLOQUEADO` si el capitán o un jugador de la nómina tiene un bloqueo vigente;
+        `INSCRIPCION_NO_PERMITIDA_EN_TORNEO` si el capitán o un jugador de la nómina es el organizador o un árbitro
+        designado del torneo (la inscripción sigue en BORRADOR).
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
         required: false
@@ -1923,7 +1929,8 @@ components:
         403 SIN_PERMISO.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
-        INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él) ·
+        INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
+        figuran en una nómina) ·
         NO_ES_CAPITAN (cargar el resultado o subir evidencia sin ser el capitán de uno de los dos lados).
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
