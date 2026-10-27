@@ -29,6 +29,7 @@ import com.hydra.pica.plataforma_pica.partido.dto.LadoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.service.EvidenciaService;
+import com.hydra.pica.plataforma_pica.partido.service.LaudoService;
 import com.hydra.pica.plataforma_pica.partido.service.PartidoService;
 import com.hydra.pica.plataforma_pica.partido.service.ResultadoService;
 import org.junit.jupiter.api.DisplayName;
@@ -44,7 +45,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * El partido, su resultado y su evidencia (PICA-241, PICA-242 y PICA-244): con sesión y sin permiso propio. Las
+ * El partido, su resultado y su evidencia (PICA-241 a PICA-248): con sesión y sin permiso propio. Las
  * reglas están en los servicios.
  */
 @WebMvcTest(PartidoController.class)
@@ -56,7 +57,7 @@ class PartidoControllerTest {
     private static final PartidoDetalle CARGADO = new PartidoDetalle(3L, 9L, "Copa", "copa", 1, "Semifinal", 1,
             EstadoPartido.RESULTADO_CARGADO, false, new LadoBracket(11L, "Los Galácticos", 3, null, true),
             new LadoBracket(12L, "Dep. Luján", 1, null, false), null, null, "Mario Gómez", Lado.LOCAL,
-            Instant.parse("2026-10-26T18:00:00Z"), Instant.parse("2026-10-26T18:15:00Z"), Lado.LOCAL, null);
+            Instant.parse("2026-10-26T18:00:00Z"), Instant.parse("2026-10-26T18:15:00Z"), Lado.LOCAL, null, false);
 
     @Autowired
     private MockMvc mockMvc;
@@ -64,6 +65,7 @@ class PartidoControllerTest {
     @MockitoBean private PartidoService partidoService;
     @MockitoBean private ResultadoService resultadoService;
     @MockitoBean private EvidenciaService evidenciaService;
+    @MockitoBean private LaudoService laudoService;
     @MockitoBean private CurrentUserProvider currentUserProvider;
 
     @Test
@@ -152,6 +154,18 @@ class PartidoControllerTest {
                                 + "\"penalesLocal\":4,\"penalesVisitante\":2}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.codigo").value("PLAZO_OBJECION_VENCIDO"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Un laudo sin justificación ni evidencia responde 400 sin llegar al servicio")
+    void laudoIncompleto() throws Exception {
+        mockMvc.perform(post("/api/v1/partidos/3/laudo").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"puntajeLocal\":0,\"puntajeVisitante\":1,\"justificacion\":\" \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[?(@.campo == 'justificacion')].codigo").value("REQUERIDO"))
+                .andExpect(jsonPath("$.errores[?(@.campo == 'evidenciaId')].codigo").value("REQUERIDO"));
+        verifyNoInteractions(laudoService);
     }
 
     @Test

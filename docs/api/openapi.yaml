@@ -1220,6 +1220,37 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/partidos/{id}/laudo:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Partidos]
+      summary: Laudar un partido objetado
+      x-jira: PICA-248
+      x-owner: Tomás
+      description: >-
+        HU-304. Lo emite el organizador o un árbitro que aceptó la designación con permiso para resolver objeciones
+        (si no, 403 `SIN_PERMISO`), con el partido OBJETADO (si no, 409 `PARTIDO_NO_OBJETADO`). Trae el resultado
+        oficial, con las reglas de la carga para los penales, la justificación y una evidencia del partido en la que
+        se basa. 400 `VALIDACION`: `REQUERIDO` en `justificacion` si no viene o está en blanco (`LONGITUD` si pasa los
+        2000 caracteres), `REQUERIDO` en `evidenciaId` si no viene y `VALOR_INVALIDO` si no es del partido. El partido
+        queda CONFIRMADO si el resultado es el que se había cargado o CORREGIDO si cambió, y la llave avanza como al
+        aceptar. El laudo queda en `objecion` con su sello: SHA-256 de
+        `laudo:<partido>:<puntajeLocal>:<puntajeVisitante>:<penalesLocal>:<penalesVisitante>:<hash de la
+        evidencia>:<justificacion>` (penales vacíos si no hay, justificación sin espacios a los costados), que el front
+        puede calcular antes de confirmar. Queda en la auditoría (MODIFICACION, entidad PARTIDO) con quién, cuándo, la
+        evidencia citada y su hash. 404 `PARTIDO_NO_ENCONTRADO`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LaudoRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/Partido'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/partidos/{id}/evidencias:
     parameters: [{$ref: '#/components/parameters/id'}]
     post:
@@ -1829,7 +1860,8 @@ components:
         regenera) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
         sin resultado) · PARTIDO_CERRADO (ya no se le suma evidencia) · RESULTADO_NO_PENDIENTE (no hay un resultado
         cargado para aceptar u objetar) · RESULTADO_PROPIO (el resultado lo acepta u objeta el rival, no quien lo
-        cargó) · PLAZO_OBJECION_VENCIDO (venció el plazo para objetar el resultado). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
+        cargó) · PLAZO_OBJECION_VENCIDO (venció el plazo para objetar el resultado) · PARTIDO_NO_OBJETADO
+        (solo se lauda un partido objetado). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
         403 SIN_PERMISO.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
@@ -1851,6 +1883,7 @@ components:
              ARBITRO_NO_HABILITADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
+             PARTIDO_NO_OBJETADO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN]
     ErrorCampo:
@@ -2378,7 +2411,8 @@ components:
         resultadoCargadoEn: {type: [string, 'null'], format: date-time}
         objecionVenceEn: {type: [string, 'null'], format: date-time, description: Hasta cuándo el rival puede objetar el resultado}
         miLado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}], description: El lado del que es capitán quien consulta}
-        objecion: {oneOf: [{$ref: '#/components/schemas/ObjecionDetalle'}, {type: 'null'}], description: Con el partido OBJETADO o CORREGIDO}
+        objecion: {oneOf: [{$ref: '#/components/schemas/ObjecionDetalle'}, {type: 'null'}], description: 'Si lo objetaron, con su laudo si ya se resolvió'}
+        puedoResolver: {type: boolean, description: 'Con el partido OBJETADO, si quien consulta lo puede laudar'}
     ObjecionDetalle:
       type: object
       required: [lado, motivo, puntajeLocal, puntajeVisitante, creadaEn]
@@ -2390,6 +2424,23 @@ components:
         penalesLocal: {type: [integer, 'null'], minimum: 0}
         penalesVisitante: {type: [integer, 'null'], minimum: 0}
         creadaEn: {type: string, format: date-time}
+        decision: {oneOf: [{type: string, enum: [CONFIRMADO, CORREGIDO]}, {type: 'null'}], description: 'Null hasta el laudo; CORREGIDO si cambió el resultado'}
+        justificacion: {type: [string, 'null']}
+        resueltaPor: {type: [string, 'null'], description: Nombre y apellido de quien laudó}
+        resueltaEn: {type: [string, 'null'], format: date-time}
+        evidenciaId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: La evidencia que citó el laudo}
+        laudoHash: {type: [string, 'null'], description: Sello SHA-256 del laudo}
+    LaudoRequest:
+      type: object
+      required: [puntajeLocal, puntajeVisitante, justificacion, evidenciaId]
+      description: El resultado oficial sigue las reglas de la carga.
+      properties:
+        puntajeLocal: {type: integer, minimum: 0}
+        puntajeVisitante: {type: integer, minimum: 0}
+        penalesLocal: {type: [integer, 'null'], minimum: 0}
+        penalesVisitante: {type: [integer, 'null'], minimum: 0}
+        justificacion: {type: string, minLength: 1, maxLength: 2000}
+        evidenciaId: {$ref: '#/components/schemas/Id'}
     ObjecionRequest:
       type: object
       required: [motivo, puntajeLocal, puntajeVisitante]

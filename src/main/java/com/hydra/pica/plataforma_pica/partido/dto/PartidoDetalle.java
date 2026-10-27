@@ -6,7 +6,7 @@ import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 
 /**
- * Un partido con lo que hace falta para cargar, aceptar u objetar su resultado (HU-301 y HU-302).
+ * Un partido con lo que hace falta para cargar, aceptar, objetar o laudar su resultado (HU-301 a HU-304).
  *
  * @param torneoSlug      el del enlace de la ficha pública
  * @param nombreRonda     "Final", "Semifinal"... como en el bracket
@@ -14,6 +14,7 @@ import com.hydra.pica.plataforma_pica.partido.domain.Lado;
  * @param objecionVenceEn hasta cuándo el rival puede objetar; después se confirma solo
  * @param miLado          el lado del que es capitán quien consulta, si juega el partido
  * @param objecion        null si nadie lo objetó (HU-302)
+ * @param puedoResolver   si quien consulta puede laudar la objeción pendiente: el organizador o un árbitro con permiso
  */
 public record PartidoDetalle(
         Long id,
@@ -34,5 +35,6 @@ public record PartidoDetalle(
         Instant resultadoCargadoEn,
         Instant objecionVenceEn,
         Lado miLado,
-        ObjecionDetalle objecion) {
+        ObjecionDetalle objecion,
+        boolean puedoResolver) {
 }

@@ -84,17 +84,8 @@ public class ResultadoService {
         }
         validar(request);
 
-        Juega local = Partidos.lado(lados, Lado.LOCAL).orElseThrow();
-        Juega visitante = Partidos.lado(lados, Lado.VISITANTE).orElseThrow();
-        local.setPuntaje(request.puntajeLocal());
-        local.setPenales(request.penalesLocal());
-        visitante.setPuntaje(request.puntajeVisitante());
-        visitante.setPenales(request.penalesVisitante());
-        boolean ganaLocal = request.puntajeLocal() > request.puntajeVisitante()
-                || (request.puntajeLocal().equals(request.puntajeVisitante())
-                        && request.penalesLocal() > request.penalesVisitante());
-        local.setEsGanador(ganaLocal);
-        visitante.setEsGanador(!ganaLocal);
+        fijarMarcador(lados, request.puntajeLocal(), request.puntajeVisitante(), request.penalesLocal(),
+                request.penalesVisitante());
 
         Instant ahora = Instant.now();
         partido.setEstado(EstadoPartido.RESULTADO_CARGADO);
@@ -205,7 +196,7 @@ public class ResultadoService {
                 request.penalesVisitante()));
     }
 
-    private static List<ErrorCampo> erroresDelMarcador(Integer puntajeLocal, Integer puntajeVisitante,
+    static List<ErrorCampo> erroresDelMarcador(Integer puntajeLocal, Integer puntajeVisitante,
                                                        Integer penalesLocal, Integer penalesVisitante) {
         List<ErrorCampo> errores = new ArrayList<>();
         if (puntajeLocal.equals(puntajeVisitante)) {
@@ -234,7 +225,22 @@ public class ResultadoService {
         return errores;
     }
 
-    private static void lanzarSiHay(List<ErrorCampo> errores) {
+    /** Puntajes, penales y ganador de cada lado; el marcador ya está validado. */
+    static void fijarMarcador(List<Juega> lados, int puntajeLocal, int puntajeVisitante, Integer penalesLocal,
+                              Integer penalesVisitante) {
+        Juega local = Partidos.lado(lados, Lado.LOCAL).orElseThrow();
+        Juega visitante = Partidos.lado(lados, Lado.VISITANTE).orElseThrow();
+        local.setPuntaje(puntajeLocal);
+        local.setPenales(penalesLocal);
+        visitante.setPuntaje(puntajeVisitante);
+        visitante.setPenales(penalesVisitante);
+        boolean ganaLocal = puntajeLocal > puntajeVisitante
+                || (puntajeLocal == puntajeVisitante && penalesLocal > penalesVisitante);
+        local.setEsGanador(ganaLocal);
+        visitante.setEsGanador(!ganaLocal);
+    }
+
+    static void lanzarSiHay(List<ErrorCampo> errores) {
         if (!errores.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay campos inválidos")
                     .con("errores", errores);
@@ -250,7 +256,7 @@ public class ResultadoService {
     }
 
     /** @param usuarioId null si lo hizo el sistema (el plazo venció) */
-    private void auditar(Partido partido, Long usuarioId, Map<String, Object> detalle) {
+    void auditar(Partido partido, Long usuarioId, Map<String, Object> detalle) {
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(usuarioId == null ? null : usuarioRepository.getReferenceById(usuarioId));
         auditoria.setAccion(AccionAuditoria.MODIFICACION);

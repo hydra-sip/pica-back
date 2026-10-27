@@ -7,10 +7,12 @@ import java.util.List;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
+import com.hydra.pica.plataforma_pica.partido.dto.LaudoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.service.EvidenciaService;
+import com.hydra.pica.plataforma_pica.partido.service.LaudoService;
 import com.hydra.pica.plataforma_pica.partido.service.PartidoService;
 import com.hydra.pica.plataforma_pica.partido.service.ResultadoService;
 import jakarta.validation.Valid;
@@ -42,6 +44,7 @@ public class PartidoController {
     private final PartidoService partidoService;
     private final ResultadoService resultadoService;
     private final EvidenciaService evidenciaService;
+    private final LaudoService laudoService;
     private final CurrentUserProvider currentUserProvider;
 
     @GetMapping("/partidos/{id}")
@@ -71,6 +74,12 @@ public class PartidoController {
     @PostMapping("/partidos/{id}/objecion")
     public PartidoDetalle objetarResultado(@PathVariable Long id, @Valid @RequestBody ObjecionRequest request) {
         return resultadoService.objetar(usuarioActual(), id, request);
+    }
+
+    /** El organizador o un árbitro con permiso para resolver objeciones; cita una evidencia del partido. */
+    @PostMapping("/partidos/{id}/laudo")
+    public PartidoDetalle laudar(@PathVariable Long id, @Valid @RequestBody LaudoRequest request) {
+        return laudoService.laudar(usuarioActual(), id, request);
     }
 
     /** Multipart con el archivo en la parte {@code archivo}. */
