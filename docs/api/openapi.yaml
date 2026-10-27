@@ -117,6 +117,11 @@ paths:
         Username o email en el mismo campo. Access dura 15 min, refresh 7 días.
         401 `CREDENCIALES_INVALIDAS` (no existe, clave incorrecta o eliminado).
         403 `EMAIL_NO_VERIFICADO`, `USUARIO_BLOQUEADO`.
+        429 `DEMASIADOS_INTENTOS` (RNF-SEG-06, PICA-278): con 5 fallidos del mismo identificador (sin distinguir
+        mayúsculas, exista o no) en 15 minutos posteriores a su último login correcto, se responde 429 antes de mirar
+        la clave, con `reintentarEnSegundos` y el header `Retry-After`. Se configuran con
+        `app.auth.intentos-login.maximo` y `.ventana`. Cada intento queda en la auditoría (LOGIN o LOGIN_FALLIDO, con
+        la IP).
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}}
@@ -124,6 +129,11 @@ paths:
         '200': {$ref: '#/components/responses/Tokens'}
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
+        '429':
+          description: Demasiados intentos fallidos
+          headers:
+            Retry-After: {description: Segundos hasta poder volver a intentar, schema: {type: integer}}
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetail'}}}
 
   /api/v1/auth/refresh:
     post:
@@ -1615,7 +1625,8 @@ components:
         backend lo agrega acá.
         Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO / SESION_REVOCADA 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404.
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
-        REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400.
+        REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
+        DEMASIADOS_INTENTOS 429 (login).
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
@@ -1647,6 +1658,7 @@ components:
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
+             DEMASIADOS_INTENTOS,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
              USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_EDITABLE, TORNEO_INCOMPLETO,
@@ -1697,6 +1709,7 @@ components:
           items: {anyOf: [{$ref: '#/components/schemas/FaltantePublicacion'}, {$ref: '#/components/schemas/FaltanteTorneo'}]}
           description: 'Solo en RIFA_INCOMPLETA (ver `FaltantePublicacion`) y TORNEO_INCOMPLETO (ver `FaltanteTorneo`): lo que le falta para publicarse'
         sumaPremios: {type: number, description: 'Solo en RIFA_INCOMPLETA y TORNEO_INCOMPLETO: cuánto suman hoy los premios (en la rifa, un entero)'}
+        reintentarEnSegundos: {type: integer, description: 'Solo en DEMASIADOS_INTENTOS: lo mismo que el header Retry-After'}
         campos: {type: array, items: {type: string}, description: 'Solo en CAMPOS_BLOQUEADOS: los campos de InformacionTorneoRequest que cambiaban y ya no se pueden cambiar'}
       examples:
         - {type: 'about:blank', title: Bad Request, status: 400, detail: Hay campos inválidos, instance: /api/v1/auth/registro,
