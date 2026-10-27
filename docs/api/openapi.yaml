@@ -693,9 +693,17 @@ paths:
         fechas van juntas). 400 `VALIDACION` con `errores`: `RANGO_INVALIDO` en `numeroHasta` si es menor
         que `numeroDesde`; `VENTANA_INVALIDA` en `ventaHasta` si no es posterior a `ventaDesde` o ya pasó;
         `REQUERIDO` si viene una sola fecha.
+        Con `torneoId` (PICA-218), el torneo tiene que ser del mismo organizador (404 `TORNEO_NO_ENCONTRADO`
+        si no), estar en BORRADOR, INSCRIPCION_ABIERTA o INSCRIPCION_CERRADA (409 `TORNEO_NO_ADMITE_RIFA`) y
+        no tener otra rifa (409 `TORNEO_CON_RIFA`). La venta tiene que empezar después de que se publicó el
+        torneo y terminar antes de que empiece (`VENTANA_INVALIDA` en `ventaDesde` o `ventaHasta`); la fecha
+        que el torneo todavía no tiene no se controla. `PREMIOS_INVALIDOS` en `pctDestinadoTorneo` si la rifa
+        no tiene torneo y no es 0, o si con los premios cargados pasa de 100.
       requestBody: {$ref: '#/components/requestBodies/Rifa'}
       responses:
         '201': {$ref: '#/components/responses/Rifa'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
 
   /api/v1/rifas/mis-rifas:
     get:
@@ -745,8 +753,9 @@ paths:
       x-owner: Laura
       description: >-
         Premios (pestaña 2). Lista completa en orden de puesto, reemplaza la anterior (vacía = sin premios).
-        En BORRADOR pueden sumar menos de 100 %; para publicar, exactamente 100. 400 `VALIDACION` con
-        `PREMIOS_INVALIDOS` en `premios` si suman más de 100 o hay más premios que números.
+        En BORRADOR, los premios más `pctDestinadoTorneo` (PICA-218) pueden sumar menos de 100 %; para
+        publicar, exactamente 100. 400 `VALIDACION` con `PREMIOS_INVALIDOS` en `premios` si suman más de
+        100 o hay más premios que números.
         409 `RIFA_NO_EDITABLE` si ya no está en BORRADOR.
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
@@ -770,7 +779,8 @@ paths:
         409 `RIFA_NO_EDITABLE` si ya no está en BORRADOR.
         409 `RIFA_INCOMPLETA` si le falta algo para venderse: la lista va en `faltantes` (ver
         `FaltantePublicacion`) y la suma de los premios en `sumaPremios`. Una venta que ya empezó no se
-        ajusta sola: el organizador corrige `ventaDesde`.
+        ajusta sola: el organizador corrige `ventaDesde`. Con torneo (PICA-218), el torneo tiene que estar
+        publicado y la venta dentro de sus fechas.
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
         required: true
@@ -1619,7 +1629,8 @@ components:
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
-        RIFA_INCOMPLETA (le falta algo para publicarse) ·
+        RIFA_INCOMPLETA (le falta algo para publicarse) · TORNEO_CON_RIFA (el torneo ya tiene otra rifa) ·
+        TORNEO_NO_ADMITE_RIFA (la rifa va con un torneo en borrador o con la inscripción abierta o cerrada) ·
         TORNEO_NO_EDITABLE (la parte económica, el reglamento y la publicación solo en BORRADOR; los pasos 1 y 2, hasta que empieza) ·
         TORNEO_INCOMPLETO (le falta algo para publicarse; la lista va en `faltantes`) ·
         CAMPOS_BLOQUEADOS (el torneo publicado ya no admite cambios en esos campos; la lista va en `campos`) ·
@@ -1649,7 +1660,8 @@ components:
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
-             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_EDITABLE, TORNEO_INCOMPLETO,
+             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_CON_RIFA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
+             TORNEO_INCOMPLETO,
              CAMPOS_BLOQUEADOS, COBRO_RECHAZADO,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA,
@@ -2335,12 +2347,26 @@ components:
           description: >-
             Fecha programada del sorteo (PICA-219): futura y posterior a ventaHasta (400 `VENTANA_INVALIDA`
             en `fechaSorteo`). La aplicación sortea sola en esa fecha. Opcional en borrador; para publicar, obligatoria.
+        torneoId:
+          oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}]
+          description: >-
+            Torneo del mismo organizador para el que recauda la rifa (PICA-218), en BORRADOR o publicado sin
+            empezar; sin torneo, null
+        pctDestinadoTorneo:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 99
+          description: >-
+            % entero de lo recaudado que va al pozo del torneo; no es un premio y no se sortea. Sin torneo, 0
+            o que no venga (no venir es 0). Con decimales da 400.
     RifaResumen:
       type: object
       required: [id, titulo, estado, numeroDesde, numeroHasta, precioNumero, moneda, creadoEn]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         titulo: {type: string}
+        torneoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'Sin torneo, null'}
+        torneoNombre: {type: [string, 'null'], description: 'Sin torneo, null'}
         estado: {$ref: '#/components/schemas/EstadoRifa'}
         numeroDesde: {type: integer}
         numeroHasta: {type: integer}
@@ -2457,11 +2483,14 @@ components:
           items: {$ref: '#/components/schemas/UsuarioPublico'}
     RifaDetalle:
       type: object
-      required: [id, titulo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, creadoEn]
+      required: [id, titulo, pctDestinadoTorneo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, creadoEn]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         titulo: {type: string}
         descripcion: {type: [string, 'null']}
+        torneoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'Sin torneo, null'}
+        torneoNombre: {type: [string, 'null'], description: 'Sin torneo, null'}
+        pctDestinadoTorneo: {type: integer, minimum: 0, maximum: 99, description: '% de lo recaudado que va al pozo del torneo; sin torneo, 0'}
         estado: {$ref: '#/components/schemas/EstadoRifa'}
         numeroDesde: {type: integer}
         numeroHasta: {type: integer}
@@ -2487,9 +2516,11 @@ components:
         Lo que le falta a una rifa para publicarse (en `faltantes` del 409 `RIFA_INCOMPLETA`). VENTANA: no
         están cargadas las fechas de venta · VENTA_YA_EMPEZO: las fechas de venta quedaron en el pasado
         (`ventaDesde` es anterior a ahora, o la venta ya terminó) y hay que actualizarlas · FECHA_SORTEO:
-        falta la fecha del sorteo · SIN_PREMIOS: no hay premios · PREMIOS_NO_SUMAN_100: los premios no
-        suman 100 % (la suma va en `sumaPremios`).
-      enum: [VENTANA, VENTA_YA_EMPEZO, FECHA_SORTEO, SIN_PREMIOS, PREMIOS_NO_SUMAN_100]
+        falta la fecha del sorteo · SIN_PREMIOS: no hay premios · PREMIOS_NO_SUMAN_100: `pctDestinadoTorneo`
+        más los premios no suman 100 % (la suma de los premios, sin el torneo, va en `sumaPremios`) ·
+        TORNEO_NO_PUBLICADO: el torneo de la rifa no se publicó · VENTANA_FUERA_DEL_TORNEO: la venta empieza
+        antes de que se publicara el torneo o termina después de que empieza.
+      enum: [VENTANA, VENTA_YA_EMPEZO, FECHA_SORTEO, SIN_PREMIOS, PREMIOS_NO_SUMAN_100, TORNEO_NO_PUBLICADO, VENTANA_FUERA_DEL_TORNEO]
 
     # --- Torneos públicos (los enums son los del asistente) -------------------
     PremioDetalle:

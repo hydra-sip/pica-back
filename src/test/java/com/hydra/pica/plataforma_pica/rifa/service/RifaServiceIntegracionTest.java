@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.within;
 import static org.assertj.core.groups.Tuple.tuple;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
@@ -26,12 +27,18 @@ import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaResumen;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
+import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
+import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
+import jakarta.persistence.EntityManager;
 import org.assertj.core.api.ListAssert;
 import org.assertj.core.api.MapAssert;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
@@ -49,8 +56,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Alta, modificación, premios y listado de rifas sin torneo (PICA-226) contra Postgres, con V10: una rifa en
- * BORRADOR se guarda sin ventana ni términos, y fuera de BORRADOR la base los exige.
+ * Alta, modificación, premios y listado de rifas sin torneo (PICA-226) y con torneo (PICA-218) contra Postgres,
+ * con V10: una rifa en BORRADOR se guarda sin ventana ni términos, y fuera de BORRADOR la base los exige.
  * Cada test hace rollback al terminar.
  */
 @SpringBootTest
@@ -67,7 +74,9 @@ class RifaServiceIntegracionTest {
     @Autowired private RifaRepository rifaRepository;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
+    @Autowired private TorneoRepository torneoRepository;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private EntityManager entityManager;
 
     private Long organizador;
     private Long otro;
@@ -141,7 +150,8 @@ class RifaServiceIntegracionTest {
         rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("60", "Primero"), premio("40", null)));
 
         RifaDetalle modificada = rifaService.modificar(organizador, creada.id(), new RifaRequest(
-                "Rifa nueva", "  Con descripción  ", 0, 49, new BigDecimal("1000"), MANIANA, EN_UNA_SEMANA, null));
+                "Rifa nueva", "  Con descripción  ", 0, 49, new BigDecimal("1000"), MANIANA, EN_UNA_SEMANA, null,
+                null, null));
 
         assertThat(modificada.titulo()).isEqualTo("Rifa nueva");
         assertThat(modificada.descripcion()).isEqualTo("Con descripción");
@@ -339,6 +349,175 @@ class RifaServiceIntegracionTest {
                         e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_NO_ENCONTRADA));
     }
 
+    // --- con torneo (HU-401) -------------------------------------------------
+
+    @Test
+    void seAsociaAUnTorneoPropioSinPublicarYSinFechas() {
+        Long torneo = torneo(organizador, null, null);
+
+        RifaDetalle rifa = rifaService.crear(organizador, conTorneo(MANIANA, EN_UNA_SEMANA, SORTEO, torneo, 35));
+
+        assertThat(rifa.torneoId()).isEqualTo(torneo);
+        assertThat(rifa.torneoNombre()).isEqualTo("Copa de prueba");
+        assertThat(rifa.pctDestinadoTorneo()).isEqualTo(35);
+        assertThat(rifaService.listarMias(organizador, PageRequest.of(0, 20)).getContent())
+                .extracting(RifaResumen::torneoId, RifaResumen::torneoNombre)
+                .containsExactly(tuple(torneo, "Copa de prueba"));
+    }
+
+    @Test
+    void elTorneoDeOtroNoSeEncuentra() {
+        Long ajeno = torneo(otro, null, null);
+
+        assertThatThrownBy(() -> rifaService.crear(organizador, conTorneo(null, null, null, ajeno, 0)))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
+                    assertThat(e.getCodigo()).isEqualTo(CodigoError.TORNEO_NO_ENCONTRADO);
+                });
+    }
+
+    @Test
+    void unTorneoQueYaEmpezoNoAdmiteRifa() {
+        Long enCurso = torneoEnCurso();
+
+        assertThatThrownBy(() -> rifaService.crear(organizador, conTorneo(null, null, null, enCurso, 0)))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(e.getCodigo()).isEqualTo(CodigoError.TORNEO_NO_ADMITE_RIFA);
+                });
+    }
+
+    @Test
+    void unTorneoTieneUnaSolaRifa() {
+        Long torneo = torneo(organizador, null, null);
+        RifaDetalle primera = rifaService.crear(organizador, conTorneo(null, null, null, torneo, 0));
+        RifaDetalle segunda = rifaService.crear(organizador, request(1, 10, null, null));
+
+        assertThatThrownBy(() -> rifaService.modificar(organizador, segunda.id(), conTorneo(null, null, null, torneo, 0)))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(e.getCodigo()).isEqualTo(CodigoError.TORNEO_CON_RIFA);
+                });
+        // la que ya lo tiene se sigue modificando
+        assertThat(rifaService.modificar(organizador, primera.id(), conTorneo(null, null, null, torneo, 0)).torneoId())
+                .isEqualTo(torneo);
+    }
+
+    @Test
+    void laVentaVaDeLaPublicacionDelTorneoASuInicio() {
+        Long torneo = torneo(organizador, MANIANA, EN_UNA_SEMANA);
+        Instant hoy = Instant.now().plus(1, ChronoUnit.HOURS);
+
+        assertThatValidacion(() -> rifaService.crear(organizador,
+                conTorneo(hoy, EN_UNA_SEMANA.plus(1, ChronoUnit.HOURS), null, torneo, 0)))
+                .containsEntry("ventaDesde", ErrorCampo.Codigo.VENTANA_INVALIDA)
+                .containsEntry("ventaHasta", ErrorCampo.Codigo.VENTANA_INVALIDA);
+        assertThat(rifaService.crear(organizador, conTorneo(MANIANA, EN_UNA_SEMANA, null, torneo, 0)).id()).isNotNull();
+    }
+
+    @Test
+    void lasFechasQueElTorneoNoTieneNoSeControlan() {
+        Long torneo = torneo(organizador, null, MANIANA);
+
+        // sin publicadoEn, el comienzo de la venta no se compara; el final, con fechaInicio, sí
+        assertThatValidacion(() -> rifaService.crear(organizador, conTorneo(MANIANA, EN_UNA_SEMANA, null, torneo, 0)))
+                .containsOnlyKeys("ventaHasta");
+    }
+
+    @Test
+    void sinTorneoNoSeDestinaNada() {
+        Long torneo = torneo(organizador, null, null);
+        RifaDetalle conTorneo = rifaService.crear(organizador, conTorneo(null, null, null, torneo, 35));
+
+        assertThatValidacion(() -> rifaService.crear(organizador, conTorneo(null, null, null, null, 10)))
+                .containsEntry("pctDestinadoTorneo", ErrorCampo.Codigo.PREMIOS_INVALIDOS);
+        RifaDetalle sacado = rifaService.modificar(organizador, conTorneo.id(), conTorneo(null, null, null, null, 0));
+        assertThat(sacado.torneoId()).isNull();
+        assertThat(sacado.pctDestinadoTorneo()).isZero();
+    }
+
+    @Test
+    void loDestinadoAlTorneoYLosPremiosNoPasanDeCien() {
+        Long torneo = torneo(organizador, null, null);
+        RifaDetalle creada = rifaService.crear(organizador, conTorneo(null, null, null, torneo, 35));
+
+        // desde los premios
+        assertThatValidacion(() -> rifaService.reemplazarPremios(organizador, creada.id(),
+                List.of(premio("40", null), premio("30", null))))
+                .containsEntry("premios", ErrorCampo.Codigo.PREMIOS_INVALIDOS);
+        // y desde los datos generales, con los premios ya cargados
+        rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("65", null)));
+        assertThatValidacion(() -> rifaService.modificar(organizador, creada.id(),
+                conTorneo(null, null, null, torneo, 40)))
+                .containsEntry("pctDestinadoTorneo", ErrorCampo.Codigo.PREMIOS_INVALIDOS);
+    }
+
+    @Test
+    void publicaConElTorneoPublicadoYTodoSumandoCien() {
+        Long torneo = torneo(organizador, Instant.now().minus(1, ChronoUnit.DAYS), SORTEO);
+        RifaDetalle creada = rifaService.crear(organizador, conTorneo(MANIANA, EN_UNA_SEMANA, SORTEO, torneo, 35));
+        rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("40", null), premio("25", null)));
+
+        RifaDetalle publicada = rifaService.publicar(organizador, creada.id());
+
+        assertThat(publicada.estado()).isEqualTo(EstadoRifa.EN_VENTA);
+        assertThat(publicada.pctDestinadoTorneo()).isEqualTo(35);
+    }
+
+    @Test
+    void conElTorneoSinPublicarNoSePublica() {
+        Long torneo = torneo(organizador, null, null);
+        RifaDetalle creada = rifaService.crear(organizador, conTorneo(MANIANA, EN_UNA_SEMANA, SORTEO, torneo, 0));
+        rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("100", null)));
+
+        assertThatIncompleta(() -> rifaService.publicar(organizador, creada.id()))
+                .containsExactly(FaltantePublicacion.TORNEO_NO_PUBLICADO);
+    }
+
+    @Test
+    void siElTorneoCambioSusFechasLaVentaQuedaFuera() {
+        Long torneo = torneo(organizador, null, null);
+        RifaDetalle creada = rifaService.crear(organizador, conTorneo(MANIANA, EN_UNA_SEMANA, SORTEO, torneo, 35));
+        rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("65", null)));
+        // el torneo se publica después, con un inicio anterior al fin de la venta
+        jdbc.update("UPDATE torneo SET publicado_en = now(), fecha_inicio = ? WHERE id = ?",
+                Timestamp.from(MANIANA.plus(1, ChronoUnit.DAYS)), torneo);
+
+        assertThatIncompleta(() -> rifaService.publicar(organizador, creada.id()))
+                .containsExactly(FaltantePublicacion.VENTANA_FUERA_DEL_TORNEO);
+    }
+
+    @Test
+    void loDestinadoAlTorneoYLosPremiosTienenQueSumarCien() {
+        Long torneo = torneo(organizador, Instant.now().minus(1, ChronoUnit.DAYS), SORTEO);
+        RifaDetalle creada = rifaService.crear(organizador, conTorneo(MANIANA, EN_UNA_SEMANA, SORTEO, torneo, 35));
+        rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("50", null)));
+
+        assertThatIncompleta(() -> rifaService.publicar(organizador, creada.id()))
+                .containsExactly(FaltantePublicacion.PREMIOS_NO_SUMAN_100);
+    }
+
+    @Test
+    void reemplazarLosPremiosDevuelveElTorneoAunqueSeLimpieLaSesion() {
+        Long torneo = torneo(organizador, null, null);
+        RifaDetalle creada = rifaService.crear(organizador, conTorneo(null, null, null, torneo, 20));
+        // como en un pedido nuevo: la rifa y el torneo se vuelven a leer de la base
+        entityManager.clear();
+
+        RifaDetalle rifa = rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("80", null)));
+
+        assertThat(rifa.torneoNombre()).isEqualTo("Copa de prueba");
+    }
+
+    @Test
+    void laBaseNoAceptaDestinarATorneoSinTorneo() {
+        RifaDetalle rifa = rifaService.crear(organizador, request(1, 10, null, null));
+
+        assertThatThrownBy(() -> jdbc.update("UPDATE rifa SET pct_destinado_torneo = 10 WHERE id = ?", rifa.id()))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_rifa_pct_destinado_torneo");
+    }
+
     // --- listado ------------------------------------------------------------
 
     @Test
@@ -390,8 +569,48 @@ class RifaServiceIntegracionTest {
     // --- ayudas -------------------------------------------------------------
 
     private static RifaRequest requestConSorteo(Instant ventaDesde, Instant ventaHasta, Instant fechaSorteo) {
+        return conTorneo(ventaDesde, ventaHasta, fechaSorteo, null, 0);
+    }
+
+    private static RifaRequest conTorneo(Instant ventaDesde, Instant ventaHasta, Instant fechaSorteo, Long torneoId,
+            int pctDestinadoTorneo) {
         return new RifaRequest("Rifa de prueba", null, 1, 100, new BigDecimal("500"), ventaDesde, ventaHasta,
-                fechaSorteo);
+                fechaSorteo, torneoId, BigDecimal.valueOf(pctDestinadoTorneo));
+    }
+
+    /** Un torneo publicado que ya empezó: fuera de BORRADOR la base exige todos sus datos. */
+    private Long torneoEnCurso() {
+        Torneo torneo = new Torneo();
+        torneo.setOrganizador(usuarioRepository.getReferenceById(organizador));
+        torneo.setNombre("Copa en curso");
+        torneo.setDisciplina("Paddle");
+        torneo.setReglamentoTexto("Dos sets a 6 games");
+        torneo.setModalidad(Modalidad.PRESENCIAL);
+        torneo.setTipoParticipante(TipoParticipante.INDIVIDUAL);
+        torneo.setCupoMaximo(8);
+        torneo.setCupoMinimo(2);
+        torneo.setValorInscripcion(new BigDecimal("1000"));
+        torneo.setPctPozoCompetidores(new BigDecimal("80"));
+        torneo.setPctPremioRifa(new BigDecimal("10"));
+        torneo.setCierreInscripcionEn(Instant.now().minus(2, ChronoUnit.DAYS));
+        torneo.setFechaInicio(Instant.now().minus(1, ChronoUnit.DAYS));
+        torneo.setPublicadoEn(Instant.now().minus(10, ChronoUnit.DAYS));
+        torneo.setEstado(EstadoTorneo.EN_CURSO);
+        return torneoRepository.saveAndFlush(torneo).getId();
+    }
+
+    /**
+     * Un torneo en BORRADOR con las fechas que se le pasen: a la rifa solo le importan {@code publicadoEn} y
+     * {@code fechaInicio}, y en BORRADOR la base no exige el resto.
+     */
+    private Long torneo(Long organizadorId, Instant publicadoEn, Instant fechaInicio) {
+        Torneo torneo = new Torneo();
+        torneo.setOrganizador(usuarioRepository.getReferenceById(organizadorId));
+        torneo.setNombre("Copa de prueba");
+        torneo.setDisciplina("Paddle");
+        torneo.setPublicadoEn(publicadoEn);
+        torneo.setFechaInicio(fechaInicio);
+        return torneoRepository.saveAndFlush(torneo).getId();
     }
 
     /** Una rifa con ventana y sorteo cargados, lista para publicar si los premios suman 100. */
@@ -412,7 +631,8 @@ class RifaServiceIntegracionTest {
     }
 
     private static RifaRequest request(int desde, int hasta, Instant ventaDesde, Instant ventaHasta) {
-        return new RifaRequest("Rifa de prueba", null, desde, hasta, new BigDecimal("500"), ventaDesde, ventaHasta, null);
+        return new RifaRequest("Rifa de prueba", null, desde, hasta, new BigDecimal("500"), ventaDesde, ventaHasta, null,
+                null, null);
     }
 
     private static PremioRifaRequest premio(String pct, String descripcion) {

@@ -7,12 +7,19 @@ import java.util.List;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.PremioRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
-/** Una rifa con sus premios, en orden de puesto. {@code fechaSorteo} es la programada (columna sorteada_en). */
+/**
+ * Una rifa con sus premios, en orden de puesto. {@code fechaSorteo} es la programada (columna sorteada_en).
+ * Sin torneo, {@code torneoId} y {@code torneoNombre} son null y {@code pctDestinadoTorneo} es 0.
+ */
 public record RifaDetalle(
         Long id,
         String titulo,
         String descripcion,
+        Long torneoId,
+        String torneoNombre,
+        int pctDestinadoTorneo,
         EstadoRifa estado,
         int numeroDesde,
         int numeroHasta,
@@ -28,7 +35,10 @@ public record RifaDetalle(
         Instant modificadoEn) {
 
     public static RifaDetalle de(Rifa rifa, List<PremioRifa> premios) {
-        return new RifaDetalle(rifa.getId(), rifa.getTitulo(), rifa.getDescripcion(), rifa.getEstado(),
+        Torneo torneo = rifa.getTorneo();
+        return new RifaDetalle(rifa.getId(), rifa.getTitulo(), rifa.getDescripcion(),
+                torneo == null ? null : torneo.getId(), torneo == null ? null : torneo.getNombre(),
+                rifa.getPctDestinadoTorneo(), rifa.getEstado(),
                 rifa.getNumeroDesde(), rifa.getNumeroHasta(), rifa.getPrecioNumero(), rifa.getMoneda(),
                 rifa.getVentaDesde(), rifa.getVentaHasta(), rifa.getSorteadaEn(), rifa.getTerminosAceptadosEn(),
                 rifa.getLoteriaDeclaradaEn(),
