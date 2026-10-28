@@ -11,6 +11,7 @@ import com.hydra.pica.plataforma_pica.realtime.dto.EventoTorneoMessage;
 import com.hydra.pica.plataforma_pica.realtime.service.RealtimeNotifier;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
+import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.event.NumerosVendidos;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
@@ -112,19 +113,12 @@ public class RealtimeEventListener {
         log.info("Números vendidos para rifa {}: {}. Nuevo pozo rifa: {}",
                 evento.rifaId(), evento.numeros(), evento.pozoRifa());
 
-        EstadoRifa estadoRifa = rifaRepository.findById(evento.rifaId())
-                .map(r -> r.getEstado())
-                .orElse(EstadoRifa.EN_VENTA);
+        Rifa rifa = rifaRepository.findById(evento.rifaId()).orElse(null);
+        EstadoRifa estadoRifa = rifa != null ? rifa.getEstado() : EstadoRifa.EN_VENTA;
 
         int totalVendidos = (int) numeroRepository.countByIdRifaIdAndEstado(evento.rifaId(), EstadoNumero.VENDIDO);
 
-        BigDecimal aporteTorneo = BigDecimal.ZERO;
-        if (evento.torneoId() != null) {
-            Torneo torneo = torneoRepository.findById(evento.torneoId()).orElse(null);
-            if (torneo != null && torneo.getPctPremioRifa() != null) {
-                aporteRifa(torneo, evento.pozoRifa());
-            }
-        }
+        BigDecimal aporteTorneo = evento.torneoId() != null ? aporteRifa(rifa, evento.pozoRifa()) : BigDecimal.ZERO;
 
         EventoRifaMessage mensajeRifa = new EventoRifaMessage(
                 "NUMEROS_VENDIDOS",
@@ -174,11 +168,12 @@ public class RealtimeEventListener {
                 .orElse(null);
     }
 
-    private BigDecimal aporteRifa(Torneo torneo, BigDecimal pozoRifa) {
-        if (torneo == null || torneo.getPctPremioRifa() == null || pozoRifa == null) {
+    /** El % de lo vendido que la rifa destina al pozo de su torneo (HU-401). */
+    private BigDecimal aporteRifa(Rifa rifa, BigDecimal pozoRifa) {
+        if (rifa == null || pozoRifa == null) {
             return BigDecimal.ZERO;
         }
-        return pozoRifa.multiply(torneo.getPctPremioRifa())
+        return pozoRifa.multiply(BigDecimal.valueOf(rifa.getPctDestinadoTorneo()))
                 .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
     }
 }
