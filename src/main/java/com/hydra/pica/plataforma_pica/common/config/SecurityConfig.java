@@ -73,8 +73,10 @@ public class SecurityConfig {
                                 "/api/v1/torneos/*/reglamento",
                                 // el de un torneo publicado (PICA-216)
                                 "/api/v1/torneos/*/bracket",
-                                "/api/v1/pronosticos/partidos")
+                                "/api/v1/pronosticos/partidos",
+                                "/api/v1/pronosticos/ranking")
                         .permitAll()
+
                         .anyRequest().authenticated());
 
         if (clientRegistrationRepository != null) {

@@ -1310,7 +1310,32 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/PartidoPronostico'}
 
+  /api/v1/pronosticos/ranking:
+    get:
+      tags: [Pronósticos]
+      summary: Ranking de posiciones de pronósticos
+      x-jira: PICA-258
+      x-owner: Baiza
+      description: >-
+        HU-307. Obtiene la tabla general de posiciones según los puntos acumulados por los pronósticos.
+        Permite filtrar por torneo mediante `torneoId`. Si hay sesión activa, incluye `miPosicion` con
+        la posición del usuario actual o un mensaje si aún no pronosticó.
+      parameters:
+        - name: torneoId
+          in: query
+          required: false
+          schema: {type: integer, format: int64}
+          description: Filtrar por torneo
+      responses:
+        '200':
+          description: Tabla de posiciones del ranking
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RankingResponse'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/partidos/{id}/pronostico:
+
     parameters: [{$ref: '#/components/parameters/id'}]
     put:
       tags: [Pronósticos]
@@ -3431,3 +3456,35 @@ components:
         local: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}]}
         visitante: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}]}
         miPronostico: {oneOf: [{$ref: '#/components/schemas/MiPronostico'}, {type: 'null'}]}
+
+    RankingResponse:
+      type: object
+      required: [posiciones]
+      properties:
+        torneoId: {type: [integer, 'null'], format: int64}
+        posiciones:
+          type: array
+          items: {$ref: '#/components/schemas/PosicionRanking'}
+        miPosicion: {oneOf: [{$ref: '#/components/schemas/MiPosicionRanking'}, {type: 'null'}]}
+
+    PosicionRanking:
+      type: object
+      required: [posicion, usuarioId, username, nombre, puntos, aciertos, pronosticosTotales, primerPronosticoEn]
+      properties:
+        posicion: {type: integer}
+        usuarioId: {type: integer, format: int64}
+        username: {type: string}
+        nombre: {type: string}
+        puntos: {type: integer}
+        aciertos: {type: integer}
+        pronosticosTotales: {type: integer}
+        primerPronosticoEn: {type: string, format: date-time}
+
+    MiPosicionRanking:
+      type: object
+      properties:
+        posicion: {type: [integer, 'null']}
+        puntos: {type: [integer, 'null']}
+        aciertos: {type: [integer, 'null']}
+        mensaje: {type: [string, 'null']}
+

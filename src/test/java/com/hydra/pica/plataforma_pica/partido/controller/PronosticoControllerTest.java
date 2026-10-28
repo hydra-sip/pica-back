@@ -107,4 +107,65 @@ class PronosticoControllerTest {
                         .content("{\"eleccion\":\"1\"}"))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    @DisplayName("GET /api/v1/pronosticos/ranking es público y retorna 200 con la tabla de posiciones")
+    void rankingPublicoRetorna200() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.empty());
+        when(pronosticoService.obtenerRanking(null, null)).thenReturn(
+                new com.hydra.pica.plataforma_pica.partido.dto.RankingResponse(
+                        null,
+                        List.of(
+                                new com.hydra.pica.plataforma_pica.partido.dto.PosicionRanking(
+                                        1, 100L, "gamer1", "Gamer Uno", 6, 2, 2, Instant.parse("2026-10-28T10:00:00Z")
+                                )
+                        ),
+                        null
+                )
+        );
+
+        mockMvc.perform(get("/api/v1/pronosticos/ranking"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.posiciones[0].posicion").value(1))
+                .andExpect(jsonPath("$.posiciones[0].usuarioId").value(100))
+                .andExpect(jsonPath("$.posiciones[0].puntos").value(6))
+                .andExpect(jsonPath("$.miPosicion").doesNotExist());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("GET /api/v1/pronosticos/ranking con usuario sin pronósticos indica mensaje sin puntaje")
+    void rankingUsuarioSinPronosticosIndicaMensaje() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(42L));
+        when(pronosticoService.obtenerRanking(42L, null)).thenReturn(
+                new com.hydra.pica.plataforma_pica.partido.dto.RankingResponse(
+                        null,
+                        List.of(),
+                        new com.hydra.pica.plataforma_pica.partido.dto.MiPosicionRanking(
+                                null, null, null, "Aún no has realizado pronósticos"
+                        )
+                )
+        );
+
+        mockMvc.perform(get("/api/v1/pronosticos/ranking"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.posiciones").isEmpty())
+                .andExpect(jsonPath("$.miPosicion.posicion").doesNotExist())
+                .andExpect(jsonPath("$.miPosicion.puntos").doesNotExist())
+                .andExpect(jsonPath("$.miPosicion.mensaje").value("Aún no has realizado pronósticos"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/pronosticos/ranking?torneoId=99 responde 404 si el torneo no existe")
+    void rankingTorneoNoExisteResponde404() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.empty());
+        when(pronosticoService.obtenerRanking(null, 99L))
+                .thenThrow(new com.hydra.pica.plataforma_pica.common.error.NoEncontradoException(
+                        CodigoError.TORNEO_NO_ENCONTRADO, "Torneo no encontrado: 99"));
+
+        mockMvc.perform(get("/api/v1/pronosticos/ranking").param("torneoId", "99"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("TORNEO_NO_ENCONTRADO"));
+    }
 }
+
