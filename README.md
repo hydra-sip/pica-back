@@ -265,3 +265,34 @@ docker compose -f docker-compose.replicas.yml down -v
 El script corta con error en el primer chequeo que falle, y cada paso lo tienen que atender las dos réplicas.
 
 **Login con Google (a mano).** El script no puede pasar por Google. Para probarlo completo: poner en `.env.replicas` las credenciales reales (`GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`), con `http://localhost:8080/login/oauth2/code/google` entre las URIs de redirección autorizadas del cliente; levantar el front con la API en `http://localhost:8080` y entrar con Google. La redirección a Google, la vuelta y el canje del código caen en réplicas distintas (se ve con `docker compose -f docker-compose.replicas.yml logs -f api1 api2`).
+
+---
+
+## Actualización en Tiempo Real (WebSocket / STOMP) y RNF-TRE-01
+
+Para cumplir con la historia de usuario **HU-305** (*actualización automática de bracket, pozo y estado del torneo sin recargar página*), el backend implementa comunicación bidireccional vía **WebSocket + STOMP** sobre el endpoint `/ws`:
+
+- **Topics públicos:**
+  - `/topic/torneos/{id}`: Notifica confirmación u objeción de partidos, avance de la llave del bracket, cambio de estado del torneo y actualización del pozo acumulado.
+  - `/topic/rifas/{id}`: Notifica números comprados y actualización del acumulado de la rifa.
+- **Sincronización al reconectar:** Los clientes que sufren desconexión transitoria se sincronizan automáticamente suscribiéndose a `/app/torneos/{id}` o enviando una petición de snapshot a `/app/torneos/{id}/sync`.
+
+Para más detalles sobre los eventos, esquemas de payload y arquitectura, ver [docs/realtime.md](docs/realtime.md).
+
+### Prueba Automatizada de Rendimiento (RNF-TRE-01)
+
+El requisito no funcional **RNF-TRE-01** exige que la entrega de eventos a **2 clientes concurrentes** a lo largo de **100 repeticiones** tenga un percentil 95 (**p95**) de latencia de **5 segundos o menos** (5000 ms).
+
+```bash
+# Ejecutar la prueba automatizada
+./scripts/probar-rnf-tre-01.sh
+
+# O mediante Maven directamente
+./mvnw test -Dtest=RnfTre01Test
+```
+
+**Resultados obtenidos:**
+- **p95 en Torneo (`/topic/torneos/{id}`):** ~0.15 ms ($\le$ 5000 ms) ✓
+- **p95 en Rifa (`/topic/rifas/{id}`):** ~0.27 ms ($\le$ 5000 ms) ✓
+- **Veredicto:** Aprobado con holgura superior a 10.000x respecto al límite exigido.
+

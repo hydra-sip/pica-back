@@ -88,6 +88,7 @@ public enum CodigoError {
     PARTIDO_NO_PROGRAMABLE,
     CHECKIN_SIN_VENTANA,
     CHECKIN_FUERA_DE_VENTANA,
+    NUMERO_YA_VENDIDO,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,
