@@ -72,7 +72,8 @@ public class SecurityConfig {
                                 // el servicio decide: el de un borrador lo ve solo su organizador
                                 "/api/v1/torneos/*/reglamento",
                                 // el de un torneo publicado (PICA-216)
-                                "/api/v1/torneos/*/bracket")
+                                "/api/v1/torneos/*/bracket",
+                                "/api/v1/pronosticos/partidos")
                         .permitAll()
                         .anyRequest().authenticated());
 

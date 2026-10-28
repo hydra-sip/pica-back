@@ -89,6 +89,7 @@ public enum CodigoError {
     CHECKIN_SIN_VENTANA,
     CHECKIN_FUERA_DE_VENTANA,
     NUMERO_YA_VENDIDO,
+    PRONOSTICO_FUERA_DE_VENTANA,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,
