@@ -85,8 +85,7 @@ class TorneoPublicoServiceTest {
         torneo.setCupoMaximo(8);
         torneo.setCupoMinimo(2);
         torneo.setValorInscripcion(new BigDecimal("5000.00"));
-        torneo.setPctPozoCompetidores(new BigDecimal("70.00"));
-        torneo.setPctPremioRifa(new BigDecimal("20.00"));
+        torneo.setPctGastosAdministrativos(BigDecimal.TEN);
         torneo.setCierreInscripcionEn(Instant.parse("2026-11-01T12:00:00Z"));
         torneo.setFechaInicio(Instant.parse("2026-11-05T10:00:00Z"));
         torneo.setReglamentoUrl("https://pica.local/reglamento.pdf");
@@ -122,8 +121,9 @@ class TorneoPublicoServiceTest {
         assertThat(resumen.slug()).isEqualTo("copa-verano");
         assertThat(resumen.cupoMaximo()).isEqualTo(8);
         assertThat(resumen.cupoDisponible()).isEqualTo(5); // 8 - 3
-        // Pozo: 8 * 5000 * 0.70 = 28000, sin gastos.
-        assertThat(resumen.pozoEstimado()).isEqualByComparingTo("28000.00");
+        // Pozo: 8 * 5000 = 40000, sin gastos; la inscripción va entera al pozo.
+        assertThat(resumen.pozoEstimado()).isEqualByComparingTo("40000.00");
+        assertThat(resumen.gastosAdministrativos()).isEqualByComparingTo("500.00"); // 10 % aparte
     }
 
     @Test
@@ -158,9 +158,9 @@ class TorneoPublicoServiceTest {
 
         assertThat(detalle.slug()).isEqualTo("copa-verano");
         assertThat(detalle.cupoDisponible()).isEqualTo(6); // 8 - 2
-        assertThat(detalle.pozoEstimado()).isEqualByComparingTo("24000.00"); // 8 * 5000 * 0.70 - 4000
-        assertThat(detalle.premios().get(0).monto()).isEqualByComparingTo("16800.00"); // 70 % del neto
-        assertThat(detalle.premioRifaEstimado()).isEqualByComparingTo("8000.00"); // 8 * 5000 * 0.20
+        assertThat(detalle.pozoEstimado()).isEqualByComparingTo("36000.00"); // 8 * 5000 - 4000
+        assertThat(detalle.premios().get(0).monto()).isEqualByComparingTo("25200.00"); // 70 % del neto
+        assertThat(detalle.totalAPagar()).isEqualByComparingTo("5500.00"); // 5000 + 10 % de gastos administrativos
         assertThat(detalle.premios()).hasSize(2);
         assertThat(detalle.premios().get(0).puesto()).isEqualTo(1);
         assertThat(detalle.organizador().nombreCompleto()).isEqualTo("Carlos Perez");

@@ -100,7 +100,7 @@ public class TorneoPublicoService {
                 .map(p -> PremioDetalle.de(p, cuentas.delPuesto(p.getPct())))
                 .toList();
 
-        return TorneoDetalle.de(torneo, cupoDisponible, cuentas.pozoNeto(), cuentas.premioRifa(), premios);
+        return TorneoDetalle.de(torneo, cupoDisponible, cuentas.pozoNeto(), premios);
     }
 
     /** Con el cupo completo, como el resumen del paso 3. */

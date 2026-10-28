@@ -1483,10 +1483,9 @@ paths:
       x-permiso: TORNEO_GESTIONAR
       x-owner: Tomás
       description: >-
-        Valor de la inscripción, reparto de la bolsa y premios por puesto (ver `EconomiaTorneoRequest`); los premios
-        reemplazan a los que había. Devuelve el torneo entero. 400 `VALIDACION` con `errores` (y `comisionMaxima`):
-        `REPARTO_INVALIDO` en `pctPozoCompetidores` si los tres % no suman 100; `COMISION_EXCEDIDA` en `pctComision`
-        si pasa el tope; `PREMIOS_INVALIDOS` en `premios` si suman más de 100 o hay más puestos que cupo.
+        Valor de la inscripción y premios por puesto (ver `EconomiaTorneoRequest`); los premios reemplazan a los que
+        había. Devuelve el torneo entero. 400 `VALIDACION` con `errores`: `PREMIOS_INVALIDOS` en `premios` si suman
+        más de 100 o hay más puestos que cupo.
         409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EconomiaTorneoRequest'}}}}
@@ -1889,8 +1888,8 @@ paths:
       x-owner: Mateo
       description: >-
         Solo quien se inscribió (el capitán, en una de equipo), y solo mientras la inscripción está en
-        PENDIENTE_PAGO. Muestra el torneo, el participante o el equipo, el monto (el valor de la inscripción,
-        sin comisiones), la moneda, el cupo que queda
+        PENDIENTE_PAGO. Muestra el torneo, el participante o el equipo, el monto (el valor de la inscripción),
+        los gastos administrativos y el total a pagar, la moneda, el cupo que queda
         (el cupo máximo menos las inscripciones confirmadas) y la fecha de cierre.
         404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador).
         409 `INSCRIPCION_NO_EDITABLE` si no está en PENDIENTE_PAGO.
@@ -2161,13 +2160,12 @@ components:
         caracteres no permitidos → NOMBRE_INVALIDO, edad fuera de 18 a 120 años → EDAD_FUERA_DE_RANGO,
         otra → VALOR_INVALIDO. Las rifas suman reglas entre campos: RANGO_INVALIDO, VENTANA_INVALIDA y
         PREMIOS_INVALIDOS (ver `POST /rifas` y `PUT /rifas/{id}/premios`). Los torneos suman FECHAS_INVALIDAS
-        (ver `InformacionTorneoRequest`), REPARTO_INVALIDO y COMISION_EXCEDIDA (ver `PUT /torneos/{id}/economia`).
+        (ver `InformacionTorneoRequest`).
       properties:
         campo: {type: string, description: Nombre del campo tal como viene en el JSON}
         codigo: {type: string, enum: [REQUERIDO, FORMATO_INVALIDO, LONGITUD, FECHA_FUTURA, PASSWORD_DEBIL,
                                       NOMBRE_INVALIDO, EDAD_FUERA_DE_RANGO, RANGO_INVALIDO, VENTANA_INVALIDA,
-                                      PREMIOS_INVALIDOS, FECHAS_INVALIDAS, REPARTO_INVALIDO,
-                                      COMISION_EXCEDIDA, VALOR_INVALIDO]}
+                                      PREMIOS_INVALIDOS, FECHAS_INVALIDAS, VALOR_INVALIDO]}
         mensaje: {type: string, description: Orientativo; el front muestra el suyo según `codigo`}
     ProblemDetail:
       type: object
@@ -2872,35 +2870,32 @@ components:
       description: >-
         Lo que le falta a un torneo para publicarse (en `faltantes` del 409 `TORNEO_INCOMPLETO`). INFORMACION: el
         paso 1 incompleto (modalidad, tipo de participante, sede si es presencial, fechas o reglamento). CUPOS: el
-        paso 2 incompleto (cupos y, por equipos, tamaño y nómina máxima). ECONOMIA: sin valor de inscripción o sin el
-        reparto. SIN_PREMIOS: no hay premios por puesto. PREMIOS_NO_SUMAN_100: la suma va en `sumaPremios`.
+        paso 2 incompleto (cupos y, por equipos, tamaño y nómina máxima). ECONOMIA: sin valor de inscripción.
+        SIN_PREMIOS: no hay premios por puesto. PREMIOS_NO_SUMAN_100: la suma va en `sumaPremios`.
         POZO_NETO_NO_POSITIVO: con el cupo mínimo, los gastos previstos se comen el pozo de competidores.
         CIERRE_VENCIDO: el cierre de la inscripción ya pasó.
       enum: [INFORMACION, CUPOS, ECONOMIA, SIN_PREMIOS, PREMIOS_NO_SUMAN_100, POZO_NETO_NO_POSITIVO, CIERRE_VENCIDO]
     EconomiaTorneoRequest:
       type: object
-      required: [valorInscripcion, pctPozoCompetidores, pctPremioRifa, pctComision, premios]
+      required: [valorInscripcion, premios]
       description: >-
-        Paso 3. Lo recaudado (inscripciones y la rifa del torneo) es una sola bolsa que se reparte en pozo de
-        competidores, premio de la rifa y comisión de la plataforma: los tres % tienen que sumar exactamente 100 y la
-        comisión no puede pasar `OpcionesTorneo.comisionMaxima`. Los premios reparten el pozo de competidores (menos
-        los gastos) por puesto; en BORRADOR pueden sumar menos de 100 y para publicar tienen que sumar 100.
+        Paso 3. La inscripción va entera al pozo de competidores; quien se inscribe paga aparte los gastos
+        administrativos, cuyo % fija la plataforma (`OpcionesTorneo.pctGastosAdministrativos`). Los premios reparten el
+        pozo (menos los gastos previstos) por puesto; en BORRADOR pueden sumar menos de 100 y para publicar tienen que
+        sumar 100.
       properties:
         valorInscripcion: {type: number, exclusiveMinimum: 0, description: 'En ARS, hasta 2 decimales'}
-        pctPozoCompetidores: {type: number, minimum: 0, maximum: 100}
-        pctPremioRifa: {type: number, minimum: 0, maximum: 100, description: 'Sin rifa, 0'}
-        pctComision: {type: number, minimum: 0, maximum: 100}
         premios: {type: array, items: {type: number, exclusiveMinimum: 0, maximum: 100}, description: '% de cada puesto, en orden: el primero es el 1.º'}
     EconomiaTorneo:
       type: object
-      required: [moneda, premios]
-      description: Lo guardado del paso 3; lo que falta viene en null. La comisión no se guarda, es el resto.
+      required: [moneda, pctGastosAdministrativos, premios]
+      description: Lo guardado del paso 3, con los gastos administrativos que se pagan aparte; lo que falta viene en null.
       properties:
         valorInscripcion: {type: [number, 'null']}
         moneda: {type: string, examples: [ARS]}
-        pctPozoCompetidores: {type: [number, 'null']}
-        pctPremioRifa: {type: [number, 'null']}
-        pctComision: {type: [number, 'null'], description: 100 menos los otros dos}
+        pctGastosAdministrativos: {type: number, description: 'El sellado al publicar; en BORRADOR, el vigente de la plataforma', examples: [10]}
+        gastosAdministrativos: {type: [number, 'null'], description: Lo que se paga de gastos por cada inscripción}
+        totalAPagar: {type: [number, 'null'], description: Valor de la inscripción más gastos administrativos}
         premios:
           type: array
           items: {type: object, required: [puesto, pct], properties: {puesto: {type: integer, minimum: 1}, pct: {type: number}}}
@@ -2919,19 +2914,19 @@ components:
         monto: {type: number}
     ResumenEconomico:
       type: object
-      required: [gastos, premios]
+      required: [pctGastosAdministrativos, gastos, premios]
       description: >-
-        Estimado con el cupo completo y sin la rifa. recaudacion = valorInscripcion × participantes; comision,
-        premioRifa y pozoCompetidores son sus % de la recaudación; pozoNeto = pozoCompetidores − gastos (puede quedar
-        negativo); el monto de cada puesto es su % del pozo neto. Lo que no se puede calcular va en null.
+        Estimado con el cupo completo y sin la rifa. recaudacion = valorInscripcion × participantes, que va entera al
+        pozo; pozoNeto = recaudacion − gastos (puede quedar negativo); el monto de cada puesto es su % del pozo neto.
+        Los gastos administrativos son por inscripción y se pagan aparte. Lo que no se puede calcular va en null.
       properties:
         participantes: {type: [integer, 'null'], description: El cupo máximo}
         valorInscripcion: {type: [number, 'null']}
         moneda: {type: string, examples: [ARS]}
+        pctGastosAdministrativos: {type: number, description: 'El sellado al publicar; en BORRADOR, el vigente'}
+        gastosAdministrativos: {type: [number, 'null'], description: Por inscripción}
+        totalAPagar: {type: [number, 'null'], description: Valor de la inscripción más gastos administrativos}
         recaudacion: {type: [number, 'null']}
-        comision: {type: [number, 'null']}
-        premioRifa: {type: [number, 'null']}
-        pozoCompetidores: {type: [number, 'null']}
         gastos: {type: number}
         pozoNeto: {type: [number, 'null']}
         premios:
@@ -2974,7 +2969,7 @@ components:
         disciplinas: {type: array, items: {type: string}, description: 'Las de los torneos del organizador, para el filtro'}
     OpcionesTorneo:
       type: object
-      required: [disciplinas, formatos, modalidades, cupoMaximo, comisionMaxima, canchas]
+      required: [disciplinas, formatos, modalidades, cupoMaximo, pctGastosAdministrativos, canchas]
       properties:
         disciplinas:
           type: array
@@ -3000,7 +2995,7 @@ components:
               disponible: {type: boolean, description: 'false: se muestra como próximamente y no se puede elegir'}
         modalidades: {type: array, items: {$ref: '#/components/schemas/Modalidad'}}
         cupoMaximo: {type: integer, description: Máximo de participantes que admite la plataforma, examples: [64]}
-        comisionMaxima: {type: number, description: Tope del % de comisión de la plataforma en el paso 3, examples: [10]}
+        pctGastosAdministrativos: {type: number, description: '% vigente de gastos administrativos que paga aparte quien se inscribe; al publicar queda fijo en el torneo', examples: [10]}
         canchas: {type: array, items: {type: string}, description: Las que ya existen en la `sede` pedida}
     # --- rifas ---------------------------------------------------------------
     EstadoRifa: {type: string, enum: [BORRADOR, EN_VENTA, CERRADA, SORTEADA, EN_REVISION, LIQUIDADA, CANCELADA]}
@@ -3059,9 +3054,10 @@ components:
         reglamentoAceptado: {type: boolean, description: Tiene que ser `true`}
     ResumenPago:
       type: object
-      required: [inscripcionId, torneo, monto, moneda, cupoMaximo, cupoDisponible, cierreInscripcionEn]
+      required: [inscripcionId, torneo, monto, gastosAdministrativos, total, moneda, cupoMaximo, cupoDisponible, cierreInscripcionEn]
       description: >-
-        Lo que va a pagar quien tiene una inscripción pendiente de pago, sin comisiones. La individual lleva el
+        Lo que va a pagar quien tiene una inscripción pendiente de pago: el valor de la inscripción, que va entero al
+        torneo, más los gastos administrativos de la plataforma, que se cobran aparte. La individual lleva el
         `participante`; la de equipo lleva el `equipo` y no el participante: paga su capitán.
       properties:
         inscripcionId: {$ref: '#/components/schemas/Id'}
@@ -3078,6 +3074,8 @@ components:
           oneOf: [{$ref: '#/components/schemas/EquipoInscripto'}, {type: 'null'}]
           description: Solo en la de equipo
         monto: {type: number, description: El valor de la inscripción}
+        gastosAdministrativos: {type: number, description: 'El % que el torneo selló al publicar, sobre el monto'}
+        total: {type: number, description: Monto más gastos administrativos; es lo que se cobra}
         moneda: {type: string, minLength: 3, maxLength: 3, example: ARS}
         cupoMaximo: {type: integer}
         cupoDisponible: {type: integer, minimum: 0, description: El cupo máximo menos las inscripciones confirmadas}
@@ -3244,7 +3242,7 @@ components:
         username: {type: string}
     TorneoResumen:
       type: object
-      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoDisponible, valorInscripcion, moneda, pozoEstimado, cierreInscripcionEn, fechaInicio]
+      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoDisponible, valorInscripcion, moneda, gastosAdministrativos, pozoEstimado, cierreInscripcionEn, fechaInicio]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         slug: {type: string}
@@ -3260,13 +3258,14 @@ components:
         cupoDisponible: {type: integer}
         valorInscripcion: {type: number}
         moneda: {type: string, examples: [ARS]}
-        pozoEstimado: {type: number, description: 'Pozo neto a repartir en premios, estimado con el cupo completo como en el paso 3 (PICA-270): inscripción × cupo × % de competidores − gastos previstos. La rifa todavía no suma.'}
+        gastosAdministrativos: {type: number, description: 'Lo que se paga aparte por inscribirse: el % sellado al publicar sobre el valor'}
+        pozoEstimado: {type: number, description: 'Pozo neto a repartir en premios, estimado con el cupo completo como en el paso 3 (PICA-270): inscripción × cupo − gastos previstos. La rifa todavía no suma.'}
         cierreInscripcionEn: {type: string, format: date-time}
         fechaInicio: {type: string, format: date-time}
         fechaFin: {type: [string, 'null'], format: date-time}
     TorneoDetalle:
       type: object
-      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoMinimo, cupoDisponible, valorInscripcion, moneda, pctPozoCompetidores, pctPremioRifa, pozoEstimado, premioRifaEstimado, premios, cierreInscripcionEn, fechaInicio, publicadoEn]
+      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoMinimo, cupoDisponible, valorInscripcion, moneda, gastosAdministrativos, totalAPagar, pozoEstimado, premios, cierreInscripcionEn, fechaInicio, publicadoEn]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         slug: {type: string}
@@ -3284,10 +3283,10 @@ components:
         tamanioEquipo: {type: [integer, 'null']}
         valorInscripcion: {type: number}
         moneda: {type: string, examples: [ARS]}
-        pctPozoCompetidores: {type: number}
-        pctPremioRifa: {type: number}
-        pozoEstimado: {type: number, description: 'Pozo neto a repartir en premios, estimado con el cupo completo como en el paso 3 (PICA-270): inscripción × cupo × % de competidores − gastos previstos. La rifa todavía no suma.'}
-        premioRifaEstimado: {type: [number, 'null'], description: 'La parte de la bolsa que va al premio de la rifa del torneo, con el cupo completo'}
+        pctGastosAdministrativos: {type: [number, 'null'], description: 'Sellado al publicar; null en los publicados antes de que existiera (sin gastos)'}
+        gastosAdministrativos: {type: number, description: Lo que se paga aparte por inscribirse}
+        totalAPagar: {type: number, description: Valor de la inscripción más gastos administrativos}
+        pozoEstimado: {type: number, description: 'Pozo neto a repartir en premios, estimado con el cupo completo como en el paso 3 (PICA-270): inscripción × cupo − gastos previstos. La rifa todavía no suma.'}
         premios: {type: array, items: {$ref: '#/components/schemas/PremioDetalle'}}
         cierreInscripcionEn: {type: string, format: date-time}
         fechaInicio: {type: string, format: date-time}

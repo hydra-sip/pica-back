@@ -1,8 +1,11 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
+import java.math.BigDecimal;
+
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
@@ -23,6 +26,7 @@ class TorneosPropios {
     private final TorneoRepository torneoRepository;
     private final PremioRepository premioRepository;
     private final EdicionTorneo edicionTorneo;
+    private final ParametrosPlataforma parametrosPlataforma;
 
     Torneo buscarPropio(Long organizadorId, Long id) {
         return torneoRepository.findByIdAndOrganizadorIdAndEliminadoEnIsNull(id, organizadorId)
@@ -49,10 +53,15 @@ class TorneosPropios {
                 .orElseThrow(() -> noEncontrado(id));
     }
 
-    /** El torneo como lo ve su organizador, con los premios por puesto y lo que ya no se puede cambiar. */
+    /**
+     * El torneo como lo ve su organizador, con los premios por puesto y lo que ya no se puede cambiar. Los gastos
+     * administrativos son los sellados al publicar; en BORRADOR, los vigentes.
+     */
     TorneoInformacion informacion(Torneo torneo) {
+        BigDecimal pct = torneo.getPctGastosAdministrativos() != null ? torneo.getPctGastosAdministrativos()
+                : parametrosPlataforma.gastosAdministrativos();
         return TorneoInformacion.de(torneo, premioRepository.findByTorneoIdOrderByIdPuestoAsc(torneo.getId()),
-                edicionTorneo.bloqueados(torneo));
+                edicionTorneo.bloqueados(torneo), pct);
     }
 
     private static NoEncontradoException noEncontrado(Long id) {

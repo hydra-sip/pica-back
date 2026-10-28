@@ -136,7 +136,7 @@ class ReglamentoTorneoServiceIntegracionTest {
         Long id = borrador("Reglas");
         reglamentoService.subir(organizador, id, PDF, URL);
         economiaService.actualizarEconomia(organizador, id, new EconomiaTorneoRequest(new BigDecimal("20000"),
-                new BigDecimal("90"), BigDecimal.ZERO, BigDecimal.TEN, List.of(new BigDecimal("100"))));
+                List.of(new BigDecimal("100"))));
 
         TorneoInformacion publicado = publicacionService.publicar(organizador, id);
 

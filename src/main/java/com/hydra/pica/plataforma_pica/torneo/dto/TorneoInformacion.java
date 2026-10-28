@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.dto;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -65,7 +66,9 @@ public record TorneoInformacion(
         Instant modificadoEn,
         List<String> camposBloqueados) {
 
-    public static TorneoInformacion de(Torneo t, List<Premio> premios, List<String> camposBloqueados) {
+    /** {@code pctGastosAdministrativos}: el del torneo si ya lo tiene, si no el vigente de la plataforma. */
+    public static TorneoInformacion de(Torneo t, List<Premio> premios, List<String> camposBloqueados,
+            BigDecimal pctGastosAdministrativos) {
         List<String> canchas = t.getCanchas().stream()
                 .map(Cancha::getNombre)
                 .sorted(Comparator.comparing(String::toLowerCase))
@@ -75,7 +78,7 @@ public record TorneoInformacion(
                 t.getSede(), canchas, t.getFechaInicio(), t.getFechaFin(), t.getCierreInscripcionEn(),
                 t.getReglamentoTexto(), t.getReglamentoUrl(), t.getReglamentoHash(), t.getCupoMaximo(), t.getCupoMinimo(),
                 t.getTamanioEquipo(), t.getNominaMaxima(), t.getCheckinMinAntes(), t.getCheckinDuracionMin(),
-                EconomiaTorneo.de(t, premios), t.getSlug(), t.getEsquemaHash(), t.getPublicadoEn(),
+                EconomiaTorneo.de(t, premios, pctGastosAdministrativos), t.getSlug(), t.getEsquemaHash(), t.getPublicadoEn(),
                 t.getListaSelladaEn(), t.getListaHash(), t.getCreadoEn(), t.getModificadoEn(), camposBloqueados);
     }
 }

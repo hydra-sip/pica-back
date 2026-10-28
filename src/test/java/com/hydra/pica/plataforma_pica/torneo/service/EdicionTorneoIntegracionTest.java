@@ -101,8 +101,8 @@ class EdicionTorneoIntegracionTest {
         assertThatValidacion(() -> torneoService.actualizarInformacion(organizador, torneo, conValor))
                 .containsEntry("valorInscripcion", ErrorCampo.Codigo.VALOR_INVALIDO);
 
-        EconomiaTorneoRequest economia = new EconomiaTorneoRequest(new BigDecimal("5000"), new BigDecimal("90"),
-                BigDecimal.ZERO, new BigDecimal("10"), List.of(new BigDecimal("100")));
+        EconomiaTorneoRequest economia = new EconomiaTorneoRequest(new BigDecimal("5000"),
+                List.of(new BigDecimal("100")));
         assertThatThrownBy(() -> economiaTorneoService.actualizarEconomia(organizador, torneo, economia))
                 .isInstanceOf(ApiException.class)
                 .extracting("codigo").isEqualTo(CodigoError.TORNEO_NO_EDITABLE);

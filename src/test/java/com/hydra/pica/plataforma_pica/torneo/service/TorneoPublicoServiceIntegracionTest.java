@@ -124,15 +124,15 @@ class TorneoPublicoServiceIntegracionTest {
     }
 
     @Test
-    @DisplayName("listarPublicos: cupo disponible y pozo estimado como en el paso 3 (cupo completo, menos gastos, sin la rifa)")
+    @DisplayName("listarPublicos: cupo disponible, pozo estimado como en el paso 3 (cupo completo, menos gastos, sin la rifa) y gastos administrativos")
     void calculoCupoYPozoEstimado() {
-        // Torneo con cupoMaximo=8, valor=5000, pctPozo=70% -> pozo competidores = 8 * 5000 * 0.70 = 28000.
-        // Menos 8000 de gastos previstos: pozo neto = 20000. La rifa del torneo todavía no suma a la bolsa (HU-405).
+        // Torneo con cupoMaximo=8, valor=5000: la inscripción va entera al pozo -> 8 * 5000 = 40000.
+        // Menos 8000 de gastos previstos: pozo neto = 32000. La rifa del torneo todavía no suma a la bolsa (HU-405).
+        // Los gastos administrativos (10 %) se pagan aparte: 500 por inscripción.
         Torneo torneo = crearTorneo("t-con-rifa", "Torneo con Rifa", "Paddle", EstadoTorneo.INSCRIPCION_ABIERTA, null);
         torneo.setCupoMaximo(8);
         torneo.setValorInscripcion(new BigDecimal("5000.00"));
-        torneo.setPctPozoCompetidores(new BigDecimal("70.00"));
-        torneo.setPctPremioRifa(new BigDecimal("20.00"));
+        torneo.setPctGastosAdministrativos(BigDecimal.TEN);
         torneo = torneoRepository.save(torneo);
 
         Rifa rifa = new Rifa();
@@ -166,7 +166,8 @@ class TorneoPublicoServiceIntegracionTest {
         TorneoResumen resumen = pagina.getContent().get(0);
         assertThat(resumen.cupoMaximo()).isEqualTo(8);
         assertThat(resumen.cupoDisponible()).isEqualTo(6); // 8 - 2
-        assertThat(resumen.pozoEstimado()).isEqualByComparingTo("20000.00");
+        assertThat(resumen.pozoEstimado()).isEqualByComparingTo("32000.00");
+        assertThat(resumen.gastosAdministrativos()).isEqualByComparingTo("500.00");
     }
 
     @Test
@@ -180,8 +181,7 @@ class TorneoPublicoServiceIntegracionTest {
         torneo.setCupoMaximo(16);
         torneo.setCupoMinimo(4);
         torneo.setValorInscripcion(new BigDecimal("3000.00"));
-        torneo.setPctPozoCompetidores(new BigDecimal("80.00"));
-        torneo.setPctPremioRifa(BigDecimal.ZERO);
+        torneo.setPctGastosAdministrativos(BigDecimal.TEN);
         torneo = torneoRepository.save(torneo);
 
         Premio p1 = new Premio(torneo, 1);
@@ -205,13 +205,15 @@ class TorneoPublicoServiceIntegracionTest {
         assertThat(detalle.cupoMinimo()).isEqualTo(4);
         assertThat(detalle.cupoDisponible()).isEqualTo(15);
         assertThat(detalle.valorInscripcion()).isEqualByComparingTo("3000.00");
-        assertThat(detalle.pozoEstimado()).isEqualByComparingTo("38400.00"); // 16 * 3000 * 0.80
+        assertThat(detalle.pozoEstimado()).isEqualByComparingTo("48000.00"); // 16 * 3000: va entera al pozo
         assertThat(detalle.premios()).hasSize(2);
         assertThat(detalle.premios().get(0).puesto()).isEqualTo(1);
         assertThat(detalle.premios().get(0).pct()).isEqualByComparingTo("70.00");
         assertThat(detalle.premios()).extracting(p -> p.monto().stripTrailingZeros().toPlainString())
-                .containsExactly("26880", "11520");
-        assertThat(detalle.premioRifaEstimado()).isEqualByComparingTo("0");
+                .containsExactly("33600", "14400");
+        assertThat(detalle.pctGastosAdministrativos()).isEqualByComparingTo("10");
+        assertThat(detalle.gastosAdministrativos()).isEqualByComparingTo("300.00");
+        assertThat(detalle.totalAPagar()).isEqualByComparingTo("3300.00");
         assertThat(detalle.reglamentoTexto()).isEqualTo("Dos sets a 6 games.");
         assertThat(detalle.organizador().username()).isEqualTo(organizador.getUsername());
     }
@@ -244,8 +246,6 @@ class TorneoPublicoServiceIntegracionTest {
         t.setCupoMaximo(8);
         t.setCupoMinimo(2);
         t.setValorInscripcion(new BigDecimal("1000.00"));
-        t.setPctPozoCompetidores(new BigDecimal("70.00"));
-        t.setPctPremioRifa(BigDecimal.ZERO);
         t.setCierreInscripcionEn(Instant.now().plus(5, ChronoUnit.DAYS));
         t.setFechaInicio(Instant.now().plus(7, ChronoUnit.DAYS));
         t.setEstado(estado);

@@ -1,7 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -42,14 +41,14 @@ import org.springframework.transaction.annotation.Transactional;
  * Las cantidades por estado son para las pestañas: aplican la búsqueda y la disciplina, no el estado, así cada
  * pestaña dice cuántos hay de lo que se está buscando.
  *
- * El pozo es lo que va a los competidores: valor de inscripción × participantes × % del pozo. En BORRADOR se estima
- * con el cupo completo; publicado, con las inscripciones confirmadas. La rifa no se suma todavía.
+ * El pozo es lo que va a los competidores: valor de inscripción × participantes, porque la inscripción va entera al
+ * pozo (PICA-283). En BORRADOR se estima con el cupo completo; publicado, con las inscripciones confirmadas. La rifa no
+ * se suma todavía.
  */
 @Service
 @RequiredArgsConstructor
 public class MisTorneosService {
 
-    private static final BigDecimal CIEN = BigDecimal.valueOf(100);
 
     private final TorneoRepository torneoRepository;
     private final InscripcionRepository inscripcionRepository;
@@ -120,9 +119,9 @@ public class MisTorneosService {
         };
     }
 
-    /** Null si falta el valor, el % o (en BORRADOR) el cupo. */
+    /** Null si falta el valor o (en BORRADOR) el cupo. */
     static BigDecimal pozo(Torneo torneo, long inscriptos) {
-        if (torneo.getValorInscripcion() == null || torneo.getPctPozoCompetidores() == null) {
+        if (torneo.getValorInscripcion() == null) {
             return null;
         }
         Integer participantes = torneo.getEstado() == EstadoTorneo.BORRADOR
@@ -131,9 +130,6 @@ public class MisTorneosService {
         if (participantes == null) {
             return null;
         }
-        return torneo.getValorInscripcion()
-                .multiply(BigDecimal.valueOf(participantes))
-                .multiply(torneo.getPctPozoCompetidores())
-                .divide(CIEN, 2, RoundingMode.HALF_UP);
+        return torneo.getValorInscripcion().multiply(BigDecimal.valueOf(participantes));
     }
 }
