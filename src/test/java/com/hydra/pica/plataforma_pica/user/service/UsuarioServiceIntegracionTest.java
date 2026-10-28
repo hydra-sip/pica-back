@@ -208,6 +208,7 @@ class UsuarioServiceIntegracionTest {
 
     @Test
     void personaInactivaOEliminadaRechazaElRegistro() {
+        long usuariosAntes = usuarioRepository.count();
         Persona inactiva = persona("30123456");
         inactiva.setEstado(EstadoGeneral.INACTIVO);
         personaRepository.saveAndFlush(inactiva);
@@ -222,7 +223,7 @@ class UsuarioServiceIntegracionTest {
         assertThatThrownBy(() -> usuarioService.crear(NuevoUsuario.autoRegistro("agarcia", "ana@example.com",
                 "Pica2026", new DatosPersona(TipoDoc.DNI, "40111222", "Ana", "García", null, null, null))))
                 .extracting("codigo").isEqualTo(CodigoError.PERSONA_INACTIVA);
-        assertThat(usuarioRepository.count()).isZero();
+        assertThat(usuarioRepository.count()).isEqualTo(usuariosAntes);
     }
 
     private static Persona persona(String nroDoc) {
