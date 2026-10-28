@@ -54,6 +54,21 @@ public interface InscripcionRepository extends JpaRepository<Inscripcion, Long> 
             @Param("torneoIds") Collection<Long> torneoIds,
             @Param("estado") EstadoInscripcion estado);
 
+    /**
+     * Las del torneo para su organizador (PICA-214): sin borradores, con {@code estado} opcional. Trae el usuario o el
+     * equipo con su capitán en la misma consulta.
+     */
+    @Query(value = "select i from Inscripcion i left join fetch i.usuario u left join fetch u.persona "
+            + "left join fetch i.equipo e left join fetch e.capitan c left join fetch c.persona "
+            + "where i.torneo.id = :torneoId "
+            + "and i.estado <> com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion.BORRADOR "
+            + "and (:estado is null or i.estado = :estado)",
+            countQuery = "select count(i) from Inscripcion i where i.torneo.id = :torneoId "
+                    + "and i.estado <> com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion.BORRADOR "
+                    + "and (:estado is null or i.estado = :estado)")
+    Page<Inscripcion> delTorneo(@Param("torneoId") Long torneoId, @Param("estado") EstadoInscripcion estado,
+            Pageable pageable);
+
     /** El estado guardado, leído de la base y no del contexto de persistencia: sirve después de esperar un bloqueo. */
     @Query("select i.estado from Inscripcion i where i.id = :id")
     Optional<EstadoInscripcion> estadoDe(@Param("id") Long id);
