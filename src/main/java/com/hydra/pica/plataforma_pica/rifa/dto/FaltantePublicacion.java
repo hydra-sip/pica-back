@@ -16,6 +16,13 @@ public enum FaltantePublicacion {
     FECHA_SORTEO,
     /** No hay premios. */
     SIN_PREMIOS,
-    /** Los premios no suman exactamente 100 %; la suma va en {@code sumaPremios}. */
-    PREMIOS_NO_SUMAN_100
+    /**
+     * {@code pctDestinadoTorneo} más los premios no suman exactamente 100 %; la suma de los premios (sin el
+     * torneo) va en {@code sumaPremios}.
+     */
+    PREMIOS_NO_SUMAN_100,
+    /** El torneo de la rifa todavía no se publicó (HU-401). */
+    TORNEO_NO_PUBLICADO,
+    /** La venta empieza antes de que se publicara el torneo o termina después de que empieza (HU-401). */
+    VENTANA_FUERA_DEL_TORNEO
 }

@@ -26,7 +26,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Un torneo tiene como máximo una rifa. {@code listaHash} sella los vendidos al cerrar la venta;
+ * Un torneo tiene como máximo una rifa, y la rifa recauda para él ({@code pctDestinadoTorneo}). {@code listaHash} sella los vendidos al cerrar la venta;
  * compromiso y semilla son del sorteo verificable (PICA-5). Baja lógica sin {@code @SQLRestriction},
  * como Torneo: cada consulta filtra los eliminados. En BORRADOR la ventana de venta y los términos
  * pueden estar vacíos; fuera de BORRADOR los exige ck_rifa_completa_fuera_de_borrador (V10).
@@ -71,6 +71,10 @@ public class Rifa extends AuditableEntity {
     @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "moneda", length = 3, nullable = false)
     private String moneda = "ARS";
+
+    /** % de lo recaudado que va al pozo del torneo (V25); no es un premio. Sin torneo es 0. */
+    @Column(name = "pct_destinado_torneo", nullable = false)
+    private int pctDestinadoTorneo;
 
     @Column(name = "venta_desde")
     private Instant ventaDesde;

@@ -3,6 +3,8 @@ package com.hydra.pica.plataforma_pica.rifa.service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -19,6 +21,9 @@ import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaResumen;
 import com.hydra.pica.plataforma_pica.rifa.repository.PremioRifaRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -38,8 +43,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Los datos generales y los premios se guardan por separado, como las pestañas de la pantalla: crear
  * o modificar la rifa no toca los premios, y {@link #reemplazarPremios} los reemplaza enteros (se borran
  * todos y se insertan los que vienen; son pocos, no tienen auditoría propia y nada los referencia
- * mientras la rifa es borrador). La única regla que cruza las dos es que no haya más premios que
- * números, y se controla desde los dos lados.
+ * mientras la rifa es borrador). Las reglas que cruzan las dos (que no haya más premios que números,
+ * y que los premios y lo destinado al torneo no pasen de 100 %) se controlan desde los dos lados.
  *
  * En BORRADOR se guarda incompleta: la ventana de venta puede faltar (las dos fechas van juntas) y
  * los premios pueden sumar menos de 100 %. Que sumen exactamente 100 y que estén los términos lo
@@ -48,16 +53,25 @@ import org.springframework.transaction.annotation.Transactional;
  * Sin torneo, la ventana de venta no se compara con fechas de torneo (alcanza con que sean fechas
  * posibles) y todo el pozo se reparte entre los premios de la rifa; eso último se aplica al liquidar,
  * no acá.
+ *
+ * Con torneo (HU-401), el torneo es del mismo organizador y puede no estar publicado todavía: en
+ * BORRADOR la ventana se compara solo con las fechas que el torneo ya tiene, y publicar la rifa exige el
+ * torneo publicado. La rifa recauda para el torneo: {@code pctDestinadoTorneo} de lo vendido va a su pozo
+ * y el resto a los premios, así que los dos juntos suman 100.
  */
 @Service
 @RequiredArgsConstructor
 public class RifaService {
 
     private static final int CIEN = 100;
+    /** Una vez que el torneo empieza, la venta ya no puede terminar antes de su inicio. */
+    private static final Set<EstadoTorneo> ESTADOS_TORNEO_CON_RIFA =
+            Set.of(EstadoTorneo.BORRADOR, EstadoTorneo.INSCRIPCION_ABIERTA, EstadoTorneo.INSCRIPCION_CERRADA);
 
     private final RifaRepository rifaRepository;
     private final PremioRifaRepository premioRifaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final TorneoRepository torneoRepository;
 
     /** La más nueva primero; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
@@ -74,11 +88,12 @@ public class RifaService {
     /** Nace sin premios; se cargan con {@link #reemplazarPremios}. */
     @Transactional
     public RifaDetalle crear(Long organizadorId, RifaRequest request) {
-        validar(request, 0);
+        Torneo torneo = buscarTorneo(organizadorId, null, request.torneoId());
+        validar(request, torneo, List.of());
 
         Rifa rifa = new Rifa();
         rifa.setOrganizador(usuarioRepository.getReferenceById(organizadorId));
-        aplicar(rifa, request);
+        aplicar(rifa, request, torneo);
         return detalle(rifaRepository.saveAndFlush(rifa));
     }
 
@@ -86,9 +101,10 @@ public class RifaService {
     @Transactional
     public RifaDetalle modificar(Long organizadorId, Long id, RifaRequest request) {
         Rifa rifa = buscarEditable(organizadorId, id);
-        validar(request, premioRifaRepository.contarDeRifa(rifa.getId()));
+        Torneo torneo = buscarTorneo(organizadorId, id, request.torneoId());
+        validar(request, torneo, premioRifaRepository.buscarPorRifa(rifa.getId()));
 
-        aplicar(rifa, request);
+        aplicar(rifa, request, torneo);
         // el flush es para que modificadoEn salga actualizado en la respuesta
         return detalle(rifaRepository.saveAndFlush(rifa));
     }
@@ -118,7 +134,8 @@ public class RifaService {
      *
      * Si le falta algo para venderse, 409 RIFA_INCOMPLETA con todo lo que falta en {@code faltantes}
      * (y la suma en {@code sumaPremios}). Una venta que ya empezó no se ajusta sola: el organizador
-     * corrige {@code ventaDesde}.
+     * corrige {@code ventaDesde}. Con torneo, el torneo tiene que estar publicado y la venta dentro de
+     * sus fechas: en BORRADOR pudieron faltar o cambiar.
      */
     @Transactional
     public RifaDetalle publicar(Long organizadorId, Long id) {
@@ -126,9 +143,10 @@ public class RifaService {
         Instant ahora = Instant.now();
         List<PremioRifa> premios = premioRifaRepository.buscarPorRifa(rifa.getId());
         int sumaPremios = premios.stream().mapToInt(PremioRifa::getPct).sum();
+        boolean conVentana = rifa.getVentaDesde() != null && rifa.getVentaHasta() != null;
 
         List<FaltantePublicacion> faltantes = new ArrayList<>();
-        if (rifa.getVentaDesde() == null || rifa.getVentaHasta() == null) {
+        if (!conVentana) {
             faltantes.add(FaltantePublicacion.VENTANA);
         } else if (rifa.getVentaDesde().isBefore(ahora)) {
             // También cubre una venta que ya terminó: si ventaHasta pasó, ventaDesde (anterior) también.
@@ -139,8 +157,15 @@ public class RifaService {
         }
         if (premios.isEmpty()) {
             faltantes.add(FaltantePublicacion.SIN_PREMIOS);
-        } else if (sumaPremios != CIEN) {
+        } else if (rifa.getPctDestinadoTorneo() + sumaPremios != CIEN) {
             faltantes.add(FaltantePublicacion.PREMIOS_NO_SUMAN_100);
+        }
+        Torneo torneo = rifa.getTorneo();
+        if (torneo != null && torneo.getPublicadoEn() == null) {
+            faltantes.add(FaltantePublicacion.TORNEO_NO_PUBLICADO);
+        } else if (torneo != null && conVentana && (empiezaAntesDelTorneo(rifa.getVentaDesde(), torneo)
+                || terminaDespuesDelTorneo(rifa.getVentaHasta(), torneo))) {
+            faltantes.add(FaltantePublicacion.VENTANA_FUERA_DEL_TORNEO);
         }
         if (!faltantes.isEmpty()) {
             throw new ConflictoException(CodigoError.RIFA_INCOMPLETA,
@@ -169,7 +194,35 @@ public class RifaService {
         return rifa;
     }
 
-    private void aplicar(Rifa rifa, RifaRequest request) {
+    /**
+     * El torneo al que se asocia la rifa: tiene que ser del mismo organizador (el de otro responde 404, como
+     * si no existiera), estar en borrador o publicado sin empezar, y no tener otra rifa (409). Sin
+     * {@code torneoId}, null.
+     */
+    private Torneo buscarTorneo(Long organizadorId, Long rifaId, Long torneoId) {
+        if (torneoId == null) {
+            return null;
+        }
+        Torneo torneo = torneoRepository.findByIdAndOrganizadorIdAndEliminadoEnIsNull(torneoId, organizadorId)
+                .orElseThrow(() -> new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO,
+                        "No existe el torneo " + torneoId));
+        if (!ESTADOS_TORNEO_CON_RIFA.contains(torneo.getEstado())) {
+            throw new ConflictoException(CodigoError.TORNEO_NO_ADMITE_RIFA,
+                    "El torneo " + torneoId + " está " + torneo.getEstado()
+                            + ": la rifa va con uno en borrador o con la inscripción abierta o cerrada");
+        }
+        Optional<Rifa> otra = rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneoId)
+                .filter(r -> !r.getId().equals(rifaId));
+        if (otra.isPresent()) {
+            throw new ConflictoException(CodigoError.TORNEO_CON_RIFA,
+                    "El torneo " + torneoId + " ya tiene la rifa " + otra.get().getId());
+        }
+        return torneo;
+    }
+
+    private void aplicar(Rifa rifa, RifaRequest request, Torneo torneo) {
+        rifa.setTorneo(torneo);
+        rifa.setPctDestinadoTorneo(request.pctDestinadoTorneoEntero());
         rifa.setTitulo(request.titulo().strip());
         rifa.setDescripcion(limpiar(request.descripcion()));
         rifa.setNumeroDesde(request.numeroDesde());
@@ -188,24 +241,37 @@ public class RifaService {
 
     /**
      * Junta todos los errores y los devuelve en un solo 400, como Bean Validation. {@code premiosCargados}
-     * es para no achicar el rango por debajo de los premios que ya tiene.
+     * es para no achicar el rango por debajo de los premios que ya tiene, ni pasar de 100 % con lo
+     * destinado al torneo.
      */
-    private void validar(RifaRequest request, long premiosCargados) {
+    private void validar(RifaRequest request, Torneo torneo, List<PremioRifa> premiosCargados) {
         List<ErrorCampo> errores = new ArrayList<>();
         if (request.numeroHasta() < request.numeroDesde()) {
             errores.add(new ErrorCampo("numeroHasta", ErrorCampo.Codigo.RANGO_INVALIDO,
                     "Tiene que ser mayor o igual que numeroDesde"));
-        } else if (cantidadNumeros(request.numeroDesde(), request.numeroHasta()) < premiosCargados) {
+        } else if (cantidadNumeros(request.numeroDesde(), request.numeroHasta()) < premiosCargados.size()) {
             errores.add(new ErrorCampo("numeroHasta", ErrorCampo.Codigo.RANGO_INVALIDO,
-                    "La rifa tiene " + premiosCargados + " premios: no puede tener menos números"));
+                    "La rifa tiene " + premiosCargados.size() + " premios: no puede tener menos números"));
         }
-        validarVentana(request.ventaDesde(), request.ventaHasta(), errores);
+        int pctDestinadoTorneo = request.pctDestinadoTorneoEntero();
+        int suma = premiosCargados.stream().mapToInt(PremioRifa::getPct).sum() + pctDestinadoTorneo;
+        if (torneo == null && pctDestinadoTorneo != 0) {
+            errores.add(new ErrorCampo("pctDestinadoTorneo", ErrorCampo.Codigo.PREMIOS_INVALIDOS,
+                    "La rifa no tiene torneo: no se le puede destinar nada"));
+        } else if (suma > CIEN) {
+            errores.add(new ErrorCampo("pctDestinadoTorneo", ErrorCampo.Codigo.PREMIOS_INVALIDOS,
+                    "Con los premios cargados suma " + suma + "%: no puede pasar de 100"));
+        }
+        validarVentana(request.ventaDesde(), request.ventaHasta(), torneo, errores);
         validarSorteo(request.fechaSorteo(), request.ventaHasta(), errores);
         lanzarSiHay(errores);
     }
 
-    /** Sin torneo, alcanza con que sean fechas posibles: desde antes que hasta, y hasta en el futuro. */
-    private void validarVentana(Instant desde, Instant hasta, List<ErrorCampo> errores) {
+    /**
+     * Tienen que ser fechas posibles: desde antes que hasta, y hasta en el futuro. Con torneo, además,
+     * dentro de las fechas que el torneo ya tenga.
+     */
+    private void validarVentana(Instant desde, Instant hasta, Torneo torneo, List<ErrorCampo> errores) {
         if (desde == null && hasta == null) {
             return;
         }
@@ -220,7 +286,28 @@ public class RifaService {
         } else if (!hasta.isAfter(Instant.now())) {
             errores.add(new ErrorCampo("ventaHasta", ErrorCampo.Codigo.VENTANA_INVALIDA,
                     "La venta no puede terminar en el pasado"));
+        } else if (torneo != null) {
+            if (empiezaAntesDelTorneo(desde, torneo)) {
+                errores.add(new ErrorCampo("ventaDesde", ErrorCampo.Codigo.VENTANA_INVALIDA,
+                        "La venta no puede empezar antes de que se publique el torneo"));
+            }
+            if (terminaDespuesDelTorneo(hasta, torneo)) {
+                errores.add(new ErrorCampo("ventaHasta", ErrorCampo.Codigo.VENTANA_INVALIDA,
+                        "La venta tiene que terminar antes de que empiece el torneo"));
+            }
         }
+    }
+
+    /**
+     * Con torneo, la venta va de la publicación del torneo a su inicio (el límite del final es provisorio).
+     * La fecha que el torneo todavía no tiene (borrador) no se controla.
+     */
+    private static boolean empiezaAntesDelTorneo(Instant ventaDesde, Torneo torneo) {
+        return torneo.getPublicadoEn() != null && ventaDesde.isBefore(torneo.getPublicadoEn());
+    }
+
+    private static boolean terminaDespuesDelTorneo(Instant ventaHasta, Torneo torneo) {
+        return torneo.getFechaInicio() != null && ventaHasta.isAfter(torneo.getFechaInicio());
     }
 
     /** La fecha programada del sorteo (opcional en borrador) es futura y posterior al fin de la venta. */
@@ -239,10 +326,10 @@ public class RifaService {
 
     private void validarPremios(Rifa rifa, List<PremioRifaRequest> premios) {
         List<ErrorCampo> errores = new ArrayList<>();
-        int suma = premios.stream().mapToInt(PremioRifaRequest::pctEntero).sum();
+        int suma = premios.stream().mapToInt(PremioRifaRequest::pctEntero).sum() + rifa.getPctDestinadoTorneo();
         if (suma > CIEN) {
             errores.add(new ErrorCampo("premios", ErrorCampo.Codigo.PREMIOS_INVALIDOS,
-                    "Los premios suman " + suma + " %: no pueden pasar de 100"));
+                    "Los premios y lo destinado al torneo suman " + suma + "%: no pueden pasar de 100"));
         }
         long cantidadNumeros = cantidadNumeros(rifa.getNumeroDesde(), rifa.getNumeroHasta());
         if (premios.size() > cantidadNumeros) {
