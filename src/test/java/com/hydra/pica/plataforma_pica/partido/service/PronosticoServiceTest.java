@@ -15,6 +15,7 @@ import java.util.Optional;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
+import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.partido.domain.Eleccion;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
@@ -23,9 +24,13 @@ import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.domain.Pronostico;
 import com.hydra.pica.plataforma_pica.partido.domain.PronosticoId;
+import com.hydra.pica.plataforma_pica.partido.dto.EstadisticaPronosticosUsuario;
+import com.hydra.pica.plataforma_pica.partido.dto.MiPosicionRanking;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoPronostico;
+import com.hydra.pica.plataforma_pica.partido.dto.PosicionRanking;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoRequest;
+import com.hydra.pica.plataforma_pica.partido.dto.RankingResponse;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PronosticoRepository;
@@ -34,6 +39,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
+import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,8 +70,12 @@ class PronosticoServiceTest {
     @Mock
     private UsuarioRepository usuarioRepository;
 
+    @Mock
+    private TorneoRepository torneoRepository;
+
     @InjectMocks
     private PronosticoService pronosticoService;
+
 
     private Torneo torneo;
     private Partido partido;
@@ -258,4 +269,152 @@ class PronosticoServiceTest {
         assertThat(item.miPronostico()).isNotNull();
         assertThat(item.miPronostico().eleccion()).isEqualTo("1");
     }
+
+    @Test
+    @DisplayName("HU-307 Criterio 1: Consultar el ranking sin haber realizado ningún pronóstico indica posición vacía y mensaje acorde")
+    void rankingUsuarioSinPronosticosIndicaMensajeYPosicionNula() {
+        when(pronosticoRepository.rankingEstadisticas(null)).thenReturn(List.of());
+
+        RankingResponse ranking = pronosticoService.obtenerRanking(55L, null);
+
+        assertThat(ranking.posiciones()).isEmpty();
+        assertThat(ranking.miPosicion()).isNotNull();
+        assertThat(ranking.miPosicion().posicion()).isNull();
+        assertThat(ranking.miPosicion().puntos()).isNull();
+        assertThat(ranking.miPosicion().aciertos()).isNull();
+        assertThat(ranking.miPosicion().mensaje()).isEqualTo("Aún no has realizado pronósticos");
+    }
+
+    @Test
+    @DisplayName("HU-307 Criterio 2: Consultar ranking luego de resolverse pronósticos refleja el puntaje acumulado")
+    void rankingReflejaPuntajeAcumulado() {
+        Usuario u1 = crearUsuario(1L, "user1", "Juan", "Pérez");
+        Usuario u2 = crearUsuario(2L, "user2", "Carlos", "Gómez");
+        Usuario u3 = crearUsuario(3L, "user3", "Lucas", "López");
+
+        Instant t0 = Instant.parse("2026-10-28T10:00:00Z");
+        EstadisticaPronosticosUsuario s1 = new EstadisticaPronosticosUsuario(1L, 6L, 2L, 2L, t0);
+        EstadisticaPronosticosUsuario s2 = new EstadisticaPronosticosUsuario(2L, 3L, 1L, 2L, t0.plusSeconds(60));
+        EstadisticaPronosticosUsuario s3 = new EstadisticaPronosticosUsuario(3L, 0L, 0L, 1L, t0.plusSeconds(120));
+
+        when(pronosticoRepository.rankingEstadisticas(null)).thenReturn(List.of(s2, s1, s3)); // desordenado a propósito
+        when(usuarioRepository.findConPersonaByIdIn(List.of(1L, 2L, 3L))).thenReturn(List.of(u1, u2, u3));
+
+        RankingResponse response = pronosticoService.obtenerRanking(2L, null);
+
+        assertThat(response.posiciones()).hasSize(3);
+        assertThat(response.posiciones().get(0).usuarioId()).isEqualTo(1L);
+        assertThat(response.posiciones().get(0).posicion()).isEqualTo(1);
+        assertThat(response.posiciones().get(0).puntos()).isEqualTo(6);
+        assertThat(response.posiciones().get(0).aciertos()).isEqualTo(2);
+        assertThat(response.posiciones().get(0).nombre()).isEqualTo("Juan Pérez");
+
+        assertThat(response.posiciones().get(1).usuarioId()).isEqualTo(2L);
+        assertThat(response.posiciones().get(1).posicion()).isEqualTo(2);
+        assertThat(response.posiciones().get(1).puntos()).isEqualTo(3);
+
+        assertThat(response.posiciones().get(2).usuarioId()).isEqualTo(3L);
+        assertThat(response.posiciones().get(2).posicion()).isEqualTo(3);
+        assertThat(response.posiciones().get(2).puntos()).isEqualTo(0);
+
+        // Mi posición para user 2
+        assertThat(response.miPosicion()).isNotNull();
+        assertThat(response.miPosicion().posicion()).isEqualTo(2);
+        assertThat(response.miPosicion().puntos()).isEqualTo(3);
+        assertThat(response.miPosicion().aciertos()).isEqualTo(1);
+        assertThat(response.miPosicion().mensaje()).isNull();
+    }
+
+    @Test
+    @DisplayName("HU-307 Criterio 3: Ante empate de puntaje se aplica criterio de desempate por orden de carga (primerPronosticoEn)")
+    void rankingEmpateDesempataPorOrdenDeCarga() {
+        Usuario u1 = crearUsuario(10L, "primero", "Primero", "Carga");
+        Usuario u2 = crearUsuario(20L, "segundo", "Segundo", "Carga");
+
+        Instant tPrimero = Instant.parse("2026-10-28T09:00:00Z");
+        Instant tSegundo = Instant.parse("2026-10-28T10:00:00Z");
+
+        // Ambos con 3 puntos y 1 acierto, pero u1 cargó antes
+        EstadisticaPronosticosUsuario s1 = new EstadisticaPronosticosUsuario(10L, 3L, 1L, 1L, tPrimero);
+        EstadisticaPronosticosUsuario s2 = new EstadisticaPronosticosUsuario(20L, 3L, 1L, 1L, tSegundo);
+
+        when(pronosticoRepository.rankingEstadisticas(null)).thenReturn(List.of(s2, s1)); // s2 primero para probar ordenamiento
+        when(usuarioRepository.findConPersonaByIdIn(List.of(10L, 20L))).thenReturn(List.of(u1, u2));
+
+        RankingResponse response = pronosticoService.obtenerRanking(null, null);
+
+        assertThat(response.posiciones()).hasSize(2);
+        assertThat(response.posiciones().get(0).usuarioId()).isEqualTo(10L);
+        assertThat(response.posiciones().get(0).posicion()).isEqualTo(1);
+        assertThat(response.posiciones().get(1).usuarioId()).isEqualTo(20L);
+        assertThat(response.posiciones().get(1).posicion()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("HU-307 Criterio 4: El ranking se actualiza automáticamente a medida que se confirman nuevos resultados")
+    void rankingSeActualizaAlConfirmarResultados() {
+        // Al confirmarse un partido vía evento ResultadoConfirmado, se calculan puntos y se persisten
+        lados.get(0).setPuntaje(2);
+        lados.get(1).setPuntaje(1);
+        Pronostico pronostico = new Pronostico(usuario, partido, Eleccion.LOCAL);
+
+        when(pronosticoRepository.delPartido(10L)).thenReturn(List.of(pronostico));
+        when(juegaRepository.delPartido(10L)).thenReturn(lados);
+
+        // Disparamos evento de resultado confirmado
+        pronosticoService.onResultadoConfirmado(new com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado(1L, 10L, 101L, false));
+
+
+        // El pronóstico fue premiado con 3 puntos y guardado
+        assertThat(pronostico.getPuntos()).isEqualTo(3);
+        verify(pronosticoRepository).saveAll(List.of(pronostico));
+
+        // Al consultar ranking posterior, la base devuelve los nuevos puntos calculados
+        Usuario u = crearUsuario(55L, "juan", "Juan", "Tester");
+        when(pronosticoRepository.rankingEstadisticas(1L)).thenReturn(List.of(
+                new EstadisticaPronosticosUsuario(55L, 3L, 1L, 1L, Instant.now())
+        ));
+        when(usuarioRepository.findConPersonaByIdIn(List.of(55L))).thenReturn(List.of(u));
+        when(torneoRepository.findByIdAndEliminadoEnIsNull(1L)).thenReturn(Optional.of(torneo));
+
+        RankingResponse rankingActualizado = pronosticoService.obtenerRanking(55L, 1L);
+
+        assertThat(rankingActualizado.posiciones()).hasSize(1);
+        assertThat(rankingActualizado.posiciones().get(0).puntos()).isEqualTo(3);
+        assertThat(rankingActualizado.miPosicion().posicion()).isEqualTo(1);
+        assertThat(rankingActualizado.miPosicion().puntos()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("Consultar ranking con torneo inexistente lanza 404 TORNEO_NO_ENCONTRADO")
+    void rankingTorneoInexistenteLanza404() {
+        when(torneoRepository.findByIdAndEliminadoEnIsNull(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> pronosticoService.obtenerRanking(null, 999L))
+                .isInstanceOf(NoEncontradoException.class)
+                .hasMessageContaining("Torneo no encontrado");
+    }
+
+    @Test
+    @DisplayName("Consultar ranking con torneo en borrador lanza 404 TORNEO_NO_ENCONTRADO")
+    void rankingTorneoEnBorradorLanza404() {
+        torneo.setEstado(EstadoTorneo.BORRADOR);
+        when(torneoRepository.findByIdAndEliminadoEnIsNull(1L)).thenReturn(Optional.of(torneo));
+
+        assertThatThrownBy(() -> pronosticoService.obtenerRanking(null, 1L))
+                .isInstanceOf(NoEncontradoException.class)
+                .hasMessageContaining("Torneo no encontrado");
+    }
+
+    private Usuario crearUsuario(Long id, String username, String nombres, String apellidos) {
+        Usuario u = new Usuario();
+        ReflectionTestUtils.setField(u, "id", id);
+        u.setUsername(username);
+        Persona p = new Persona();
+        p.setNombres(nombres);
+        p.setApellidos(apellidos);
+        u.setPersona(p);
+        return u;
+    }
 }
+

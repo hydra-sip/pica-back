@@ -6,10 +6,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import java.util.Comparator;
+import java.util.Optional;
+
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
+import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.partido.domain.Eleccion;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
@@ -17,17 +21,23 @@ import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.domain.Pronostico;
 import com.hydra.pica.plataforma_pica.partido.domain.PronosticoId;
+import com.hydra.pica.plataforma_pica.partido.dto.EstadisticaPronosticosUsuario;
 import com.hydra.pica.plataforma_pica.partido.dto.LadoBracket;
+import com.hydra.pica.plataforma_pica.partido.dto.MiPosicionRanking;
 import com.hydra.pica.plataforma_pica.partido.dto.MiPronostico;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoPronostico;
+import com.hydra.pica.plataforma_pica.partido.dto.PosicionRanking;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoRequest;
+import com.hydra.pica.plataforma_pica.partido.dto.RankingResponse;
 import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PronosticoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
@@ -38,10 +48,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Servicio de pronósticos de partidos (HU-306, T306-1).
+ * Servicio de pronósticos de partidos y ranking (HU-306, HU-307, T306-1, T307-1).
  * Permite a los usuarios pronosticar cruces (1, X o 2) antes del inicio del partido,
- * y calcula automáticamente el puntaje obtenido (3 puntos acierto, 0 desacierto)
- * al confirmarse el resultado oficial.
+ * calcula automáticamente el puntaje obtenido (3 puntos acierto, 0 desacierto)
+ * al confirmarse el resultado oficial, y computa el ranking general y por torneo.
  */
 @Service
 @RequiredArgsConstructor
@@ -56,6 +66,8 @@ public class PronosticoService {
     private final JuegaRepository juegaRepository;
     private final PronosticoRepository pronosticoRepository;
     private final UsuarioRepository usuarioRepository;
+    private final TorneoRepository torneoRepository;
+
 
     /**
      * Lista los partidos disponibles para pronósticos, con opción de filtro por torneo y estado de ventana.
@@ -117,8 +129,90 @@ public class PronosticoService {
     }
 
     /**
+     * Obtiene el ranking general de pronósticos o filtrado por torneo (HU-307, T307-1).
+     * Aplica el criterio de desempate: mayor puntaje, primer pronóstico registrado (orden de carga),
+     * mayor cantidad de aciertos, y usuarioId determinístico.
+     * Si el usuario autenticado no ha registrado pronósticos, indica un mensaje acorde sin puntaje.
+     */
+    @Transactional(readOnly = true)
+    public RankingResponse obtenerRanking(Long usuarioId, Long torneoId) {
+        if (torneoId != null) {
+            Torneo torneo = torneoRepository.findByIdAndEliminadoEnIsNull(torneoId)
+                    .orElseThrow(() -> new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO,
+                            "Torneo no encontrado: " + torneoId));
+            if (torneo.getEstado() == EstadoTorneo.BORRADOR) {
+                throw new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO,
+                        "Torneo no encontrado: " + torneoId);
+            }
+        }
+
+        List<EstadisticaPronosticosUsuario> stats = pronosticoRepository.rankingEstadisticas(torneoId);
+        if (stats.isEmpty()) {
+            MiPosicionRanking miPosicionVacia = usuarioId != null
+                    ? new MiPosicionRanking(null, null, null, "Aún no has realizado pronósticos")
+                    : null;
+            return new RankingResponse(torneoId, List.of(), miPosicionVacia);
+        }
+
+        Comparator<EstadisticaPronosticosUsuario> comparador = Comparator
+                .comparing((EstadisticaPronosticosUsuario s) -> s.puntos() != null ? s.puntos() : 0L, Comparator.reverseOrder())
+                .thenComparing(s -> s.primerPronosticoEn() != null ? s.primerPronosticoEn() : Instant.MAX)
+                .thenComparing((EstadisticaPronosticosUsuario s) -> s.aciertos() != null ? s.aciertos() : 0L, Comparator.reverseOrder())
+                .thenComparing(EstadisticaPronosticosUsuario::usuarioId);
+
+        List<EstadisticaPronosticosUsuario> statsOrdenadas = stats.stream()
+                .sorted(comparador)
+                .toList();
+
+        List<Long> usuarioIds = statsOrdenadas.stream()
+                .map(EstadisticaPronosticosUsuario::usuarioId)
+                .toList();
+
+        Map<Long, Usuario> usuariosMap = usuarioRepository.findConPersonaByIdIn(usuarioIds).stream()
+                .collect(Collectors.toMap(Usuario::getId, u -> u));
+
+        List<PosicionRanking> posiciones = new ArrayList<>();
+        int currentPosicion = 1;
+        for (EstadisticaPronosticosUsuario stat : statsOrdenadas) {
+            Usuario u = usuariosMap.get(stat.usuarioId());
+            String username = u != null ? u.getUsername() : "usuario-" + stat.usuarioId();
+            String nombre = (u != null && u.getPersona() != null)
+                    ? (u.getPersona().getNombres() + " " + u.getPersona().getApellidos()).trim()
+                    : username;
+
+            posiciones.add(new PosicionRanking(
+                    currentPosicion++,
+                    stat.usuarioId(),
+                    username,
+                    nombre,
+                    stat.puntos() != null ? stat.puntos().intValue() : 0,
+                    stat.aciertos() != null ? stat.aciertos().intValue() : 0,
+                    stat.totalPronosticos() != null ? stat.totalPronosticos().intValue() : 0,
+                    stat.primerPronosticoEn()
+            ));
+        }
+
+        MiPosicionRanking miPosicion = null;
+        if (usuarioId != null) {
+            Optional<PosicionRanking> miFila = posiciones.stream()
+                    .filter(p -> p.usuarioId().equals(usuarioId))
+                    .findFirst();
+
+            if (miFila.isPresent()) {
+                PosicionRanking p = miFila.get();
+                miPosicion = new MiPosicionRanking(p.posicion(), p.puntos(), p.aciertos(), null);
+            } else {
+                miPosicion = new MiPosicionRanking(null, null, null, "Aún no has realizado pronósticos");
+            }
+        }
+
+        return new RankingResponse(torneoId, posiciones, miPosicion);
+    }
+
+    /**
      * Carga o modifica el pronóstico del usuario para un partido, validando que la ventana esté abierta.
      */
+
     @Transactional
     public PronosticoDetalle pronosticar(Long usuarioId, Long partidoId, PronosticoRequest request) {
         validarRequest(request);
