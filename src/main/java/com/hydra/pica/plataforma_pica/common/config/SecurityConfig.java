@@ -62,7 +62,8 @@ public class SecurityConfig {
                                 "/api/v1/auth/**",
                                 "/oauth2/**",
                                 "/login/oauth2/**",
-                                "/.well-known/**")
+                                "/.well-known/**",
+                                "/ws/**")
                         .permitAll()
                         .requestMatchers(
                                 HttpMethod.GET,
@@ -71,8 +72,11 @@ public class SecurityConfig {
                                 // el servicio decide: el de un borrador lo ve solo su organizador
                                 "/api/v1/torneos/*/reglamento",
                                 // el de un torneo publicado (PICA-216)
-                                "/api/v1/torneos/*/bracket")
+                                "/api/v1/torneos/*/bracket",
+                                "/api/v1/pronosticos/partidos",
+                                "/api/v1/pronosticos/ranking")
                         .permitAll()
+
                         .anyRequest().authenticated());
 
         if (clientRegistrationRepository != null) {

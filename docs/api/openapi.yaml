@@ -704,9 +704,17 @@ paths:
         fechas van juntas). 400 `VALIDACION` con `errores`: `RANGO_INVALIDO` en `numeroHasta` si es menor
         que `numeroDesde`; `VENTANA_INVALIDA` en `ventaHasta` si no es posterior a `ventaDesde` o ya pasó;
         `REQUERIDO` si viene una sola fecha.
+        Con `torneoId` (PICA-218), el torneo tiene que ser del mismo organizador (404 `TORNEO_NO_ENCONTRADO`
+        si no), estar en BORRADOR, INSCRIPCION_ABIERTA o INSCRIPCION_CERRADA (409 `TORNEO_NO_ADMITE_RIFA`) y
+        no tener otra rifa (409 `TORNEO_CON_RIFA`). La venta tiene que empezar después de que se publicó el
+        torneo y terminar antes de que empiece (`VENTANA_INVALIDA` en `ventaDesde` o `ventaHasta`); la fecha
+        que el torneo todavía no tiene no se controla. `PREMIOS_INVALIDOS` en `pctDestinadoTorneo` si la rifa
+        no tiene torneo y no es 0, o si con los premios cargados pasa de 100.
       requestBody: {$ref: '#/components/requestBodies/Rifa'}
       responses:
         '201': {$ref: '#/components/responses/Rifa'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
 
   /api/v1/rifas/mis-rifas:
     get:
@@ -756,8 +764,9 @@ paths:
       x-owner: Laura
       description: >-
         Premios (pestaña 2). Lista completa en orden de puesto, reemplaza la anterior (vacía = sin premios).
-        En BORRADOR pueden sumar menos de 100 %; para publicar, exactamente 100. 400 `VALIDACION` con
-        `PREMIOS_INVALIDOS` en `premios` si suman más de 100 o hay más premios que números.
+        En BORRADOR, los premios más `pctDestinadoTorneo` (PICA-218) pueden sumar menos de 100 %; para
+        publicar, exactamente 100. 400 `VALIDACION` con `PREMIOS_INVALIDOS` en `premios` si suman más de
+        100 o hay más premios que números.
         409 `RIFA_NO_EDITABLE` si ya no está en BORRADOR.
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
@@ -781,7 +790,8 @@ paths:
         409 `RIFA_NO_EDITABLE` si ya no está en BORRADOR.
         409 `RIFA_INCOMPLETA` si le falta algo para venderse: la lista va en `faltantes` (ver
         `FaltantePublicacion`) y la suma de los premios en `sumaPremios`. Una venta que ya empezó no se
-        ajusta sola: el organizador corrige `ventaDesde`.
+        ajusta sola: el organizador corrige `ventaDesde`. Con torneo (PICA-218), el torneo tiene que estar
+        publicado y la venta dentro de sus fechas.
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
         required: true
@@ -1268,6 +1278,95 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/CheckinPartido'}
         '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/pronosticos/partidos:
+    get:
+      tags: [Pronósticos]
+      summary: Listar partidos para pronósticos
+      x-jira: PICA-256
+      x-owner: Baiza
+      description: >-
+        HU-306. Lista los cruces disponibles para pronóstico (1X2). Si hay sesión activa, incluye `miPronostico` con la
+        elección del usuario y los puntos si ya fueron calculados.
+      parameters:
+        - name: torneoId
+          in: query
+          required: false
+          schema: {type: integer, format: int64}
+          description: Filtrar por torneo
+        - name: abierto
+          in: query
+          required: false
+          schema: {type: boolean}
+          description: Filtrar por estado de la ventana (true = abierta para pronosticar)
+      responses:
+        '200':
+          description: Lista de partidos para pronósticos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/PartidoPronostico'}
+
+  /api/v1/pronosticos/ranking:
+    get:
+      tags: [Pronósticos]
+      summary: Ranking de posiciones de pronósticos
+      x-jira: PICA-258
+      x-owner: Baiza
+      description: >-
+        HU-307. Obtiene la tabla general de posiciones según los puntos acumulados por los pronósticos.
+        Permite filtrar por torneo mediante `torneoId`. Si hay sesión activa, incluye `miPosicion` con
+        la posición del usuario actual o un mensaje si aún no pronosticó.
+      parameters:
+        - name: torneoId
+          in: query
+          required: false
+          schema: {type: integer, format: int64}
+          description: Filtrar por torneo
+      responses:
+        '200':
+          description: Tabla de posiciones del ranking
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RankingResponse'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/partidos/{id}/pronostico:
+
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      tags: [Pronósticos]
+      summary: Registrar o modificar el pronóstico de un partido
+      x-jira: PICA-256
+      x-owner: Baiza
+      description: >-
+        HU-306. Registra o actualiza la elección del usuario (1 = Local, X = Empate, 2 = Visitante) antes del inicio del
+        partido. Requiere sesión. 404 `PARTIDO_NO_ENCONTRADO` si no existe. 400 `VALIDACION` si la elección no es válida.
+        409 `PRONOSTICO_FUERA_DE_VENTANA` si el partido ya comenzó, está finalizado, no tiene ambos rivales definidos o
+        la fecha programada ya pasó.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eleccion]
+              properties:
+                eleccion:
+                  type: string
+                  description: Elección del pronóstico (1, X o 2; también acepta LOCAL, EMPATE o VISITANTE)
+                  example: "1"
+      responses:
+        '200':
+          description: Pronóstico registrado
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PronosticoDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
@@ -2097,7 +2196,8 @@ components:
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
-        RIFA_INCOMPLETA (le falta algo para publicarse) ·
+        RIFA_INCOMPLETA (le falta algo para publicarse) · TORNEO_CON_RIFA (el torneo ya tiene otra rifa) ·
+        TORNEO_NO_ADMITE_RIFA (la rifa va con un torneo en borrador o con la inscripción abierta o cerrada) ·
         TORNEO_NO_EDITABLE (la parte económica, el reglamento y la publicación solo en BORRADOR; los pasos 1 y 2, hasta que empieza) ·
         TORNEO_INCOMPLETO (le falta algo para publicarse; la lista va en `faltantes`) ·
         CAMPOS_BLOQUEADOS (el torneo publicado ya no admite cambios en esos campos; la lista va en `campos`) ·
@@ -2139,7 +2239,8 @@ components:
              DEMASIADOS_INTENTOS,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
-             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_EDITABLE, TORNEO_INCOMPLETO,
+             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_CON_RIFA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
+             TORNEO_INCOMPLETO,
              CAMPOS_BLOQUEADOS, COBRO_RECHAZADO,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
@@ -2148,6 +2249,7 @@ components:
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
+             NUMERO_YA_VENDIDO, PRONOSTICO_FUERA_DE_VENTANA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN]
     ErrorCampo:
@@ -3031,12 +3133,26 @@ components:
           description: >-
             Fecha programada del sorteo (PICA-219): futura y posterior a ventaHasta (400 `VENTANA_INVALIDA`
             en `fechaSorteo`). La aplicación sortea sola en esa fecha. Opcional en borrador; para publicar, obligatoria.
+        torneoId:
+          oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}]
+          description: >-
+            Torneo del mismo organizador para el que recauda la rifa (PICA-218), en BORRADOR o publicado sin
+            empezar; sin torneo, null
+        pctDestinadoTorneo:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 99
+          description: >-
+            % entero de lo recaudado que va al pozo del torneo; no es un premio y no se sortea. Sin torneo, 0
+            o que no venga (no venir es 0). Con decimales da 400.
     RifaResumen:
       type: object
       required: [id, titulo, estado, numeroDesde, numeroHasta, precioNumero, moneda, creadoEn]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         titulo: {type: string}
+        torneoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'Sin torneo, null'}
+        torneoNombre: {type: [string, 'null'], description: 'Sin torneo, null'}
         estado: {$ref: '#/components/schemas/EstadoRifa'}
         numeroDesde: {type: integer}
         numeroHasta: {type: integer}
@@ -3191,11 +3307,14 @@ components:
         realizadoPor: {$ref: '#/components/schemas/UsuarioPublico'}
     RifaDetalle:
       type: object
-      required: [id, titulo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, creadoEn]
+      required: [id, titulo, pctDestinadoTorneo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, creadoEn]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         titulo: {type: string}
         descripcion: {type: [string, 'null']}
+        torneoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'Sin torneo, null'}
+        torneoNombre: {type: [string, 'null'], description: 'Sin torneo, null'}
+        pctDestinadoTorneo: {type: integer, minimum: 0, maximum: 99, description: '% de lo recaudado que va al pozo del torneo; sin torneo, 0'}
         estado: {$ref: '#/components/schemas/EstadoRifa'}
         numeroDesde: {type: integer}
         numeroHasta: {type: integer}
@@ -3221,9 +3340,11 @@ components:
         Lo que le falta a una rifa para publicarse (en `faltantes` del 409 `RIFA_INCOMPLETA`). VENTANA: no
         están cargadas las fechas de venta · VENTA_YA_EMPEZO: las fechas de venta quedaron en el pasado
         (`ventaDesde` es anterior a ahora, o la venta ya terminó) y hay que actualizarlas · FECHA_SORTEO:
-        falta la fecha del sorteo · SIN_PREMIOS: no hay premios · PREMIOS_NO_SUMAN_100: los premios no
-        suman 100 % (la suma va en `sumaPremios`).
-      enum: [VENTANA, VENTA_YA_EMPEZO, FECHA_SORTEO, SIN_PREMIOS, PREMIOS_NO_SUMAN_100]
+        falta la fecha del sorteo · SIN_PREMIOS: no hay premios · PREMIOS_NO_SUMAN_100: `pctDestinadoTorneo`
+        más los premios no suman 100 % (la suma de los premios, sin el torneo, va en `sumaPremios`) ·
+        TORNEO_NO_PUBLICADO: el torneo de la rifa no se publicó · VENTANA_FUERA_DEL_TORNEO: la venta empieza
+        antes de que se publicara el torneo o termina después de que empieza.
+      enum: [VENTANA, VENTA_YA_EMPEZO, FECHA_SORTEO, SIN_PREMIOS, PREMIOS_NO_SUMAN_100, TORNEO_NO_PUBLICADO, VENTANA_FUERA_DEL_TORNEO]
 
     # --- Torneos públicos (los enums son los del asistente) -------------------
     PremioDetalle:
@@ -3296,3 +3417,73 @@ components:
         reglamentoHash: {type: [string, 'null'], description: 'SHA-256 del reglamento (el PDF o, sin PDF, el texto), sellado al publicar'}
         organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
         publicadoEn: {type: [string, 'null'], format: date-time}
+
+    PronosticoDetalle:
+      type: object
+      required: [partidoId, usuarioId, eleccion]
+      properties:
+        partidoId: {type: integer, format: int64}
+        usuarioId: {type: integer, format: int64}
+        eleccion: {type: string, enum: ['1', 'X', '2']}
+        puntos: {type: [integer, 'null']}
+        creadoEn: {type: string, format: date-time}
+        modificadoEn: {type: string, format: date-time}
+
+    MiPronostico:
+      type: object
+      required: [eleccion]
+      properties:
+        eleccion: {type: string, enum: ['1', 'X', '2']}
+        puntos: {type: [integer, 'null']}
+        creadoEn: {type: string, format: date-time}
+        modificadoEn: {type: string, format: date-time}
+
+    PartidoPronostico:
+      type: object
+      required: [partidoId, torneoId, torneoNombre, ronda, nombreRonda, posicion, estado, abierto]
+      properties:
+        partidoId: {type: integer, format: int64}
+        torneoId: {type: integer, format: int64}
+        torneoNombre: {type: string}
+        ronda: {type: integer}
+        nombreRonda: {type: string}
+        posicion: {type: integer}
+        estado: {$ref: '#/components/schemas/EstadoPartido'}
+        fechaProgramada: {type: [string, 'null'], format: date-time}
+        cierraEn: {type: [string, 'null'], format: date-time}
+        abierto: {type: boolean}
+        local: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}]}
+        visitante: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}]}
+        miPronostico: {oneOf: [{$ref: '#/components/schemas/MiPronostico'}, {type: 'null'}]}
+
+    RankingResponse:
+      type: object
+      required: [posiciones]
+      properties:
+        torneoId: {type: [integer, 'null'], format: int64}
+        posiciones:
+          type: array
+          items: {$ref: '#/components/schemas/PosicionRanking'}
+        miPosicion: {oneOf: [{$ref: '#/components/schemas/MiPosicionRanking'}, {type: 'null'}]}
+
+    PosicionRanking:
+      type: object
+      required: [posicion, usuarioId, username, nombre, puntos, aciertos, pronosticosTotales, primerPronosticoEn]
+      properties:
+        posicion: {type: integer}
+        usuarioId: {type: integer, format: int64}
+        username: {type: string}
+        nombre: {type: string}
+        puntos: {type: integer}
+        aciertos: {type: integer}
+        pronosticosTotales: {type: integer}
+        primerPronosticoEn: {type: string, format: date-time}
+
+    MiPosicionRanking:
+      type: object
+      properties:
+        posicion: {type: [integer, 'null']}
+        puntos: {type: [integer, 'null']}
+        aciertos: {type: [integer, 'null']}
+        mensaje: {type: [string, 'null']}
+

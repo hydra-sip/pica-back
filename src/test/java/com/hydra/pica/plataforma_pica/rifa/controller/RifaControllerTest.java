@@ -104,17 +104,19 @@ class RifaControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"titulo": "Rifa del club", "numeroDesde": 1, "numeroHasta": 100,
-                                 "precioNumero": 500}
+                                 "precioNumero": 500, "torneoId": 3, "pctDestinadoTorneo": 35}
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "http://localhost/api/v1/rifas/7"))
                 .andExpect(jsonPath("$.id").value(7))
-                .andExpect(jsonPath("$.estado").value("BORRADOR"));
+                .andExpect(jsonPath("$.estado").value("BORRADOR"))
+                .andExpect(jsonPath("$.torneoNombre").value("Copa del club"));
 
         ArgumentCaptor<RifaRequest> captor = ArgumentCaptor.forClass(RifaRequest.class);
         verify(rifaService).crear(eq(ORGANIZADOR), captor.capture());
         assertThat(captor.getValue()).isEqualTo(
-                new RifaRequest("Rifa del club", null, 1, 100, new BigDecimal("500"), null, null, null));
+                new RifaRequest("Rifa del club", null, 1, 100, new BigDecimal("500"), null, null, null, 3L,
+                        new BigDecimal("35")));
     }
 
     @Test
@@ -132,6 +134,25 @@ class RifaControllerTest {
                 .andExpect(jsonPath("$.codigo").value("VALIDACION"))
                 .andExpect(jsonPath("$.errores[?(@.campo == 'titulo')].codigo").value("REQUERIDO"))
                 .andExpect(jsonPath("$.errores[?(@.campo == 'precioNumero')].codigo").value("REQUERIDO"));
+        verify(rifaService, never()).crear(any(), any());
+    }
+
+    @Test
+    @WithMockUser(authorities = "RIFA_GESTIONAR")
+    @DisplayName("POST /api/v1/rifas con lo destinado al torneo con decimales o de 100 responde 400")
+    void destinadoAlTorneoInvalido() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+
+        for (String pct : List.of("12.5", "100")) {
+            mockMvc.perform(post("/api/v1/rifas")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"titulo": "Rifa", "numeroDesde": 1, "numeroHasta": 100, "precioNumero": 500,
+                                     "torneoId": 3, "pctDestinadoTorneo": %s}
+                                    """.formatted(pct)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errores[0].campo").value("pctDestinadoTorneo"));
+        }
         verify(rifaService, never()).crear(any(), any());
     }
 
@@ -264,7 +285,7 @@ class RifaControllerTest {
     void misRifas() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
         when(rifaService.listarMias(eq(ORGANIZADOR), any(Pageable.class))).thenReturn(new PageImpl<>(List.of(
-                new RifaResumen(7L, "Rifa del club", EstadoRifa.BORRADOR, 1, 100, new BigDecimal("500.00"), "ARS",
+                new RifaResumen(7L, "Rifa del club", null, null, EstadoRifa.BORRADOR, 1, 100, new BigDecimal("500.00"), "ARS",
                         null, null, null, CREADA)), PageRequest.of(0, 20), 1));
 
         mockMvc.perform(get("/api/v1/rifas/mis-rifas"))
@@ -275,7 +296,8 @@ class RifaControllerTest {
     }
 
     private static RifaDetalle detalle() {
-        return new RifaDetalle(7L, "Rifa del club", null, EstadoRifa.BORRADOR, 1, 100, new BigDecimal("500.00"),
+        return new RifaDetalle(7L, "Rifa del club", null, 3L, "Copa del club", 0, EstadoRifa.BORRADOR, 1, 100,
+                new BigDecimal("500.00"),
                 "ARS", null, null, null, null, null, List.of(new PremioRifaDetalle(1, 100, "Una bici", null)),
                 CREADA, CREADA);
     }

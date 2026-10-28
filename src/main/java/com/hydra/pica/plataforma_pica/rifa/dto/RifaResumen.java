@@ -5,11 +5,14 @@ import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
-/** Fila de "Mis rifas". */
+/** Fila de "Mis rifas". {@code torneoId} y {@code torneoNombre} son null si la rifa no tiene torneo. */
 public record RifaResumen(
         Long id,
         String titulo,
+        Long torneoId,
+        String torneoNombre,
         EstadoRifa estado,
         int numeroDesde,
         int numeroHasta,
@@ -21,8 +24,10 @@ public record RifaResumen(
         Instant creadoEn) {
 
     public static RifaResumen de(Rifa rifa) {
-        return new RifaResumen(rifa.getId(), rifa.getTitulo(), rifa.getEstado(), rifa.getNumeroDesde(),
-                rifa.getNumeroHasta(), rifa.getPrecioNumero(), rifa.getMoneda(), rifa.getVentaDesde(),
-                rifa.getVentaHasta(), rifa.getSorteadaEn(), rifa.getCreadoEn());
+        Torneo torneo = rifa.getTorneo();
+        return new RifaResumen(rifa.getId(), rifa.getTitulo(), torneo == null ? null : torneo.getId(),
+                torneo == null ? null : torneo.getNombre(), rifa.getEstado(),
+                rifa.getNumeroDesde(), rifa.getNumeroHasta(), rifa.getPrecioNumero(), rifa.getMoneda(),
+                rifa.getVentaDesde(), rifa.getVentaHasta(), rifa.getSorteadaEn(), rifa.getCreadoEn());
     }
 }

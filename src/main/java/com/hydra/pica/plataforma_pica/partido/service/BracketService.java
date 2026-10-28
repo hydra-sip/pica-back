@@ -73,6 +73,7 @@ public class BracketService {
     private final JuegaRepository juegaRepository;
     private final AuditoriaRepository auditoriaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final org.springframework.context.ApplicationEventPublisher eventos;
 
     @Transactional
     public BracketTorneo generar(Long organizadorId, Long torneoId) {
@@ -162,6 +163,8 @@ public class BracketService {
         torneo.setSemillaBracket(semilla);
         torneo.setEstado(EstadoTorneo.EN_CURSO);
         auditar(torneo, organizadorId, semilla, semillaAnterior, inscriptos.size());
+        eventos.publishEvent(new com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado(
+                torneo.getId(), EstadoTorneo.INSCRIPCION_CERRADA, EstadoTorneo.EN_CURSO));
     }
 
     private List<Usuario> arbitros(Long torneoId) {

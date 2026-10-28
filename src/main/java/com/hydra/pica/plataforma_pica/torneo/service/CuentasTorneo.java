@@ -14,7 +14,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  *
  * @param pozoNeto puede quedar negativo si los gastos superan el pozo; publicar lo rechaza
  */
-record CuentasTorneo(
+public record CuentasTorneo(
         BigDecimal recaudacion,
         BigDecimal gastos,
         BigDecimal pozoNeto) {

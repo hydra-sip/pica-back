@@ -2,8 +2,8 @@
 {$DOMINIO} {
 	encode zstd gzip
 
-	# Todo lo que atiende Spring: la API, el login con Google, el JWKS y el health
-	@api path /api/* /oauth2/* /login/oauth2/* /.well-known/jwks.json /actuator/health
+	# Todo lo que atiende Spring: la API, el login con Google, el JWKS, el health y WebSockets (/ws/*)
+	@api path /api/* /oauth2/* /login/oauth2/* /.well-known/jwks.json /actuator/health /ws/*
 	handle @api {
 		reverse_proxy api:8080
 	}

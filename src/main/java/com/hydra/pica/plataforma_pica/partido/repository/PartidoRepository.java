@@ -65,4 +65,12 @@ public interface PartidoRepository extends JpaRepository<Partido, Long> {
     @Modifying(flushAutomatically = true)
     @Query("delete from Partido p where p.torneo.id = :torneoId")
     void borrarDelTorneo(@Param("torneoId") Long torneoId);
+
+    /** Partidos de torneos visibles para pronósticos. */
+    @Query("""
+            select p from Partido p join fetch p.torneo t
+            where t.eliminadoEn is null and t.estado != com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo.BORRADOR
+              and (:torneoId is null or t.id = :torneoId)
+            order by t.id, p.ronda, p.posicion""")
+    List<Partido> paraPronosticos(@Param("torneoId") Long torneoId);
 }
