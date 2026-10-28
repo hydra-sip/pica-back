@@ -29,6 +29,7 @@ import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
+import com.hydra.pica.plataforma_pica.partido.event.PaseDirecto;
 import com.hydra.pica.plataforma_pica.partido.event.PartidoSinPresentes;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.torneo.dto.CheckinTorneoRequest;
@@ -276,6 +277,157 @@ class AusenciaAutomaticaIntegracionTest {
         verifyNoMoreInteractions(emailService);
     }
 
+    // --- sin presentes: descalificar a los dos y pase directo ------------------------------
+
+    @Test
+    void conDescalificarAmbosLosDosPierdenNadiePasaYLosPronosticosQuedanSinPuntos() {
+        Long espectador = escenario.usuario("espectador_ausencia", "PARTICIPANTE").getId();
+        descalificarAmbos();
+        abrirLaVentana(partido);
+        pronosticoService.pronosticar(espectador, partido, new PronosticoRequest("1"));
+        cerrarLaVentana();
+
+        assertThat(ausenciaAutomatica.declararVencidas()).isEqualTo(1);
+
+        PartidoDetalle descalificados = ver(partido);
+        assertThat(descalificados.estado()).isEqualTo(EstadoPartido.WALKOVER);
+        assertThat(descalificados.local().ganador()).isFalse();
+        assertThat(descalificados.visitante().ganador()).isFalse();
+        PartidoDetalle laFinal = ver(escenario.partido(torneo, 2, 1));
+        assertThat(laFinal.local()).isNull();
+        assertThat(laFinal.visitante()).isNull();
+        assertThat(puntos(espectador, partido)).isNull();
+        assertThat(criterios(partido)).containsExactly("DESCALIFICAR_AMBOS");
+        assertThat(eventos.stream(PartidoSinPresentes.class))
+                .containsExactly(new PartidoSinPresentes(torneo, partido));
+    }
+
+    @Test
+    void enLaFinalNoSeDescalificaALosDosSinoQueSeReprograma() {
+        Long laFinal = llegarALaFinal();
+        descalificarAmbos();
+        vencerLaVentana(laFinal);
+
+        ausenciaAutomatica.declararVencidas();
+
+        assertThat(ver(laFinal)).extracting(PartidoDetalle::estado, PartidoDetalle::fechaProgramada)
+                .containsExactly(EstadoPartido.PROGRAMADO, null);
+        assertThat(criterios(laFinal)).containsExactly("REPROGRAMAR");
+    }
+
+    @Test
+    void siElPartidoHermanoYaTerminoSinGanadorSeReprogramaYSuGanadorPasaDirectoComoCampeon() {
+        descalificarAmbos();
+        vencerLaVentana(partido);
+        ausenciaAutomatica.declararVencidas();
+        Long hermano = escenario.partido(torneo, 1, 2);
+        vencerLaVentana(hermano);
+
+        ausenciaAutomatica.declararVencidas();
+
+        assertThat(ver(hermano)).extracting(PartidoDetalle::estado, PartidoDetalle::fechaProgramada)
+                .containsExactly(EstadoPartido.PROGRAMADO, null);
+        assertThat(criterios(hermano)).containsExactly("REPROGRAMAR");
+
+        // se juega en la fecha nueva: el ganador llega a la final y pasa directo
+        Long campeon = inscripcion(hermano, "LOCAL");
+        resultadoService.cargar(escenario.jugador(hermano, "LOCAL"), hermano, new ResultadoRequest(1, 0, null, null));
+        resultadoService.aceptar(escenario.jugador(hermano, "VISITANTE"), hermano);
+
+        PartidoDetalle laFinal = ver(escenario.partido(torneo, 2, 1));
+        assertThat(laFinal.estado()).isEqualTo(EstadoPartido.CONFIRMADO);
+        assertThat(laFinal.local()).isNull();
+        assertThat(laFinal.visitante()).extracting(LadoBracket::inscripcionId, LadoBracket::ganador)
+                .containsExactly(campeon, true);
+        assertThat(jdbc.queryForObject("SELECT estado FROM torneo WHERE id = ?", String.class, torneo))
+                .isEqualTo("FINALIZADO");
+        assertThat(posicion(campeon)).isEqualTo(1);
+    }
+
+    @Test
+    void elGanadorQueLlegaAUnPartidoConElHermanoSinGanadorPasaDirectoYSigueAvanzando() {
+        Long ocho = escenario.individualEnCurso(organizador, escenario.usuario("juez_ocho", "ARBITRO").getId(),
+                "Copa Ocho", "jugador_ocho_", 8);
+        escenario.empezadoAyer(ocho);
+        torneo = ocho;
+        descalificarAmbos();
+        Long primero = escenario.partido(ocho, 1, 1);
+        vencerLaVentana(primero);
+        ausenciaAutomatica.declararVencidas();
+        Long segundo = escenario.partido(ocho, 1, 2);
+        Long ganador = inscripcion(segundo, "VISITANTE");
+
+        resultadoService.cargar(escenario.jugador(segundo, "LOCAL"), segundo, new ResultadoRequest(0, 2, null, null));
+        resultadoService.aceptar(escenario.jugador(segundo, "VISITANTE"), segundo);
+
+        Long semifinal = escenario.partido(ocho, 2, 1);
+        assertThat(ver(semifinal).estado()).isEqualTo(EstadoPartido.CONFIRMADO);
+        assertThat(ver(semifinal).visitante()).extracting(LadoBracket::inscripcionId, LadoBracket::ganador)
+                .containsExactly(ganador, true);
+        assertThat(ver(escenario.partido(ocho, 3, 1)).local().inscripcionId()).isEqualTo(ganador);
+        assertThat(eventos.stream(PaseDirecto.class)).containsExactly(new PaseDirecto(ocho, semifinal, ganador));
+        entityManager.flush();
+        assertThat(jdbc.queryForList("""
+                SELECT usuario_id IS NULL AS sistema, detalle ->> 'lado' AS lado,
+                       (detalle ->> 'inscripcionId')::bigint AS inscripcion
+                FROM auditoria WHERE accion = 'MODIFICACION' AND entidad = 'PARTIDO' AND entidad_id = ?
+                  AND detalle ->> 'resultado' = 'PASE_DIRECTO'""", String.valueOf(semifinal)))
+                .containsExactly(Map.of("sistema", true, "lado", "VISITANTE", "inscripcion", ganador));
+    }
+
+    @Test
+    void elGanadorQueYaEsperabaPasaDirectoEnCuantoDescalificanALosDosDelOtroCruce() {
+        Long hermano = escenario.partido(torneo, 1, 2);
+        Long campeon = inscripcion(hermano, "LOCAL");
+        resultadoService.cargar(escenario.jugador(hermano, "LOCAL"), hermano, new ResultadoRequest(1, 0, null, null));
+        resultadoService.aceptar(escenario.jugador(hermano, "VISITANTE"), hermano);
+        descalificarAmbos();
+        vencerLaVentana(partido);
+        Long descalificadoLocal = inscripcion(partido, "LOCAL");
+
+        assertThat(ausenciaAutomatica.declararVencidas()).isEqualTo(1);
+
+        Long laFinal = escenario.partido(torneo, 2, 1);
+        assertThat(ver(laFinal).estado()).isEqualTo(EstadoPartido.CONFIRMADO);
+        assertThat(ver(laFinal).visitante()).extracting(LadoBracket::inscripcionId, LadoBracket::ganador)
+                .containsExactly(campeon, true);
+        assertThat(jdbc.queryForObject("SELECT estado FROM torneo WHERE id = ?", String.class, torneo))
+                .isEqualTo("FINALIZADO");
+        // los descalificados quedan como cualquier perdedor de la primera ronda de dos: 2^(2 - 1) + 1
+        assertThat(posicion(campeon)).isEqualTo(1);
+        assertThat(posicion(descalificadoLocal)).isEqualTo(3);
+        assertThat(posicion(inscripcion(partido, "VISITANTE"))).isEqualTo(3);
+        assertThat(eventos.stream(PaseDirecto.class)).containsExactly(new PaseDirecto(torneo, laFinal, campeon));
+    }
+
+    @Test
+    void delDescalificarALosDosYDelPaseDirectoSeAvisa() {
+        Long hermano = escenario.partido(torneo, 1, 2);
+        Long campeon = escenario.jugador(hermano, "LOCAL");
+        resultadoService.cargar(campeon, hermano, new ResultadoRequest(1, 0, null, null));
+        resultadoService.aceptar(escenario.jugador(hermano, "VISITANTE"), hermano);
+        descalificarAmbos();
+        vencerLaVentana(partido);
+        ausenciaAutomatica.declararVencidas();
+        entityManager.flush();
+
+        avisoAusencia.avisar(new PartidoSinPresentes(torneo, partido));
+        for (String email : List.of(email(partido, "LOCAL"), email(partido, "VISITANTE"), "org_ausencia@example.com")) {
+            verify(emailService).enviarAviso(eq(email), eq("Partido sin presentes en Copa Ausencia"),
+                    contains("Quedan descalificados los dos"));
+        }
+        verifyNoMoreInteractions(emailService);
+
+        Long laFinal = escenario.partido(torneo, 2, 1);
+        avisoAusencia.avisar(new PaseDirecto(torneo, laFinal, inscripcion(laFinal, "VISITANTE")));
+        String pasa = nombre(hermano, "LOCAL");
+        verify(emailService).enviarAviso(eq(email(hermano, "LOCAL")), eq("Pase directo en Copa Ausencia"),
+                contains(pasa + " pasa de ronda sin jugar"));
+        verify(emailService).enviarAviso(eq("org_ausencia@example.com"), eq("Pase directo en Copa Ausencia"),
+                contains(pasa + " pasa de ronda sin jugar"));
+        verifyNoMoreInteractions(emailService);
+    }
+
     // --- lo que la tarea saltea ------------------------------------------------------
 
     @Test
@@ -318,6 +470,19 @@ class AusenciaAutomaticaIntegracionTest {
 
         assertThat(ausenciaAutomatica.declararVencidas()).isZero();
         assertThat(ver(partido).estado()).isEqualTo(EstadoPartido.PROGRAMADO);
+    }
+
+    private void descalificarAmbos() {
+        torneoService.configurarCheckin(organizador, torneo, new CheckinTorneoRequest(30, 20, "DESCALIFICAR_AMBOS"));
+    }
+
+    /** Los criterios que la auditoría dice que se aplicaron al partido sin presentes. */
+    private List<String> criterios(Long partido) {
+        entityManager.flush();
+        return jdbc.queryForList("""
+                SELECT detalle ->> 'criterio' FROM auditoria
+                WHERE entidad = 'PARTIDO' AND entidad_id = ? AND detalle ->> 'resultado' = 'SIN_PRESENTES'""",
+                String.class, String.valueOf(partido));
     }
 
     /** Con la ventana abierta y los {@code presentes} con check-in, la cierra: ver {@link #cerrarLaVentana()}. */

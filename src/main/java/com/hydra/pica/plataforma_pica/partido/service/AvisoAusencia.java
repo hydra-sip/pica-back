@@ -9,6 +9,7 @@ import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
+import com.hydra.pica.plataforma_pica.partido.event.PaseDirecto;
 import com.hydra.pica.plataforma_pica.partido.event.PartidoSinPresentes;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
@@ -24,7 +25,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Avisa por mail lo que resolvió la ausencia (HU-309): el walkover y el partido sin presentes, a los dos capitanes y
- * al organizador. Va después del commit: si el aviso falla, lo resuelto queda igual.
+ * al organizador, y el pase directo, al capitán que pasa y al organizador. Va después del commit: si el aviso falla,
+ * lo resuelto queda igual.
  */
 @Component
 public class AvisoAusencia {
@@ -54,6 +56,12 @@ public class AvisoAusencia {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void alPasarDirecto(PaseDirecto evento) {
+        avisar(evento);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public void sinPresentes(PartidoSinPresentes evento) {
         avisar(evento);
     }
@@ -77,7 +85,10 @@ public class AvisoAusencia {
         enviar(partido, capitanesYOrganizador(partido, lados), "Victoria por ausencia en " + torneo, texto);
     }
 
-    /** Con el criterio que se aplicó: sin fecha, el organizador recibe el enlace para ponerle una nueva. */
+    /**
+     * Con el criterio que se aplicó: descalificados los dos (el partido quedó WALKOVER) o sin fecha, donde el
+     * organizador recibe el enlace para ponerle una nueva.
+     */
     void avisar(PartidoSinPresentes evento) {
         Partido partido = partidoRepository.findById(evento.partidoId()).orElseThrow();
         List<Juega> lados = juegaRepository.delPartido(partido.getId());
@@ -87,6 +98,15 @@ public class AvisoAusencia {
                 Partidos.nombre(Partidos.lado(lados, Lado.LOCAL).orElseThrow().getInscripcion()),
                 Partidos.nombre(Partidos.lado(lados, Lado.VISITANTE).orElseThrow().getInscripcion()), torneo);
         String enlace = "%s/partidos/%d".formatted(webUrl, partido.getId());
+        if (partido.getEstado() == EstadoPartido.WALKOVER) {
+            String texto = """
+                    %s Quedan descalificados los dos: ninguno pasa de ronda.
+
+                    %s
+                    """.formatted(cruce, enlace);
+            enviar(partido, capitanesYOrganizador(partido, lados), asunto, texto);
+            return;
+        }
         String organizador = partido.getTorneo().getOrganizador().getEmail();
         String paraCapitanes = """
                 %s El partido queda sin fecha: el organizador le va a poner una nueva.
@@ -101,6 +121,22 @@ public class AvisoAusencia {
         capitanes.remove(organizador);
         enviar(partido, capitanes, asunto, paraCapitanes);
         enviar(partido, Set.of(organizador), asunto, paraOrganizador);
+    }
+
+    /** Al capitán que pasa y al organizador. */
+    void avisar(PaseDirecto evento) {
+        Partido partido = partidoRepository.findById(evento.partidoId()).orElseThrow();
+        Juega pasa = juegaRepository.delPartido(partido.getId()).stream()
+                .filter(j -> j.getId().getInscripcionId().equals(evento.inscripcionId()))
+                .findFirst().orElseThrow();
+        String torneo = partido.getTorneo().getNombre();
+        String texto = """
+                %s pasa de ronda sin jugar en %s: descalificaron a los dos del otro cruce, porque ninguno hizo check-in \
+                a tiempo.
+
+                %s/partidos/%d
+                """.formatted(Partidos.nombre(pasa.getInscripcion()), torneo, webUrl, partido.getId());
+        enviar(partido, capitanesYOrganizador(partido, List.of(pasa)), "Pase directo en " + torneo, texto);
     }
 
     private static Set<String> capitanesYOrganizador(Partido partido, List<Juega> lados) {

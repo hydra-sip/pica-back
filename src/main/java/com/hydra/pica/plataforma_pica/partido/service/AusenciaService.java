@@ -52,7 +52,7 @@ public class AusenciaService {
         }
         List<Juega> presentes = lados.stream().filter(j -> j.getCheckinEn() != null).toList();
         if (presentes.isEmpty()) {
-            return sinPresentes(partido);
+            return sinPresentes(partido, lados);
         }
         if (presentes.size() != 1) {
             return false;
@@ -66,18 +66,36 @@ public class AusenciaService {
         return true;
     }
 
-    /** Ninguno hizo check-in: con REPROGRAMAR el partido sigue PROGRAMADO, sin fecha y por lo tanto sin ventana. */
-    private boolean sinPresentes(Partido partido) {
+    /**
+     * Ninguno hizo check-in. Con REPROGRAMAR el partido sigue PROGRAMADO, sin fecha y por lo tanto sin ventana. Con
+     * DESCALIFICAR_AMBOS queda WALKOVER sin ganador y, si el ganador del partido hermano ya espera en el siguiente,
+     * pasa directo; en la final, o si el hermano ya terminó sin ganador, se reprograma: el torneo siempre tiene
+     * campeón y ningún partido queda sin nadie.
+     */
+    private boolean sinPresentes(Partido partido, List<Juega> lados) {
         CriterioSinPresentes criterio = partido.getTorneo().getCheckinSinPresentes();
-        if (criterio != CriterioSinPresentes.REPROGRAMAR) {
-            return false;
+        if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS
+                && (avanceLlave.esFinal(partido) || avanceLlave.terminoSinGanador(avanceLlave.hermano(partido)))) {
+            criterio = CriterioSinPresentes.REPROGRAMAR;
         }
-        partido.setFechaProgramada(null);
+        if (criterio == CriterioSinPresentes.REPROGRAMAR) {
+            partido.setFechaProgramada(null);
+        } else {
+            lados.forEach(j -> j.setEsGanador(false));
+            partido.setEstado(EstadoPartido.WALKOVER);
+        }
         Map<String, Object> detalle = new LinkedHashMap<>();
         detalle.put("resultado", "SIN_PRESENTES");
         detalle.put("criterio", criterio.name());
         resultadoService.auditar(partido, null, detalle);
         eventos.publishEvent(new PartidoSinPresentes(partido.getTorneo().getId(), partido.getId()));
+        if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS) {
+            Partido siguiente = avanceLlave.siguiente(partido);
+            List<Juega> esperan = juegaRepository.delPartido(siguiente.getId());
+            if (esperan.size() == 1) {
+                avanceLlave.paseDirecto(siguiente, esperan.getFirst());
+            }
+        }
         return true;
     }
 }
