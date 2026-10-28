@@ -161,6 +161,10 @@ public class Torneo extends AuditableEntity {
     @Column(name = "checkin_duracion_min")
     private Integer checkinDuracionMin;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "checkin_sin_presentes", length = 20, nullable = false)
+    private CriterioSinPresentes checkinSinPresentes = CriterioSinPresentes.REPROGRAMAR;
+
     @Column(name = "eliminado_en")
     private Instant eliminadoEn;
 

@@ -7,6 +7,7 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.torneo.domain.AsistenteTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancha;
+import com.hydra.pica.plataforma_pica.torneo.domain.CriterioSinPresentes;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
@@ -22,6 +23,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * @param pasoPendiente en BORRADOR, el paso donde reabrir el asistente (ver {@link AsistenteTorneo}); si no, null
  * @param checkinMinAntes la ventana de check-in (HU-308): cuántos minutos antes del cruce abre; null sin configurar
  * @param checkinDuracion cuántos minutos dura la ventana de check-in
+ * @param checkinSinPresentes qué pasa si no se presenta ninguno de los dos (HU-309); siempre tiene valor
  * @param economia el paso 3 (PICA-203)
  * @param slug el enlace público; se genera al publicar (PICA-204)
  * @param reglamentoUrl el PDF, que sirve {@code GET /torneos/{id}/reglamento} (PICA-200)
@@ -56,6 +58,7 @@ public record TorneoInformacion(
         Integer nominaMaxima,
         Integer checkinMinAntes,
         Integer checkinDuracion,
+        CriterioSinPresentes checkinSinPresentes,
         EconomiaTorneo economia,
         String slug,
         String esquemaHash,
@@ -78,6 +81,7 @@ public record TorneoInformacion(
                 t.getSede(), canchas, t.getFechaInicio(), t.getFechaFin(), t.getCierreInscripcionEn(),
                 t.getReglamentoTexto(), t.getReglamentoUrl(), t.getReglamentoHash(), t.getCupoMaximo(), t.getCupoMinimo(),
                 t.getTamanioEquipo(), t.getNominaMaxima(), t.getCheckinMinAntes(), t.getCheckinDuracionMin(),
+                t.getCheckinSinPresentes(),
                 EconomiaTorneo.de(t, premios, pctGastosAdministrativos), t.getSlug(), t.getEsquemaHash(), t.getPublicadoEn(),
                 t.getListaSelladaEn(), t.getListaHash(), t.getCreadoEn(), t.getModificadoEn(), camposBloqueados);
     }

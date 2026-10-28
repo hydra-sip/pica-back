@@ -7,7 +7,9 @@ import java.util.Set;
 import com.hydra.pica.plataforma_pica.common.email.EmailService;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
+import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
+import com.hydra.pica.plataforma_pica.partido.event.PartidoSinPresentes;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
@@ -21,8 +23,8 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Avisa por mail lo que resolvió la ausencia (HU-309): el walkover a los dos capitanes y al organizador. Va después
- * del commit: si el aviso falla, lo resuelto queda igual.
+ * Avisa por mail lo que resolvió la ausencia (HU-309): el walkover y el partido sin presentes, a los dos capitanes y
+ * al organizador. Va después del commit: si el aviso falla, lo resuelto queda igual.
  */
 @Component
 public class AvisoAusencia {
@@ -50,6 +52,12 @@ public class AvisoAusencia {
         avisar(evento);
     }
 
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void sinPresentes(PartidoSinPresentes evento) {
+        avisar(evento);
+    }
+
     /** Sin transacción propia: los tests lo llaman dentro de la suya, que no se confirma. Solo los WALKOVER. */
     void avisar(ResultadoConfirmado evento) {
         Partido partido = partidoRepository.findById(evento.partidoId()).orElse(null);
@@ -67,6 +75,32 @@ public class AvisoAusencia {
                 """.formatted(Partidos.nombre(ganador.getInscripcion()), Partidos.nombre(ausente.getInscripcion()),
                 torneo, webUrl, partido.getId());
         enviar(partido, capitanesYOrganizador(partido, lados), "Victoria por ausencia en " + torneo, texto);
+    }
+
+    /** Con el criterio que se aplicó: sin fecha, el organizador recibe el enlace para ponerle una nueva. */
+    void avisar(PartidoSinPresentes evento) {
+        Partido partido = partidoRepository.findById(evento.partidoId()).orElseThrow();
+        List<Juega> lados = juegaRepository.delPartido(partido.getId());
+        String torneo = partido.getTorneo().getNombre();
+        String asunto = "Partido sin presentes en " + torneo;
+        String cruce = "Ninguno de los dos hizo check-in a tiempo en %s vs %s, en %s.".formatted(
+                Partidos.nombre(Partidos.lado(lados, Lado.LOCAL).orElseThrow().getInscripcion()),
+                Partidos.nombre(Partidos.lado(lados, Lado.VISITANTE).orElseThrow().getInscripcion()), torneo);
+        String enlace = "%s/partidos/%d".formatted(webUrl, partido.getId());
+        String organizador = partido.getTorneo().getOrganizador().getEmail();
+        String paraCapitanes = """
+                %s El partido queda sin fecha: el organizador le va a poner una nueva.
+
+                %s
+                """.formatted(cruce, enlace);
+        String paraOrganizador = """
+                %s El partido queda sin fecha: entrá para ponerle una fecha nueva: %s
+                """.formatted(cruce, enlace);
+        Set<String> capitanes = new LinkedHashSet<>();
+        lados.forEach(j -> capitanes.add(j.getInscripcion().titular().getEmail()));
+        capitanes.remove(organizador);
+        enviar(partido, capitanes, asunto, paraCapitanes);
+        enviar(partido, Set.of(organizador), asunto, paraOrganizador);
     }
 
     private static Set<String> capitanesYOrganizador(Partido partido, List<Juega> lados) {

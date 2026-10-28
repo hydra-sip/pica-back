@@ -93,6 +93,7 @@ Notifica eventos que alteran el desarrollo de un torneo (bracket, estado y pozo 
 #### Tipos de evento (`tipo`):
 - `RESULTADO_CONFIRMADO`: Se confirmó el resultado de un partido y avanzó la llave del bracket.
 - `RESULTADO_OBJETADO`: Un resultado fue objetado y el bracket volvió a su estado previo.
+- `PARTIDO_SIN_PRESENTES`: Al vencer la ventana de check-in no se presentó ninguno de los dos (HU-309): el partido quedó sin fecha o descalificaron a los dos, según el criterio del torneo. Un walkover y un pase directo llegan como `RESULTADO_CONFIRMADO`.
 - `ESTADO_CAMBIADO`: Cambió el estado del torneo (ej. `INSCRIPCION_CERRADA` $\to$ `EN_CURSO` $\to$ `FINALIZADO`).
 - `POZO_ACTUALIZADO`: Se incrementó el pozo del torneo tras la venta de números de una rifa asociada.
 - `SYNC`: Snapshot completo enviado a un cliente que se reconecta.

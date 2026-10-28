@@ -28,6 +28,7 @@ import com.hydra.pica.plataforma_pica.partido.dto.EventoPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
+import com.hydra.pica.plataforma_pica.torneo.domain.CriterioSinPresentes;
 import com.hydra.pica.plataforma_pica.torneo.dto.CheckinTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
@@ -221,6 +222,28 @@ class CheckinIntegracionTest {
                     new CheckinTorneoRequest(30, 20)))
                     .extracting("codigo").isEqualTo(CodigoError.TORNEO_NO_EDITABLE);
         }
+    }
+
+    @Test
+    void elCriterioSinPresentesEsReprogramarPorDefectoYSiNoVieneQuedaElVigente() {
+        assertThat(torneoService.configurarCheckin(organizador, torneo, new CheckinTorneoRequest(30, 20))
+                .checkinSinPresentes()).isEqualTo(CriterioSinPresentes.REPROGRAMAR);
+
+        assertThat(torneoService.configurarCheckin(organizador, torneo,
+                new CheckinTorneoRequest(30, 20, "DESCALIFICAR_AMBOS")).checkinSinPresentes())
+                .isEqualTo(CriterioSinPresentes.DESCALIFICAR_AMBOS);
+        assertThat(torneoService.configurarCheckin(organizador, torneo, new CheckinTorneoRequest(40, 20))
+                .checkinSinPresentes()).isEqualTo(CriterioSinPresentes.DESCALIFICAR_AMBOS);
+        assertThat(torneoService.detalle(organizador, torneo).checkinSinPresentes())
+                .isEqualTo(CriterioSinPresentes.DESCALIFICAR_AMBOS);
+    }
+
+    @Test
+    void unCriterioSinPresentesQueNoExisteSeRechaza() {
+        assertThatThrownBy(() -> torneoService.configurarCheckin(organizador, torneo,
+                new CheckinTorneoRequest(30, 20, "SORTEAR")))
+                .satisfies(e -> assertThat(errores(e)).extracting(ErrorCampo::campo, ErrorCampo::codigo)
+                        .containsExactly(tuple("sinPresentes", ErrorCampo.Codigo.VALOR_INVALIDO)));
     }
 
     // --- consultar y hacer check-in ---------------------------------------------

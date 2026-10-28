@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.partido.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -12,6 +13,7 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -20,11 +22,14 @@ import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.email.EmailService;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.Lado;
+import com.hydra.pica.plataforma_pica.partido.dto.EventoPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.LadoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
+import com.hydra.pica.plataforma_pica.partido.event.PartidoSinPresentes;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.torneo.dto.CheckinTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
@@ -37,6 +42,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -48,7 +55,11 @@ import org.springframework.transaction.annotation.Transactional;
 @ActiveProfiles("dev")
 @Import({TestcontainersConfiguration.class, EscenarioTorneo.class})
 @Transactional
+@RecordApplicationEvents
 class AusenciaAutomaticaIntegracionTest {
+
+    private static final byte[] JPG = Arrays.copyOf(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0},
+            2048);
 
     @Autowired private AusenciaAutomatica ausenciaAutomatica;
     @Autowired private CheckinService checkinService;
@@ -58,6 +69,9 @@ class AusenciaAutomaticaIntegracionTest {
     @Autowired private ResultadoService resultadoService;
     @Autowired private PronosticoService pronosticoService;
     @Autowired private AvisoAusencia avisoAusencia;
+    @Autowired private EvidenciaService evidenciaService;
+    @Autowired private ObjecionService objecionService;
+    @Autowired private ApplicationEvents eventos;
     @MockitoBean private EmailService emailService;
     @Autowired private EscenarioTorneo escenario;
     @Autowired private JdbcTemplate jdbc;
@@ -183,6 +197,83 @@ class AusenciaAutomaticaIntegracionTest {
         avisoAusencia.avisar(new ResultadoConfirmado(torneo, partido, inscripcion(partido, "LOCAL"), false));
 
         verifyNoInteractions(emailService);
+    }
+
+    // --- sin presentes: reprogramar ----------------------------------------------------
+
+    @Test
+    void sinPresentesPorDefectoElPartidoQuedaSinFechaYNoSeVuelveATomar() {
+        vencerLaVentana(partido);
+
+        assertThat(ausenciaAutomatica.declararVencidas()).isEqualTo(1);
+
+        PartidoDetalle reprogramar = ver(partido);
+        assertThat(reprogramar.estado()).isEqualTo(EstadoPartido.PROGRAMADO);
+        assertThat(reprogramar.fechaProgramada()).isNull();
+        assertThat(reprogramar.local().ganador()).isNull();
+        assertThat(ausenciaAutomatica.declararVencidas()).isZero();
+        assertThat(eventos.stream(PartidoSinPresentes.class))
+                .containsExactly(new PartidoSinPresentes(torneo, partido));
+    }
+
+    @Test
+    void elPartidoReprogramadoSeVuelveAProgramarYSigueAbiertoAPronosticos() {
+        Long espectador = escenario.usuario("espectador_ausencia", "PARTICIPANTE").getId();
+        vencerLaVentana(partido);
+        ausenciaAutomatica.declararVencidas();
+        entityManager.flush();
+        entityManager.clear();
+
+        Instant nueva = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+        assertThat(programacionService.programar(organizador, partido, nueva).fechaProgramada()).isEqualTo(nueva);
+        assertThat(pronosticoService.pronosticar(espectador, partido, new PronosticoRequest("X")).eleccion())
+                .isEqualTo("X");
+    }
+
+    @Test
+    void sinPresentesQuedaEnLaAuditoriaConElCriterioYEnElHistorialDelPartido() {
+        vencerLaVentana(partido);
+        ausenciaAutomatica.declararVencidas();
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(jdbc.queryForList("""
+                SELECT usuario_id IS NULL AS sistema, detalle ->> 'criterio' AS criterio FROM auditoria
+                WHERE accion = 'MODIFICACION' AND entidad = 'PARTIDO' AND entidad_id = ?
+                  AND detalle ->> 'resultado' = 'SIN_PRESENTES'""", String.valueOf(partido)))
+                .containsExactly(Map.of("sistema", true, "criterio", "REPROGRAMAR"));
+
+        // se juega en la fecha nueva y el rival objeta: el historial muestra que no se presentó nadie
+        programacionService.programar(organizador, partido, Instant.now().plus(1, ChronoUnit.DAYS));
+        Long local = escenario.jugador(partido, "LOCAL");
+        Long visitante = escenario.jugador(partido, "VISITANTE");
+        resultadoService.cargar(local, partido, new ResultadoRequest(2, 0, null, null));
+        evidenciaService.subir(visitante, partido, JPG, "http://localhost/api/v1/partidos/1/evidencias");
+        resultadoService.objetar(visitante, partido, new ObjecionRequest("No fue así", 0, 1, null, null));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(objecionService.comparar(organizador, partido).historial())
+                .extracting(EventoPartido::evento, EventoPartido::usuario, EventoPartido::lado)
+                .containsExactly(tuple("PROGRAMADO", "org_ausencia Test", null), tuple("SIN_PRESENTES", null, null),
+                        tuple("PROGRAMADO", "org_ausencia Test", null), tuple("CARGADO", nombre(partido, "LOCAL"),
+                                Lado.LOCAL), tuple("OBJETADO", nombre(partido, "VISITANTE"), Lado.VISITANTE));
+    }
+
+    @Test
+    void delPartidoSinPresentesSeAvisaALosCapitanesYAlOrganizadorConElEnlaceParaReprogramar() {
+        vencerLaVentana(partido);
+        ausenciaAutomatica.declararVencidas();
+        entityManager.flush();
+
+        avisoAusencia.avisar(new PartidoSinPresentes(torneo, partido));
+
+        for (String email : List.of(email(partido, "LOCAL"), email(partido, "VISITANTE"))) {
+            verify(emailService).enviarAviso(eq(email), eq("Partido sin presentes en Copa Ausencia"),
+                    contains("queda sin fecha"));
+        }
+        verify(emailService).enviarAviso(eq("org_ausencia@example.com"), eq("Partido sin presentes en Copa Ausencia"),
+                contains("ponerle una fecha nueva: http://localhost:5173/partidos/" + partido));
+        verifyNoMoreInteractions(emailService);
     }
 
     // --- lo que la tarea saltea ------------------------------------------------------
