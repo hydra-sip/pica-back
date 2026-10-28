@@ -1,8 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
@@ -91,15 +89,12 @@ public class AvanceLlave {
     public void paseDirecto(Partido partido, Juega lado) {
         Partido bloqueado = partidoRepository.buscarBloqueado(partido.getId()).orElseThrow();
         lado.setEsGanador(true);
-        Map<String, Object> detalle = new LinkedHashMap<>();
-        detalle.put("resultado", "PASE_DIRECTO");
-        detalle.put("inscripcionId", lado.getId().getInscripcionId());
-        detalle.put("lado", lado.getLado().name());
+        // sin ResultadoService.auditar: ResultadoService depende de esta clase
         Auditoria auditoria = new Auditoria();
         auditoria.setAccion(AccionAuditoria.MODIFICACION);
         auditoria.setEntidad("PARTIDO");
         auditoria.setEntidadId(String.valueOf(bloqueado.getId()));
-        auditoria.setDetalle(detalle);
+        auditoria.setDetalle(ResultadoService.detalle("PASE_DIRECTO", lado));
         auditoriaRepository.save(auditoria);
         eventos.publishEvent(new PaseDirecto(bloqueado.getTorneo().getId(), bloqueado.getId(),
                 lado.getId().getInscripcionId()));

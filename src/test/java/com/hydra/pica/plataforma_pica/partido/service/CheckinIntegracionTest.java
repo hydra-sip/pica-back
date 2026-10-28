@@ -423,13 +423,10 @@ class CheckinIntegracionTest {
 
     /**
      * Con la ventana de 30 minutos antes y 15 de duración, programa el partido a {@code minutos} de ahora. Para eso
-     * el torneo empieza ayer: el escenario lo pone dentro de dos semanas.
+     * el torneo empieza ayer.
      */
     private Instant programarDentroDe(int minutos) {
-        jdbc.update("""
-                UPDATE torneo SET cierre_inscripcion_en = now() - interval '2 days',
-                                  fecha_inicio = now() - interval '1 day' WHERE id = ?""", torneo);
-        entityManager.clear();
+        escenario.empezadoAyer(torneo);
         torneoService.configurarCheckin(organizador, torneo, new CheckinTorneoRequest(30, 15));
         Instant fecha = Instant.now().plus(minutos, ChronoUnit.MINUTES).truncatedTo(ChronoUnit.SECONDS);
         programacionService.programar(organizador, partido, fecha);

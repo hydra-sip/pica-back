@@ -62,7 +62,7 @@ public class AvisoAusencia {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
-    public void sinPresentes(PartidoSinPresentes evento) {
+    public void alQuedarSinPresentes(PartidoSinPresentes evento) {
         avisar(evento);
     }
 
@@ -116,10 +116,7 @@ public class AvisoAusencia {
         String paraOrganizador = """
                 %s El partido queda sin fecha: entrá para ponerle una fecha nueva: %s
                 """.formatted(cruce, enlace);
-        Set<String> capitanes = new LinkedHashSet<>();
-        lados.forEach(j -> capitanes.add(j.getInscripcion().titular().getEmail()));
-        capitanes.remove(organizador);
-        enviar(partido, capitanes, asunto, paraCapitanes);
+        enviar(partido, capitanes(lados), asunto, paraCapitanes);
         enviar(partido, Set.of(organizador), asunto, paraOrganizador);
     }
 
@@ -139,9 +136,14 @@ public class AvisoAusencia {
         enviar(partido, capitanesYOrganizador(partido, List.of(pasa)), "Pase directo en " + torneo, texto);
     }
 
+    private static Set<String> capitanes(List<Juega> lados) {
+        Set<String> capitanes = new LinkedHashSet<>();
+        lados.forEach(j -> capitanes.add(j.getInscripcion().titular().getEmail()));
+        return capitanes;
+    }
+
     private static Set<String> capitanesYOrganizador(Partido partido, List<Juega> lados) {
-        Set<String> destinatarios = new LinkedHashSet<>();
-        lados.forEach(j -> destinatarios.add(j.getInscripcion().titular().getEmail()));
+        Set<String> destinatarios = capitanes(lados);
         destinatarios.add(partido.getTorneo().getOrganizador().getEmail());
         return destinatarios;
     }
