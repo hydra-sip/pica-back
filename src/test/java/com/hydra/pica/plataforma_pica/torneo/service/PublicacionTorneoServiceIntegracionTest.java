@@ -78,7 +78,7 @@ class PublicacionTorneoServiceIntegracionTest {
         assertThat(publicado.esquemaHash()).isEqualTo(SelloTorneo.sha256("""
                 torneo:%d
                 inscripcion:20000.00 ARS
-                reparto:90.00|0.00|10.00
+                gastos-administrativos:10.00
                 premio:1:60.00
                 premio:2:25.00
                 premio:3:15.00
@@ -86,6 +86,24 @@ class PublicacionTorneoServiceIntegracionTest {
                 gasto:2:30000.00:Alquiler""".formatted(id)));
         assertThat(jdbc.queryForObject("SELECT reglamento_hash FROM torneo WHERE id = ?", String.class, id))
                 .isEqualTo(SelloTorneo.sha256("Reglas"));
+    }
+
+    @Test
+    void alPublicarQuedanFijosLosGastosAdministrativosVigentes() {
+        Long id = listo("Apertura F5");
+        entityManager.flush();
+        jdbc.update("UPDATE parametro_plataforma SET valor = 7.5 WHERE clave = 'GASTOS_ADMINISTRATIVOS'");
+        entityManager.clear();
+
+        TorneoInformacion publicado = publicacionService.publicar(organizador, id);
+        entityManager.flush();
+        jdbc.update("UPDATE parametro_plataforma SET valor = 12 WHERE clave = 'GASTOS_ADMINISTRATIVOS'");
+        entityManager.clear();
+
+        assertThat(publicado.economia().pctGastosAdministrativos()).isEqualByComparingTo("7.5");
+        assertThat(torneoService.detalle(organizador, id).economia().pctGastosAdministrativos())
+                .isEqualByComparingTo("7.5");
+        assertThat(torneoService.detalle(organizador, id).economia().totalAPagar()).isEqualByComparingTo("21500");
     }
 
     @Test
@@ -125,9 +143,9 @@ class PublicacionTorneoServiceIntegracionTest {
 
     @Test
     void conElCupoMinimoLosGastosNoPuedenComerseElPozo() {
-        // mínimo 12 × 20.000 × 90 % = 216.000, y ya hay 50.000 de gastos
+        // mínimo 12 × 20.000 = 240.000, y ya hay 50.000 de gastos
         Long id = listo("Apertura F5");
-        economiaService.agregarGasto(organizador, id, gasto("Premio extra", "166000"));
+        economiaService.agregarGasto(organizador, id, gasto("Premio extra", "190000"));
 
         assertThat(faltantes(id)).containsExactly(FaltanteTorneo.POZO_NETO_NO_POSITIVO);
     }
@@ -193,8 +211,7 @@ class PublicacionTorneoServiceIntegracionTest {
     }
 
     private static EconomiaTorneoRequest economia(String... premios) {
-        return new EconomiaTorneoRequest(new BigDecimal("20000"), new BigDecimal("90"), BigDecimal.ZERO,
-                BigDecimal.TEN, Arrays.stream(premios).map(BigDecimal::new).toList());
+        return new EconomiaTorneoRequest(new BigDecimal("20000"), Arrays.stream(premios).map(BigDecimal::new).toList());
     }
 
     private static GastoRequest gasto(String descripcion, String monto) {

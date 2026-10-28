@@ -114,13 +114,11 @@ public class RealtimeWebSocketController {
                 ? rifa.getPrecioNumero().multiply(BigDecimal.valueOf(vendidos.size()))
                 : BigDecimal.ZERO;
 
+        // el % de lo vendido que la rifa destina al pozo de su torneo (HU-401)
         BigDecimal aporteTorneo = BigDecimal.ZERO;
-        if (torneoId != null) {
-            Torneo torneo = torneoRepository.findById(torneoId).orElse(null);
-            if (torneo != null && torneo.getPctPremioRifa() != null) {
-                aporteTorneo = pozoRifa.multiply(torneo.getPctPremioRifa())
-                        .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
-            }
+        if (torneoId != null && rifa.getPctDestinadoTorneo() > 0) {
+            aporteTorneo = pozoRifa.multiply(BigDecimal.valueOf(rifa.getPctDestinadoTorneo()))
+                    .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
         }
 
         return new EventoRifaMessage(

@@ -21,6 +21,7 @@ import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
+import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancha;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
@@ -70,6 +71,7 @@ public class TorneoService {
     private final CanchaRepository canchaRepository;
     private final UsuarioRepository usuarioRepository;
     private final TorneoProperties torneoProperties;
+    private final ParametrosPlataforma parametrosPlataforma;
     private final AuditingHandler auditingHandler;
     private final AuditoriaRepository auditoriaRepository;
 
@@ -81,7 +83,7 @@ public class TorneoService {
                         .map(Cancha::getNombre)
                         .toList();
         return new OpcionesTorneo(CatalogoTorneo.DISCIPLINAS, CatalogoTorneo.FORMATOS, List.of(Modalidad.values()),
-                torneoProperties.cupoMaximo(), torneoProperties.comisionMaxima(), canchas);
+                torneoProperties.cupoMaximo(), parametrosPlataforma.gastosAdministrativos(), canchas);
     }
 
     @Transactional(readOnly = true)

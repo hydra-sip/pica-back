@@ -430,8 +430,6 @@ class ModeloCorregidoRepositoriesTest {
         torneo.setTamanioEquipo(tipo == TipoParticipante.EQUIPO ? 5 : null);
         torneo.setNominaMaxima(tipo == TipoParticipante.EQUIPO ? 8 : null);
         torneo.setValorInscripcion(new BigDecimal("1000.00"));
-        torneo.setPctPozoCompetidores(new BigDecimal("50"));
-        torneo.setPctPremioRifa(new BigDecimal("10"));
         torneo.setCierreInscripcionEn(Instant.now());
         torneo.setFechaInicio(Instant.now().plus(1, ChronoUnit.DAYS));
         return torneo;

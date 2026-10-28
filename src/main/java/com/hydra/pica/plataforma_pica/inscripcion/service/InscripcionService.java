@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.inscripcion.service;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -36,6 +37,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.ReemplazoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.GastosAdministrativos;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -474,6 +476,13 @@ public class InscripcionService {
         if (torneo.getValorInscripcion().signum() > 0) {
             cobroService.cobrar(new SolicitudCobro(usuarioId, TipoMovimiento.INSCRIPCION, torneo.getValorInscripcion(),
                     torneoId, id, "inscripcion-" + id, "Inscripción al torneo " + torneo.getNombre()));
+        }
+        // los gastos administrativos van aparte, en otro movimiento: la inscripción es del torneo y esto de la
+        // plataforma (PICA-283)
+        BigDecimal gastos = GastosAdministrativos.monto(torneo.getValorInscripcion(), torneo.getPctGastosAdministrativos());
+        if (gastos.signum() > 0) {
+            cobroService.cobrar(new SolicitudCobro(usuarioId, TipoMovimiento.COMISION, gastos, torneoId, id,
+                    "gastos-inscripcion-" + id, "Gastos administrativos de la inscripción al torneo " + torneo.getNombre()));
         }
         inscripcion.setEstado(EstadoInscripcion.CONFIRMADA);
         Inscripcion pagada = inscripcionRepository.saveAndFlush(inscripcion);

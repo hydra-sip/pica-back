@@ -67,6 +67,7 @@ class TorneoPublicoControllerTest {
                 12,
                 new BigDecimal("5000.00"),
                 "ARS",
+                new BigDecimal("500.00"),
                 new BigDecimal("56000.00"),
                 Instant.parse("2026-11-01T12:00:00Z"),
                 Instant.parse("2026-11-05T10:00:00Z"),
@@ -109,10 +110,10 @@ class TorneoPublicoControllerTest {
                 5,
                 new BigDecimal("5000.00"),
                 "ARS",
-                new BigDecimal("70.00"),
-                new BigDecimal("20.00"),
+                new BigDecimal("10.00"),
+                new BigDecimal("500.00"),
+                new BigDecimal("5500.00"),
                 new BigDecimal("56000.00"),
-                new BigDecimal("16000.00"),
                 List.of(new PremioDetalle(1, new BigDecimal("70.00"), new BigDecimal("39200.00")),
                         new PremioDetalle(2, new BigDecimal("30.00"), new BigDecimal("16800.00"))),
                 Instant.parse("2026-11-01T12:00:00Z"),
@@ -131,6 +132,7 @@ class TorneoPublicoControllerTest {
                 .andExpect(jsonPath("$.slug").value("copa-verano"))
                 .andExpect(jsonPath("$.cupoDisponible").value(12))
                 .andExpect(jsonPath("$.pozoEstimado").value(56000.00))
+                .andExpect(jsonPath("$.totalAPagar").value(5500.00))
                 .andExpect(jsonPath("$.reglamentoUrl").value("https://pica.local/reglamento.pdf"))
                 .andExpect(jsonPath("$.premios[0].puesto").value(1))
                 .andExpect(jsonPath("$.organizador.username").value("juanp"));

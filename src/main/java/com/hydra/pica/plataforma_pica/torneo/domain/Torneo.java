@@ -110,12 +110,12 @@ public class Torneo extends AuditableEntity {
     @Column(name = "moneda", length = 3, nullable = false)
     private String moneda = "ARS";
 
-    @Column(name = "pct_pozo_competidores", precision = 5, scale = 2)
-    private BigDecimal pctPozoCompetidores;
-
-    /** % de lo recaudado por la rifa que se suma al premio del torneo. */
-    @Column(name = "pct_premio_rifa", precision = 5, scale = 2)
-    private BigDecimal pctPremioRifa;
+    /**
+     * % de gastos administrativos que paga aparte quien se inscribe (V27): se copia del parámetro de la plataforma al
+     * publicar. En BORRADOR es null.
+     */
+    @Column(name = "pct_gastos_administrativos", precision = 5, scale = 2)
+    private BigDecimal pctGastosAdministrativos;
 
     @Column(name = "cierre_inscripcion_en")
     private Instant cierreInscripcionEn;
