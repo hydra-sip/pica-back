@@ -1271,6 +1271,70 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/pronosticos/partidos:
+    get:
+      tags: [Pronósticos]
+      summary: Listar partidos para pronósticos
+      x-jira: PICA-256
+      x-owner: Baiza
+      description: >-
+        HU-306. Lista los cruces disponibles para pronóstico (1X2). Si hay sesión activa, incluye `miPronostico` con la
+        elección del usuario y los puntos si ya fueron calculados.
+      parameters:
+        - name: torneoId
+          in: query
+          required: false
+          schema: {type: integer, format: int64}
+          description: Filtrar por torneo
+        - name: abierto
+          in: query
+          required: false
+          schema: {type: boolean}
+          description: Filtrar por estado de la ventana (true = abierta para pronosticar)
+      responses:
+        '200':
+          description: Lista de partidos para pronósticos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/PartidoPronostico'}
+
+  /api/v1/partidos/{id}/pronostico:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      tags: [Pronósticos]
+      summary: Registrar o modificar el pronóstico de un partido
+      x-jira: PICA-256
+      x-owner: Baiza
+      description: >-
+        HU-306. Registra o actualiza la elección del usuario (1 = Local, X = Empate, 2 = Visitante) antes del inicio del
+        partido. Requiere sesión. 404 `PARTIDO_NO_ENCONTRADO` si no existe. 400 `VALIDACION` si la elección no es válida.
+        409 `PRONOSTICO_FUERA_DE_VENTANA` si el partido ya comenzó, está finalizado, no tiene ambos rivales definidos o
+        la fecha programada ya pasó.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eleccion]
+              properties:
+                eleccion:
+                  type: string
+                  description: Elección del pronóstico (1, X o 2; también acepta LOCAL, EMPATE o VISITANTE)
+                  example: "1"
+      responses:
+        '200':
+          description: Pronóstico registrado
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PronosticoDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/partidos/{id}/resultado:
     parameters: [{$ref: '#/components/parameters/id'}]
     post:
@@ -2149,7 +2213,7 @@ components:
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
-             NUMERO_YA_VENDIDO,
+             NUMERO_YA_VENDIDO, PRONOSTICO_FUERA_DE_VENTANA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN]
     ErrorCampo:
@@ -3298,3 +3362,41 @@ components:
         reglamentoHash: {type: [string, 'null'], description: 'SHA-256 del reglamento (el PDF o, sin PDF, el texto), sellado al publicar'}
         organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
         publicadoEn: {type: [string, 'null'], format: date-time}
+
+    PronosticoDetalle:
+      type: object
+      required: [partidoId, usuarioId, eleccion]
+      properties:
+        partidoId: {type: integer, format: int64}
+        usuarioId: {type: integer, format: int64}
+        eleccion: {type: string, enum: ['1', 'X', '2']}
+        puntos: {type: [integer, 'null']}
+        creadoEn: {type: string, format: date-time}
+        modificadoEn: {type: string, format: date-time}
+
+    MiPronostico:
+      type: object
+      required: [eleccion]
+      properties:
+        eleccion: {type: string, enum: ['1', 'X', '2']}
+        puntos: {type: [integer, 'null']}
+        creadoEn: {type: string, format: date-time}
+        modificadoEn: {type: string, format: date-time}
+
+    PartidoPronostico:
+      type: object
+      required: [partidoId, torneoId, torneoNombre, ronda, nombreRonda, posicion, estado, abierto]
+      properties:
+        partidoId: {type: integer, format: int64}
+        torneoId: {type: integer, format: int64}
+        torneoNombre: {type: string}
+        ronda: {type: integer}
+        nombreRonda: {type: string}
+        posicion: {type: integer}
+        estado: {$ref: '#/components/schemas/EstadoPartido'}
+        fechaProgramada: {type: [string, 'null'], format: date-time}
+        cierraEn: {type: [string, 'null'], format: date-time}
+        abierto: {type: boolean}
+        local: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}]}
+        visitante: {oneOf: [{$ref: '#/components/schemas/LadoBracket'}, {type: 'null'}]}
+        miPronostico: {oneOf: [{$ref: '#/components/schemas/MiPronostico'}, {type: 'null'}]}
