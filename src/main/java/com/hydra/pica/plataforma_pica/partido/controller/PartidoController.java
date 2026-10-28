@@ -6,14 +6,18 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.LaudoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
+import com.hydra.pica.plataforma_pica.partido.dto.ProgramacionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
+import com.hydra.pica.plataforma_pica.partido.service.CheckinService;
 import com.hydra.pica.plataforma_pica.partido.service.EvidenciaService;
 import com.hydra.pica.plataforma_pica.partido.service.LaudoService;
 import com.hydra.pica.plataforma_pica.partido.service.PartidoService;
+import com.hydra.pica.plataforma_pica.partido.service.ProgramacionService;
 import com.hydra.pica.plataforma_pica.partido.service.ResultadoService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +29,7 @@ import org.springframework.security.authentication.AuthenticationCredentialsNotF
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -45,6 +50,8 @@ public class PartidoController {
     private final ResultadoService resultadoService;
     private final EvidenciaService evidenciaService;
     private final LaudoService laudoService;
+    private final ProgramacionService programacionService;
+    private final CheckinService checkinService;
     private final CurrentUserProvider currentUserProvider;
 
     @GetMapping("/partidos/{id}")
@@ -80,6 +87,24 @@ public class PartidoController {
     @PostMapping("/partidos/{id}/laudo")
     public PartidoDetalle laudar(@PathVariable Long id, @Valid @RequestBody LaudoRequest request) {
         return laudoService.laudar(usuarioActual(), id, request);
+    }
+
+    /** El organizador del torneo, con el partido PROGRAMADO: de la fecha sale la ventana de check-in (HU-308). */
+    @PutMapping("/partidos/{id}/programacion")
+    public PartidoDetalle programar(@PathVariable Long id, @RequestBody ProgramacionRequest request) {
+        return programacionService.programar(usuarioActual(), id, request.fechaProgramada());
+    }
+
+    /** Cualquiera con sesión: la ventana y si cada lado hizo check-in (HU-308). */
+    @GetMapping("/partidos/{id}/checkin")
+    public CheckinPartido verCheckin(@PathVariable Long id) {
+        return checkinService.ver(usuarioActual(), id);
+    }
+
+    /** El capitán de un lado confirma su presencia, sin cuerpo; repetirlo no cambia nada. */
+    @PostMapping("/partidos/{id}/checkin")
+    public CheckinPartido hacerCheckin(@PathVariable Long id) {
+        return checkinService.hacer(usuarioActual(), id);
     }
 
     /** Multipart con el archivo en la parte {@code archivo}. */

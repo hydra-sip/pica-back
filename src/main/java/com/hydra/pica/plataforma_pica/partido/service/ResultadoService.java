@@ -2,11 +2,9 @@ package com.hydra.pica.plataforma_pica.partido.service;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.common.config.PartidoConfig.PartidoProperties;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
@@ -28,7 +26,6 @@ import com.hydra.pica.plataforma_pica.partido.event.ResultadoObjetado;
 import com.hydra.pica.plataforma_pica.partido.repository.EvidenciaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.ObjecionRepository;
-import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -42,8 +39,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <ul>
  * <li>Lo carga el capitán de uno de los dos lados: el jugador inscripto o el capitán del equipo.</li>
- * <li>Solo con el partido en juego: el torneo en curso, los dos rivales definidos y el resultado sin cargar. Mientras
- * no haya check-in (HU-308), PROGRAMADO también cuenta como en juego.</li>
+ * <li>Solo con el partido en juego: el torneo en curso, los dos rivales definidos y el resultado sin cargar. El
+ * check-in (HU-308) no es requisito: PROGRAMADO también cuenta como en juego.</li>
  * <li>Es eliminación directa: un empate se define por penales, y los penales no pueden empatar.</li>
  * <li>El partido queda RESULTADO_CARGADO y el rival tiene {@code app.partidos.plazo-objecion} para aceptarlo u
  * objetarlo.</li>
@@ -56,9 +53,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class ResultadoService {
-
-    static final Set<EstadoPartido> EN_JUEGO =
-            EnumSet.of(EstadoPartido.PROGRAMADO, EstadoPartido.CHECK_IN, EstadoPartido.EN_JUEGO);
 
     private final Partidos partidos;
     private final PartidoService partidoService;
@@ -76,12 +70,7 @@ public class ResultadoService {
         Partido partido = partidos.buscarBloqueado(partidoId);
         List<Juega> lados = juegaRepository.delPartido(partidoId);
         Juega mio = Partidos.exigirCapitan(lados, usuarioId, partidoId);
-        if (partido.getTorneo().getEstado() != EstadoTorneo.EN_CURSO || lados.size() < 2
-                || !EN_JUEGO.contains(partido.getEstado())) {
-            throw new ConflictoException(CodigoError.PARTIDO_NO_EN_JUEGO,
-                    "El partido " + partidoId + " está " + partido.getEstado()
-                            + (lados.size() < 2 ? " y sin rival definido" : "") + ": no se le carga resultado");
-        }
+        Partidos.exigirEnJuego(partido, lados, "le carga resultado");
         validar(request);
 
         fijarMarcador(lados, request.puntajeLocal(), request.puntajeVisitante(), request.penalesLocal(),
@@ -247,7 +236,8 @@ public class ResultadoService {
         }
     }
 
-    private static Map<String, Object> detalle(String resultado, Juega lado) {
+    /** El registro de algo que hizo un lado: el capitán de esa inscripción. */
+    static Map<String, Object> detalle(String resultado, Juega lado) {
         Map<String, Object> detalle = new LinkedHashMap<>();
         detalle.put("resultado", resultado);
         detalle.put("inscripcionId", lado.getId().getInscripcionId());

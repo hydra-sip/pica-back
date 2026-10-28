@@ -33,6 +33,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle.EquipoI
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
+import com.hydra.pica.plataforma_pica.torneo.dto.CheckinTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.MiTorneoResumen;
 import com.hydra.pica.plataforma_pica.torneo.dto.MisTorneos;
@@ -226,6 +227,34 @@ class TorneoControllerTest {
 
     @Test
     @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("PUT /api/v1/torneos/{id}/checkin pasa la ventana y el usuario de la sesión")
+    void configuraCheckin() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(torneoService.configurarCheckin(ORGANIZADOR, 9L, new CheckinTorneoRequest(30, 20)))
+                .thenReturn(borrador());
+
+        mockMvc.perform(put("/api/v1/torneos/9/checkin")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"minAntes": 30, "duracion": 20}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(9));
+    }
+
+    @Test
+    @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
+    @DisplayName("PUT /api/v1/torneos/{id}/checkin sin TORNEO_GESTIONAR responde 403")
+    void configuraCheckinSinPermiso() throws Exception {
+        mockMvc.perform(put("/api/v1/torneos/9/checkin")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"minAntes\": 30, \"duracion\": 20}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(torneoService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
     @DisplayName("GET /api/v1/torneos/{id} de un torneo ajeno responde 404 TORNEO_NO_ENCONTRADO")
     void ajeno() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
@@ -354,7 +383,7 @@ class TorneoControllerTest {
     private static TorneoInformacion borrador() {
         return new TorneoInformacion(9L, EstadoTorneo.BORRADOR, 1, "Apertura F5", "Fútbol 5", null,
                 Formato.ELIMINACION_DIRECTA, Modalidad.PRESENCIAL, null, "Club Mercedes", List.of("Cancha 1"), null,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, CREADO, CREADO,
-                List.of());
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                CREADO, CREADO, List.of());
     }
 }

@@ -6,6 +6,7 @@ import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.dto.CheckinTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.MisTorneos;
 import com.hydra.pica.plataforma_pica.torneo.dto.OpcionesTorneo;
@@ -98,6 +99,12 @@ public class TorneoController {
     @PostMapping("/{id}/cerrar-inscripcion")
     public TorneoInformacion cerrarInscripcion(@PathVariable Long id) {
         return inscripcionTorneoService.cerrar(usuarioActual(), id);
+    }
+
+    /** La ventana de check-in de todos los cruces (HU-308); con el torneo publicado y sin terminar. */
+    @PutMapping("/{id}/checkin")
+    public TorneoInformacion configurarCheckin(@PathVariable Long id, @RequestBody CheckinTorneoRequest request) {
+        return torneoService.configurarCheckin(usuarioActual(), id, request);
     }
 
     private Long usuarioActual() {

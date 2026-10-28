@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
@@ -33,6 +34,10 @@ public class Partidos {
     public static final Set<EstadoPartido> CERRADOS =
             EnumSet.of(EstadoPartido.CONFIRMADO, EstadoPartido.CORREGIDO, EstadoPartido.WALKOVER);
 
+    /** Se le puede cargar resultado y hacer check-in; el check-in (HU-308) no es requisito para cargarlo. */
+    public static final Set<EstadoPartido> EN_JUEGO =
+            EnumSet.of(EstadoPartido.PROGRAMADO, EstadoPartido.CHECK_IN, EstadoPartido.EN_JUEGO);
+
     private final PartidoRepository partidoRepository;
 
     /** El de un torneo en borrador o dado de baja no existe: 404. */
@@ -54,6 +59,20 @@ public class Partidos {
     public static Juega exigirCapitan(List<Juega> lados, Long usuarioId, Long partidoId) {
         return deCapitan(lados, usuarioId).orElseThrow(() -> new ProhibidoException(CodigoError.NO_ES_CAPITAN,
                 "Solo el capitán de uno de los dos lados del partido " + partidoId + " puede hacerlo"));
+    }
+
+    /**
+     * 409 PARTIDO_NO_EN_JUEGO si el torneo no está en curso, falta el rival o el partido ya tiene resultado.
+     *
+     * @param accion lo que no se puede hacer, para el mensaje: "le carga resultado", "hace check-in"
+     */
+    public static void exigirEnJuego(Partido partido, List<Juega> lados, String accion) {
+        if (partido.getTorneo().getEstado() != EstadoTorneo.EN_CURSO || lados.size() < 2
+                || !EN_JUEGO.contains(partido.getEstado())) {
+            throw new ConflictoException(CodigoError.PARTIDO_NO_EN_JUEGO,
+                    "El partido " + partido.getId() + " está " + partido.getEstado()
+                            + (lados.size() < 2 ? " y sin rival definido" : "") + ": no se " + accion);
+        }
     }
 
     public static Optional<Juega> lado(List<Juega> lados, Lado lado) {
