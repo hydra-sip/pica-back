@@ -73,6 +73,10 @@ public class SecurityConfig {
                                 "/api/v1/torneos/*/reglamento",
                                 // el de un torneo publicado (PICA-216)
                                 "/api/v1/torneos/*/bracket",
+                                // las rifas para quien compra (PICA-221)
+                                "/api/v1/rifas/publicas",
+                                "/api/v1/rifas/publicas/*",
+                                "/api/v1/rifas/publicas/*/numeros",
                                 "/api/v1/pronosticos/partidos")
                         .permitAll()
                         .anyRequest().authenticated());
