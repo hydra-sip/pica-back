@@ -3,6 +3,8 @@ package com.hydra.pica.plataforma_pica.torneo.controller;
 import java.net.URI;
 
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.CheckinTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
@@ -13,6 +15,7 @@ import com.hydra.pica.plataforma_pica.torneo.service.InscripcionTorneoService;
 import com.hydra.pica.plataforma_pica.torneo.service.MisTorneosService;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -82,6 +85,14 @@ public class TorneoController {
     public TorneoInformacion actualizarInformacion(@PathVariable Long id,
             @Valid @RequestBody InformacionTorneoRequest request) {
         return torneoService.actualizarInformacion(usuarioActual(), id, request);
+    }
+
+    /** HU-206: las inscripciones del torneo, sin borradores y de la más vieja a la más nueva. */
+    @GetMapping("/{id}/inscripciones")
+    public Page<InscripcionDelTorneo> inscripciones(@PathVariable Long id,
+            @RequestParam(required = false) EstadoInscripcion estado,
+            @PageableDefault(size = 20) Pageable pageable) {
+        return inscripcionTorneoService.listar(usuarioActual(), id, estado, pageable);
     }
 
     /** HU-206: cierra la inscripción antes de la fecha; el cierre es definitivo. */

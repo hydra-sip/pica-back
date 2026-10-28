@@ -15,6 +15,11 @@ public interface NominaRepository extends JpaRepository<Nomina, NominaId> {
 
     List<Nomina> findAllByIdInscripcionId(Long inscripcionId);
 
+    /** Cuántos hay en la nómina de cada una, en una sola consulta: para una página de inscripciones. */
+    @Query("select n.id.inscripcionId as inscripcionId, count(n) as cantidad from Nomina n "
+            + "where n.id.inscripcionId in :inscripcionIds group by n.id.inscripcionId")
+    List<ConteoNomina> contarPorInscripcion(@Param("inscripcionIds") Collection<Long> inscripcionIds);
+
     boolean existsByIdInscripcionIdAndIdUsuarioId(Long inscripcionId, Long usuarioId);
 
     /** Los jugadores de la nómina de una inscripción, con su persona, en el orden en que se cargaron. */

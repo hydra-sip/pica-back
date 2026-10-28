@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,6 +17,11 @@ import org.springframework.data.repository.query.Param;
 public interface TorneoRepository extends JpaRepository<Torneo, Long>, JpaSpecificationExecutor<Torneo> {
 
     Optional<Torneo> findByIdAndEliminadoEnIsNull(Long id);
+
+    /** Los que tienen la inscripción abierta con la fecha de cierre vencida (HU-206), el más viejo primero. */
+    @Query("select t.id from Torneo t where t.estado = com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo.INSCRIPCION_ABIERTA "
+            + "and t.eliminadoEn is null and t.cierreInscripcionEn <= :ahora order by t.cierreInscripcionEn, t.id")
+    List<Long> conInscripcionVencida(@Param("ahora") Instant ahora);
 
     /** Bloquea la fila del torneo hasta el fin de la transacción: serializa los chequeos de cupo. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

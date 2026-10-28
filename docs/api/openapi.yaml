@@ -1664,6 +1664,28 @@ paths:
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
+    get:
+      tags: [Inscripciones]
+      summary: Las inscripciones del torneo, para su organizador
+      x-jira: PICA-214
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        HU-206. Solo el organizador del torneo. Trae todas menos los borradores, que son privados del capitán mientras
+        arma, de la más vieja a la más nueva; `sort` se ignora. Con `estado`, solo las de ese estado (con `BORRADOR`
+        la página viene vacía). Cada fila es un resumen; la nómina se pide con `GET /inscripciones/{id}`, que el
+        organizador puede ver. 404 `TORNEO_NO_ENCONTRADO` si no existe, está dado de baja o quien llama no es el
+        organizador.
+      parameters:
+        - {$ref: '#/components/parameters/id'}
+        - {name: estado, in: query, required: false, schema: {$ref: '#/components/schemas/EstadoInscripcion'}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageInscripcionDelTorneo'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
 
   /api/v1/inscripciones/mias:
     get:
@@ -2226,6 +2248,10 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/InscripcionResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageInscripcionDelTorneo:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/InscripcionDelTorneo'}}, page: {$ref: '#/components/schemas/PageInfo'}}
 
     # --- auth ----------------------------------------------------------------
     RegistroRequest:
@@ -3096,6 +3122,26 @@ components:
         equipo:
           oneOf: [{$ref: '#/components/schemas/EquipoInscripto'}, {type: 'null'}]
           description: Solo en la de equipo
+    InscripcionDelTorneo:
+      type: object
+      required: [id, estado, creadoEn]
+      description: >-
+        Una inscripción como la ve el organizador en la lista de su torneo (HU-206). La individual lleva `usuario`; la
+        de equipo lleva `equipo`, `capitan` y `jugadores`.
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        estado: {$ref: '#/components/schemas/EstadoInscripcion'}
+        creadoEn: {type: string, format: date-time}
+        usuario:
+          oneOf: [{$ref: '#/components/schemas/UsuarioPublico'}, {type: 'null'}]
+          description: Solo en la individual
+        equipo:
+          oneOf: [{$ref: '#/components/schemas/EquipoInscripto'}, {type: 'null'}]
+          description: Solo en la de equipo
+        capitan:
+          oneOf: [{$ref: '#/components/schemas/UsuarioPublico'}, {type: 'null'}]
+          description: Solo en la de equipo
+        jugadores: {type: [integer, 'null'], description: 'Solo en la de equipo: cuántos hay en la nómina, el capitán incluido'}
     InscripcionEquipoRequest:
       type: object
       description: >-

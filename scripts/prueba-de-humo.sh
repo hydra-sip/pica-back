@@ -392,6 +392,9 @@ pedir 409:INSCRIPCION_NO_EDITABLE GET /api/v1/inscripciones/{id}/resumen-pago "/
 pedir 200 POST /api/v1/torneos/{id}/cerrar-inscripcion "/api/v1/torneos/$TORNEO_PAGO_ID/cerrar-inscripcion" "$ADMIN"
 pedir 409:INSCRIPCION_NO_ABIERTA POST /api/v1/torneos/{id}/cerrar-inscripcion "/api/v1/torneos/$TORNEO_PAGO_ID/cerrar-inscripcion" "$ADMIN"
 pedir 409:INSCRIPCION_NO_ABIERTA POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_PAGO_ID/inscripciones" "$USUARIO"
+# el organizador ve la lista de su torneo, con la inscripción pagada
+pedir 200 GET /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_PAGO_ID/inscripciones?estado=CONFIRMADA" "$ADMIN"
+en_listado "$INSCRIPCION_ID"
 # un torneo por equipos y un equipo del usuario de prueba (tampoco hay API de equipos): borrador, edición,
 # confirmación y pago. El torneo pide una nómina de 2 a 4 jugadores y el usuario de prueba está solo.
 TORNEO_EQUIPO_ID=$(sql <<SQL

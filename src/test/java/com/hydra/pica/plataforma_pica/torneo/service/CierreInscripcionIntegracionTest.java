@@ -13,6 +13,7 @@ import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDelTorneo;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
@@ -30,6 +31,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -260,6 +263,76 @@ class CierreInscripcionIntegracionTest {
                 """, String.valueOf(individual));
         assertThat(fila).containsEntry("usuario_id", organizador).containsEntry("entidad", "TORNEO")
                 .containsEntry("motivo", "MANUAL").containsEntry("canceladas", 2);
+    }
+
+    // --- inscripciones del torneo (PICA-214) -----------------------------------
+
+    @Test
+    void elOrganizadorVeLasInscripcionesDeSuTorneoSinLosBorradoresYEnOrdenDeLlegada() {
+        long individual = torneo("INDIVIDUAL", 1000);
+        Long primero = usuario("lista_primero").getId();
+        long confirmada = inscripcionIndividual(individual, primero, "CONFIRMADA");
+        inscripcionIndividual(individual, usuario("lista_borrador").getId(), "BORRADOR");
+        long pendiente = inscripcionIndividual(individual, usuario("lista_pendiente").getId(), "PENDIENTE_PAGO");
+        long cancelada = inscripcionIndividual(individual, usuario("lista_cancelada").getId(), "CANCELADA");
+
+        Page<InscripcionDelTorneo> pagina = inscripcionTorneoService.listar(organizador, individual, null, PageRequest.of(0, 20));
+
+        assertThat(pagina.getContent()).extracting(InscripcionDelTorneo::id).containsExactly(confirmada, pendiente, cancelada);
+        InscripcionDelTorneo fila = pagina.getContent().get(0);
+        assertThat(fila.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(fila.usuario().id()).isEqualTo(primero);
+        assertThat(fila.usuario().username()).isEqualTo("lista_primero");
+        assertThat(fila.equipo()).isNull();
+        assertThat(fila.capitan()).isNull();
+        assertThat(fila.jugadores()).isNull();
+    }
+
+    @Test
+    void unaInscripcionDeEquipoTraeElEquipoElCapitanYCuantosHayEnLaNomina() {
+        Long capitan = usuario("lista_cap").getId();
+        Long jugador = usuario("lista_jug").getId();
+        long equipo = equipo("Los Listados", capitan);
+        integrante(equipo, jugador);
+        long id = inscripcionDeEquipo(torneo, equipo, "PENDIENTE_PAGO");
+        enNomina(id, capitan, equipo);
+        enNomina(id, jugador, equipo);
+
+        InscripcionDelTorneo fila = inscripcionTorneoService.listar(organizador, torneo, null, PageRequest.of(0, 20))
+                .getContent().get(0);
+
+        assertThat(fila.equipo().id()).isEqualTo(equipo);
+        assertThat(fila.equipo().nombre()).isEqualTo("Los Listados");
+        assertThat(fila.capitan().id()).isEqualTo(capitan);
+        assertThat(fila.jugadores()).isEqualTo(2);
+        assertThat(fila.usuario()).isNull();
+    }
+
+    @Test
+    void conElFiltroTraeSoloLasDeEseEstadoYPaginado() {
+        long individual = torneo("INDIVIDUAL", 1000);
+        long a = inscripcionIndividual(individual, usuario("filtro_a").getId(), "CONFIRMADA");
+        inscripcionIndividual(individual, usuario("filtro_b").getId(), "PENDIENTE_PAGO");
+        long c = inscripcionIndividual(individual, usuario("filtro_c").getId(), "CONFIRMADA");
+        inscripcionIndividual(individual, usuario("filtro_d").getId(), "BORRADOR");
+
+        Page<InscripcionDelTorneo> confirmadas = inscripcionTorneoService.listar(organizador, individual,
+                EstadoInscripcion.CONFIRMADA, PageRequest.of(0, 1));
+
+        assertThat(confirmadas.getContent()).extracting(InscripcionDelTorneo::id).containsExactly(a);
+        assertThat(confirmadas.getTotalElements()).isEqualTo(2);
+        assertThat(inscripcionTorneoService.listar(organizador, individual, EstadoInscripcion.CONFIRMADA, PageRequest.of(1, 1))
+                .getContent()).extracting(InscripcionDelTorneo::id).containsExactly(c);
+        assertThat(inscripcionTorneoService.listar(organizador, individual, EstadoInscripcion.BORRADOR, PageRequest.of(0, 20))
+                .getContent()).isEmpty();
+    }
+
+    @Test
+    void paraQuienNoOrganizaElTorneoSusInscripcionesNoExisten() {
+        Long otro = usuario("otro_lista").getId();
+
+        assertError(() -> inscripcionTorneoService.listar(otro, torneo, null, PageRequest.of(0, 20)),
+                HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
     }
 
     // --- ayudas -------------------------------------------------------------
