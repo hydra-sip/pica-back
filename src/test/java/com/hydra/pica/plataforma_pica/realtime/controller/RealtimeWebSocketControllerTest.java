@@ -102,8 +102,8 @@ class RealtimeWebSocketControllerTest {
         assertThat(msg.torneoId()).isEqualTo(1L);
         assertThat(msg.numeros()).containsExactly(1, 2);
         assertThat(msg.cantidadVendidos()).isEqualTo(2);
-        assertThat(msg.pozoRifa()).isEqualByComparingTo("200.00");
-        // el 10 % que la rifa destina al torneo
+        // de los $200 vendidos, el 10 % va al torneo y el resto a los premios (HU-405)
+        assertThat(msg.pozoRifa()).isEqualByComparingTo("180.00");
         assertThat(msg.aporteTorneo()).isEqualByComparingTo("20.00");
 
         EventoRifaMessage suscripcionMsg = controller.suscribirRifa(10L);

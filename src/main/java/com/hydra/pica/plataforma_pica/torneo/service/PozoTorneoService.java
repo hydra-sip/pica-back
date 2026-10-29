@@ -1,10 +1,9 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
-import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
@@ -42,17 +41,11 @@ public class PozoTorneoService {
         CuentasTorneo cuentas = CuentasTorneo.de(torneo, cupo, gastos);
         BigDecimal pozoBase = cuentas.pozoNeto() != null ? cuentas.pozoNeto() : BigDecimal.ZERO;
 
-        BigDecimal aporteRifa = BigDecimal.ZERO;
-        var rifaOpt = rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneo.getId());
-        if (rifaOpt.isPresent() && rifaOpt.get().getPctDestinadoTorneo() > 0) {
-            Rifa rifa = rifaOpt.get();
-            long vendidos = numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO);
-            BigDecimal recaudacionRifa = rifa.getPrecioNumero() != null
-                    ? rifa.getPrecioNumero().multiply(BigDecimal.valueOf(vendidos))
-                    : BigDecimal.ZERO;
-            aporteRifa = recaudacionRifa.multiply(BigDecimal.valueOf(rifa.getPctDestinadoTorneo()))
-                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        }
+        // la misma cuenta que el desglose de la rifa (HU-405)
+        BigDecimal aporteRifa = rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneo.getId())
+                .map(rifa -> RepartoRifa.de(rifa,
+                        numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO)).alPozoTorneo())
+                .orElse(BigDecimal.ZERO);
 
         return pozoBase.add(aporteRifa);
     }

@@ -10,6 +10,7 @@ import com.hydra.pica.plataforma_pica.realtime.dto.EventoTorneoMessage;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Numero;
+import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
@@ -110,16 +111,10 @@ public class RealtimeWebSocketController {
                 .map(n -> n.getId().getNumero())
                 .toList();
 
-        BigDecimal pozoRifa = rifa != null && rifa.getPrecioNumero() != null
-                ? rifa.getPrecioNumero().multiply(BigDecimal.valueOf(vendidos.size()))
-                : BigDecimal.ZERO;
-
-        // el % de lo vendido que la rifa destina al pozo de su torneo (HU-401)
-        BigDecimal aporteTorneo = BigDecimal.ZERO;
-        if (torneoId != null && rifa.getPctDestinadoTorneo() > 0) {
-            aporteTorneo = pozoRifa.multiply(BigDecimal.valueOf(rifa.getPctDestinadoTorneo()))
-                    .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
-        }
+        // lo vendido se reparte entre el pozo del torneo y los premios (HU-405)
+        RepartoRifa reparto = rifa != null ? RepartoRifa.de(rifa, vendidos.size()) : null;
+        BigDecimal pozoRifa = reparto != null ? reparto.aPremios() : BigDecimal.ZERO;
+        BigDecimal aporteTorneo = reparto != null ? reparto.alPozoTorneo() : BigDecimal.ZERO;
 
         return new EventoRifaMessage(
                 "SINCRONIZACION",

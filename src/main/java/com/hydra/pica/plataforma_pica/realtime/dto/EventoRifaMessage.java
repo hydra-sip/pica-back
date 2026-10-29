@@ -14,7 +14,7 @@ import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
  * @param estado           estado actual de la rifa
  * @param numeros          números involucrados en esta venta
  * @param cantidadVendidos total acumulado de números vendidos
- * @param pozoRifa         pozo / recaudación total de la rifa
+ * @param pozoRifa         lo que va a los premios de la rifa: lo vendido sin el aporte al torneo (HU-405)
  * @param aporteTorneo     monto que esta rifa aporta al pozo del torneo (si aplica)
  */
 public record EventoRifaMessage(

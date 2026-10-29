@@ -12,6 +12,7 @@ import com.hydra.pica.plataforma_pica.realtime.dto.EventoTorneoMessage;
 import com.hydra.pica.plataforma_pica.realtime.service.RealtimeNotifier;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
+import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.event.NumerosVendidos;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
@@ -137,7 +138,9 @@ public class RealtimeEventListener {
 
         int totalVendidos = (int) numeroRepository.countByIdRifaIdAndEstado(evento.rifaId(), EstadoNumero.VENDIDO);
 
-        BigDecimal aporteTorneo = evento.torneoId() != null ? aporteRifa(rifa, evento.pozoRifa()) : BigDecimal.ZERO;
+        BigDecimal aporteTorneo = evento.torneoId() != null && rifa != null
+                ? RepartoRifa.de(rifa, totalVendidos).alPozoTorneo()
+                : BigDecimal.ZERO;
 
         EventoRifaMessage mensajeRifa = new EventoRifaMessage(
                 "NUMEROS_VENDIDOS",
@@ -185,14 +188,5 @@ public class RealtimeEventListener {
         return torneoRepository.findById(torneoId)
                 .map(Torneo::getEstado)
                 .orElse(null);
-    }
-
-    /** El % de lo vendido que la rifa destina al pozo de su torneo (HU-401). */
-    private BigDecimal aporteRifa(Rifa rifa, BigDecimal pozoRifa) {
-        if (rifa == null || pozoRifa == null) {
-            return BigDecimal.ZERO;
-        }
-        return pozoRifa.multiply(BigDecimal.valueOf(rifa.getPctDestinadoTorneo()))
-                .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
     }
 }
