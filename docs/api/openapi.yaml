@@ -1139,8 +1139,11 @@ paths:
         `TORNEO_NO_ENCONTRADO`), con el torneo publicado y sin terminar ni cancelar (si no, 409 `TORNEO_NO_EDITABLE`).
         400 `VALIDACION`: `REQUERIDO` o `RANGO_INVALIDO` en `minAntes` y `duracion` si faltan o no son mayores que 0, y
         `VENTANA_INVALIDA` en `duracion` si pasa a `minAntes` (la ventana se superpondría con el cruce). Rige desde
-        ese momento para todas las ventanas, aun una ya abierta; los check-ins hechos quedan. Queda en la auditoría
-        (MODIFICACION, entidad TORNEO).
+        ese momento para todas las ventanas, aun una ya abierta; los check-ins hechos quedan. HU-309 (PICA-252):
+        `sinPresentes` es el criterio para un partido al que, al vencer la ventana, no se presentó ninguno de los dos
+        (ver `POST /partidos/{id}/checkin`); es opcional, si no viene queda el vigente (`REPROGRAMAR` por defecto) y
+        un valor que no existe es 400 `VALIDACION` con `VALOR_INVALIDO` en `sinPresentes`. Un cambio se aplica a las
+        ventanas que venzan desde ese momento. Queda en la auditoría (MODIFICACION, entidad TORNEO).
       requestBody:
         required: true
         content:
@@ -1271,6 +1274,24 @@ paths:
         `abreEn` y `cierraEn` en el problem detail. El primer check-in pasa el partido a CHECK_IN y el segundo a
         EN_JUEGO. No es requisito para cargar el resultado. Queda en la auditoría (MODIFICACION, entidad PARTIDO) y en
         el historial del partido como CHECKIN.
+
+
+        HU-309 (PICA-252), la ausencia: una tarea revisa cada `app.partidos.revision-plazos` (30 segundos por
+        defecto) los partidos PROGRAMADO o CHECK_IN, con fecha y con los dos lados, de un torneo EN_CURSO con el
+        check-in configurado, cuya ventana cerró hace más que la tolerancia. Si hizo check-in un solo lado, gana por
+        ausencia: el partido queda WALKOVER, con el presente `ganador` y sin puntajes, y avanza la llave como al
+        confirmar un resultado (si era la final, el torneo termina con sus posiciones). Si no se presentó ninguno, se
+        aplica el criterio `checkinSinPresentes` del torneo: con `REPROGRAMAR` el partido sigue PROGRAMADO y queda sin
+        `fechaProgramada`, para que el organizador le ponga una nueva (`PUT /partidos/{id}/programacion`); con
+        `DESCALIFICAR_AMBOS` queda WALKOVER sin ganador (los dos lados con `ganador` false), nadie pasa de ronda y los
+        dos quedan con el puesto de cualquier perdedor de esa ronda. En la final, o si el partido hermano (el otro que
+        alimenta al mismo partido de la ronda siguiente) ya terminó sin ganador, `DESCALIFICAR_AMBOS` se aplica como
+        `REPROGRAMAR`, así el torneo siempre tiene campeón. Pase directo: el lado que llega a un partido cuyo otro
+        lugar quedó vacante porque el partido hermano terminó sin ganador gana sin jugar, en cuanto llega o en cuanto
+        el hermano termina sin ganador: el partido queda CONFIRMADO con un solo lado, como un BYE, y avanza. Los dos
+        capitanes y el organizador reciben un mail (en el pase directo, el capitán que pasa y el organizador). Cada
+        caso queda en la auditoría (MODIFICACION, entidad PARTIDO, sin usuario) y en el historial del partido como
+        WALKOVER, SIN_PRESENTES o PASE_DIRECTO. Los dos que hacen check-in juegan con normalidad: no hay ausencia.
       responses:
         '200':
           description: La ventana y el check-in de cada lado, con el propio
@@ -2652,7 +2673,7 @@ components:
         nominaMaxima: {type: [integer, 'null'], minimum: 1, description: Con suplentes; solo por equipos}
     TorneoInformacion:
       type: object
-      required: [id, estado, nombre, disciplina, formato, canchas, economia, creadoEn, modificadoEn, camposBloqueados]
+      required: [id, estado, nombre, disciplina, formato, canchas, checkinSinPresentes, economia, creadoEn, modificadoEn, camposBloqueados]
       description: Un torneo propio como lo ve su organizador en el asistente; lo que falta viene en null.
       properties:
         id: {$ref: '#/components/schemas/Id'}
@@ -2683,6 +2704,7 @@ components:
         nominaMaxima: {type: [integer, 'null']}
         checkinMinAntes: {type: [integer, 'null'], description: 'Ventana de check-in: cuántos minutos antes del cruce abre (HU-308); null sin configurar'}
         checkinDuracion: {type: [integer, 'null'], description: Cuántos minutos dura la ventana de check-in}
+        checkinSinPresentes: {$ref: '#/components/schemas/CriterioSinPresentes'}
         economia: {$ref: '#/components/schemas/EconomiaTorneo'}
         slug: {type: [string, 'null'], description: 'El enlace público (`GET /torneos/slug/{slug}`); se genera al publicar', examples: [apertura-f5-2026]}
         esquemaHash:
@@ -2804,7 +2826,7 @@ components:
         arbitro: {type: [string, 'null'], description: Nombre y apellido}
         cargadoPor: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}], description: El lado que cargó el resultado; el otro lo acepta u objeta}
         resultadoCargadoEn: {type: [string, 'null'], format: date-time}
-        objecionVenceEn: {type: [string, 'null'], format: date-time, description: Hasta cuándo el rival puede objetar el resultado}
+        objecionVenceEn: {type: [string, 'null'], format: date-time, description: 'Hasta cuándo el rival puede objetar el resultado. Null en un WALKOVER (HU-309): no tiene plazo ni se puede objetar'}
         miLado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}], description: El lado del que es capitán quien consulta}
         objecion: {oneOf: [{$ref: '#/components/schemas/ObjecionDetalle'}, {type: 'null'}], description: 'Si lo objetaron, con su laudo si ya se resolvió'}
         puedoResolver: {type: boolean, description: 'Con el partido OBJETADO, si quien consulta lo puede laudar'}
@@ -2884,6 +2906,15 @@ components:
       properties:
         minAntes: {type: integer, minimum: 1, description: Cuántos minutos antes del cruce abre la ventana}
         duracion: {type: integer, minimum: 1, description: 'Cuántos minutos dura; no más que `minAntes`'}
+        sinPresentes: {$ref: '#/components/schemas/CriterioSinPresentes'}
+    CriterioSinPresentes:
+      type: string
+      enum: [REPROGRAMAR, DESCALIFICAR_AMBOS]
+      description: >-
+        HU-309. Qué pasa si al vencer la ventana de check-in no se presentó ninguno de los dos: REPROGRAMAR (por
+        defecto) deja el partido sin fecha; DESCALIFICAR_AMBOS lo cierra sin ganador, salvo en la final o si el partido
+        hermano ya terminó sin ganador, donde se reprograma. En `CheckinTorneoRequest` es opcional: si no viene, queda
+        el vigente.
     CheckinPartido:
       type: object
       required: [estadoVentana]
@@ -2912,9 +2943,15 @@ components:
       required: [evento, fecha]
       description: Un registro de la auditoría del partido
       properties:
-        evento: {type: string, enum: [PROGRAMADO, CHECKIN, CARGADO, ACEPTADO, OBJETADO, CONFIRMADO_POR_PLAZO, LAUDO]}
+        evento:
+          type: string
+          enum: [PROGRAMADO, CHECKIN, CARGADO, ACEPTADO, OBJETADO, CONFIRMADO_POR_PLAZO, LAUDO, WALKOVER, SIN_PRESENTES, PASE_DIRECTO]
+          description: >-
+            Los de HU-309 los hace el sistema: WALKOVER (el lado ausente), SIN_PRESENTES (no se presentó ninguno) y
+            PASE_DIRECTO (el lado que pasa sin jugar). Como el comparativo es de un partido objetado, en la práctica
+            solo SIN_PRESENTES con REPROGRAMAR llega a verse: los otros cierran el partido sin objeción posible.
         usuario: {type: [string, 'null'], description: 'Nombre y apellido; null si lo hizo el sistema'}
-        lado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}]}
+        lado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}], description: 'En WALKOVER, el ausente; en PASE_DIRECTO, el que pasa'}
         equipo: {type: [string, 'null']}
         fecha: {type: string, format: date-time}
         decision: {oneOf: [{type: string, enum: [CONFIRMADO, CORREGIDO]}, {type: 'null'}], description: Solo en el laudo}

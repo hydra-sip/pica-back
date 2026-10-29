@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.realtime.listener;
 import java.math.BigDecimal;
 
 import com.hydra.pica.plataforma_pica.partido.dto.BracketTorneo;
+import com.hydra.pica.plataforma_pica.partido.event.PartidoSinPresentes;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoObjetado;
 import com.hydra.pica.plataforma_pica.partido.service.BracketService;
@@ -82,6 +83,24 @@ public class RealtimeEventListener {
                 false,
                 bracket,
                 pozo
+        );
+
+        realtimeNotifier.publicarTorneo(evento.torneoId(), mensaje);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onPartidoSinPresentes(PartidoSinPresentes evento) {
+        log.info("Partido {} sin presentes en torneo {}", evento.partidoId(), evento.torneoId());
+
+        EventoTorneoMessage mensaje = new EventoTorneoMessage(
+                "PARTIDO_SIN_PRESENTES",
+                evento.torneoId(),
+                obtenerEstadoTorneo(evento.torneoId()),
+                evento.partidoId(),
+                null,
+                false,
+                obtenerBracket(evento.torneoId()),
+                pozoTorneoService.calcularPozo(evento.torneoId())
         );
 
         realtimeNotifier.publicarTorneo(evento.torneoId(), mensaje);
