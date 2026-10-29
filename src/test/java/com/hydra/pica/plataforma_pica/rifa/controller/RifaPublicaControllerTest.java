@@ -66,7 +66,7 @@ class RifaPublicaControllerTest {
     void detalleSinLogin() throws Exception {
         when(rifaPublicaService.detalle(7L)).thenReturn(new RifaPublicaDetalle(7L, "Rifa del club", null,
                 EstadoRifa.EN_VENTA, new RifaPublicaDetalle.TorneoDeRifa(3L, "Copa abierta", "copa-abierta"), 20, 1,
-                100, new BigDecimal("500.00"), "ARS", null, VENTA_HASTA, null,
+                100, new BigDecimal("500.00"), new BigDecimal("10.00"), "ARS", null, VENTA_HASTA, null,
                 List.of(new PremioRifaDetalle(1, 80, "Una bici", null))));
 
         mockMvc.perform(get("/api/v1/rifas/publicas/7"))

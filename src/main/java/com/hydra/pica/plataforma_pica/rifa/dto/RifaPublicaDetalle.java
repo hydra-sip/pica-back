@@ -10,7 +10,8 @@ import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
 /**
- * Lo que ve de una rifa quien la va a comprar (HU-403), sin login. Sin datos del organizador ni de los
+ * Lo que ve de una rifa quien la va a comprar (HU-403), sin login, con los gastos administrativos que paga aparte
+ * ({@code pctGastosAdministrativos}, fijado al publicar). Sin datos del organizador ni de los
  * compradores. {@code torneo} es null si la rifa no tiene torneo; su {@code slug} lleva a la ficha pública.
  */
 public record RifaPublicaDetalle(
@@ -23,6 +24,7 @@ public record RifaPublicaDetalle(
         int numeroDesde,
         int numeroHasta,
         BigDecimal precioNumero,
+        BigDecimal pctGastosAdministrativos,
         String moneda,
         Instant ventaDesde,
         Instant ventaHasta,
@@ -37,7 +39,7 @@ public record RifaPublicaDetalle(
         return new RifaPublicaDetalle(rifa.getId(), rifa.getTitulo(), rifa.getDescripcion(), rifa.getEstado(),
                 torneo == null ? null : new TorneoDeRifa(torneo.getId(), torneo.getNombre(), torneo.getSlug()),
                 rifa.getPctDestinadoTorneo(), rifa.getNumeroDesde(), rifa.getNumeroHasta(), rifa.getPrecioNumero(),
-                rifa.getMoneda(), rifa.getVentaDesde(), rifa.getVentaHasta(), rifa.getSorteadaEn(),
+                rifa.getPctGastosAdministrativos(), rifa.getMoneda(), rifa.getVentaDesde(), rifa.getVentaHasta(), rifa.getSorteadaEn(),
                 premios.stream().map(PremioRifaDetalle::de).toList());
     }
 }
