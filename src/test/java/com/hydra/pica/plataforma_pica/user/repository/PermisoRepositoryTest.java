@@ -51,18 +51,18 @@ class PermisoRepositoryTest {
                         "USUARIO_VER", "USUARIO_CREAR", "USUARIO_EDITAR", "USUARIO_ELIMINAR",
                         "PERSONA_VER", "PERSONA_CREAR", "PERSONA_EDITAR", "PERSONA_ELIMINAR",
                         "ROL_VER", "ROL_CREAR", "ROL_EDITAR", "ROL_ELIMINAR", "ROL_ASIGNAR",
-                        "RIFA_GESTIONAR", "INSCRIPCION_GESTIONAR", "TORNEO_GESTIONAR");
+                        "RIFA_GESTIONAR", "INSCRIPCION_GESTIONAR", "TORNEO_GESTIONAR", "RIFA_ADMINISTRAR");
         assertThat(permisoRepository.findByCodigo("ROL_ASIGNAR")).get()
                 .extracting(Permiso::getModulo).isEqualTo(Modulo.ROLES);
     }
 
     @Test
     void superUsuarioTieneTodoYAdministradorTodoMenosElCatalogoDeRoles() {
-        assertThat(rolRepository.findByNombre("SUPER_USUARIO").orElseThrow().getPermisos()).hasSize(16);
+        assertThat(rolRepository.findByNombre("SUPER_USUARIO").orElseThrow().getPermisos()).hasSize(17);
 
         assertThat(rolRepository.findByNombre("ADMINISTRADOR").orElseThrow().getPermisos())
                 .extracting(Permiso::getCodigo)
-                .hasSize(13)
+                .hasSize(14)
                 .contains("ROL_VER", "ROL_ASIGNAR")
                 .doesNotContain("ROL_CREAR", "ROL_EDITAR", "ROL_ELIMINAR");
     }
@@ -99,7 +99,7 @@ class PermisoRepositoryTest {
         Usuario usuario = usuarioCon("ADMINISTRADOR", "ARBITRO");
 
         assertThat(permisoRepository.findCodigosByUsuarioId(usuario.getId()))
-                .hasSize(13)
+                .hasSize(14)
                 .contains("USUARIO_VER", "PERSONA_ELIMINAR", "ROL_ASIGNAR")
                 .doesNotContain("ROL_EDITAR");
         assertThat(permisoRepository.findCodigosByUsuarioId(usuarioCon("PARTICIPANTE").getId()))

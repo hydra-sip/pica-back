@@ -949,6 +949,36 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  # --- Tickets -----------------------------------------------------------------
+  # El ticket digital de una compra (HU-404). Se emite al comprar (POST /rifas/{id}/comprar); una reserva no tiene
+  # ticket. Lo ve su comprador y quien tiene RIFA_ADMINISTRAR (ADMINISTRADOR y SUPER_USUARIO).
+
+  /api/v1/tickets/mis-tickets:
+    get:
+      tags: [Rifas]
+      summary: Mis tickets
+      x-jira: PICA-224
+      x-owner: Laura
+      description: Los tickets que compró el usuario logueado, el más nuevo primero. Sin paginar.
+      responses:
+        '200': {description: Lista, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/TicketDetalle'}}}}}
+        '401': {$ref: '#/components/responses/Error'}
+
+  /api/v1/tickets/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Rifas]
+      summary: Detalle de un ticket
+      x-jira: PICA-224
+      x-owner: Laura
+      description: >-
+        El ticket con la numeración y el comprobante. 404 `TICKET_NO_ENCONTRADO` si no existe o si no es del usuario
+        y no tiene RIFA_ADMINISTRAR.
+      responses:
+        '200': {description: El ticket, content: {application/json: {schema: {$ref: '#/components/schemas/TicketDetalle'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
   # --- Equipos -----------------------------------------------------------------
 
   /api/v1/equipos/mios:
@@ -2326,11 +2356,11 @@ components:
     Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208) y TORNEO_GESTIONAR de V18 (PICA-199). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199) y RIFA_ADMINISTRAR de V30 (PICA-224). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
-             RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR]
+             RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -2387,7 +2417,7 @@ components:
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
-             OBJECION_NO_ENCONTRADA,
+             OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
@@ -3578,6 +3608,30 @@ components:
         compradoEn: {type: string, format: date-time}
         pozoRifa: {type: number, description: Lo vendido hasta ahora}
         pozoTorneo: {type: [number, 'null'], description: 'El pozo del torneo de ahora; sin torneo, null'}
+    TicketDetalle:
+      type: object
+      required: [id, codigo, rifaId, rifaTitulo, compradorId, compradorNombre, compradorUsername, numeros, monto,
+                 comision, moneda, creadoEn, rifaEstado, esComprador, ventanaReclamoAbierta]
+      description: El ticket digital de una compra (PICA-224). Total pagado = `monto` + `comision`.
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        codigo: {type: string, examples: [R7-4F2K9Q]}
+        rifaId: {$ref: '#/components/schemas/Id'}
+        rifaTitulo: {type: string}
+        torneoId: {type: [integer, 'null'], format: int64}
+        torneoNombre: {type: [string, 'null']}
+        compradorId: {$ref: '#/components/schemas/Id'}
+        compradorNombre: {type: string, description: Nombres y apellidos}
+        compradorUsername: {type: string}
+        numeros: {type: array, items: {type: integer}, description: En orden}
+        monto: {type: number, description: Precio de los números; fue al pozo de la rifa}
+        comision: {type: number, description: Gastos administrativos}
+        moneda: {type: string, examples: [ARS]}
+        creadoEn: {type: string, format: date-time, description: Cuándo se compró}
+        rifaEstado: {$ref: '#/components/schemas/EstadoRifa'}
+        sorteadaEn: {type: [string, 'null'], format: date-time, description: Fecha programada del sorteo}
+        esComprador: {type: boolean, description: 'False si lo mira un administrador'}
+        ventanaReclamoAbierta: {type: boolean, description: 'De los reclamos (HU-506); por ahora false'}
     NumeroOcupado:
       type: object
       required: [numero, estado]
