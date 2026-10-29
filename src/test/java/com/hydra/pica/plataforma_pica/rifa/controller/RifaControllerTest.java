@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -264,6 +265,31 @@ class RifaControllerTest {
 
     @Test
     @WithMockUser(authorities = "RIFA_GESTIONAR")
+    @DisplayName("POST /api/v1/rifas/{id}/volver-a-borrador con números vendidos responde 409 RIFA_CON_VENTAS")
+    void volverABorradorConVentas() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(rifaService.volverABorrador(ORGANIZADOR, 7L)).thenThrow(
+                new ConflictoException(CodigoError.RIFA_CON_VENTAS, "Tiene ventas").con("numerosVendidos", 3L));
+
+        mockMvc.perform(post("/api/v1/rifas/7/volver-a-borrador"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("RIFA_CON_VENTAS"))
+                .andExpect(jsonPath("$.numerosVendidos").value(3));
+    }
+
+    @Test
+    @WithMockUser(authorities = "RIFA_GESTIONAR")
+    @DisplayName("DELETE /api/v1/rifas/{id} da de baja la rifa del usuario de la sesión y responde 204")
+    void elimina() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+
+        mockMvc.perform(delete("/api/v1/rifas/7"))
+                .andExpect(status().isNoContent());
+        verify(rifaService).eliminar(ORGANIZADOR, 7L);
+    }
+
+    @Test
+    @WithMockUser(authorities = "RIFA_GESTIONAR")
     @DisplayName("PUT /api/v1/rifas/{id} de una rifa ajena responde 404 RIFA_NO_ENCONTRADA")
     void modificarAjena() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
@@ -298,7 +324,7 @@ class RifaControllerTest {
     private static RifaDetalle detalle() {
         return new RifaDetalle(7L, "Rifa del club", null, 3L, "Copa del club", 0, EstadoRifa.BORRADOR, 1, 100,
                 new BigDecimal("500.00"),
-                "ARS", null, null, null, null, null, List.of(new PremioRifaDetalle(1, 100, "Una bici", null)),
+                "ARS", null, null, null, null, null, List.of(new PremioRifaDetalle(1, 100, "Una bici", null)), 0,
                 CREADA, CREADA);
     }
 }

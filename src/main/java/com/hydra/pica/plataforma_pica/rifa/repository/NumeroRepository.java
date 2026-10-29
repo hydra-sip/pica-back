@@ -44,6 +44,15 @@ public interface NumeroRepository extends JpaRepository<Numero, NumeroId> {
     int liberarVencidas(@Param("rifaId") Long rifaId, @Param("numeros") Collection<Integer> numeros,
             @Param("vencidasDesde") Instant vencidasDesde);
 
+    /** Las reservas hechas después de {@code desde}: las vigentes, si {@code desde} es ahora menos la duración. */
+    long countByIdRifaIdAndEstadoAndCreadoEnAfter(Long rifaId, EstadoNumero estado, Instant desde);
+
+    /** Todas las reservas de la rifa, al volverla a borrador o eliminarla (PICA-287). */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("DELETE FROM Numero n WHERE n.id.rifaId = :rifaId"
+            + " AND n.estado = com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero.RESERVADO")
+    int borrarReservas(@Param("rifaId") Long rifaId);
+
     /** Las reservas del usuario en la rifa, vigentes o no: reservar otra vez o cancelar las reemplaza. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("DELETE FROM Numero n WHERE n.id.rifaId = :rifaId AND n.reservadoPor.id = :usuarioId"

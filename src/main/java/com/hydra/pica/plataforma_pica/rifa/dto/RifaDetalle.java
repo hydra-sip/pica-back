@@ -12,6 +12,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 /**
  * Una rifa con sus premios, en orden de puesto. {@code fechaSorteo} es la programada (columna sorteada_en).
  * Sin torneo, {@code torneoId} y {@code torneoNombre} son null y {@code pctDestinadoTorneo} es 0.
+ * {@code numerosVendidos}: mientras sea 0, la rifa se puede volver a borrador o eliminar (PICA-287).
  */
 public record RifaDetalle(
         Long id,
@@ -31,10 +32,11 @@ public record RifaDetalle(
         Instant terminosAceptadosEn,
         Instant loteriaDeclaradaEn,
         List<PremioRifaDetalle> premios,
+        long numerosVendidos,
         Instant creadoEn,
         Instant modificadoEn) {
 
-    public static RifaDetalle de(Rifa rifa, List<PremioRifa> premios) {
+    public static RifaDetalle de(Rifa rifa, List<PremioRifa> premios, long numerosVendidos) {
         Torneo torneo = rifa.getTorneo();
         return new RifaDetalle(rifa.getId(), rifa.getTitulo(), rifa.getDescripcion(),
                 torneo == null ? null : torneo.getId(), torneo == null ? null : torneo.getNombre(),
@@ -42,6 +44,7 @@ public record RifaDetalle(
                 rifa.getNumeroDesde(), rifa.getNumeroHasta(), rifa.getPrecioNumero(), rifa.getMoneda(),
                 rifa.getVentaDesde(), rifa.getVentaHasta(), rifa.getSorteadaEn(), rifa.getTerminosAceptadosEn(),
                 rifa.getLoteriaDeclaradaEn(),
-                premios.stream().map(PremioRifaDetalle::de).toList(), rifa.getCreadoEn(), rifa.getModificadoEn());
+                premios.stream().map(PremioRifaDetalle::de).toList(), numerosVendidos, rifa.getCreadoEn(),
+                rifa.getModificadoEn());
     }
 }

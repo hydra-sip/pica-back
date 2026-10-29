@@ -6,12 +6,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import com.hydra.pica.plataforma_pica.common.config.RifaConfig.RifaProperties;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
+import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.PremioRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
@@ -20,6 +22,7 @@ import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaResumen;
+import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.PremioRifaRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
@@ -74,6 +77,8 @@ public class RifaService {
     private final UsuarioRepository usuarioRepository;
     private final TorneoRepository torneoRepository;
     private final ParametrosPlataforma parametrosPlataforma;
+    private final NumeroRepository numeroRepository;
+    private final RifaProperties rifaProperties;
 
     /** La más nueva primero; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
@@ -135,9 +140,9 @@ public class RifaService {
      * insertan al elegirlos (V13).
      *
      * Si le falta algo para venderse, 409 RIFA_INCOMPLETA con todo lo que falta en {@code faltantes}
-     * (y la suma en {@code sumaPremios}). Una venta que ya empezó no se ajusta sola: el organizador
-     * corrige {@code ventaDesde}. Con torneo, el torneo tiene que estar publicado y la venta dentro de
-     * sus fechas: en BORRADOR pudieron faltar o cambiar.
+     * (y la suma en {@code sumaPremios}). Un inicio de venta pasado se acepta y la venta arranca al
+     * publicar (PICA-287); un fin pasado no. Con torneo, el torneo tiene que estar publicado y la venta
+     * dentro de sus fechas: en BORRADOR pudieron faltar o cambiar.
      */
     @Transactional
     public RifaDetalle publicar(Long organizadorId, Long id) {
@@ -150,9 +155,8 @@ public class RifaService {
         List<FaltantePublicacion> faltantes = new ArrayList<>();
         if (!conVentana) {
             faltantes.add(FaltantePublicacion.VENTANA);
-        } else if (rifa.getVentaDesde().isBefore(ahora)) {
-            // También cubre una venta que ya terminó: si ventaHasta pasó, ventaDesde (anterior) también.
-            faltantes.add(FaltantePublicacion.VENTA_YA_EMPEZO);
+        } else if (!rifa.getVentaHasta().isAfter(ahora)) {
+            faltantes.add(FaltantePublicacion.VENTA_TERMINADA);
         }
         if (rifa.getSorteadaEn() == null) {
             faltantes.add(FaltantePublicacion.FECHA_SORTEO);
@@ -181,7 +185,66 @@ public class RifaService {
         // los gastos que paga el comprador quedan fijos desde acá, aunque después cambie el parámetro (V27)
         rifa.setPctGastosAdministrativos(parametrosPlataforma.gastosAdministrativos());
         rifa.setEstado(EstadoRifa.EN_VENTA);
-        return RifaDetalle.de(rifaRepository.saveAndFlush(rifa), premios);
+        return RifaDetalle.de(rifaRepository.saveAndFlush(rifa), premios, 0);
+    }
+
+    /**
+     * Vuelve una rifa EN_VENTA a BORRADOR para modificarla (PICA-287), aunque la venta ya haya empezado,
+     * mientras nadie haya comprado ni esté pagando ({@link #sinCompradores}). Se borran la aceptación de
+     * los términos, la declaración de la lotería y los gastos fijados: al publicar de nuevo se vuelven a
+     * registrar.
+     */
+    @Transactional
+    public RifaDetalle volverABorrador(Long organizadorId, Long id) {
+        Rifa rifa = buscarPropia(organizadorId, id);
+        if (rifa.getEstado() != EstadoRifa.EN_VENTA) {
+            throw new ConflictoException(CodigoError.RIFA_NO_EDITABLE,
+                    "La rifa " + id + " está " + rifa.getEstado() + ": solo vuelve a borrador una EN_VENTA");
+        }
+        sinCompradores(rifa);
+
+        rifa.setTerminosAceptadosEn(null);
+        rifa.setLoteriaDeclaradaEn(null);
+        rifa.setPctGastosAdministrativos(null);
+        rifa.setEstado(EstadoRifa.BORRADOR);
+        return detalle(rifaRepository.saveAndFlush(rifa));
+    }
+
+    /**
+     * Baja lógica de una rifa en BORRADOR o EN_VENTA sin compradores (PICA-287): deja de aparecer en todos
+     * lados y su torneo queda libre para otra rifa (V29).
+     */
+    @Transactional
+    public void eliminar(Long organizadorId, Long id) {
+        Rifa rifa = buscarPropia(organizadorId, id);
+        if (rifa.getEstado() != EstadoRifa.BORRADOR && rifa.getEstado() != EstadoRifa.EN_VENTA) {
+            throw new ConflictoException(CodigoError.RIFA_NO_EDITABLE,
+                    "La rifa " + id + " está " + rifa.getEstado() + ": solo se elimina en BORRADOR o EN_VENTA");
+        }
+        sinCompradores(rifa);
+
+        rifa.setEliminadoEn(Instant.now());
+        rifaRepository.saveAndFlush(rifa);
+    }
+
+    /**
+     * Ningún número vendido ni reservado por alguien que está pagando; las reservas vencidas no cuentan y
+     * se borran.
+     */
+    private void sinCompradores(Rifa rifa) {
+        long vendidos = numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO);
+        if (vendidos > 0) {
+            throw new ConflictoException(CodigoError.RIFA_CON_VENTAS,
+                    "La rifa " + rifa.getId() + " tiene " + vendidos + " números vendidos")
+                    .con("numerosVendidos", vendidos);
+        }
+        Instant vencidasDesde = Instant.now().minus(rifaProperties.duracionReserva());
+        if (numeroRepository.countByIdRifaIdAndEstadoAndCreadoEnAfter(rifa.getId(), EstadoNumero.RESERVADO,
+                vencidasDesde) > 0) {
+            throw new ConflictoException(CodigoError.RIFA_CON_RESERVAS,
+                    "Alguien está pagando números de la rifa " + rifa.getId());
+        }
+        numeroRepository.borrarReservas(rifa.getId());
     }
 
     private Rifa buscarPropia(Long organizadorId, Long id) {
@@ -238,7 +301,8 @@ public class RifaService {
     }
 
     private RifaDetalle detalle(Rifa rifa) {
-        return RifaDetalle.de(rifa, premioRifaRepository.buscarPorRifa(rifa.getId()));
+        return RifaDetalle.de(rifa, premioRifaRepository.buscarPorRifa(rifa.getId()),
+                numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO));
     }
 
     // --- validaciones entre campos ------------------------------------------
