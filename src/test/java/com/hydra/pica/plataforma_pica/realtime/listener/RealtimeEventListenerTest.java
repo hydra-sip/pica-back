@@ -203,4 +203,29 @@ class RealtimeEventListenerTest {
         assertThat(captor.getValue()).extracting(EventoTorneoMessage::tipo, EventoTorneoMessage::partidoId,
                 EventoTorneoMessage::bracket).containsExactly("PARTIDO_SIN_PRESENTES", 10L, bracket);
     }
+
+    @Test
+    @DisplayName("Reclamo registrado de rifa publica estado EN_REVISION a /topic/rifas/{id}")
+    void reclamoRegistradoPublicaEnTopicRifas() {
+        Rifa rifa = new Rifa();
+        rifa.setEstado(EstadoRifa.EN_REVISION);
+        rifa.setPrecioNumero(new BigDecimal("100.00"));
+        when(rifaRepository.findById(5L)).thenReturn(Optional.of(rifa));
+        when(numeroRepository.countByIdRifaIdAndEstado(5L, EstadoNumero.VENDIDO)).thenReturn(10L);
+
+        com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaRegistrado evento =
+                new com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaRegistrado(
+                        5L, 1L, 42L, "Error en el cálculo"
+                );
+        listener.onReclamoRifaRegistrado(evento);
+
+        ArgumentCaptor<EventoRifaMessage> captor = ArgumentCaptor.forClass(EventoRifaMessage.class);
+        verify(realtimeNotifier).publicarRifa(eq(5L), captor.capture());
+
+        EventoRifaMessage msg = captor.getValue();
+        assertThat(msg.tipo()).isEqualTo("RECLAMO_REGISTRADO");
+        assertThat(msg.rifaId()).isEqualTo(5L);
+        assertThat(msg.estado()).isEqualTo(EstadoRifa.EN_REVISION);
+        assertThat(msg.pozoRifa()).isEqualByComparingTo("1000.00");
+    }
 }

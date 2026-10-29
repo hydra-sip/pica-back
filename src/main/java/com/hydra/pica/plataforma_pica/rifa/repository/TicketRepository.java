@@ -13,4 +13,8 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
 
     /** Los tickets del comprador, el más nuevo primero (HU-404). */
     List<Ticket> findByCompradorIdOrderByIdDesc(Long compradorId);
+
+    boolean existsByRifaIdAndCompradorId(Long rifaId, Long compradorId);
+
 }
+
