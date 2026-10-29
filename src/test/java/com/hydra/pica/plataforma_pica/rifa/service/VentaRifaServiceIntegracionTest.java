@@ -102,7 +102,9 @@ class VentaRifaServiceIntegracionTest {
         assertThat(ticket.getComprador().getId()).isEqualTo(comprador);
         assertThat(ticket.getMonto()).isEqualByComparingTo("1000");
         assertThat(ticket.getComision()).isEqualByComparingTo("100");
-        assertThat(ticket.getMovimiento().getMonto()).isEqualByComparingTo("1100");
+        assertThat(ticket.getMovimiento().getMonto()).isEqualByComparingTo("1000");
+        assertThat(jdbc.queryForObject("SELECT monto FROM movimiento WHERE tipo = 'COMISION' AND referencia_externa = ?",
+                BigDecimal.class, "sim-gastos-compra-" + ticket.getMovimiento().getId())).isEqualByComparingTo("100");
         assertThat(rifaPublicaService.numerosOcupados(rifa)).extracting(NumeroOcupado::numero, NumeroOcupado::estado)
                 .containsExactly(tuple(5, EstadoNumero.VENDIDO), tuple(6, EstadoNumero.VENDIDO));
     }
