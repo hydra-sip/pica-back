@@ -150,6 +150,19 @@ class TicketServiceIntegracionTest {
                 .containsExactly(segunda.ticketId(), primera.ticketId());
     }
 
+    // --- la ventana de reclamo (HU-506) ------------------------------------------------------------
+
+    @Test
+    void laVentanaDeReclamoQuedaAbiertaLas48HorasDespuesDelSorteo() {
+        VentaRifaResultado compra = comprar(List.of(50));
+
+        sorteadaHace(47);
+        assertThat(ticketService.detalle(comprador, compra.ticketId()).ventanaReclamoAbierta()).isTrue();
+
+        sorteadaHace(49);
+        assertThat(ticketService.detalle(comprador, compra.ticketId()).ventanaReclamoAbierta()).isFalse();
+    }
+
     // --- ayudas -------------------------------------------------------------------------------------
 
     private VentaRifaResultado comprar(List<Integer> numeros) {
@@ -170,6 +183,13 @@ class TicketServiceIntegracionTest {
         jdbc.update("UPDATE rifa SET venta_desde = now() - interval '1 hour' WHERE id = ?", creada.id());
         entityManager.clear();
         return creada.id();
+    }
+
+    /** Todavía no hay sorteo de rifas (PICA-265): se marca a mano con el momento en que se obtuvo la semilla. */
+    private void sorteadaHace(int horas) {
+        jdbc.update("UPDATE rifa SET estado = 'SORTEADA', semilla_obtenida_en = now() - make_interval(hours => ?) "
+                + "WHERE id = ?", horas, rifa);
+        entityManager.clear();
     }
 
     private static void assertThatNoEncontrado(ThrowingCallable llamada) {

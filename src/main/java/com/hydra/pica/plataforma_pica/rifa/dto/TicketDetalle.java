@@ -12,7 +12,8 @@ import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 /**
  * El ticket digital de una compra (HU-404): la numeración y el comprobante. {@code monto} es lo que fue al pozo de la
  * rifa y {@code comision} los gastos administrativos; el total pagado es la suma. {@code sorteadaEn} es la fecha
- * programada del sorteo. {@code ventanaReclamoAbierta} es de los reclamos (HU-506) y por ahora va en false.
+ * programada del sorteo. {@code ventanaReclamoAbierta}: si ahora se puede reclamar el resultado (HU-506), ver
+ * {@code ReclamoRifaService#ventanaAbierta}.
  */
 public record TicketDetalle(
         Long id,
@@ -35,7 +36,8 @@ public record TicketDetalle(
         boolean ventanaReclamoAbierta) {
 
     /** {@code usuarioId}: quien lo pide; un administrador ve el ticket con {@code esComprador} en false. */
-    public static TicketDetalle de(Ticket ticket, List<Integer> numeros, Long usuarioId) {
+    public static TicketDetalle de(Ticket ticket, List<Integer> numeros, Long usuarioId,
+            boolean ventanaReclamoAbierta) {
         Rifa rifa = ticket.getRifa();
         Usuario comprador = ticket.getComprador();
         return new TicketDetalle(ticket.getId(), ticket.getCodigo(), rifa.getId(), rifa.getTitulo(),
@@ -44,6 +46,6 @@ public record TicketDetalle(
                 comprador.getId(), comprador.getPersona().getNombres() + " " + comprador.getPersona().getApellidos(),
                 comprador.getUsername(), numeros, ticket.getMonto(), ticket.getComision(), ticket.getMoneda(),
                 ticket.getCreadoEn(), rifa.getEstado(), rifa.getSorteadaEn(), comprador.getId().equals(usuarioId),
-                false);
+                ventanaReclamoAbierta);
     }
 }

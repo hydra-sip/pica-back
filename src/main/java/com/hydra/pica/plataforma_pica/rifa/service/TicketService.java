@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Instant;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -35,15 +36,20 @@ public class TicketService {
                         || currentUserProvider.getPermisos().contains(PERMISO_ADMINISTRAR))
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.TICKET_NO_ENCONTRADO,
                         "No existe el ticket " + id));
-        return TicketDetalle.de(ticket, numeros(ticket), usuarioId);
+        return detalle(ticket, usuarioId);
     }
 
     /** Los del usuario, el más nuevo primero. */
     @Transactional(readOnly = true)
     public List<TicketDetalle> misTickets(Long usuarioId) {
         return ticketRepository.findByCompradorIdOrderByIdDesc(usuarioId).stream()
-                .map(ticket -> TicketDetalle.de(ticket, numeros(ticket), usuarioId))
+                .map(ticket -> detalle(ticket, usuarioId))
                 .toList();
+    }
+
+    private TicketDetalle detalle(Ticket ticket, Long usuarioId) {
+        return TicketDetalle.de(ticket, numeros(ticket), usuarioId,
+                ReclamoRifaService.ventanaAbierta(ticket.getRifa(), Instant.now()));
     }
 
     private List<Integer> numeros(Ticket ticket) {

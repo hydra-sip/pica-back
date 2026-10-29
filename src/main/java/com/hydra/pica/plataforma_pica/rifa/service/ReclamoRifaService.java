@@ -47,6 +47,19 @@ public class ReclamoRifaService {
     private final UsuarioRepository usuarioRepository;
     private final ApplicationEventPublisher eventPublisher;
 
+    /** Hasta cuándo se puede reclamar: 48 h desde que se sorteó de verdad o, si falta, desde la fecha programada. */
+    public static Instant plazoReclamo(Rifa rifa) {
+        Instant finalizadaEn = rifa.getSemillaObtenidaEn() != null ? rifa.getSemillaObtenidaEn() : rifa.getSorteadaEn();
+        return finalizadaEn == null ? null : finalizadaEn.plus(HORAS_LIMITE_RECLAMO, ChronoUnit.HOURS);
+    }
+
+    /** Si un comprador puede reclamar ahora: la rifa sorteada (o ya en revisión por otro reclamo) y dentro del plazo. */
+    public static boolean ventanaAbierta(Rifa rifa, Instant ahora) {
+        Instant plazo = plazoReclamo(rifa);
+        return (rifa.getEstado() == EstadoRifa.SORTEADA || rifa.getEstado() == EstadoRifa.EN_REVISION)
+                && plazo != null && !ahora.isAfter(plazo);
+    }
+
     @Transactional
     public ReclamoRifaDetalle registrarReclamo(Long usuarioId, Long rifaId, ReclamoRifaRequest request) {
         validarRequest(request);
@@ -77,14 +90,13 @@ public class ReclamoRifaService {
         }
 
         // Criterio 1: Comprobar ventana de 48 horas posteriores a la finalización
-        Instant finalizadaEn = rifa.getSemillaObtenidaEn() != null ? rifa.getSemillaObtenidaEn() : rifa.getSorteadaEn();
-        if (finalizadaEn == null) {
+        Instant plazoLimite = plazoReclamo(rifa);
+        if (plazoLimite == null) {
             throw new ConflictoException(CodigoError.RIFA_NO_SORTEADA,
                     "La rifa " + rifaId + " no registra fecha de finalización");
         }
 
         Instant ahora = Instant.now();
-        Instant plazoLimite = finalizadaEn.plus(HORAS_LIMITE_RECLAMO, ChronoUnit.HOURS);
         if (ahora.isAfter(plazoLimite)) {
             throw new ConflictoException(CodigoError.PLAZO_RECLAMO_VENCIDO,
                     "Venció el plazo de 48 horas para reclamar el resultado de la rifa " + rifaId);
