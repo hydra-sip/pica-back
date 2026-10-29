@@ -24,6 +24,8 @@ public interface PronosticoRepository extends JpaRepository<Pronostico, Pronosti
      * Agregación de estadísticas de pronósticos por usuario (HU-307, T307-1),
      * filtrando torneos vigentes (no eliminados y fuera de borrador), ordenados
      * por puntaje acumulado y primer pronóstico registrado (orden de carga).
+     * El {@code eliminadoEn is null} del usuario va escrito a propósito: la consulta solo usa
+     * {@code id.usuarioId}, y sin el join los usuarios dados de baja seguían ocupando puestos.
      */
     @Query("""
             select new com.hydra.pica.plataforma_pica.partido.dto.EstadisticaPronosticosUsuario(
@@ -34,7 +36,9 @@ public interface PronosticoRepository extends JpaRepository<Pronostico, Pronosti
                 min(p.creadoEn)
             )
             from Pronostico p
-            where p.partido.torneo.eliminadoEn is null
+              join p.usuario usuario
+            where usuario.eliminadoEn is null
+              and p.partido.torneo.eliminadoEn is null
               and p.partido.torneo.estado != com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo.BORRADOR
               and (:torneoId is null or p.partido.torneo.id = :torneoId)
             group by p.id.usuarioId
