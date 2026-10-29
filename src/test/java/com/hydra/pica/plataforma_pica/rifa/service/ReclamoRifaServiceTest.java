@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
@@ -201,5 +202,58 @@ class ReclamoRifaServiceTest {
                 55L, 999L, new ReclamoRifaRequest("Rifa que no existe")))
                 .isInstanceOf(NoEncontradoException.class)
                 .hasMessageContaining("No existe la rifa");
+    }
+
+    @Test
+    @DisplayName("Reclamar con un reclamo propio pendiente en la misma rifa indica error RECLAMO_DUPLICADO")
+    void reclamarConReclamoPendienteLanzaConflicto() {
+        when(usuarioRepository.findById(55L)).thenReturn(Optional.of(comprador));
+        when(rifaRepository.buscarBloqueado(100L)).thenReturn(Optional.of(rifa));
+        when(ticketRepository.existsByRifaIdAndCompradorId(100L, 55L)).thenReturn(true);
+        when(reclamoRifaRepository.existsByRifaIdAndUsuarioIdAndEstado(100L, 55L, EstadoReclamo.PENDIENTE))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> reclamoRifaService.registrarReclamo(
+                55L, 100L, new ReclamoRifaRequest("Otra vez el mismo reclamo")))
+                .isInstanceOf(ConflictoException.class)
+                .matches(e -> ((ConflictoException) e).getCodigo() == CodigoError.RECLAMO_DUPLICADO);
+
+        verify(reclamoRifaRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("El organizador ve todos los reclamos de la rifa y un comprador, solo los suyos")
+    void listarMuestraTodosAlOrganizadorYLosPropiosAlComprador() {
+        Usuario otroComprador = new Usuario();
+        ReflectionTestUtils.setField(otroComprador, "id", 77L);
+        when(rifaRepository.findByIdAndEliminadoEnIsNull(100L)).thenReturn(Optional.of(rifa));
+        when(reclamoRifaRepository.findByRifaIdOrderByCreadoEnDesc(100L))
+                .thenReturn(List.of(reclamo(1L, comprador), reclamo(2L, otroComprador)));
+
+        assertThat(reclamoRifaService.listarPorRifa(10L, 100L)).extracting(ReclamoRifaDetalle::id)
+                .containsExactly(1L, 2L);
+        assertThat(reclamoRifaService.listarPorRifa(55L, 100L)).extracting(ReclamoRifaDetalle::id)
+                .containsExactly(1L);
+    }
+
+    @Test
+    @DisplayName("Listar los reclamos de una rifa inexistente lanza 404 RIFA_NO_ENCONTRADA")
+    void listarRifaInexistenteLanza404() {
+        when(rifaRepository.findByIdAndEliminadoEnIsNull(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> reclamoRifaService.listarPorRifa(55L, 999L))
+                .isInstanceOf(NoEncontradoException.class);
+    }
+
+    private ReclamoRifa reclamo(Long id, Usuario usuario) {
+        ReclamoRifa reclamo = new ReclamoRifa();
+        ReflectionTestUtils.setField(reclamo, "id", id);
+        reclamo.setRifa(rifa);
+        reclamo.setUsuario(usuario);
+        reclamo.setMotivo("Motivo " + id);
+        reclamo.setEstado(EstadoReclamo.PENDIENTE);
+        reclamo.setCreadoEn(Instant.now());
+        return reclamo;
     }
 }

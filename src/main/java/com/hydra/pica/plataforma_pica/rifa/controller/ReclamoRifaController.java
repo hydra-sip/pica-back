@@ -51,11 +51,13 @@ public class ReclamoRifaController {
     }
 
     /**
-     * Lista los reclamos registrados para una rifa.
+     * Lista los reclamos de una rifa: el organizador ve todos; cualquier otro usuario, solo los suyos.
      */
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public List<ReclamoRifaDetalle> listarReclamos(@PathVariable Long id) {
-        return reclamoRifaService.listarPorRifa(id);
+        Long usuarioId = currentUserProvider.getCurrentUserId()
+                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+        return reclamoRifaService.listarPorRifa(usuarioId, id);
     }
 }

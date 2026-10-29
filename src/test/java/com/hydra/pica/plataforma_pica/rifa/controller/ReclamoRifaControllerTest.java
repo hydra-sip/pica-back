@@ -162,7 +162,8 @@ class ReclamoRifaControllerTest {
         ReclamoRifaDetalle r1 = new ReclamoRifaDetalle(
                 1L, RIFA_ID, USUARIO_ID, "Motivo 1", EstadoReclamo.PENDIENTE, null, null, null, Instant.now()
         );
-        when(reclamoRifaService.listarPorRifa(RIFA_ID)).thenReturn(List.of(r1));
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(USUARIO_ID));
+        when(reclamoRifaService.listarPorRifa(USUARIO_ID, RIFA_ID)).thenReturn(List.of(r1));
 
         mockMvc.perform(get("/api/v1/rifas/10/reclamos"))
                 .andExpect(status().isOk())

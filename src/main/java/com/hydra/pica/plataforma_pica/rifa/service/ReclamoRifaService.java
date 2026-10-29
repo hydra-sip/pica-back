@@ -90,6 +90,11 @@ public class ReclamoRifaService {
                     "Venció el plazo de 48 horas para reclamar el resultado de la rifa " + rifaId);
         }
 
+        if (reclamoRifaRepository.existsByRifaIdAndUsuarioIdAndEstado(rifaId, usuarioId, EstadoReclamo.PENDIENTE)) {
+            throw new ConflictoException(CodigoError.RECLAMO_DUPLICADO,
+                    "El usuario ya tiene un reclamo pendiente en la rifa " + rifaId);
+        }
+
         // Criterio 3: Registrar el reclamo en estado PENDIENTE
         ReclamoRifa reclamo = new ReclamoRifa();
         reclamo.setRifa(rifa);
@@ -113,9 +118,15 @@ public class ReclamoRifaService {
         return toDetalle(reclamo);
     }
 
+    /** El organizador ve todos los reclamos de la rifa; cualquier otro usuario, solo los suyos. */
     @Transactional(readOnly = true)
-    public List<ReclamoRifaDetalle> listarPorRifa(Long rifaId) {
+    public List<ReclamoRifaDetalle> listarPorRifa(Long usuarioId, Long rifaId) {
+        Rifa rifa = rifaRepository.findByIdAndEliminadoEnIsNull(rifaId)
+                .orElseThrow(() -> new NoEncontradoException(CodigoError.RIFA_NO_ENCONTRADA,
+                        "No existe la rifa " + rifaId));
+        boolean esOrganizador = rifa.getOrganizador() != null && usuarioId.equals(rifa.getOrganizador().getId());
         return reclamoRifaRepository.findByRifaIdOrderByCreadoEnDesc(rifaId).stream()
+                .filter(reclamo -> esOrganizador || usuarioId.equals(reclamo.getUsuario().getId()))
                 .map(this::toDetalle)
                 .toList();
     }

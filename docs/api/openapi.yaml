@@ -963,6 +963,7 @@ paths:
         404 `RIFA_NO_ENCONTRADA` si la rifa no existe o fue eliminada.
         409 `RIFA_NO_SORTEADA` si la rifa aún no fue sorteada.
         409 `PLAZO_RECLAMO_VENCIDO` si pasaron más de 48 horas de finalizada o ya está liquidada/cancelada.
+        409 `RECLAMO_DUPLICADO` si el usuario ya tiene un reclamo pendiente en la rifa.
       requestBody:
         required: true
         content:
@@ -979,6 +980,24 @@ paths:
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
+    get:
+      tags: [Rifas]
+      summary: Reclamos de una rifa
+      x-jira: PICA-268
+      x-owner: Baiza
+      description: >-
+        HU-506. El organizador ve todos los reclamos de la rifa; cualquier otro usuario, solo los suyos. El más
+        nuevo primero. Requiere sesión.
+        401 `NO_AUTENTICADO` si no hay sesión.
+        404 `RIFA_NO_ENCONTRADA` si la rifa no existe o fue eliminada.
+      responses:
+        '200':
+          description: Reclamos
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/ReclamoRifaDetalle'}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
 
   # --- Equipos -----------------------------------------------------------------
 
@@ -2430,7 +2449,9 @@ components:
         RESERVA_VENCIDA (la reserva se venció o no existe; la lista va en `numeros`) · RIFA_PROPIA (el organizador
         no compra su rifa) · CLAVE_IDEMPOTENCIA_USADA (la clave ya se usó para otra compra) · RIFA_CON_VENTAS
         (la rifa tiene números vendidos: no vuelve a borrador ni se elimina; trae `numerosVendidos`) ·
-        RIFA_CON_RESERVAS (alguien está pagando números de la rifa).
+        RIFA_CON_RESERVAS (alguien está pagando números de la rifa). Reclamo de una rifa (PICA-268):
+        RIFA_NO_SORTEADA (todavía no se sorteó) · PLAZO_RECLAMO_VENCIDO (pasaron las 48 h o ya se liquidó o
+        canceló) · RECLAMO_DUPLICADO (el usuario ya tiene un reclamo pendiente en la rifa).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
@@ -2460,7 +2481,7 @@ components:
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
-             PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA,
+             PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, RECLAMO_DUPLICADO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR]
 

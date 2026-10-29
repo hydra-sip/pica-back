@@ -100,6 +100,7 @@ public enum CodigoError {
     PRONOSTICO_FUERA_DE_VENTANA,
     PLAZO_RECLAMO_VENCIDO,
     RIFA_NO_SORTEADA,
+    RECLAMO_DUPLICADO,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,
