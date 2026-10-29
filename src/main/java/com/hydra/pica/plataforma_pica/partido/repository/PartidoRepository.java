@@ -40,6 +40,19 @@ public interface PartidoRepository extends JpaRepository<Partido, Long> {
             order by p.objecionVenceEn""")
     List<Long> conPlazoVencido(@Param("ahora") Instant ahora);
 
+    /**
+     * Los que pueden tener una ausencia (HU-309): PROGRAMADO o CHECK_IN, con fecha y con los dos lados, de un torneo
+     * EN_CURSO con el check-in configurado, cuya ventana cerró antes de {@code limite} (ahora menos la tolerancia).
+     */
+    @Query(value = """
+            select p.id from partido p join torneo t on t.id = p.torneo_id
+            where t.estado = 'EN_CURSO' and t.checkin_min_antes is not null
+              and p.estado in ('PROGRAMADO', 'CHECK_IN') and p.fecha_programada is not null
+              and (select count(*) from juega j where j.partido_id = p.id) = 2
+              and p.fecha_programada - (t.checkin_min_antes - t.checkin_duracion_min) * interval '1 minute' < :limite
+            order by p.fecha_programada, p.id""", nativeQuery = true)
+    List<Long> conVentanaVencida(@Param("limite") Instant limite);
+
     /** Cuántas rondas tiene el bracket: con eso se nombra cada una ("Final", "Semifinal"...). */
     @Query("select coalesce(max(p.ronda), 0) from Partido p where p.torneo.id = :torneoId")
     int rondasDelTorneo(@Param("torneoId") Long torneoId);

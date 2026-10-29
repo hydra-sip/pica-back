@@ -7,7 +7,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 /**
  * Tareas programadas: confirmar los resultados con el plazo vencido (PICA-242) y cerrar las inscripciones vencidas
  * (PICA-213, que además se apaga sola con {@code app.torneos.cierre-automatico}). Los tests las apagan para que nada
- * cambie la base por su cuenta.
+ * cambie la base por su cuenta. También declarar las ausencias al vencer el check-in (HU-309), que se apaga sola con
+ * {@code app.partidos.ausencia-automatica}.
  */
 @Configuration
 @EnableScheduling

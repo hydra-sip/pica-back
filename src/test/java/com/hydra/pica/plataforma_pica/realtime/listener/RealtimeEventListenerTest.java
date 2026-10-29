@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.partido.dto.BracketTorneo;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
+import com.hydra.pica.plataforma_pica.partido.event.PartidoSinPresentes;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoObjetado;
 import com.hydra.pica.plataforma_pica.partido.service.BracketService;
 import com.hydra.pica.plataforma_pica.realtime.dto.EventoRifaMessage;
@@ -186,5 +187,20 @@ class RealtimeEventListenerTest {
         EventoTorneoMessage msg = captor.getValue();
         assertThat(msg.tipo()).isEqualTo("RESULTADO_OBJETADO");
         assertThat(msg.partidoId()).isEqualTo(10L);
+    }
+
+    @Test
+    @DisplayName("Un partido sin presentes publica el bracket en /topic/torneos/{id}")
+    void partidoSinPresentesPublicaEnTopic() {
+        when(torneoRepository.findById(1L)).thenReturn(Optional.of(torneo));
+        when(bracketService.ver(1L)).thenReturn(bracket);
+        when(pozoTorneoService.calcularPozo(1L)).thenReturn(new BigDecimal("50000.00"));
+
+        listener.onPartidoSinPresentes(new PartidoSinPresentes(1L, 10L));
+
+        ArgumentCaptor<EventoTorneoMessage> captor = ArgumentCaptor.forClass(EventoTorneoMessage.class);
+        verify(realtimeNotifier).publicarTorneo(eq(1L), captor.capture());
+        assertThat(captor.getValue()).extracting(EventoTorneoMessage::tipo, EventoTorneoMessage::partidoId,
+                EventoTorneoMessage::bracket).containsExactly("PARTIDO_SIN_PRESENTES", 10L, bracket);
     }
 }

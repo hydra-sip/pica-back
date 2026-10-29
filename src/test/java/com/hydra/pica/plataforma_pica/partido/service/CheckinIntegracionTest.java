@@ -28,6 +28,7 @@ import com.hydra.pica.plataforma_pica.partido.dto.EventoPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
+import com.hydra.pica.plataforma_pica.torneo.domain.CriterioSinPresentes;
 import com.hydra.pica.plataforma_pica.torneo.dto.CheckinTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
@@ -223,6 +224,28 @@ class CheckinIntegracionTest {
         }
     }
 
+    @Test
+    void elCriterioSinPresentesEsReprogramarPorDefectoYSiNoVieneQuedaElVigente() {
+        assertThat(torneoService.configurarCheckin(organizador, torneo, new CheckinTorneoRequest(30, 20))
+                .checkinSinPresentes()).isEqualTo(CriterioSinPresentes.REPROGRAMAR);
+
+        assertThat(torneoService.configurarCheckin(organizador, torneo,
+                new CheckinTorneoRequest(30, 20, "DESCALIFICAR_AMBOS")).checkinSinPresentes())
+                .isEqualTo(CriterioSinPresentes.DESCALIFICAR_AMBOS);
+        assertThat(torneoService.configurarCheckin(organizador, torneo, new CheckinTorneoRequest(40, 20))
+                .checkinSinPresentes()).isEqualTo(CriterioSinPresentes.DESCALIFICAR_AMBOS);
+        assertThat(torneoService.detalle(organizador, torneo).checkinSinPresentes())
+                .isEqualTo(CriterioSinPresentes.DESCALIFICAR_AMBOS);
+    }
+
+    @Test
+    void unCriterioSinPresentesQueNoExisteSeRechaza() {
+        assertThatThrownBy(() -> torneoService.configurarCheckin(organizador, torneo,
+                new CheckinTorneoRequest(30, 20, "SORTEAR")))
+                .satisfies(e -> assertThat(errores(e)).extracting(ErrorCampo::campo, ErrorCampo::codigo)
+                        .containsExactly(tuple("sinPresentes", ErrorCampo.Codigo.VALOR_INVALIDO)));
+    }
+
     // --- consultar y hacer check-in ---------------------------------------------
 
     @Test
@@ -400,13 +423,10 @@ class CheckinIntegracionTest {
 
     /**
      * Con la ventana de 30 minutos antes y 15 de duración, programa el partido a {@code minutos} de ahora. Para eso
-     * el torneo empieza ayer: el escenario lo pone dentro de dos semanas.
+     * el torneo empieza ayer.
      */
     private Instant programarDentroDe(int minutos) {
-        jdbc.update("""
-                UPDATE torneo SET cierre_inscripcion_en = now() - interval '2 days',
-                                  fecha_inicio = now() - interval '1 day' WHERE id = ?""", torneo);
-        entityManager.clear();
+        escenario.empezadoAyer(torneo);
         torneoService.configurarCheckin(organizador, torneo, new CheckinTorneoRequest(30, 15));
         Instant fecha = Instant.now().plus(minutos, ChronoUnit.MINUTES).truncatedTo(ChronoUnit.SECONDS);
         programacionService.programar(organizador, partido, fecha);
