@@ -120,8 +120,8 @@ class MisTorneosServiceIntegracionTest {
 
         assertThat(fila.inscriptos()).isEqualTo(2);
         assertThat(fila.cupoMaximo()).isEqualTo(8);
-        // 1000 × 2 confirmadas × 50 %
-        assertThat(fila.pozo()).isEqualByComparingTo("1000");
+        // 1000 × 2 confirmadas: la inscripción va entera al pozo
+        assertThat(fila.pozo()).isEqualByComparingTo("2000");
         assertThat(fila.pozoEstimado()).isFalse();
         assertThat(fila.pasoPendiente()).isNull();
     }
@@ -130,14 +130,14 @@ class MisTorneosServiceIntegracionTest {
     void enBorradorElPozoSeEstimaConElCupoYSinParteEconomicaNoHay() {
         long conEconomia = torneoService.crear(organizador, new InformacionTorneoRequest("Apertura F5", "Fútbol 5",
                 null, null, null, null, null, null, null, null, null, null, 16, 12, null, null)).id();
-        jdbc.update("UPDATE torneo SET valor_inscripcion = 5000, pct_pozo_competidores = 70 WHERE id = ?", conEconomia);
+        jdbc.update("UPDATE torneo SET valor_inscripcion = 5000 WHERE id = ?", conEconomia);
         borrador(organizador, "Sin economía", "Fútbol 5");
 
         MisTorneos mis = listar(null, null, null);
 
         MiTorneoResumen estimado = fila(mis, "Apertura F5");
-        // 5000 × 16 de cupo × 70 %
-        assertThat(estimado.pozo()).isEqualByComparingTo("56000");
+        // 5000 × 16 de cupo
+        assertThat(estimado.pozo()).isEqualByComparingTo("80000");
         assertThat(estimado.pozoEstimado()).isTrue();
         assertThat(fila(mis, "Sin economía").pozo()).isNull();
     }

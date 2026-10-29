@@ -19,4 +19,28 @@ public interface PronosticoRepository extends JpaRepository<Pronostico, Pronosti
 
     @Query("select p from Pronostico p where p.id.usuarioId = :usuarioId and p.id.partidoId = :partidoId")
     Optional<Pronostico> delUsuarioYPartido(@Param("usuarioId") Long usuarioId, @Param("partidoId") Long partidoId);
+
+    /**
+     * Agregación de estadísticas de pronósticos por usuario (HU-307, T307-1),
+     * filtrando torneos vigentes (no eliminados y fuera de borrador), ordenados
+     * por puntaje acumulado y primer pronóstico registrado (orden de carga).
+     */
+    @Query("""
+            select new com.hydra.pica.plataforma_pica.partido.dto.EstadisticaPronosticosUsuario(
+                p.id.usuarioId,
+                coalesce(sum(p.puntos), 0L),
+                coalesce(sum(case when p.puntos is not null and p.puntos > 0 then 1L else 0L end), 0L),
+                count(p),
+                min(p.creadoEn)
+            )
+            from Pronostico p
+            where p.partido.torneo.eliminadoEn is null
+              and p.partido.torneo.estado != com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo.BORRADOR
+              and (:torneoId is null or p.partido.torneo.id = :torneoId)
+            group by p.id.usuarioId
+            order by coalesce(sum(p.puntos), 0L) desc, min(p.creadoEn) asc, p.id.usuarioId asc
+            """)
+    List<com.hydra.pica.plataforma_pica.partido.dto.EstadisticaPronosticosUsuario> rankingEstadisticas(
+            @Param("torneoId") Long torneoId);
 }
+

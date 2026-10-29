@@ -4,16 +4,16 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.hydra.pica.plataforma_pica.common.config.TorneoConfig.TorneoProperties;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.torneo.domain.Gasto;
 import com.hydra.pica.plataforma_pica.torneo.domain.GastoId;
+import com.hydra.pica.plataforma_pica.torneo.domain.GastosAdministrativos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Premio;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
-import com.hydra.pica.plataforma_pica.torneo.dto.EconomiaTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.EconomiaTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoRequest;
@@ -29,14 +29,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Paso 3 del asistente, el esquema económico (HU-601, PICA-203): valor de la inscripción, reparto de la bolsa,
- * premios por puesto y gastos previstos. Como los pasos 1 y 2, cada organizador toca solo sus torneos y se edita
- * solo en BORRADOR; el resumen se puede ver siempre.
+ * Paso 3 del asistente, el esquema económico (HU-601, PICA-203): valor de la inscripción, premios por puesto y gastos
+ * previstos. Como los pasos 1 y 2, cada organizador toca solo sus torneos y se edita solo en BORRADOR; el resumen se
+ * puede ver siempre.
  *
- * La bolsa (inscripciones y rifa del torneo) se reparte en pozo de competidores, premio de la rifa y comisión de la
- * plataforma, que tienen que sumar exactamente 100; la comisión no puede pasar el tope de la plataforma
- * ({@code app.torneos.comision-maxima}). Del pozo de competidores se descuentan los gastos y el resto se reparte por
- * puesto: en BORRADOR los puestos pueden sumar menos de 100, y que sumen 100 lo exige la publicación.
+ * La inscripción va entera al pozo de competidores; quien se inscribe paga aparte los gastos administrativos, cuyo %
+ * fija la plataforma (PICA-283). Del pozo se descuentan los gastos previstos y el resto se reparte por puesto: en
+ * BORRADOR los puestos pueden sumar menos de 100, y que sumen 100 lo exige la publicación.
  */
 @Service
 @RequiredArgsConstructor
@@ -48,7 +47,7 @@ public class EconomiaTorneoService {
     private final TorneoRepository torneoRepository;
     private final PremioRepository premioRepository;
     private final GastoRepository gastoRepository;
-    private final TorneoProperties torneoProperties;
+    private final ParametrosPlataforma parametrosPlataforma;
     private final AuditingHandler auditingHandler;
 
     /** Guarda el paso 3 y devuelve el torneo entero, como los pasos 1 y 2. */
@@ -58,8 +57,6 @@ public class EconomiaTorneoService {
         validar(torneo, request);
 
         torneo.setValorInscripcion(request.valorInscripcion());
-        torneo.setPctPozoCompetidores(request.pctPozoCompetidores());
-        torneo.setPctPremioRifa(request.pctPremioRifa());
         reemplazarPremios(torneo, request.premios());
         // si solo cambian los premios no se entera la auditoría; el flush es para que modificadoEn salga en la respuesta
         auditingHandler.markModified(torneo);
@@ -103,9 +100,12 @@ public class EconomiaTorneoService {
         List<ResumenEconomico.Puesto> premios = premioRepository.findByTorneoIdOrderByIdPuestoAsc(id).stream()
                 .map(p -> new ResumenEconomico.Puesto(p.getId().getPuesto(), p.getPct(), cuentas.delPuesto(p.getPct())))
                 .toList();
-        return new ResumenEconomico(torneo.getCupoMaximo(), torneo.getValorInscripcion(), torneo.getMoneda(),
-                cuentas.recaudacion(), cuentas.comision(), cuentas.premioRifa(), cuentas.pozoCompetidores(),
-                cuentas.gastos(), cuentas.pozoNeto(), premios);
+        BigDecimal pct = torneo.getPctGastosAdministrativos() != null ? torneo.getPctGastosAdministrativos()
+                : parametrosPlataforma.gastosAdministrativos();
+        return new ResumenEconomico(torneo.getCupoMaximo(), torneo.getValorInscripcion(), torneo.getMoneda(), pct,
+                GastosAdministrativos.monto(torneo.getValorInscripcion(), pct),
+                GastosAdministrativos.total(torneo.getValorInscripcion(), pct),
+                cuentas.recaudacion(), cuentas.gastos(), cuentas.pozoNeto(), premios);
     }
 
     // --- premios y gastos ---------------------------------------------------
@@ -142,18 +142,6 @@ public class EconomiaTorneoService {
     /** Junta todos los errores y los devuelve en un solo 400, como Bean Validation. */
     private void validar(Torneo torneo, EconomiaTorneoRequest request) {
         List<ErrorCampo> errores = new ArrayList<>();
-        BigDecimal suma = request.pctPozoCompetidores().add(request.pctPremioRifa()).add(request.pctComision());
-        if (suma.compareTo(CIEN) != 0) {
-            errores.add(new ErrorCampo("pctPozoCompetidores", ErrorCampo.Codigo.REPARTO_INVALIDO,
-                    "Competidores, rifa y comisión suman " + suma.stripTrailingZeros().toPlainString()
-                            + " %: tienen que sumar 100"));
-        }
-        BigDecimal tope = torneoProperties.comisionMaxima();
-        if (request.pctComision().compareTo(tope) > 0) {
-            errores.add(new ErrorCampo("pctComision", ErrorCampo.Codigo.COMISION_EXCEDIDA,
-                    "La comisión de la plataforma no puede pasar del " + tope.stripTrailingZeros().toPlainString()
-                            + " %"));
-        }
         BigDecimal premios = request.premios().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
         if (premios.compareTo(CIEN) > 0) {
             errores.add(new ErrorCampo("premios", ErrorCampo.Codigo.PREMIOS_INVALIDOS,
@@ -164,8 +152,7 @@ public class EconomiaTorneoService {
         }
         if (!errores.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay campos inválidos")
-                    .con("errores", errores)
-                    .con("comisionMaxima", tope);
+                    .con("errores", errores);
         }
     }
 }

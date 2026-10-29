@@ -16,7 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Calcula el pozo acumulado/vigente de un torneo (HU-305, HU-601).
- * Suma el pozo neto de las inscripciones más el porcentaje recaudado por la venta de números de la rifa asociada.
+ * Suma el pozo neto de las inscripciones más lo que aporta la rifa asociada: el % de lo vendido que la rifa destina al
+ * torneo ({@code pctDestinadoTorneo}, HU-401).
  */
 @Service
 @RequiredArgsConstructor
@@ -42,17 +43,15 @@ public class PozoTorneoService {
         BigDecimal pozoBase = cuentas.pozoNeto() != null ? cuentas.pozoNeto() : BigDecimal.ZERO;
 
         BigDecimal aporteRifa = BigDecimal.ZERO;
-        if (torneo.getPctPremioRifa() != null && torneo.getPctPremioRifa().signum() > 0) {
-            var rifaOpt = rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneo.getId());
-            if (rifaOpt.isPresent()) {
-                Rifa rifa = rifaOpt.get();
-                long vendidos = numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO);
-                BigDecimal recaudacionRifa = rifa.getPrecioNumero() != null
-                        ? rifa.getPrecioNumero().multiply(BigDecimal.valueOf(vendidos))
-                        : BigDecimal.ZERO;
-                aporteRifa = recaudacionRifa.multiply(torneo.getPctPremioRifa())
-                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-            }
+        var rifaOpt = rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneo.getId());
+        if (rifaOpt.isPresent() && rifaOpt.get().getPctDestinadoTorneo() > 0) {
+            Rifa rifa = rifaOpt.get();
+            long vendidos = numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO);
+            BigDecimal recaudacionRifa = rifa.getPrecioNumero() != null
+                    ? rifa.getPrecioNumero().multiply(BigDecimal.valueOf(vendidos))
+                    : BigDecimal.ZERO;
+            aporteRifa = recaudacionRifa.multiply(BigDecimal.valueOf(rifa.getPctDestinadoTorneo()))
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
         }
 
         return pozoBase.add(aporteRifa);

@@ -6,14 +6,16 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
+import com.hydra.pica.plataforma_pica.torneo.domain.GastosAdministrativos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
 /**
  * La ficha pública de un torneo publicado (HU-208). Los montos son estimados con el cupo completo, como en el paso 3
- * (HU-601): {@code pozoEstimado} es el pozo neto que se reparte en premios (competidores menos gastos) y cada premio
- * trae su monto. El reglamento puede venir escrito, en PDF o los dos.
+ * (HU-601): {@code pozoEstimado} es el pozo neto que se reparte en premios (la recaudación menos los gastos previstos)
+ * y cada premio trae su monto. Quien se inscribe paga {@code totalAPagar}: el valor más los gastos administrativos
+ * sellados al publicar (PICA-283). El reglamento puede venir escrito, en PDF o los dos.
  */
 public record TorneoDetalle(
         Long id,
@@ -32,10 +34,10 @@ public record TorneoDetalle(
         Integer tamanioEquipo,
         BigDecimal valorInscripcion,
         String moneda,
-        BigDecimal pctPozoCompetidores,
-        BigDecimal pctPremioRifa,
+        BigDecimal pctGastosAdministrativos,
+        BigDecimal gastosAdministrativos,
+        BigDecimal totalAPagar,
         BigDecimal pozoEstimado,
-        BigDecimal premioRifaEstimado,
         List<PremioDetalle> premios,
         Instant cierreInscripcionEn,
         Instant fechaInicio,
@@ -50,7 +52,6 @@ public record TorneoDetalle(
             Torneo torneo,
             int cupoDisponible,
             BigDecimal pozoEstimado,
-            BigDecimal premioRifaEstimado,
             List<PremioDetalle> premios) {
         return new TorneoDetalle(
                 torneo.getId(),
@@ -69,10 +70,10 @@ public record TorneoDetalle(
                 torneo.getTamanioEquipo(),
                 torneo.getValorInscripcion(),
                 torneo.getMoneda(),
-                torneo.getPctPozoCompetidores(),
-                torneo.getPctPremioRifa(),
+                torneo.getPctGastosAdministrativos(),
+                GastosAdministrativos.monto(torneo.getValorInscripcion(), torneo.getPctGastosAdministrativos()),
+                GastosAdministrativos.total(torneo.getValorInscripcion(), torneo.getPctGastosAdministrativos()),
                 pozoEstimado,
-                premioRifaEstimado,
                 premios,
                 torneo.getCierreInscripcionEn(),
                 torneo.getFechaInicio(),

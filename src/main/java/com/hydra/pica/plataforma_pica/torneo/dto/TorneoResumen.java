@@ -5,10 +5,12 @@ import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
+import com.hydra.pica.plataforma_pica.torneo.domain.GastosAdministrativos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
+/** Un torneo del catálogo (HU-208); {@code gastosAdministrativos} es lo que se paga aparte por inscribirse (PICA-283). */
 public record TorneoResumen(
         Long id,
         String slug,
@@ -24,6 +26,7 @@ public record TorneoResumen(
         Integer cupoDisponible,
         BigDecimal valorInscripcion,
         String moneda,
+        BigDecimal gastosAdministrativos,
         BigDecimal pozoEstimado,
         Instant cierreInscripcionEn,
         Instant fechaInicio,
@@ -45,6 +48,7 @@ public record TorneoResumen(
                 cupoDisponible,
                 torneo.getValorInscripcion(),
                 torneo.getMoneda(),
+                GastosAdministrativos.monto(torneo.getValorInscripcion(), torneo.getPctGastosAdministrativos()),
                 pozoEstimado,
                 torneo.getCierreInscripcionEn(),
                 torneo.getFechaInicio(),

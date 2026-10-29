@@ -57,7 +57,6 @@ class RealtimeEventListenerTest {
         torneo = new Torneo();
         torneo.setNombre("Torneo CS2");
         torneo.setEstado(EstadoTorneo.EN_CURSO);
-        torneo.setPctPremioRifa(new BigDecimal("10.00"));
 
         bracket = new BracketTorneo(1L, "semilla-test", "hash-test", List.of());
     }
@@ -130,6 +129,7 @@ class RealtimeEventListenerTest {
         rifa.setEstado(EstadoRifa.EN_VENTA);
         rifa.setPrecioNumero(new BigDecimal("100.00"));
         rifa.setTorneo(torneo);
+        rifa.setPctDestinadoTorneo(10);
 
         when(rifaRepository.findById(5L)).thenReturn(Optional.of(rifa));
         when(numeroRepository.countByIdRifaIdAndEstado(5L, EstadoNumero.VENDIDO)).thenReturn(25L);
@@ -158,6 +158,8 @@ class RealtimeEventListenerTest {
         assertThat(rifaMsg.numeros()).containsExactly(7, 8, 9);
         assertThat(rifaMsg.cantidadVendidos()).isEqualTo(25);
         assertThat(rifaMsg.pozoRifa()).isEqualByComparingTo("2500.00");
+        // el 10 % que la rifa destina al torneo
+        assertThat(rifaMsg.aporteTorneo()).isEqualByComparingTo("250.00");
 
         // Verificamos publicación a /topic/torneos/1
         ArgumentCaptor<EventoTorneoMessage> torneoCaptor = ArgumentCaptor.forClass(EventoTorneoMessage.class);

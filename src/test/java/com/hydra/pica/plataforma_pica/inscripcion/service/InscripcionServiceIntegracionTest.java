@@ -504,6 +504,33 @@ class InscripcionServiceIntegracionTest {
     }
 
     @Test
+    void losGastosAdministrativosSeCobranAparteEnOtroMovimiento() {
+        jdbc.update("UPDATE torneo SET pct_gastos_administrativos = 10 WHERE id = ?", torneo);
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        inscripcionService.pagar(jugador, id);
+
+        assertThat(jdbc.queryForList("SELECT tipo, monto FROM movimiento WHERE inscripcion_id = ? ORDER BY id", id))
+                .extracting(m -> m.get("tipo") + " " + ((BigDecimal) m.get("monto")).stripTrailingZeros().toPlainString())
+                .containsExactly("INSCRIPCION 1000", "COMISION 100");
+        // reintentar no cobra de nuevo ninguno de los dos
+        inscripcionService.pagar(jugador, id);
+        assertThat(movimientosDe(id)).isEqualTo(2);
+    }
+
+    @Test
+    void elResumenDePagoSumaLosGastosAdministrativos() {
+        jdbc.update("UPDATE torneo SET pct_gastos_administrativos = 10 WHERE id = ?", torneo);
+        long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
+
+        ResumenPago resumen = inscripcionService.resumenPago(jugador, id);
+
+        assertThat(resumen.monto()).isEqualByComparingTo("1000");
+        assertThat(resumen.gastosAdministrativos()).isEqualByComparingTo("100");
+        assertThat(resumen.total()).isEqualByComparingTo("1100");
+    }
+
+    @Test
     void reintentarElPagoDeUnaConfirmadaRespondeConExitoYNoCobraDeNuevo() {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
         inscripcionService.pagar(jugador, id);

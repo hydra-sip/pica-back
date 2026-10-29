@@ -355,7 +355,10 @@ pedir 404:PARTIDO_NO_ENCONTRADO POST /api/v1/partidos/{id}/checkin "/api/v1/part
 # pronósticos de partidos (HU-306, PICA-256)
 pedir 200 GET /api/v1/pronosticos/partidos "/api/v1/pronosticos/partidos" "$USUARIO"
 pedir 404:PARTIDO_NO_ENCONTRADO PUT /api/v1/partidos/{id}/pronostico "/api/v1/partidos/0/pronostico" "$USUARIO" '{"eleccion":"1"}'
+# ranking de pronósticos (HU-307, PICA-258)
+pedir 200 GET /api/v1/pronosticos/ranking "/api/v1/pronosticos/ranking" "$USUARIO"
 pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
+
 INSCRIPCION_ID=$(campo .id)
 pedir 200 GET /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
 pedir 204 DELETE /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"

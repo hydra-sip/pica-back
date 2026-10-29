@@ -590,8 +590,6 @@ class RifaServiceIntegracionTest {
         torneo.setCupoMaximo(8);
         torneo.setCupoMinimo(2);
         torneo.setValorInscripcion(new BigDecimal("1000"));
-        torneo.setPctPozoCompetidores(new BigDecimal("80"));
-        torneo.setPctPremioRifa(new BigDecimal("10"));
         torneo.setCierreInscripcionEn(Instant.now().minus(2, ChronoUnit.DAYS));
         torneo.setFechaInicio(Instant.now().minus(1, ChronoUnit.DAYS));
         torneo.setPublicadoEn(Instant.now().minus(10, ChronoUnit.DAYS));

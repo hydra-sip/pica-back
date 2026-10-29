@@ -185,8 +185,6 @@ class CobroSimuladoTest {
         torneo.setCupoMaximo(8);
         torneo.setCupoMinimo(2);
         torneo.setValorInscripcion(MIL);
-        torneo.setPctPozoCompetidores(new BigDecimal("50"));
-        torneo.setPctPremioRifa(new BigDecimal("10"));
         torneo.setCierreInscripcionEn(Instant.now());
         torneo.setFechaInicio(Instant.now().plus(1, ChronoUnit.DAYS));
         return torneo;

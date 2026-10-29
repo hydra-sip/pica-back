@@ -76,57 +76,52 @@ class EconomiaTorneoServiceIntegracionTest {
     // --- esquema económico --------------------------------------------------
 
     @Test
-    void guardaElEsquemaYLaComisionEsElResto() {
+    void guardaElEsquemaConLosGastosAdministrativosAparte() {
         EconomiaTorneo economia = economiaService.actualizarEconomia(organizador, torneo,
-                request("20000", "85", "5", "10", "60", "25", "15")).economia();
+                request("20000", "60", "25", "15")).economia();
 
         assertThat(economia.valorInscripcion()).isEqualByComparingTo("20000");
         assertThat(economia.moneda()).isEqualTo("ARS");
-        assertThat(economia.pctPozoCompetidores()).isEqualByComparingTo("85");
-        assertThat(economia.pctPremioRifa()).isEqualByComparingTo("5");
-        assertThat(economia.pctComision()).isEqualByComparingTo("10");
+        // el 10 % vigente de la plataforma, que paga aparte quien se inscribe
+        assertThat(economia.pctGastosAdministrativos()).isEqualByComparingTo("10");
+        assertThat(economia.gastosAdministrativos()).isEqualByComparingTo("2000");
+        assertThat(economia.totalAPagar()).isEqualByComparingTo("22000");
         assertThat(economia.premios()).extracting(EconomiaTorneo.PremioPuesto::puesto).containsExactly(1, 2, 3);
         assertThat(torneoService.detalle(organizador, torneo).economia().premios()).hasSize(3);
     }
 
     @Test
-    void competidoresRifaYComisionTienenQueSumarCien() {
-        assertThatValidacion(() -> economiaService.actualizarEconomia(organizador, torneo,
-                request("20000", "80", "5", "10", "100")))
-                .containsEntry("pctPozoCompetidores", ErrorCampo.Codigo.REPARTO_INVALIDO);
-        assertThatValidacion(() -> economiaService.actualizarEconomia(organizador, torneo,
-                request("20000", "90", "5", "10", "100")))
-                .containsEntry("pctPozoCompetidores", ErrorCampo.Codigo.REPARTO_INVALIDO);
-    }
+    void enBorradorLosGastosAdministrativosSonLosVigentes() {
+        economiaService.actualizarEconomia(organizador, torneo, request("20000", "100"));
+        entityManager.flush();
+        jdbc.update("UPDATE parametro_plataforma SET valor = 7.5 WHERE clave = 'GASTOS_ADMINISTRATIVOS'");
+        entityManager.clear();
 
-    @Test
-    void laComisionNoPuedePasarElTopeDeLaPlataforma() {
-        Throwable error = catchThrowable(() -> economiaService.actualizarEconomia(organizador, torneo,
-                request("20000", "80", "5", "15", "100")));
+        EconomiaTorneo economia = torneoService.detalle(organizador, torneo).economia();
 
-        assertThat(errores(error)).containsEntry("pctComision", ErrorCampo.Codigo.COMISION_EXCEDIDA);
-        assertThat(((ApiException) error).getPropiedades().get("comisionMaxima")).isEqualTo(new BigDecimal("10"));
+        assertThat(economia.pctGastosAdministrativos()).isEqualByComparingTo("7.5");
+        assertThat(economia.totalAPagar()).isEqualByComparingTo("21500");
     }
 
     @Test
     void losPremiosNoPasanDeCienNiDelCupo() {
         assertThatValidacion(() -> economiaService.actualizarEconomia(organizador, torneo,
-                request("20000", "90", "0", "10", "60", "50")))
+                request("20000", "60", "50")))
                 .containsEntry("premios", ErrorCampo.Codigo.PREMIOS_INVALIDOS);
 
         Long chico = conCupo(2);
         assertThatValidacion(() -> economiaService.actualizarEconomia(organizador, chico,
-                request("20000", "90", "0", "10", "50", "30", "20")))
+                request("20000", "50", "30", "20")))
                 .containsEntry("premios", ErrorCampo.Codigo.PREMIOS_INVALIDOS);
     }
 
     @Test
     void enBorradorLosPremiosPuedenSumarMenosYSeReemplazan() {
-        economiaService.actualizarEconomia(organizador, torneo, request("20000", "90", "0", "10", "60", "25", "15"));
+        economiaService.actualizarEconomia(organizador, torneo, request("20000", "60", "25", "15"));
         assertThat(premios(economiaService.actualizarEconomia(organizador, torneo,
-                request("20000", "90", "0", "10", "70")).economia())).containsExactly("70");
+                request("20000", "70")).economia())).containsExactly("70");
         assertThat(premios(economiaService.actualizarEconomia(organizador, torneo,
-                request("20000", "90", "0", "10", "50", "30", "10", "10")).economia()))
+                request("20000", "50", "30", "10", "10")).economia()))
                 .containsExactly("50", "30", "10", "10");
     }
 
@@ -174,21 +169,21 @@ class EconomiaTorneoServiceIntegracionTest {
 
     @Test
     void elResumenDaLasCuentasDelWireframe() {
-        economiaService.actualizarEconomia(organizador, torneo, request("20000", "90", "0", "10", "60", "25", "15"));
+        economiaService.actualizarEconomia(organizador, torneo, request("20000", "60", "25", "15"));
         economiaService.agregarGasto(organizador, torneo, gasto("Honorarios árbitros", "20000"));
         economiaService.agregarGasto(organizador, torneo, gasto("Alquiler", "30000"));
 
         ResumenEconomico resumen = economiaService.resumen(organizador, torneo);
 
-        // 16 × 20.000; 10 % de comisión; 90 % al pozo menos 50.000 de gastos
+        // 16 × 20.000, entero al pozo, menos 50.000 de gastos; los gastos administrativos se pagan aparte
         assertThat(resumen.recaudacion()).isEqualByComparingTo("320000");
-        assertThat(resumen.comision()).isEqualByComparingTo("32000");
-        assertThat(resumen.premioRifa()).isEqualByComparingTo("0");
-        assertThat(resumen.pozoCompetidores()).isEqualByComparingTo("288000");
         assertThat(resumen.gastos()).isEqualByComparingTo("50000");
-        assertThat(resumen.pozoNeto()).isEqualByComparingTo("238000");
+        assertThat(resumen.pozoNeto()).isEqualByComparingTo("270000");
         assertThat(resumen.premios()).extracting(p -> p.monto().stripTrailingZeros().toPlainString())
-                .containsExactly("142800", "59500", "35700");
+                .containsExactly("162000", "67500", "40500");
+        assertThat(resumen.pctGastosAdministrativos()).isEqualByComparingTo("10");
+        assertThat(resumen.gastosAdministrativos()).isEqualByComparingTo("2000");
+        assertThat(resumen.totalAPagar()).isEqualByComparingTo("22000");
     }
 
     @Test
@@ -206,14 +201,14 @@ class EconomiaTorneoServiceIntegracionTest {
 
     @Test
     void fueraDeBorradorNoSeTocaLaEconomiaNiLosGastos() {
-        economiaService.actualizarEconomia(organizador, torneo, request("20000", "90", "0", "10", "100"));
+        economiaService.actualizarEconomia(organizador, torneo, request("20000", "100"));
         torneoService.actualizarInformacion(organizador, torneo, completo());
         entityManager.flush();
         jdbc.update("UPDATE torneo SET estado = 'INSCRIPCION_ABIERTA' WHERE id = ?", torneo);
         entityManager.clear();
 
         assertThatThrownBy(() -> economiaService.actualizarEconomia(organizador, torneo,
-                request("20000", "90", "0", "10", "100")))
+                request("20000", "100")))
                 .isInstanceOf(ApiException.class)
                 .extracting("codigo").isEqualTo(CodigoError.TORNEO_NO_EDITABLE);
         assertThatThrownBy(() -> economiaService.agregarGasto(organizador, torneo, gasto("Alquiler", "1")))
@@ -224,7 +219,7 @@ class EconomiaTorneoServiceIntegracionTest {
 
     @Test
     void elTorneoDeOtroOrganizadorNoExiste() {
-        assertThatThrownBy(() -> economiaService.actualizarEconomia(otro, torneo, request("1", "90", "0", "10")))
+        assertThatThrownBy(() -> economiaService.actualizarEconomia(otro, torneo, request("1")))
                 .isInstanceOf(ApiException.class)
                 .extracting("codigo").isEqualTo(CodigoError.TORNEO_NO_ENCONTRADO);
     }
@@ -245,10 +240,8 @@ class EconomiaTorneoServiceIntegracionTest {
                 inicio, null, cierre, "Reglas", 16, 12, 5, 10);
     }
 
-    private static EconomiaTorneoRequest request(String valor, String pozo, String rifa, String comision,
-            String... premios) {
-        return new EconomiaTorneoRequest(new BigDecimal(valor), new BigDecimal(pozo), new BigDecimal(rifa),
-                new BigDecimal(comision), Arrays.stream(premios).map(BigDecimal::new).toList());
+    private static EconomiaTorneoRequest request(String valor, String... premios) {
+        return new EconomiaTorneoRequest(new BigDecimal(valor), Arrays.stream(premios).map(BigDecimal::new).toList());
     }
 
     private static GastoRequest gasto(String descripcion, String monto) {

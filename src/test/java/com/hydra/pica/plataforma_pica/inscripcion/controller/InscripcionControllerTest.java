@@ -336,7 +336,7 @@ class InscripcionControllerTest {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         when(inscripcionService.resumenPago(PARTICIPANTE, 7L)).thenReturn(new ResumenPago(7L,
                 new ResumenPago.TorneoPago(3L, "Copa"), new UsuarioPublico(PARTICIPANTE, "jugador", "Ana", "Paz"), null,
-                new BigDecimal("1500.00"), "ARS", 8, 5L, CREADA));
+                new BigDecimal("1500.00"), new BigDecimal("150.00"), new BigDecimal("1650.00"), "ARS", 8, 5L, CREADA));
 
         mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago"))
                 .andExpect(status().isOk())
@@ -345,6 +345,8 @@ class InscripcionControllerTest {
                 .andExpect(jsonPath("$.participante.username").value("jugador"))
                 .andExpect(jsonPath("$.participante.email").doesNotExist())
                 .andExpect(jsonPath("$.monto").value(1500.00))
+                .andExpect(jsonPath("$.gastosAdministrativos").value(150.00))
+                .andExpect(jsonPath("$.total").value(1650.00))
                 .andExpect(jsonPath("$.moneda").value("ARS"))
                 .andExpect(jsonPath("$.cupoMaximo").value(8))
                 .andExpect(jsonPath("$.cupoDisponible").value(5))
@@ -521,7 +523,7 @@ class InscripcionControllerTest {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         when(inscripcionService.resumenPago(PARTICIPANTE, 7L)).thenReturn(new ResumenPago(7L,
                 new ResumenPago.TorneoPago(3L, "Copa"), null, new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones"),
-                new BigDecimal("1500.00"), "ARS", 8, 5L, CREADA));
+                new BigDecimal("1500.00"), new BigDecimal("150.00"), new BigDecimal("1650.00"), "ARS", 8, 5L, CREADA));
 
         mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago"))
                 .andExpect(status().isOk())

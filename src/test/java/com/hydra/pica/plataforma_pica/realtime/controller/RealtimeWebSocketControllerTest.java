@@ -61,6 +61,7 @@ class RealtimeWebSocketControllerTest {
         rifa.setEstado(EstadoRifa.EN_VENTA);
         rifa.setPrecioNumero(new BigDecimal("100.00"));
         rifa.setTorneo(torneo);
+        rifa.setPctDestinadoTorneo(10);
         ReflectionTestUtils.setField(rifa, "id", 10L);
     }
 
@@ -89,7 +90,6 @@ class RealtimeWebSocketControllerTest {
     @DisplayName("Suscripción o sincronización de rifa devuelve números vendidos y pozo")
     void sincronizarRifaDevuelveEstadoCompleto() {
         when(rifaRepository.findById(10L)).thenReturn(Optional.of(rifa));
-        when(torneoRepository.findById(1L)).thenReturn(Optional.of(torneo));
 
         Numero num1 = Numero.vendido(rifa, 1, new Ticket());
         Numero num2 = Numero.vendido(rifa, 2, new Ticket());
@@ -103,6 +103,8 @@ class RealtimeWebSocketControllerTest {
         assertThat(msg.numeros()).containsExactly(1, 2);
         assertThat(msg.cantidadVendidos()).isEqualTo(2);
         assertThat(msg.pozoRifa()).isEqualByComparingTo("200.00");
+        // el 10 % que la rifa destina al torneo
+        assertThat(msg.aporteTorneo()).isEqualByComparingTo("20.00");
 
         EventoRifaMessage suscripcionMsg = controller.suscribirRifa(10L);
         assertThat(suscripcionMsg).isEqualTo(msg);

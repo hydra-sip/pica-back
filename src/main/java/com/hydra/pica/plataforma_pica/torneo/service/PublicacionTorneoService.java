@@ -1,7 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.text.Normalizer;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -11,6 +10,7 @@ import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
+import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.torneo.domain.AsistenteTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Gasto;
@@ -27,8 +27,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Publicar el torneo, el último botón del paso 3 (HU-601, PICA-204): revisa que esté todo, sella el esquema económico
- * y el reglamento con SHA-256 ({@link SelloTorneo}), le da el enlace público (slug) y abre la inscripción.
+ * Publicar el torneo, el último botón del paso 3 (HU-601, PICA-204): revisa que esté todo, le fija el % de gastos
+ * administrativos vigente (PICA-283), sella el esquema económico y el reglamento con SHA-256 ({@link SelloTorneo}), le
+ * da el enlace público (slug) y abre la inscripción.
  *
  * El torneo queda bloqueado mientras se publica, igual que en los cambios del asistente: así no se publica dos veces
  * ni entra un gasto después del sello.
@@ -48,6 +49,7 @@ public class PublicacionTorneoService {
     private final TorneoRepository torneoRepository;
     private final PremioRepository premioRepository;
     private final GastoRepository gastoRepository;
+    private final ParametrosPlataforma parametrosPlataforma;
 
     /** Si le falta algo, 409 TORNEO_INCOMPLETO con todo lo que falta en {@code faltantes}; no se publica nada. */
     @Transactional
@@ -58,6 +60,8 @@ public class PublicacionTorneoService {
         Instant ahora = Instant.now();
         validar(torneo, premios, gastos, ahora);
 
+        // el % queda fijo desde acá: un cambio del parámetro ya no lo toca
+        torneo.setPctGastosAdministrativos(parametrosPlataforma.gastosAdministrativos());
         torneo.setEsquemaHash(SelloTorneo.esquema(torneo, premios, gastos));
         // si hay PDF, el hash es el suyo y lo puso la subida (ReglamentoTorneoService)
         if (torneo.getReglamentoHash() == null && torneo.getReglamentoTexto() != null) {
@@ -79,8 +83,7 @@ public class PublicacionTorneoService {
         if (!AsistenteTorneo.cuposCompletos(torneo)) {
             faltantes.add(FaltanteTorneo.CUPOS);
         }
-        boolean conEconomia = torneo.getValorInscripcion() != null && torneo.getPctPozoCompetidores() != null
-                && torneo.getPctPremioRifa() != null;
+        boolean conEconomia = torneo.getValorInscripcion() != null;
         if (!conEconomia) {
             faltantes.add(FaltanteTorneo.ECONOMIA);
         }
@@ -103,10 +106,7 @@ public class PublicacionTorneoService {
 
     /** Si arranca con lo justo, los gastos tienen que quedar cubiertos igual. */
     private static BigDecimal pozoNetoConElMinimo(Torneo torneo, List<Gasto> gastos) {
-        BigDecimal pozo = torneo.getValorInscripcion()
-                .multiply(BigDecimal.valueOf(torneo.getCupoMinimo()))
-                .multiply(torneo.getPctPozoCompetidores())
-                .divide(CIEN, 2, RoundingMode.HALF_UP);
+        BigDecimal pozo = torneo.getValorInscripcion().multiply(BigDecimal.valueOf(torneo.getCupoMinimo()));
         return gastos.stream().map(Gasto::getMonto).reduce(pozo, BigDecimal::subtract);
     }
 
