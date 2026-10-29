@@ -433,7 +433,8 @@ class RifaServiceIntegracionTest {
         entityManager.clear();
 
         // termina después del inicio pero antes del fin: vale
-        RifaDetalle rifa = rifaService.crear(organizador, conTorneo(MANIANA, EN_UNA_SEMANA, null, torneo, 0));
+        RifaDetalle rifa = rifaService.crear(organizador,
+                conTorneo(MANIANA, EN_UNA_SEMANA.minus(1, ChronoUnit.HOURS), null, torneo, 0));
         assertThatValidacion(() -> rifaService.modificar(organizador, rifa.id(),
                 conTorneo(MANIANA, EN_UNA_SEMANA.plus(1, ChronoUnit.HOURS), null, torneo, 0)))
                 .containsOnlyKeys("ventaHasta");
