@@ -15,10 +15,12 @@ import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.event.NumerosVendidos;
+import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaRegistrado;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+
 import com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.torneo.service.PozoTorneoService;
@@ -174,6 +176,36 @@ public class RealtimeEventListener {
             realtimeNotifier.publicarTorneo(evento.torneoId(), mensajeTorneo);
         }
     }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onReclamoRifaRegistrado(ReclamoRifaRegistrado evento) {
+        log.info("Reclamo registrado en rifa {}. Estado pasa a EN_REVISION", evento.rifaId());
+        Rifa rifa = rifaRepository.findById(evento.rifaId()).orElse(null);
+        if (rifa == null) {
+            return;
+        }
+        int totalVendidos = (int) numeroRepository.countByIdRifaIdAndEstado(evento.rifaId(), EstadoNumero.VENDIDO);
+        BigDecimal pozoRifa = rifa.getPrecioNumero() != null
+                ? rifa.getPrecioNumero().multiply(BigDecimal.valueOf(totalVendidos))
+                : BigDecimal.ZERO;
+        Long torneoId = rifa.getTorneo() != null ? rifa.getTorneo().getId() : null;
+        BigDecimal aporteTorneo = BigDecimal.ZERO;
+        if (torneoId != null) {
+            aporteTorneo = aporteRifa(rifa, pozoRifa);
+        }
+        EventoRifaMessage mensajeRifa = new EventoRifaMessage(
+                "RECLAMO_REGISTRADO",
+                evento.rifaId(),
+                torneoId,
+                EstadoRifa.EN_REVISION,
+                java.util.List.of(),
+                totalVendidos,
+                pozoRifa,
+                aporteTorneo
+        );
+        realtimeNotifier.publicarRifa(evento.rifaId(), mensajeRifa);
+    }
+
 
     private BracketTorneo obtenerBracket(Long torneoId) {
         try {
