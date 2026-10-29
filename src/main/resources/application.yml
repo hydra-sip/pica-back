@@ -107,6 +107,7 @@ app:
     plazo-objecion: ${APP_PARTIDOS_PLAZO_OBJECION:15m}   # para aceptar u objetar un resultado cargado (HU-301)
     tolerancia-checkin: ${APP_PARTIDOS_TOLERANCIA_CHECKIN:2m}   # margen en cada extremo de la ventana de check-in (HU-308)
     confirmacion-automatica: ${APP_PARTIDOS_CONFIRMACION_AUTOMATICA:true}   # confirmar los que vencieron (PICA-242)
+    ausencia-automatica: ${APP_PARTIDOS_AUSENCIA_AUTOMATICA:true}   # declarar las ausencias al vencer el check-in (HU-309)
     revision-plazos: ${APP_PARTIDOS_REVISION_PLAZOS:30s}   # cada cuánto se buscan
   rifas:
     duracion-reserva: ${APP_RIFAS_DURACION_RESERVA:10m}   # lo que dura un número reservado mientras se paga (HU-403)

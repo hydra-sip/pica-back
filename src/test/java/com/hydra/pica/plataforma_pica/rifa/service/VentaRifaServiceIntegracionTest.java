@@ -200,8 +200,8 @@ class VentaRifaServiceIntegracionTest {
 
         assertThat(segunda.ticketId()).isEqualTo(primera.ticketId());
         assertThat(segunda.ticketCodigo()).isEqualTo(primera.ticketCodigo());
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE referencia_externa LIKE '%compra-1'",
-                Long.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE tipo = 'COMPRA_NUMERO' "
+                + "AND referencia_externa LIKE '%compra-1'", Long.class)).isEqualTo(1);
     }
 
     @Test

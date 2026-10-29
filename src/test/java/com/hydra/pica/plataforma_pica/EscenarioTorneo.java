@@ -104,6 +104,14 @@ public class EscenarioTorneo {
         return torneo;
     }
 
+    /** El torneo empezó ayer, para programar partidos dentro de unos minutos: el escenario lo pone en dos semanas. */
+    public void empezadoAyer(Long torneo) {
+        jdbc.update("""
+                UPDATE torneo SET cierre_inscripcion_en = now() - interval '2 days',
+                                  fecha_inicio = now() - interval '1 day' WHERE id = ?""", torneo);
+        entityManager.clear();
+    }
+
     public Long partido(Long torneo, int ronda, int posicion) {
         return jdbc.queryForObject("SELECT id FROM partido WHERE torneo_id = ? AND ronda = ? AND posicion = ?",
                 Long.class, torneo, ronda, posicion);
