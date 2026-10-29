@@ -3724,7 +3724,7 @@ components:
         rifaEstado: {$ref: '#/components/schemas/EstadoRifa'}
         sorteadaEn: {type: [string, 'null'], format: date-time, description: Fecha programada del sorteo}
         esComprador: {type: boolean, description: 'False si lo mira un administrador'}
-        ventanaReclamoAbierta: {type: boolean, description: 'De los reclamos (HU-506); por ahora false'}
+        ventanaReclamoAbierta: {type: boolean, description: 'Si ahora se puede reclamar el resultado (HU-506): la rifa SORTEADA o EN_REVISION y dentro de las 48 h del sorteo'}
     NumeroOcupado:
       type: object
       required: [numero, estado]
