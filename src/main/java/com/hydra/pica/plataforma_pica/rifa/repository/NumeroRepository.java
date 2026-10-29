@@ -15,4 +15,7 @@ public interface NumeroRepository extends JpaRepository<Numero, NumeroId> {
     List<Numero> findByIdRifaIdAndEstado(Long rifaId, EstadoNumero estado);
 
     List<Numero> findByIdRifaIdAndIdNumeroIn(Long rifaId, Collection<Integer> numeros);
+
+    /** Todos los que tienen fila (vendidos, reservados y reintegrados), en orden: los demás están libres. */
+    List<Numero> findByIdRifaIdOrderByIdNumero(Long rifaId);
 }
