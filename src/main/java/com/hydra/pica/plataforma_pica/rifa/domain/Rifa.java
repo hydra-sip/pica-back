@@ -76,6 +76,13 @@ public class Rifa extends AuditableEntity {
     @Column(name = "pct_destinado_torneo", nullable = false)
     private int pctDestinadoTorneo;
 
+    /**
+     * % de gastos administrativos que paga aparte el comprador (V27): se copia del parámetro de la plataforma al
+     * publicar y queda fijo; en BORRADOR es null.
+     */
+    @Column(name = "pct_gastos_administrativos", precision = 5, scale = 2)
+    private BigDecimal pctGastosAdministrativos;
+
     @Column(name = "venta_desde")
     private Instant ventaDesde;
 

@@ -11,6 +11,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.PremioRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
@@ -64,7 +65,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class RifaService {
 
     private static final int CIEN = 100;
-    /** Una vez que el torneo empieza, la venta ya no puede terminar antes de su inicio. */
+    /** La rifa se asocia a un torneo en borrador o publicado que todavía no empezó. */
     private static final Set<EstadoTorneo> ESTADOS_TORNEO_CON_RIFA =
             Set.of(EstadoTorneo.BORRADOR, EstadoTorneo.INSCRIPCION_ABIERTA, EstadoTorneo.INSCRIPCION_CERRADA);
 
@@ -72,6 +73,7 @@ public class RifaService {
     private final PremioRifaRepository premioRifaRepository;
     private final UsuarioRepository usuarioRepository;
     private final TorneoRepository torneoRepository;
+    private final ParametrosPlataforma parametrosPlataforma;
 
     /** La más nueva primero; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
@@ -176,6 +178,8 @@ public class RifaService {
 
         rifa.setTerminosAceptadosEn(ahora);
         rifa.setLoteriaDeclaradaEn(ahora);
+        // los gastos que paga el comprador quedan fijos desde acá, aunque después cambie el parámetro (V27)
+        rifa.setPctGastosAdministrativos(parametrosPlataforma.gastosAdministrativos());
         rifa.setEstado(EstadoRifa.EN_VENTA);
         return RifaDetalle.de(rifaRepository.saveAndFlush(rifa), premios);
     }
@@ -293,21 +297,24 @@ public class RifaService {
             }
             if (terminaDespuesDelTorneo(hasta, torneo)) {
                 errores.add(new ErrorCampo("ventaHasta", ErrorCampo.Codigo.VENTANA_INVALIDA,
-                        "La venta tiene que terminar antes de que empiece el torneo"));
+                        torneo.getFechaFin() != null
+                                ? "La fecha debe ser anterior a la finalización del torneo"
+                                : "La fecha debe ser anterior al inicio del torneo"));
             }
         }
     }
 
     /**
-     * Con torneo, la venta va de la publicación del torneo a su inicio (el límite del final es provisorio).
-     * La fecha que el torneo todavía no tiene (borrador) no se controla.
+     * Con torneo, la venta va de la publicación del torneo a su finalización; si el torneo no tiene fecha de fin, a
+     * su inicio. La fecha que el torneo todavía no tiene (borrador) no se controla.
      */
     private static boolean empiezaAntesDelTorneo(Instant ventaDesde, Torneo torneo) {
         return torneo.getPublicadoEn() != null && ventaDesde.isBefore(torneo.getPublicadoEn());
     }
 
     private static boolean terminaDespuesDelTorneo(Instant ventaHasta, Torneo torneo) {
-        return torneo.getFechaInicio() != null && ventaHasta.isAfter(torneo.getFechaInicio());
+        Instant limite = torneo.getFechaFin() != null ? torneo.getFechaFin() : torneo.getFechaInicio();
+        return limite != null && ventaHasta.isAfter(limite);
     }
 
     /** La fecha programada del sorteo (opcional en borrador) es futura y posterior al fin de la venta. */

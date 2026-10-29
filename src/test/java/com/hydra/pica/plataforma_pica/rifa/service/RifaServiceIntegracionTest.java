@@ -295,6 +295,8 @@ class RifaServiceIntegracionTest {
         // Postgres guarda microsegundos
         assertThat(publicada.fechaSorteo()).isCloseTo(SORTEO, within(1, ChronoUnit.MILLIS));
         assertThat(publicada.premios()).hasSize(2);
+        // los gastos administrativos vigentes (V26) quedan fijos en la rifa (PICA-222)
+        assertThat(rifaRepository.findById(id).orElseThrow().getPctGastosAdministrativos()).isEqualByComparingTo("10");
     }
 
     @Test
@@ -421,6 +423,19 @@ class RifaServiceIntegracionTest {
 
         // sin publicadoEn, el comienzo de la venta no se compara; el final, con fechaInicio, sí
         assertThatValidacion(() -> rifaService.crear(organizador, conTorneo(MANIANA, EN_UNA_SEMANA, null, torneo, 0)))
+                .containsOnlyKeys("ventaHasta");
+    }
+
+    @Test
+    void conFechaDeFinLaVentaPuedeSeguirMientrasSeJuegaElTorneo() {
+        Long torneo = torneo(organizador, null, MANIANA);
+        jdbc.update("UPDATE torneo SET fecha_fin = ? WHERE id = ?", Timestamp.from(EN_UNA_SEMANA), torneo);
+        entityManager.clear();
+
+        // termina después del inicio pero antes del fin: vale
+        RifaDetalle rifa = rifaService.crear(organizador, conTorneo(MANIANA, EN_UNA_SEMANA, null, torneo, 0));
+        assertThatValidacion(() -> rifaService.modificar(organizador, rifa.id(),
+                conTorneo(MANIANA, EN_UNA_SEMANA.plus(1, ChronoUnit.HOURS), null, torneo, 0)))
                 .containsOnlyKeys("ventaHasta");
     }
 

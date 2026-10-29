@@ -707,8 +707,9 @@ paths:
         Con `torneoId` (PICA-218), el torneo tiene que ser del mismo organizador (404 `TORNEO_NO_ENCONTRADO`
         si no), estar en BORRADOR, INSCRIPCION_ABIERTA o INSCRIPCION_CERRADA (409 `TORNEO_NO_ADMITE_RIFA`) y
         no tener otra rifa (409 `TORNEO_CON_RIFA`). La venta tiene que empezar después de que se publicó el
-        torneo y terminar antes de que empiece (`VENTANA_INVALIDA` en `ventaDesde` o `ventaHasta`); la fecha
-        que el torneo todavía no tiene no se controla. `PREMIOS_INVALIDOS` en `pctDestinadoTorneo` si la rifa
+        torneo y terminar antes de su finalización (`fechaFin`) o, si el torneo no la tiene, antes de su inicio
+        (`VENTANA_INVALIDA` en `ventaDesde` o `ventaHasta`); la fecha que el torneo todavía no tiene no se
+        controla. `PREMIOS_INVALIDOS` en `pctDestinadoTorneo` si la rifa
         no tiene torneo y no es 0, o si con los premios cargados pasa de 100.
       requestBody: {$ref: '#/components/requestBodies/Rifa'}
       responses:
@@ -798,6 +799,120 @@ paths:
         content: {application/json: {schema: {$ref: '#/components/schemas/PublicarRifaRequest'}}}
       responses:
         '200': {$ref: '#/components/responses/Rifa'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/rifas/publicas:
+    get:
+      tags: [Rifas]
+      summary: Rifas en venta (público)
+      x-jira: PICA-221
+      x-owner: Laura
+      security: []
+      description: >-
+        Las rifas EN_VENTA con la venta sin terminar, también las que todavía no empezaron (`ventaDesde` futura).
+        Primero las que cierran antes; `sort` se ignora. Sin borradores ni dadas de baja. Accesible sin login.
+      parameters:
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageRifaPublicaResumen'}}}}
+
+  /api/v1/rifas/publicas/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Rifas]
+      summary: Ver una rifa para comprar (público)
+      x-jira: PICA-221
+      x-owner: Laura
+      security: []
+      description: >-
+        El detalle que ve quien compra, sin datos del organizador ni de los compradores. 404 `RIFA_NO_ENCONTRADA`
+        si es un borrador o está dada de baja. Accesible sin login.
+      responses:
+        '200': {description: La rifa, content: {application/json: {schema: {$ref: '#/components/schemas/RifaPublicaDetalle'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/rifas/publicas/{id}/numeros:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Rifas]
+      summary: Grilla de números de una rifa (público)
+      x-jira: PICA-221
+      x-owner: Laura
+      security: []
+      description: >-
+        Los números que no se pueden elegir, en orden: VENDIDO, RESERVADO mientras alguien lo paga y REINTEGRADO.
+        Los demás del rango `numeroDesde`..`numeroHasta` están disponibles: un número libre no tiene fila. Una
+        reserva vencida (`app.rifas.duracion-reserva`, 10 minutos por defecto) cuenta como libre. No dice quién
+        tiene cada número. 404 `RIFA_NO_ENCONTRADA` como en el detalle. Accesible sin login.
+      responses:
+        '200':
+          description: Los ocupados
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/NumeroOcupado'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/rifas/{id}/reservas:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Rifas]
+      summary: Reservar números para comprarlos
+      x-jira: PICA-222
+      x-owner: Laura
+      description: >-
+        Paso 1 de la compra (HU-403). Los números elegidos quedan RESERVADO a nombre del usuario por
+        `app.rifas.duracion-reserva` (10 minutos por defecto), mientras paga; reemplaza la reserva que tuviera en la
+        rifa. Responde lo que se va a cobrar: el precio de los números (va al pozo de la rifa) más los gastos
+        administrativos que la rifa fijó al publicar. 400 `VALIDACION` con `RANGO_INVALIDO` en `numeros` si alguno
+        está fuera del rango, y `VALOR_INVALIDO` si hay repetidos. 404 `RIFA_NO_ENCONTRADA`. 409 `VENTA_CERRADA`
+        fuera de la ventana de venta, `RIFA_PROPIA` si es el organizador y `NUMERO_NO_DISPONIBLE` (con `numeros`)
+        si alguno está vendido o reservado por otro; dos pedidos a la vez por el mismo número reservan uno solo.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/VentaRifaRequest'}}}
+      responses:
+        '200': {description: La reserva, content: {application/json: {schema: {$ref: '#/components/schemas/ReservaRifa'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Rifas]
+      summary: Cancelar la reserva
+      x-jira: PICA-222
+      x-owner: Laura
+      description: Libera los números que el usuario tiene reservados en la rifa; sin reserva no hace nada.
+      responses:
+        '204': {description: Liberados}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/rifas/{id}/comprar:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Rifas]
+      summary: Comprar los números reservados
+      x-jira: PICA-222
+      x-owner: Laura
+      description: >-
+        Paso 2 de la compra (HU-403; empezó en HU-305). Con los números reservados por el usuario, cobra por la
+        interfaz de cobro el precio más los gastos administrativos (un solo cobro; el ticket guarda el monto y los
+        gastos por separado), emite el ticket y los números pasan a VENDIDO. Publica la venta en
+        `/topic/rifas/{id}` y, con torneo, `/topic/torneos/{id}`. Idempotente: con la misma clave devuelve el mismo
+        ticket sin volver a cobrar. 400 `VALIDACION` con `REQUERIDO` en `Idempotency-Key` sin la clave. 409
+        `VENTA_CERRADA`, `RIFA_PROPIA`, `NUMERO_NO_DISPONIBLE` si alguno ya no es suyo, `RESERVA_VENCIDA` (con
+        `numeros`) si la reserva venció o no existe y `CLAVE_IDEMPOTENCIA_USADA` si la clave es de otra compra. En
+        ningún 409 se cobra nada.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 64}
+          description: Una por intento de compra (por ejemplo, un UUID); repetirla devuelve el mismo ticket
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/VentaRifaRequest'}}}
+      responses:
+        '200': {description: El comprobante, content: {application/json: {schema: {$ref: '#/components/schemas/VentaRifaResultado'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
   # --- Equipos -----------------------------------------------------------------
@@ -2223,7 +2338,10 @@ components:
         torneo con la inscripción cerrada o en curso) · CHECKIN_SIN_VENTANA (el torneo no configuró el check-in o el
         partido no tiene fecha) · CHECKIN_FUERA_DE_VENTANA (antes o después de la ventana; trae `abreEn` y
         `cierraEn`). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
-        403 SIN_PERMISO.
+        403 SIN_PERMISO. Venta de números (PICA-222): NUMERO_NO_DISPONIBLE (vendido o reservado por otro; la lista
+        va en `numeros`) · VENTA_CERRADA (fuera de la ventana de venta; trae `ventaDesde` y `ventaHasta`) ·
+        RESERVA_VENCIDA (la reserva se venció o no existe; la lista va en `numeros`) · RIFA_PROPIA (el organizador
+        no compra su rifa) · CLAVE_IDEMPOTENCIA_USADA (la clave ya se usó para otra compra).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
@@ -2249,7 +2367,8 @@ components:
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
-             NUMERO_YA_VENDIDO, PRONOSTICO_FUERA_DE_VENTANA,
+             NUMERO_NO_DISPONIBLE, VENTA_CERRADA, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
+             PRONOSTICO_FUERA_DE_VENTANA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN]
     ErrorCampo:
@@ -3343,8 +3462,95 @@ components:
         falta la fecha del sorteo · SIN_PREMIOS: no hay premios · PREMIOS_NO_SUMAN_100: `pctDestinadoTorneo`
         más los premios no suman 100 % (la suma de los premios, sin el torneo, va en `sumaPremios`) ·
         TORNEO_NO_PUBLICADO: el torneo de la rifa no se publicó · VENTANA_FUERA_DEL_TORNEO: la venta empieza
-        antes de que se publicara el torneo o termina después de que empieza.
+        antes de que se publicara el torneo o termina después de su finalización (o de su inicio, si no tiene
+        fecha de fin).
       enum: [VENTANA, VENTA_YA_EMPEZO, FECHA_SORTEO, SIN_PREMIOS, PREMIOS_NO_SUMAN_100, TORNEO_NO_PUBLICADO, VENTANA_FUERA_DEL_TORNEO]
+    RifaPublicaResumen:
+      type: object
+      required: [id, titulo, numeroDesde, numeroHasta, precioNumero, moneda, ventaHasta]
+      description: Fila de las rifas en venta (PICA-221).
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        titulo: {type: string}
+        torneoNombre: {type: [string, 'null'], description: 'Sin torneo, null'}
+        numeroDesde: {type: integer}
+        numeroHasta: {type: integer}
+        precioNumero: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        ventaDesde: {type: string, format: date-time, description: 'Si es futura, la venta todavía no empezó'}
+        ventaHasta: {type: string, format: date-time}
+        fechaSorteo: {type: string, format: date-time}
+    RifaPublicaDetalle:
+      type: object
+      required: [id, titulo, estado, pctDestinadoTorneo, numeroDesde, numeroHasta, precioNumero, moneda, premios]
+      description: Una rifa como la ve quien compra (PICA-221), sin datos del organizador ni de los compradores.
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        titulo: {type: string}
+        descripcion: {type: [string, 'null']}
+        estado: {$ref: '#/components/schemas/EstadoRifa'}
+        torneo:
+          type: [object, 'null']
+          description: 'Sin torneo, null. El slug lleva a la ficha pública (`GET /torneos/slug/{slug}`)'
+          required: [id, nombre]
+          properties:
+            id: {$ref: '#/components/schemas/Id'}
+            nombre: {type: string}
+            slug: {type: [string, 'null']}
+        pctDestinadoTorneo: {type: integer, minimum: 0, maximum: 99, description: '% de lo recaudado que va al pozo del torneo; sin torneo, 0'}
+        numeroDesde: {type: integer}
+        numeroHasta: {type: integer}
+        precioNumero: {type: number}
+        pctGastosAdministrativos: {type: [number, 'null'], description: '% de gastos administrativos que paga aparte el comprador, fijado al publicar (PICA-222)'}
+        moneda: {type: string, examples: [ARS]}
+        ventaDesde: {type: string, format: date-time}
+        ventaHasta: {type: string, format: date-time}
+        fechaSorteo: {type: string, format: date-time, description: Fecha programada del sorteo}
+        premios: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}}
+    VentaRifaRequest:
+      type: object
+      required: [numeros]
+      description: Los números elegidos, para reservar y para comprar (PICA-222).
+      properties:
+        numeros: {type: array, minItems: 1, items: {type: integer}}
+    ReservaRifa:
+      type: object
+      required: [rifaId, numeros, precioNumero, monto, gastosAdministrativos, total, venceEn]
+      description: Los números reservados mientras se paga, con lo que se va a cobrar (`monto` + `gastosAdministrativos` = `total`).
+      properties:
+        rifaId: {$ref: '#/components/schemas/Id'}
+        numeros: {type: array, items: {type: integer}, description: En orden}
+        precioNumero: {type: number}
+        monto: {type: number, description: Precio de los números; va al pozo de la rifa}
+        pctGastosAdministrativos: {type: [number, 'null']}
+        gastosAdministrativos: {type: number}
+        total: {type: number}
+        venceEn: {type: string, format: date-time, description: Después los números vuelven a estar libres}
+    VentaRifaResultado:
+      type: object
+      required: [ticketId, ticketCodigo, numeros, monto, gastosAdministrativos, total, compradoEn, pozoRifa]
+      description: El comprobante de la compra.
+      properties:
+        ticketId: {$ref: '#/components/schemas/Id'}
+        ticketCodigo: {type: string, examples: [R7-4F2K9Q]}
+        numeros: {type: array, items: {type: integer}}
+        monto: {type: number}
+        gastosAdministrativos: {type: number}
+        total: {type: number, description: Lo que se cobró}
+        compradoEn: {type: string, format: date-time}
+        pozoRifa: {type: number, description: Lo vendido hasta ahora}
+        pozoTorneo: {type: [number, 'null'], description: 'El pozo del torneo de ahora; sin torneo, null'}
+    NumeroOcupado:
+      type: object
+      required: [numero, estado]
+      description: Un número de la grilla que no se puede elegir (PICA-221); no dice quién lo tiene.
+      properties:
+        numero: {type: integer}
+        estado: {type: string, enum: [VENDIDO, RESERVADO, REINTEGRADO]}
+    PageRifaPublicaResumen:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/RifaPublicaResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
 
     # --- Torneos públicos (los enums son los del asistente) -------------------
     PremioDetalle:

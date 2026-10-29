@@ -199,11 +199,11 @@ ON CONFLICT DO NOTHING;
 -- ---------------------------------------------------------------------------------------------------
 
 INSERT INTO rifa (organizador_id, torneo_id, titulo, descripcion, numero_desde, numero_hasta, precio_numero,
-                  venta_desde, venta_hasta, sorteada_en, terminos_aceptados_en, loteria_declarada_en, estado,
-                  creado_por, modificado_por)
+                  venta_desde, venta_hasta, sorteada_en, terminos_aceptados_en, loteria_declarada_en,
+                  pct_gastos_administrativos, estado, creado_por, modificado_por)
 SELECT u.id, t.id, 'Rifa de la Copa abierta', 'El premio se sortea con la lotería nacional', 1, 100, 1000.00,
        now() - interval '1 day', now() + interval '7 days', now() + interval '8 days',
-       now() - interval '1 day', now() - interval '1 day',
+       now() - interval '1 day', now() - interval '1 day', 10,
        'EN_VENTA', 'SEED', 'SEED'
 FROM torneo t
 JOIN usuario u ON u.username = 'dev_organizador'
@@ -220,7 +220,7 @@ ON CONFLICT DO NOTHING;
 -- Una compra de tres números: el movimiento de pago, el ticket y los números que pasan a VENDIDO.
 INSERT INTO movimiento (billetera_id, tipo, monto, saldo_resultante, estado, referencia_externa, descripcion,
                         creado_por, modificado_por)
-SELECT b.id, 'COMPRA_NUMERO', 3150.00, 0, 'CONFIRMADO', 'seed-ticket-0001', 'Compra de 3 números de rifa',
+SELECT b.id, 'COMPRA_NUMERO', 3300.00, 0, 'CONFIRMADO', 'seed-ticket-0001', 'Compra de 3 números de rifa',
        'SEED', 'SEED'
 FROM billetera b
 JOIN usuario u ON u.id = b.usuario_id
@@ -228,7 +228,7 @@ WHERE u.username = 'dev_jugador5'
   AND NOT EXISTS (SELECT 1 FROM movimiento m WHERE m.referencia_externa = 'seed-ticket-0001');
 
 INSERT INTO ticket (codigo, rifa_id, comprador_id, movimiento_id, monto, comision, clave_idempotencia, creado_por)
-SELECT 'SEED-0001', r.id, u.id, m.id, 3000.00, 150.00, 'seed-ticket-0001', 'SEED'
+SELECT 'SEED-0001', r.id, u.id, m.id, 3000.00, 300.00, 'seed-ticket-0001', 'SEED'
 FROM rifa r
 JOIN torneo t ON t.id = r.torneo_id
 JOIN usuario u ON u.username = 'dev_jugador5'

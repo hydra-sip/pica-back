@@ -23,6 +23,9 @@ public enum FaltantePublicacion {
     PREMIOS_NO_SUMAN_100,
     /** El torneo de la rifa todavía no se publicó (HU-401). */
     TORNEO_NO_PUBLICADO,
-    /** La venta empieza antes de que se publicara el torneo o termina después de que empieza (HU-401). */
+    /**
+     * La venta empieza antes de que se publicara el torneo o termina después de su finalización (o de su inicio, si
+     * el torneo no tiene fecha de fin) (HU-401).
+     */
     VENTANA_FUERA_DEL_TORNEO
 }

@@ -1,9 +1,11 @@
 package com.hydra.pica.plataforma_pica.rifa.repository;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -21,6 +23,13 @@ public interface RifaRepository extends JpaRepository<Rifa, Long> {
 
     @EntityGraph(attributePaths = "torneo")
     Optional<Rifa> findByIdAndOrganizadorIdAndEliminadoEnIsNull(Long id, Long organizadorId);
+
+    /** Las que se pueden comprar o se van a poder: en venta y con la venta sin terminar (HU-403). */
+    @EntityGraph(attributePaths = "torneo")
+    Page<Rifa> findByEstadoAndVentaHastaAfterAndEliminadoEnIsNull(EstadoRifa estado, Instant ahora, Pageable pageable);
+
+    @EntityGraph(attributePaths = "torneo")
+    Optional<Rifa> findByIdAndEliminadoEnIsNull(Long id);
 
     Optional<Rifa> findByTorneoIdAndEliminadoEnIsNull(Long torneoId);
 
