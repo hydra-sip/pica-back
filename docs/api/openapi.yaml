@@ -893,8 +893,8 @@ paths:
       x-owner: Laura
       description: >-
         Paso 2 de la compra (HU-403; empezó en HU-305). Con los números reservados por el usuario, cobra por la
-        interfaz de cobro el precio más los gastos administrativos (un solo cobro; el ticket guarda el monto y los
-        gastos por separado), emite el ticket y los números pasan a VENDIDO. Publica la venta en
+        interfaz de cobro el precio más los gastos administrativos (en dos movimientos, COMPRA_NUMERO y COMISION,
+        como la inscripción; el ticket también guarda el monto y los gastos por separado), emite el ticket y los números pasan a VENDIDO. Publica la venta en
         `/topic/rifas/{id}` y, con torneo, `/topic/torneos/{id}`. Idempotente: con la misma clave devuelve el mismo
         ticket sin volver a cobrar. 400 `VALIDACION` con `REQUERIDO` en `Idempotency-Key` sin la clave. 409
         `VENTA_CERRADA`, `RIFA_PROPIA`, `NUMERO_NO_DISPONIBLE` si alguno ya no es suyo, `RESERVA_VENCIDA` (con

@@ -51,8 +51,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Un número tiene fila desde que se reserva (V13), así que la PK impide que dos lo reserven a la vez: el segundo
  * recibe 409 NUMERO_NO_DISPONIBLE. Una reserva vencida cuenta como libre y se borra al reservar ese número.</li>
  * <li>Comprar: con los números bloqueados, se cobra por {@link CobroService} el precio más los gastos administrativos
- * que la rifa fijó al publicar (un solo cobro; el ticket los guarda por separado), se emite el ticket y los números
- * pasan a VENDIDO. Publica {@link NumerosVendidos} para el tiempo real.</li>
+ * que la rifa fijó al publicar (en dos movimientos, COMPRA_NUMERO y COMISION, como la inscripción), se emite el
+ * ticket y los números pasan a VENDIDO. Publica {@link NumerosVendidos} para el tiempo real.</li>
  * </ol>
  *
  * Se reserva y se compra solo con la venta abierta (EN_VENTA y entre {@code ventaDesde} y {@code ventaHasta}), y el
@@ -143,8 +143,14 @@ public class VentaRifaService {
         BigDecimal gastos = GastosAdministrativos.monto(monto, rifa.getPctGastosAdministrativos());
         Long torneoId = rifa.getTorneo() != null ? rifa.getTorneo().getId() : null;
         Movimiento pago = cobroService.cobrar(new SolicitudCobro(compradorId, TipoMovimiento.COMPRA_NUMERO,
-                monto.add(gastos), torneoId, null, claveIdempotencia,
+                monto, torneoId, null, claveIdempotencia,
                 "Compra de " + elegidos.size() + " números de la rifa " + rifa.getTitulo()));
+        // los gastos administrativos van aparte, en otro movimiento, igual que en la inscripción: los números son del
+        // pozo de la rifa y esto de la plataforma (PICA-283)
+        if (gastos.signum() > 0) {
+            cobroService.cobrar(new SolicitudCobro(compradorId, TipoMovimiento.COMISION, gastos, torneoId, null,
+                    "gastos-compra-" + pago.getId(), "Gastos administrativos de la compra en la rifa " + rifa.getTitulo()));
+        }
 
         Ticket ticket = new Ticket();
         ticket.setCodigo(nuevoCodigo(rifaId));
