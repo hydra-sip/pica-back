@@ -17,6 +17,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -78,6 +79,18 @@ public class RifaController {
     @PostMapping("/{id}/publicar")
     public RifaDetalle publicar(@PathVariable Long id, @Valid @RequestBody PublicarRifaRequest request) {
         return rifaService.publicar(usuarioActual(), id);
+    }
+
+    /** Para modificar una rifa publicada que nadie compró (PICA-287). */
+    @PostMapping("/{id}/volver-a-borrador")
+    public RifaDetalle volverABorrador(@PathVariable Long id) {
+        return rifaService.volverABorrador(usuarioActual(), id);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
+        rifaService.eliminar(usuarioActual(), id);
+        return ResponseEntity.noContent().build();
     }
 
     private Long usuarioActual() {

@@ -755,6 +755,21 @@ paths:
       responses:
         '200': {$ref: '#/components/responses/Rifa'}
         '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Rifas]
+      summary: Eliminar una rifa sin compradores
+      x-jira: PICA-287
+      x-permiso: RIFA_GESTIONAR
+      x-owner: Laura
+      description: >-
+        Baja lógica de una rifa propia en BORRADOR o EN_VENTA (aunque la venta haya empezado) mientras nadie
+        haya comprado: deja de aparecer en Mis rifas y en las rifas en venta, y su torneo queda libre para otra
+        rifa. 409 `RIFA_NO_EDITABLE` en otro estado, `RIFA_CON_VENTAS` y `RIFA_CON_RESERVAS` como al volver a
+        borrador.
+      responses:
+        '204': {description: Eliminada}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
 
   /api/v1/rifas/{id}/premios:
     put:
@@ -790,15 +805,34 @@ paths:
         400 `VALIDACION` con `REQUERIDO` en el campo que no venga en `true`.
         409 `RIFA_NO_EDITABLE` si ya no está en BORRADOR.
         409 `RIFA_INCOMPLETA` si le falta algo para venderse: la lista va en `faltantes` (ver
-        `FaltantePublicacion`) y la suma de los premios en `sumaPremios`. Una venta que ya empezó no se
-        ajusta sola: el organizador corrige `ventaDesde`. Con torneo (PICA-218), el torneo tiene que estar
-        publicado y la venta dentro de sus fechas.
+        `FaltantePublicacion`) y la suma de los premios en `sumaPremios`. Un `ventaDesde` pasado se acepta y
+        la venta arranca al publicar (PICA-287); un `ventaHasta` pasado no. Con torneo (PICA-218), el torneo
+        tiene que estar publicado y la venta dentro de sus fechas.
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/PublicarRifaRequest'}}}
       responses:
         '200': {$ref: '#/components/responses/Rifa'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/rifas/{id}/volver-a-borrador:
+    post:
+      tags: [Rifas]
+      summary: Volver una rifa publicada a BORRADOR para modificarla
+      x-jira: PICA-287
+      x-permiso: RIFA_GESTIONAR
+      x-owner: Laura
+      description: >-
+        Una rifa EN_VENTA propia vuelve a BORRADOR, aunque la venta ya haya empezado, mientras nadie haya
+        comprado. Se borran la aceptación de los términos, la declaración de la lotería y los gastos fijados: se
+        vuelven a registrar al publicar de nuevo. 409 `RIFA_NO_EDITABLE` si no está EN_VENTA, `RIFA_CON_VENTAS`
+        (con `numerosVendidos`) si tiene números vendidos y `RIFA_CON_RESERVAS` si alguien está pagando (las
+        reservas vencidas no cuentan y se borran).
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200': {$ref: '#/components/responses/Rifa'}
+        '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
   /api/v1/rifas/publicas:
@@ -2362,7 +2396,9 @@ components:
         403 SIN_PERMISO. Venta de números (PICA-222): NUMERO_NO_DISPONIBLE (vendido o reservado por otro; la lista
         va en `numeros`) · VENTA_CERRADA (fuera de la ventana de venta; trae `ventaDesde` y `ventaHasta`) ·
         RESERVA_VENCIDA (la reserva se venció o no existe; la lista va en `numeros`) · RIFA_PROPIA (el organizador
-        no compra su rifa) · CLAVE_IDEMPOTENCIA_USADA (la clave ya se usó para otra compra).
+        no compra su rifa) · CLAVE_IDEMPOTENCIA_USADA (la clave ya se usó para otra compra) · RIFA_CON_VENTAS
+        (la rifa tiene números vendidos: no vuelve a borrador ni se elimina; trae `numerosVendidos`) ·
+        RIFA_CON_RESERVAS (alguien está pagando números de la rifa).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
@@ -2389,6 +2425,7 @@ components:
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
+             RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
              PRONOSTICO_FUERA_DE_VENTANA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN]
@@ -3463,7 +3500,7 @@ components:
         realizadoPor: {$ref: '#/components/schemas/UsuarioPublico'}
     RifaDetalle:
       type: object
-      required: [id, titulo, pctDestinadoTorneo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, creadoEn]
+      required: [id, titulo, pctDestinadoTorneo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, numerosVendidos, creadoEn]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         titulo: {type: string}
@@ -3482,6 +3519,7 @@ components:
         terminosAceptadosEn: {type: [string, 'null'], format: date-time, description: Se completa al publicar}
         loteriaDeclaradaEn: {type: [string, 'null'], format: date-time, description: Se completa al publicar}
         premios: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}}
+        numerosVendidos: {type: integer, minimum: 0, description: 'Mientras sea 0, se puede volver a borrador o eliminar (PICA-287)'}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: [string, 'null'], format: date-time}
     PublicarRifaRequest:
@@ -3494,14 +3532,14 @@ components:
       type: string
       description: >-
         Lo que le falta a una rifa para publicarse (en `faltantes` del 409 `RIFA_INCOMPLETA`). VENTANA: no
-        están cargadas las fechas de venta · VENTA_YA_EMPEZO: las fechas de venta quedaron en el pasado
-        (`ventaDesde` es anterior a ahora, o la venta ya terminó) y hay que actualizarlas · FECHA_SORTEO:
+        están cargadas las fechas de venta · VENTA_TERMINADA: el fin de la venta ya pasó (un inicio pasado sí
+        se acepta: la venta arranca al publicar) · FECHA_SORTEO:
         falta la fecha del sorteo · SIN_PREMIOS: no hay premios · PREMIOS_NO_SUMAN_100: `pctDestinadoTorneo`
         más los premios no suman 100 % (la suma de los premios, sin el torneo, va en `sumaPremios`) ·
         TORNEO_NO_PUBLICADO: el torneo de la rifa no se publicó · VENTANA_FUERA_DEL_TORNEO: la venta empieza
         antes de que se publicara el torneo o termina después de su finalización (o de su inicio, si no tiene
         fecha de fin).
-      enum: [VENTANA, VENTA_YA_EMPEZO, FECHA_SORTEO, SIN_PREMIOS, PREMIOS_NO_SUMAN_100, TORNEO_NO_PUBLICADO, VENTANA_FUERA_DEL_TORNEO]
+      enum: [VENTANA, VENTA_TERMINADA, FECHA_SORTEO, SIN_PREMIOS, PREMIOS_NO_SUMAN_100, TORNEO_NO_PUBLICADO, VENTANA_FUERA_DEL_TORNEO]
     RifaPublicaResumen:
       type: object
       required: [id, titulo, numeroDesde, numeroHasta, precioNumero, moneda, ventaHasta]

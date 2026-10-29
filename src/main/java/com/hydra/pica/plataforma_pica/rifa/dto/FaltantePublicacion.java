@@ -8,10 +8,10 @@ public enum FaltantePublicacion {
     /** No están cargadas las fechas de venta. */
     VENTANA,
     /**
-     * Las fechas de venta quedaron en el pasado: la venta empieza antes de ahora (o ya terminó). Hay que
-     * actualizarlas en el paso 1; no se ajustan solas.
+     * El fin de la venta ya pasó: hay que actualizarlo en el paso 1. Un inicio pasado sí se acepta: la venta
+     * arranca al publicar (PICA-287).
      */
-    VENTA_YA_EMPEZO,
+    VENTA_TERMINADA,
     /** No está cargada la fecha del sorteo. */
     FECHA_SORTEO,
     /** No hay premios. */

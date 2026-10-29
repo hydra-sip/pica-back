@@ -95,6 +95,8 @@ public enum CodigoError {
     RESERVA_VENCIDA,
     RIFA_PROPIA,
     CLAVE_IDEMPOTENCIA_USADA,
+    RIFA_CON_VENTAS,
+    RIFA_CON_RESERVAS,
     PRONOSTICO_FUERA_DE_VENTANA,
 
     // Protecciones (403)

@@ -71,6 +71,7 @@ class RifaServiceIntegracionTest {
     private static final Instant SORTEO = EN_UNA_SEMANA.plus(1, ChronoUnit.DAYS);
 
     @Autowired private RifaService rifaService;
+    @Autowired private VentaRifaService ventaRifaService;
     @Autowired private RifaRepository rifaRepository;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
@@ -322,14 +323,104 @@ class RifaServiceIntegracionTest {
     }
 
     @Test
-    void unaVentaQueYaEmpezoHayQueCorregirla() {
+    void conElInicioDeLaVentaPasadoSePublicaYLaVentaArrancaYa() {
         RifaDetalle creada = rifaService.crear(organizador,
                 requestConSorteo(Instant.now().minus(1, ChronoUnit.HOURS), EN_UNA_SEMANA, SORTEO));
         rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("100", null)));
 
-        assertThatIncompleta(() -> rifaService.publicar(organizador, creada.id()))
-                .containsExactly(FaltantePublicacion.VENTA_YA_EMPEZO);
-        assertThat(rifaService.detalle(organizador, creada.id()).estado()).isEqualTo(EstadoRifa.BORRADOR);
+        assertThat(rifaService.publicar(organizador, creada.id()).estado()).isEqualTo(EstadoRifa.EN_VENTA);
+    }
+
+    @Test
+    void conElFinDeLaVentaPasadoNoSePublica() {
+        Long id = rifaLista(premio("100", null));
+        jdbc.update("UPDATE rifa SET venta_desde = now() - interval '3 days', venta_hasta = now() - interval '1 day'"
+                + " WHERE id = ?", id);
+        entityManager.clear();
+
+        assertThatIncompleta(() -> rifaService.publicar(organizador, id))
+                .containsExactly(FaltantePublicacion.VENTA_TERMINADA);
+    }
+
+    // --- volver a borrador y eliminar (PICA-287) -------------------------------------------------------
+
+    @Test
+    void unaRifaPublicadaSinComprasVuelveABorradorYSePuedeModificar() {
+        Long id = rifaLista(premio("100", null));
+        rifaService.publicar(organizador, id);
+        abrirLaVenta(id);
+
+        RifaDetalle borrador = rifaService.volverABorrador(organizador, id);
+
+        assertThat(borrador.estado()).isEqualTo(EstadoRifa.BORRADOR);
+        assertThat(borrador.terminosAceptadosEn()).isNull();
+        assertThat(borrador.loteriaDeclaradaEn()).isNull();
+        assertThat(rifaRepository.findById(id).orElseThrow().getPctGastosAdministrativos()).isNull();
+        assertThat(rifaService.modificar(organizador, id, requestConSorteo(MANIANA, EN_UNA_SEMANA, SORTEO)).estado())
+                .isEqualTo(EstadoRifa.BORRADOR);
+    }
+
+    @Test
+    void conNumerosVendidosNoVuelveABorradorNiSeElimina() {
+        Long id = rifaLista(premio("100", null));
+        rifaService.publicar(organizador, id);
+        abrirLaVenta(id);
+        ventaRifaService.reservar(otro, id, List.of(5));
+        ventaRifaService.comprar(otro, id, List.of(5), "compra-1");
+
+        assertThat(rifaService.detalle(organizador, id).numerosVendidos()).isEqualTo(1);
+        assertThatThrownBy(() -> rifaService.volverABorrador(organizador, id)).isInstanceOfSatisfying(
+                ApiException.class, e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_CON_VENTAS));
+        assertThatThrownBy(() -> rifaService.eliminar(organizador, id)).isInstanceOfSatisfying(
+                ApiException.class, e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_CON_VENTAS));
+    }
+
+    @Test
+    void conAlguienPagandoNoVuelveABorradorPeroConLaReservaVencidaSi() {
+        Long id = rifaLista(premio("100", null));
+        rifaService.publicar(organizador, id);
+        abrirLaVenta(id);
+        ventaRifaService.reservar(otro, id, List.of(5));
+
+        assertThatThrownBy(() -> rifaService.volverABorrador(organizador, id)).isInstanceOfSatisfying(
+                ApiException.class, e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_CON_RESERVAS));
+
+        jdbc.update("UPDATE numero SET creado_en = now() - interval '11 minutes' WHERE rifa_id = ?", id);
+        entityManager.clear();
+        assertThat(rifaService.volverABorrador(organizador, id).estado()).isEqualTo(EstadoRifa.BORRADOR);
+        // la reserva vencida se borró
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM numero WHERE rifa_id = ?", Integer.class, id)).isZero();
+    }
+
+    @Test
+    void unBorradorSeEliminaYDejaDeAparecer() {
+        RifaDetalle borrador = rifaService.crear(organizador, request(1, 10, null, null));
+
+        rifaService.eliminar(organizador, borrador.id());
+
+        assertThat(rifaService.listarMias(organizador, PageRequest.of(0, 20)).getContent()).isEmpty();
+        assertThatThrownBy(() -> rifaService.detalle(organizador, borrador.id())).isInstanceOfSatisfying(
+                ApiException.class, e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_NO_ENCONTRADA));
+    }
+
+    @Test
+    void alEliminarLaRifaSuTorneoQuedaLibreParaOtra() {
+        Long torneo = torneo(organizador, null, null);
+        RifaDetalle primera = rifaService.crear(organizador, conTorneo(null, null, null, torneo, 0));
+
+        rifaService.eliminar(organizador, primera.id());
+
+        assertThat(rifaService.crear(organizador, conTorneo(null, null, null, torneo, 0)).torneoId()).isEqualTo(torneo);
+    }
+
+    @Test
+    void laRifaDeOtroNoSeEliminaNiVuelveABorrador() {
+        RifaDetalle ajena = rifaService.crear(otro, request(1, 10, null, null));
+
+        assertThatThrownBy(() -> rifaService.eliminar(organizador, ajena.id())).isInstanceOfSatisfying(
+                ApiException.class, e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_NO_ENCONTRADA));
+        assertThatThrownBy(() -> rifaService.volverABorrador(organizador, ajena.id())).isInstanceOfSatisfying(
+                ApiException.class, e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_NO_ENCONTRADA));
     }
 
     @Test
@@ -625,6 +716,12 @@ class RifaServiceIntegracionTest {
         torneo.setPublicadoEn(publicadoEn);
         torneo.setFechaInicio(fechaInicio);
         return torneoRepository.saveAndFlush(torneo).getId();
+    }
+
+    /** La venta de una rifa publicada, abierta desde hace una hora, para poder comprar. */
+    private void abrirLaVenta(Long id) {
+        jdbc.update("UPDATE rifa SET venta_desde = now() - interval '1 hour' WHERE id = ?", id);
+        entityManager.clear();
     }
 
     /** Una rifa con ventana y sorteo cargados, lista para publicar si los premios suman 100. */
