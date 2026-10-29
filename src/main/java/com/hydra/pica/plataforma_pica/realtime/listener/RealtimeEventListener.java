@@ -185,14 +185,11 @@ public class RealtimeEventListener {
             return;
         }
         int totalVendidos = (int) numeroRepository.countByIdRifaIdAndEstado(evento.rifaId(), EstadoNumero.VENDIDO);
-        BigDecimal pozoRifa = rifa.getPrecioNumero() != null
-                ? rifa.getPrecioNumero().multiply(BigDecimal.valueOf(totalVendidos))
-                : BigDecimal.ZERO;
+        // lo vendido se reparte entre el pozo del torneo y los premios (HU-405)
+        RepartoRifa reparto = RepartoRifa.de(rifa, totalVendidos);
+        BigDecimal pozoRifa = reparto.aPremios();
         Long torneoId = rifa.getTorneo() != null ? rifa.getTorneo().getId() : null;
-        BigDecimal aporteTorneo = BigDecimal.ZERO;
-        if (torneoId != null) {
-            aporteTorneo = aporteRifa(rifa, pozoRifa);
-        }
+        BigDecimal aporteTorneo = torneoId != null ? reparto.alPozoTorneo() : BigDecimal.ZERO;
         EventoRifaMessage mensajeRifa = new EventoRifaMessage(
                 "RECLAMO_REGISTRADO",
                 evento.rifaId(),
