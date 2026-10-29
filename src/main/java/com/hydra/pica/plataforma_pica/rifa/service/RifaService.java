@@ -212,7 +212,7 @@ public class RifaService {
 
     /**
      * Baja lógica de una rifa en BORRADOR o EN_VENTA sin compradores (PICA-287): deja de aparecer en todos
-     * lados y su torneo queda libre para otra rifa (V29).
+     * lados y su torneo queda libre para otra rifa (V30).
      */
     @Transactional
     public void eliminar(Long organizadorId, Long id) {
