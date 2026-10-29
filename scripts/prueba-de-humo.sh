@@ -357,7 +357,10 @@ pedir 200 GET /api/v1/pronosticos/partidos "/api/v1/pronosticos/partidos" "$USUA
 pedir 404:PARTIDO_NO_ENCONTRADO PUT /api/v1/partidos/{id}/pronostico "/api/v1/partidos/0/pronostico" "$USUARIO" '{"eleccion":"1"}'
 # ranking de pronósticos (HU-307, PICA-258)
 pedir 200 GET /api/v1/pronosticos/ranking "/api/v1/pronosticos/ranking" "$USUARIO"
+# reclamos de rifa (HU-506, PICA-268)
+pedir 404:RIFA_NO_ENCONTRADA POST /api/v1/rifas/{id}/reclamos "/api/v1/rifas/0/reclamos" "$USUARIO" '{"motivo":"Irregularidad en sorteo"}'
 pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
+
 
 INSCRIPCION_ID=$(campo .id)
 pedir 200 GET /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
