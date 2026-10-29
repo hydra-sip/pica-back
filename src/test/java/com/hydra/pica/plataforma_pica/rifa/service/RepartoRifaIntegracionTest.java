@@ -49,6 +49,7 @@ class RepartoRifaIntegracionTest {
 
     @Autowired private VentaRifaService ventaRifaService;
     @Autowired private RifaService rifaService;
+    @Autowired private RifaPublicaService rifaPublicaService;
     @Autowired private PozoTorneoService pozoTorneoService;
     @Autowired private TorneoRepository torneoRepository;
     @Autowired private UsuarioRepository usuarioRepository;
@@ -101,6 +102,8 @@ class RepartoRifaIntegracionTest {
 
         assertThat(compra.pozoRifa()).isEqualByComparingTo("700");
         assertThat(reparto(rifa)).isEqualTo(reparto("1000.00", "300.00", "700.00"));
+        // quien la va a comprar ve lo mismo
+        assertThat(rifaPublicaService.detalle(rifa).reparto()).isEqualTo(reparto("1000.00", "300.00", "700.00"));
     }
 
     @Test

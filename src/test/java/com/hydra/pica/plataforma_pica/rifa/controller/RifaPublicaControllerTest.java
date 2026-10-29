@@ -17,6 +17,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
+import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
 import com.hydra.pica.plataforma_pica.rifa.dto.NumeroOcupado;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaPublicaDetalle;
@@ -67,13 +68,15 @@ class RifaPublicaControllerTest {
         when(rifaPublicaService.detalle(7L)).thenReturn(new RifaPublicaDetalle(7L, "Rifa del club", null,
                 EstadoRifa.EN_VENTA, new RifaPublicaDetalle.TorneoDeRifa(3L, "Copa abierta", "copa-abierta"), 20, 1,
                 100, new BigDecimal("500.00"), new BigDecimal("10.00"), "ARS", null, VENTA_HASTA, null,
-                List.of(new PremioRifaDetalle(1, 80, "Una bici", null))));
+                List.of(new PremioRifaDetalle(1, 80, "Una bici", null)),
+                new RepartoRifa(new BigDecimal("1000.00"), new BigDecimal("200.00"), new BigDecimal("800.00"))));
 
         mockMvc.perform(get("/api/v1/rifas/publicas/7"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.torneo.slug").value("copa-abierta"))
                 .andExpect(jsonPath("$.pctDestinadoTorneo").value(20))
-                .andExpect(jsonPath("$.premios[0].descripcion").value("Una bici"));
+                .andExpect(jsonPath("$.premios[0].descripcion").value("Una bici"))
+                .andExpect(jsonPath("$.reparto.alPozoTorneo").value(200.00));
     }
 
     @Test

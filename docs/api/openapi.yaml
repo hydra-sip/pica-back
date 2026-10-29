@@ -3655,8 +3655,10 @@ components:
         fechaSorteo: {type: string, format: date-time}
     RifaPublicaDetalle:
       type: object
-      required: [id, titulo, estado, pctDestinadoTorneo, numeroDesde, numeroHasta, precioNumero, moneda, premios]
-      description: Una rifa como la ve quien compra (PICA-221), sin datos del organizador ni de los compradores.
+      required: [id, titulo, estado, pctDestinadoTorneo, numeroDesde, numeroHasta, precioNumero, moneda, premios, reparto]
+      description: >-
+        Una rifa como la ve quien compra (PICA-221), sin datos del organizador ni de los compradores. `reparto` es lo
+        recaudado hasta ahora y cuánto va al pozo del torneo y a los premios (HU-405).
       properties:
         id: {$ref: '#/components/schemas/Id'}
         titulo: {type: string}
@@ -3680,6 +3682,7 @@ components:
         ventaHasta: {type: string, format: date-time}
         fechaSorteo: {type: string, format: date-time, description: Fecha programada del sorteo}
         premios: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}}
+        reparto: {$ref: '#/components/schemas/RepartoRifa'}
     VentaRifaRequest:
       type: object
       required: [numeros]
