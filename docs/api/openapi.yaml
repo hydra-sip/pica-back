@@ -3584,9 +3584,20 @@ components:
         entra: {$ref: '#/components/schemas/UsuarioPublico'}
         reemplazadoEn: {type: string, format: date-time}
         realizadoPor: {$ref: '#/components/schemas/UsuarioPublico'}
+    RepartoRifa:
+      type: object
+      required: [recaudado, alPozoTorneo, aPremios]
+      description: >-
+        Cómo se reparte lo vendido (HU-405, PICA-259): `alPozoTorneo` es el `pctDestinadoTorneo` de lo recaudado y
+        `aPremios` el resto, así las dos partes suman siempre `recaudado`. Sin torneo, todo va a premios. Los gastos
+        administrativos no entran: los paga el comprador aparte.
+      properties:
+        recaudado: {type: number, description: Precio del número por los vendidos}
+        alPozoTorneo: {type: number}
+        aPremios: {type: number}
     RifaDetalle:
       type: object
-      required: [id, titulo, pctDestinadoTorneo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, numerosVendidos, creadoEn]
+      required: [id, titulo, pctDestinadoTorneo, estado, numeroDesde, numeroHasta, precioNumero, moneda, premios, numerosVendidos, reparto, creadoEn]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         titulo: {type: string}
@@ -3606,6 +3617,7 @@ components:
         loteriaDeclaradaEn: {type: [string, 'null'], format: date-time, description: Se completa al publicar}
         premios: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}}
         numerosVendidos: {type: integer, minimum: 0, description: 'Mientras sea 0, se puede volver a borrador o eliminar (PICA-287)'}
+        reparto: {$ref: '#/components/schemas/RepartoRifa'}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: [string, 'null'], format: date-time}
     PublicarRifaRequest:
@@ -3643,8 +3655,10 @@ components:
         fechaSorteo: {type: string, format: date-time}
     RifaPublicaDetalle:
       type: object
-      required: [id, titulo, estado, pctDestinadoTorneo, numeroDesde, numeroHasta, precioNumero, moneda, premios]
-      description: Una rifa como la ve quien compra (PICA-221), sin datos del organizador ni de los compradores.
+      required: [id, titulo, estado, pctDestinadoTorneo, numeroDesde, numeroHasta, precioNumero, moneda, premios, reparto]
+      description: >-
+        Una rifa como la ve quien compra (PICA-221), sin datos del organizador ni de los compradores. `reparto` es lo
+        recaudado hasta ahora y cuánto va al pozo del torneo y a los premios (HU-405).
       properties:
         id: {$ref: '#/components/schemas/Id'}
         titulo: {type: string}
@@ -3668,6 +3682,7 @@ components:
         ventaHasta: {type: string, format: date-time}
         fechaSorteo: {type: string, format: date-time, description: Fecha programada del sorteo}
         premios: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}}
+        reparto: {$ref: '#/components/schemas/RepartoRifa'}
     VentaRifaRequest:
       type: object
       required: [numeros]
@@ -3699,7 +3714,7 @@ components:
         gastosAdministrativos: {type: number}
         total: {type: number, description: Lo que se cobró}
         compradoEn: {type: string, format: date-time}
-        pozoRifa: {type: number, description: Lo vendido hasta ahora}
+        pozoRifa: {type: number, description: 'Lo que va a los premios de lo vendido hasta ahora: sin el aporte al torneo (HU-405)'}
         pozoTorneo: {type: [number, 'null'], description: 'El pozo del torneo de ahora; sin torneo, null'}
     TicketDetalle:
       type: object

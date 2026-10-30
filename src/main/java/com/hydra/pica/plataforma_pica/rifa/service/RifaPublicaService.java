@@ -6,6 +6,7 @@ import java.util.List;
 import com.hydra.pica.plataforma_pica.common.config.RifaConfig.RifaProperties;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.dto.NumeroOcupado;
@@ -53,7 +54,8 @@ public class RifaPublicaService {
     @Transactional(readOnly = true)
     public RifaPublicaDetalle detalle(Long id) {
         Rifa rifa = buscarPublica(id);
-        return RifaPublicaDetalle.de(rifa, premioRifaRepository.buscarPorRifa(rifa.getId()));
+        return RifaPublicaDetalle.de(rifa, premioRifaRepository.buscarPorRifa(rifa.getId()),
+                numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO));
     }
 
     @Transactional(readOnly = true)

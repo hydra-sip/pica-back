@@ -24,6 +24,7 @@ import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Numero;
+import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Ticket;
 import com.hydra.pica.plataforma_pica.rifa.dto.ReservaRifa;
@@ -278,10 +279,10 @@ public class VentaRifaService {
 
     // --- cuentas y armado ---------------------------------------------------------------------------
 
-    /** Lo vendido hasta ahora: va a los premios y, con torneo, a su pozo. */
+    /** Lo que va a los premios de lo vendido hasta ahora: sin el % que la rifa destina al torneo (HU-405). */
     private BigDecimal pozoRifa(Rifa rifa) {
         long vendidos = numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO);
-        return rifa.getPrecioNumero().multiply(BigDecimal.valueOf(vendidos));
+        return RepartoRifa.de(rifa, vendidos).aPremios();
     }
 
     private static VentaRifaResultado resultado(Ticket ticket, List<Integer> numeros, BigDecimal pozoRifa,
