@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.domain;
 
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -15,6 +16,9 @@ import com.hydra.pica.plataforma_pica.torneo.domain.SelloTorneo;
  * 5;R7-4F2K9Q
  * 12;R7-8HX2LM
  * </pre>
+ * El compromiso del sorteo (HU-502) es el SHA-256 de {@code listaHash:fechaSorteo}, con la fecha programada en
+ * ISO-8601 UTC como la devuelve la API ({@code 2026-10-31T15:00:00Z}): fija qué se sortea y cuándo, antes de que
+ * exista la semilla.
  */
 public final class SelloRifa {
 
@@ -23,6 +27,10 @@ public final class SelloRifa {
 
     public static String lista(List<Numero> vendidos) {
         return SelloTorneo.sha256(textoLista(vendidos));
+    }
+
+    public static String compromiso(String listaHash, Instant fechaSorteo) {
+        return SelloTorneo.sha256(listaHash + ":" + fechaSorteo);
     }
 
     public static String textoLista(List<Numero> vendidos) {
