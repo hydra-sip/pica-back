@@ -69,7 +69,8 @@ class RifaPublicaControllerTest {
                 EstadoRifa.EN_VENTA, new RifaPublicaDetalle.TorneoDeRifa(3L, "Copa abierta", "copa-abierta"), 20, 1,
                 100, new BigDecimal("500.00"), new BigDecimal("10.00"), "ARS", null, VENTA_HASTA, null,
                 List.of(new PremioRifaDetalle(1, 80, "Una bici", null)),
-                new RepartoRifa(new BigDecimal("1000.00"), new BigDecimal("200.00"), new BigDecimal("800.00"))));
+                new RepartoRifa(new BigDecimal("1000.00"), new BigDecimal("200.00"), new BigDecimal("800.00")),
+                null, null));
 
         mockMvc.perform(get("/api/v1/rifas/publicas/7"))
                 .andExpect(status().isOk())

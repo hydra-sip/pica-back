@@ -111,6 +111,8 @@ app:
     revision-plazos: ${APP_PARTIDOS_REVISION_PLAZOS:30s}   # cada cuánto se buscan
   rifas:
     duracion-reserva: ${APP_RIFAS_DURACION_RESERVA:10m}   # lo que dura un número reservado mientras se paga (HU-403)
+    cierre-automatico: ${APP_RIFAS_CIERRE_AUTOMATICO:true}   # cerrar las ventas vencidas y sellar la lista (HU-407)
+    revision-cierres: ${APP_RIFAS_REVISION_CIERRES:60s}   # cada cuánto se buscan
   # Los archivos que se suben (PICA-200): local, en una carpeta, o supabase, en un bucket privado de Storage
   almacenamiento:
     tipo: ${APP_ALMACENAMIENTO_TIPO:local}

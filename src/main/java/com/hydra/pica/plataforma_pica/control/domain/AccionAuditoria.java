@@ -12,5 +12,6 @@ public enum AccionAuditoria {
     PAGO,
     LAUDO,
     SORTEO,
-    CIERRE_INSCRIPCION
+    CIERRE_INSCRIPCION,
+    CIERRE_VENTA
 }

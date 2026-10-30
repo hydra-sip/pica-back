@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.event.NumerosVendidos;
 import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaRegistrado;
+import com.hydra.pica.plataforma_pica.rifa.event.VentaRifaCerrada;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
@@ -203,6 +204,28 @@ public class RealtimeEventListener {
         realtimeNotifier.publicarRifa(evento.rifaId(), mensajeRifa);
     }
 
+    /** HU-407: la venta se cerró y la lista quedó sellada; quien mira la rifa la ve pasar a CERRADA. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onVentaRifaCerrada(VentaRifaCerrada evento) {
+        log.info("Venta de la rifa {} cerrada y lista sellada", evento.rifaId());
+        Rifa rifa = rifaRepository.findById(evento.rifaId()).orElse(null);
+        if (rifa == null) {
+            return;
+        }
+        int totalVendidos = (int) numeroRepository.countByIdRifaIdAndEstado(evento.rifaId(), EstadoNumero.VENDIDO);
+        RepartoRifa reparto = RepartoRifa.de(rifa, totalVendidos);
+        EventoRifaMessage mensajeRifa = new EventoRifaMessage(
+                "ESTADO_CAMBIADO",
+                evento.rifaId(),
+                evento.torneoId(),
+                EstadoRifa.CERRADA,
+                java.util.List.of(),
+                totalVendidos,
+                reparto.aPremios(),
+                evento.torneoId() != null ? reparto.alPozoTorneo() : BigDecimal.ZERO
+        );
+        realtimeNotifier.publicarRifa(evento.rifaId(), mensajeRifa);
+    }
 
     private BracketTorneo obtenerBracket(Long torneoId) {
         try {

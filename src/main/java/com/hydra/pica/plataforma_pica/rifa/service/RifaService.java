@@ -196,7 +196,7 @@ public class RifaService {
      */
     @Transactional
     public RifaDetalle volverABorrador(Long organizadorId, Long id) {
-        Rifa rifa = buscarPropia(organizadorId, id);
+        Rifa rifa = noSellada(buscarPropia(organizadorId, id));
         if (rifa.getEstado() != EstadoRifa.EN_VENTA) {
             throw new ConflictoException(CodigoError.RIFA_NO_EDITABLE,
                     "La rifa " + id + " está " + rifa.getEstado() + ": solo vuelve a borrador una EN_VENTA");
@@ -216,7 +216,7 @@ public class RifaService {
      */
     @Transactional
     public void eliminar(Long organizadorId, Long id) {
-        Rifa rifa = buscarPropia(organizadorId, id);
+        Rifa rifa = noSellada(buscarPropia(organizadorId, id));
         if (rifa.getEstado() != EstadoRifa.BORRADOR && rifa.getEstado() != EstadoRifa.EN_VENTA) {
             throw new ConflictoException(CodigoError.RIFA_NO_EDITABLE,
                     "La rifa " + id + " está " + rifa.getEstado() + ": solo se elimina en BORRADOR o EN_VENTA");
@@ -250,6 +250,14 @@ public class RifaService {
     private Rifa buscarPropia(Long organizadorId, Long id) {
         return rifaRepository.findByIdAndOrganizadorIdAndEliminadoEnIsNull(id, organizadorId)
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.RIFA_NO_ENCONTRADA, "No existe la rifa " + id));
+    }
+
+    /** Con la venta cerrada, la lista de vendidos está sellada y la rifa ya no cambia (HU-407). */
+    private static Rifa noSellada(Rifa rifa) {
+        if (rifa.getListaSelladaEn() != null) {
+            throw CierreVentaService.listaSellada(rifa.getId());
+        }
+        return rifa;
     }
 
     private Rifa buscarEditable(Long organizadorId, Long id) {

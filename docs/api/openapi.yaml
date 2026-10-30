@@ -835,6 +835,27 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/rifas/{id}/cerrar-venta:
+    post:
+      tags: [Rifas]
+      summary: Cerrar la venta y sellar la lista de vendidos
+      x-jira: PICA-261
+      x-permiso: RIFA_GESTIONAR
+      x-owner: Laura
+      description: >-
+        HU-407. El organizador cierra la venta de su rifa antes de `ventaHasta`; al llegar esa fecha la cierra sola
+        una tarea programada. La rifa pasa a CERRADA, se borran las reservas que no se pagaron y se sella la lista de
+        vendidos: `listaHash` es el SHA-256 de una línea por número vendido, de menor a mayor, con `número;código del
+        ticket`, separadas con `\n` (ver `SelloRifa`), y `listaSelladaEn` la fecha del sellado. El cierre es
+        definitivo: después, reservar, comprar, volver a borrador o eliminar responden 409 `LISTA_SELLADA`. 409
+        `RIFA_NO_EDITABLE` si no está EN_VENTA y `LISTA_SELLADA` si ya se cerró. Queda en la auditoría
+        (`CIERRE_VENTA`, con el motivo MANUAL o FECHA).
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200': {$ref: '#/components/responses/Rifa'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/rifas/publicas:
     get:
       tags: [Rifas]
@@ -898,7 +919,8 @@ paths:
         rifa. Responde lo que se va a cobrar: el precio de los números (va al pozo de la rifa) más los gastos
         administrativos que la rifa fijó al publicar. 400 `VALIDACION` con `RANGO_INVALIDO` en `numeros` si alguno
         está fuera del rango, y `VALOR_INVALIDO` si hay repetidos. 404 `RIFA_NO_ENCONTRADA`. 409 `VENTA_CERRADA`
-        fuera de la ventana de venta, `RIFA_PROPIA` si es el organizador y `NUMERO_NO_DISPONIBLE` (con `numeros`)
+        fuera de la ventana de venta, `LISTA_SELLADA` con la venta ya cerrada (HU-407), `RIFA_PROPIA` si es el
+        organizador y `NUMERO_NO_DISPONIBLE` (con `numeros`)
         si alguno está vendido o reservado por otro; dos pedidos a la vez por el mismo número reservan uno solo.
       requestBody:
         required: true
@@ -931,7 +953,7 @@ paths:
         como la inscripción; el ticket también guarda el monto y los gastos por separado), emite el ticket y los números pasan a VENDIDO. Publica la venta en
         `/topic/rifas/{id}` y, con torneo, `/topic/torneos/{id}`. Idempotente: con la misma clave devuelve el mismo
         ticket sin volver a cobrar. 400 `VALIDACION` con `REQUERIDO` en `Idempotency-Key` sin la clave. 409
-        `VENTA_CERRADA`, `RIFA_PROPIA`, `NUMERO_NO_DISPONIBLE` si alguno ya no es suyo, `RESERVA_VENCIDA` (con
+        `VENTA_CERRADA`, `LISTA_SELLADA`, `RIFA_PROPIA`, `NUMERO_NO_DISPONIBLE` si alguno ya no es suyo, `RESERVA_VENCIDA` (con
         `numeros`) si la reserva venció o no existe y `CLAVE_IDEMPOTENCIA_USADA` si la clave es de otra compra. En
         ningún 409 se cobra nada.
       parameters:
@@ -2476,6 +2498,8 @@ components:
         `cierraEn`). Un partido solo lo arbitra un designado que aceptó, con el permiso para lo que hace; si no,
         403 SIN_PERMISO. Venta de números (PICA-222): NUMERO_NO_DISPONIBLE (vendido o reservado por otro; la lista
         va en `numeros`) · VENTA_CERRADA (fuera de la ventana de venta; trae `ventaDesde` y `ventaHasta`) ·
+        LISTA_SELLADA (la venta se cerró y la lista de vendidos está sellada: ya no se reserva, compra, vuelve a borrador
+        ni elimina, HU-407) ·
         RESERVA_VENCIDA (la reserva se venció o no existe; la lista va en `numeros`) · RIFA_PROPIA (el organizador
         no compra su rifa) · CLAVE_IDEMPOTENCIA_USADA (la clave ya se usó para otra compra) · RIFA_CON_VENTAS
         (la rifa tiene números vendidos: no vuelve a borrador ni se elimina; trae `numerosVendidos`) ·
@@ -2509,7 +2533,7 @@ components:
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
-             NUMERO_NO_DISPONIBLE, VENTA_CERRADA, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
+             NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, RECLAMO_DUPLICADO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
@@ -3618,6 +3642,8 @@ components:
         premios: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}}
         numerosVendidos: {type: integer, minimum: 0, description: 'Mientras sea 0, se puede volver a borrador o eliminar (PICA-287)'}
         reparto: {$ref: '#/components/schemas/RepartoRifa'}
+        listaHash: {type: [string, 'null'], description: 'SHA-256 de la lista de vendidos, fijado al cerrar la venta (HU-407); null antes'}
+        listaSelladaEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se cerró la venta y se selló la lista; null antes'}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: [string, 'null'], format: date-time}
     PublicarRifaRequest:
@@ -3683,6 +3709,8 @@ components:
         fechaSorteo: {type: string, format: date-time, description: Fecha programada del sorteo}
         premios: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}}
         reparto: {$ref: '#/components/schemas/RepartoRifa'}
+        listaHash: {type: [string, 'null'], description: 'SHA-256 de la lista de vendidos, fijado al cerrar la venta (HU-407); null antes'}
+        listaSelladaEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se cerró la venta y se selló la lista; null antes'}
     VentaRifaRequest:
       type: object
       required: [numeros]
