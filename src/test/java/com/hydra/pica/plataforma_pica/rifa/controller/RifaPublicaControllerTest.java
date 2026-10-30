@@ -18,6 +18,7 @@ import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.LineaListaSellada;
 import com.hydra.pica.plataforma_pica.rifa.dto.NumeroOcupado;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaPublicaDetalle;
@@ -70,7 +71,7 @@ class RifaPublicaControllerTest {
                 100, new BigDecimal("500.00"), new BigDecimal("10.00"), "ARS", null, VENTA_HASTA, null,
                 List.of(new PremioRifaDetalle(1, 80, "Una bici", null)),
                 new RepartoRifa(new BigDecimal("1000.00"), new BigDecimal("200.00"), new BigDecimal("800.00")),
-                null, null));
+                null, null, null, null));
 
         mockMvc.perform(get("/api/v1/rifas/publicas/7"))
                 .andExpect(status().isOk())
@@ -90,6 +91,17 @@ class RifaPublicaControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].numero").value(13))
                 .andExpect(jsonPath("$[1].estado").value("RESERVADO"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/rifas/publicas/{id}/lista-sellada es público y devuelve el desglose")
+    void listaSelladaSinLogin() throws Exception {
+        when(rifaPublicaService.listaSellada(7L)).thenReturn(List.of(new LineaListaSellada(5, "R7-4F2K9Q")));
+
+        mockMvc.perform(get("/api/v1/rifas/publicas/7/lista-sellada"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].numero").value(5))
+                .andExpect(jsonPath("$[0].ticketCodigo").value("R7-4F2K9Q"));
     }
 
     @Test

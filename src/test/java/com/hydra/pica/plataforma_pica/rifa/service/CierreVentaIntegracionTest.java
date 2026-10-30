@@ -15,7 +15,10 @@ import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
+import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.LineaListaSellada;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
+import com.hydra.pica.plataforma_pica.rifa.dto.RifaPublicaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.VentaRifaResultado;
 import com.hydra.pica.plataforma_pica.torneo.domain.SelloTorneo;
@@ -38,8 +41,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * El cierre de la venta y el sellado de la lista (PICA-261) contra Postgres, con las pruebas de aceptación de HU-407.
- * La tarea programada está apagada en los tests: se la llama a mano. Cada test hace rollback al terminar.
+ * El cierre de la venta y el sellado de la lista (PICA-261) contra Postgres, con las pruebas de aceptación de HU-407,
+ * y el compromiso del sorteo que se publica con el sello (PICA-263), con las de HU-502. La tarea programada está
+ * apagada en los tests: se la llama a mano. Cada test hace rollback al terminar.
  */
 @SpringBootTest
 @ActiveProfiles("dev")
@@ -55,6 +59,8 @@ class CierreVentaIntegracionTest {
     @Autowired private CierreAutomaticoRifa cierreAutomaticoRifa;
     @Autowired private VentaRifaService ventaRifaService;
     @Autowired private RifaService rifaService;
+    @Autowired private RifaPublicaService rifaPublicaService;
+    @Autowired private SemillaRifaService semillaRifaService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
@@ -133,7 +139,57 @@ class CierreVentaIntegracionTest {
         assertThat(auditoria(rifa)).isEqualTo("MANUAL");
     }
 
+    // --- pruebas de aceptación de HU-502 --------------------------------------------------------------
+
+    @Test
+    void sinElCompromisoPublicadoNoSeObtieneLaSemilla() {
+        assertThatConflicto(() -> semillaRifaService.obtener(rifa), CodigoError.COMPROMISO_NO_PUBLICADO);
+    }
+
+    @Test
+    void elCompromisoQuedaPublicadoConSuFecha() {
+        comprar(comprador, List.of(9));
+        cierreVentaService.cerrar(organizador, rifa);
+        entityManager.flush();
+        entityManager.clear();
+
+        RifaPublicaDetalle publica = rifaPublicaService.detalle(rifa);
+        assertThat(publica.compromisoHash())
+                .isEqualTo(SelloTorneo.sha256(publica.listaHash() + ":" + publica.fechaSorteo()));
+        assertThat(publica.compromisoPublicadoEn()).isEqualTo(publica.listaSelladaEn());
+    }
+
+    @Test
+    void elCompromisoSePublicaAntesDeObtenerLaSemilla() {
+        comprar(comprador, List.of(9));
+        cierreVentaService.cerrar(organizador, rifa);
+
+        Rifa conSemilla = semillaRifaService.obtener(rifa);
+
+        assertThat(conSemilla.getSemilla()).hasSize(64);
+        assertThat(conSemilla.getSemillaObtenidaEn()).isAfter(conSemilla.getCompromisoPublicadoEn());
+        // obtenida una vez, no cambia
+        assertThat(semillaRifaService.obtener(rifa).getSemilla()).isEqualTo(conSemilla.getSemilla());
+    }
+
     // --- cierre a mano ------------------------------------------------------------------------------
+
+    @Test
+    void elDesgloseDeLaListaSelladaDaElMismoHash() {
+        VentaRifaResultado primera = comprar(comprador, List.of(12));
+        VentaRifaResultado segunda = comprar(otro, List.of(5));
+        assertThatThrownBy(() -> rifaPublicaService.listaSellada(rifa)).isInstanceOfSatisfying(ApiException.class,
+                e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_NO_ENCONTRADA));
+
+        RifaDetalle cerrada = cierreVentaService.cerrar(organizador, rifa);
+
+        List<LineaListaSellada> lista = rifaPublicaService.listaSellada(rifa);
+        assertThat(lista).containsExactly(new LineaListaSellada(5, segunda.ticketCodigo()),
+                new LineaListaSellada(12, primera.ticketCodigo()));
+        String texto = lista.stream().map(l -> l.numero() + ";" + l.ticketCodigo())
+                .collect(java.util.stream.Collectors.joining("\n"));
+        assertThat(SelloTorneo.sha256(texto)).isEqualTo(cerrada.listaHash());
+    }
 
     @Test
     void sinVentasTambienSeCierraConLaListaVacia() {

@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * compradores. {@code torneo} es null si la rifa no tiene torneo; su {@code slug} lleva a la ficha pública.
  * {@code reparto}: lo recaudado hasta ahora y cuánto va al pozo del torneo y a los premios (HU-405).
  * {@code listaHash} y {@code listaSelladaEn}: el sello de los vendidos al cerrar la venta (HU-407); null hasta entonces.
+ * {@code compromisoHash} y {@code compromisoPublicadoEn}: el compromiso del sorteo, publicado con el sello (HU-502).
  */
 public record RifaPublicaDetalle(
         Long id,
@@ -35,7 +36,9 @@ public record RifaPublicaDetalle(
         List<PremioRifaDetalle> premios,
         RepartoRifa reparto,
         String listaHash,
-        Instant listaSelladaEn) {
+        Instant listaSelladaEn,
+        String compromisoHash,
+        Instant compromisoPublicadoEn) {
 
     public record TorneoDeRifa(Long id, String nombre, String slug) {
     }
@@ -47,6 +50,7 @@ public record RifaPublicaDetalle(
                 rifa.getPctDestinadoTorneo(), rifa.getNumeroDesde(), rifa.getNumeroHasta(), rifa.getPrecioNumero(),
                 rifa.getPctGastosAdministrativos(), rifa.getMoneda(), rifa.getVentaDesde(), rifa.getVentaHasta(), rifa.getSorteadaEn(),
                 premios.stream().map(PremioRifaDetalle::de).toList(), RepartoRifa.de(rifa, vendidos),
-                rifa.getListaHash(), rifa.getListaSelladaEn());
+                rifa.getListaHash(), rifa.getListaSelladaEn(), rifa.getCompromisoHash(),
+                rifa.getCompromisoPublicadoEn());
     }
 }

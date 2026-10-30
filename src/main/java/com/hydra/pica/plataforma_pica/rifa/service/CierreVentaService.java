@@ -31,7 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
  * El cierre de la venta de una rifa (HU-407, PICA-261), lo cierre quien lo cierre: el organizador a mano o la tarea
  * programada cuando llega {@code ventaHasta} ({@link CierreAutomaticoRifa}), como el cierre de la inscripción de un
  * torneo. La rifa pasa a CERRADA, se borran las reservas que no se pagaron y se sella la lista de vendidos con
- * {@link SelloRifa}; desde ahí la lista no se modifica (409 LISTA_SELLADA). Queda en la auditoría con el motivo.
+ * {@link SelloRifa}; desde ahí la lista no se modifica (409 LISTA_SELLADA). Con el sello se publica el compromiso
+ * del sorteo (HU-502, PICA-263), antes de que exista la semilla. Queda en la auditoría con el motivo.
  */
 @Service
 @RequiredArgsConstructor
@@ -87,8 +88,11 @@ public class CierreVentaService {
         Long torneoId = rifa.getTorneo() != null ? rifa.getTorneo().getId() : null;
         int reservas = numeroRepository.borrarReservas(rifa.getId());
         List<Numero> vendidos = numeroRepository.findByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO);
+        Instant ahora = Instant.now();
         rifa.setListaHash(SelloRifa.lista(vendidos));
-        rifa.setListaSelladaEn(Instant.now());
+        rifa.setListaSelladaEn(ahora);
+        rifa.setCompromisoHash(SelloRifa.compromiso(rifa.getListaHash(), rifa.getSorteadaEn()));
+        rifa.setCompromisoPublicadoEn(ahora);
         rifa.setEstado(EstadoRifa.CERRADA);
         Rifa cerrada = rifaRepository.saveAndFlush(rifa);
         auditar(cerrada, motivo, actorId, vendidos.size(), reservas);
@@ -101,6 +105,7 @@ public class CierreVentaService {
         detalle.put("vendidos", vendidos);
         detalle.put("reservasBorradas", reservasBorradas);
         detalle.put("listaHash", rifa.getListaHash());
+        detalle.put("compromisoHash", rifa.getCompromisoHash());
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(actorId == null ? null : usuarioRepository.getReferenceById(actorId));
         auditoria.setAccion(AccionAuditoria.CIERRE_VENTA);

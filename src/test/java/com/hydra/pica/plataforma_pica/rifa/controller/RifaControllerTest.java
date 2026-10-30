@@ -330,6 +330,6 @@ class RifaControllerTest {
         return new RifaDetalle(7L, "Rifa del club", null, 3L, "Copa del club", 0, EstadoRifa.BORRADOR, 1, 100,
                 new BigDecimal("500.00"),
                 "ARS", null, null, null, null, null, List.of(new PremioRifaDetalle(1, 100, "Una bici", null)), 0,
-                new RepartoRifa(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), null, null, CREADA, CREADA);
+                new RepartoRifa(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), null, null, null, null, CREADA, CREADA);
     }
 }

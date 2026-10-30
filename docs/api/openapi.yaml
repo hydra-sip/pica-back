@@ -849,7 +849,8 @@ paths:
         ticket`, separadas con `\n` (ver `SelloRifa`), y `listaSelladaEn` la fecha del sellado. El cierre es
         definitivo: después, reservar, comprar, volver a borrador o eliminar responden 409 `LISTA_SELLADA`. 409
         `RIFA_NO_EDITABLE` si no está EN_VENTA y `LISTA_SELLADA` si ya se cerró. Queda en la auditoría
-        (`CIERRE_VENTA`, con el motivo MANUAL o FECHA).
+        (`CIERRE_VENTA`, con el motivo MANUAL o FECHA). Con el sello se publica el compromiso del sorteo (HU-502):
+        `compromisoHash` = SHA-256 de `listaHash:fechaSorteo` y `compromisoPublicadoEn`, antes de que exista la semilla.
       parameters: [{$ref: '#/components/parameters/id'}]
       responses:
         '200': {$ref: '#/components/responses/Rifa'}
@@ -904,6 +905,25 @@ paths:
         '200':
           description: Los ocupados
           content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/NumeroOcupado'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/rifas/publicas/{id}/lista-sellada:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Rifas]
+      summary: Desglose de la lista sellada de una rifa (público)
+      x-jira: PICA-263
+      x-owner: Laura
+      security: []
+      description: >-
+        Los números vendidos al cerrar la venta, de menor a mayor, con el código de su ticket: lo que sella
+        `listaHash` (HU-407). Con una línea `número;código` por cada uno, separadas con `\n`, el SHA-256 de ese texto
+        tiene que dar `listaHash`. 404 `RIFA_NO_ENCONTRADA` como en el detalle, o si la rifa todavía no cerró la
+        venta. Accesible sin login.
+      responses:
+        '200':
+          description: La lista sellada
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/LineaListaSellada'}}}}
         '404': {$ref: '#/components/responses/Error'}
 
   /api/v1/rifas/{id}/reservas:
@@ -2499,7 +2519,8 @@ components:
         403 SIN_PERMISO. Venta de números (PICA-222): NUMERO_NO_DISPONIBLE (vendido o reservado por otro; la lista
         va en `numeros`) · VENTA_CERRADA (fuera de la ventana de venta; trae `ventaDesde` y `ventaHasta`) ·
         LISTA_SELLADA (la venta se cerró y la lista de vendidos está sellada: ya no se reserva, compra, vuelve a borrador
-        ni elimina, HU-407) ·
+        ni elimina, HU-407) · COMPROMISO_NO_PUBLICADO (se pidió la semilla del sorteo sin el compromiso publicado,
+        HU-502) ·
         RESERVA_VENCIDA (la reserva se venció o no existe; la lista va en `numeros`) · RIFA_PROPIA (el organizador
         no compra su rifa) · CLAVE_IDEMPOTENCIA_USADA (la clave ya se usó para otra compra) · RIFA_CON_VENTAS
         (la rifa tiene números vendidos: no vuelve a borrador ni se elimina; trae `numerosVendidos`) ·
@@ -2533,7 +2554,7 @@ components:
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
-             NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
+             NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, RECLAMO_DUPLICADO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
@@ -3644,6 +3665,8 @@ components:
         reparto: {$ref: '#/components/schemas/RepartoRifa'}
         listaHash: {type: [string, 'null'], description: 'SHA-256 de la lista de vendidos, fijado al cerrar la venta (HU-407); null antes'}
         listaSelladaEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se cerró la venta y se selló la lista; null antes'}
+        compromisoHash: {type: [string, 'null'], description: 'Compromiso del sorteo (HU-502): SHA-256 de `listaHash:fechaSorteo`, con la fecha en ISO-8601 UTC como la devuelve la API; null antes del cierre'}
+        compromisoPublicadoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se publicó el compromiso, con el sello; siempre antes de obtener la semilla'}
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: [string, 'null'], format: date-time}
     PublicarRifaRequest:
@@ -3711,6 +3734,8 @@ components:
         reparto: {$ref: '#/components/schemas/RepartoRifa'}
         listaHash: {type: [string, 'null'], description: 'SHA-256 de la lista de vendidos, fijado al cerrar la venta (HU-407); null antes'}
         listaSelladaEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se cerró la venta y se selló la lista; null antes'}
+        compromisoHash: {type: [string, 'null'], description: 'Compromiso del sorteo (HU-502): SHA-256 de `listaHash:fechaSorteo`, con la fecha en ISO-8601 UTC como la devuelve la API; null antes del cierre'}
+        compromisoPublicadoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se publicó el compromiso, con el sello; siempre antes de obtener la semilla'}
     VentaRifaRequest:
       type: object
       required: [numeros]
@@ -3775,6 +3800,13 @@ components:
       properties:
         numero: {type: integer}
         estado: {type: string, enum: [VENDIDO, RESERVADO, REINTEGRADO]}
+    LineaListaSellada:
+      type: object
+      required: [numero, ticketCodigo]
+      description: Un número vendido de la lista sellada y el código de su ticket (HU-407)
+      properties:
+        numero: {type: integer}
+        ticketCodigo: {type: string}
     PageRifaPublicaResumen:
       type: object
       required: [content, page]
