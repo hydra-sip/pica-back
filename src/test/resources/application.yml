@@ -21,6 +21,7 @@ app:
     cierre-automatico: false
   rifas:
     cierre-automatico: false
+    sorteo-automatico: false
   cors:
     allowed-origins:
       - http://localhost:3000

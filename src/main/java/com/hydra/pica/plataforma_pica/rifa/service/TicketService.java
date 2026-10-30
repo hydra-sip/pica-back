@@ -7,8 +7,10 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.rifa.domain.Ticket;
+import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.TicketDetalle;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
+import com.hydra.pica.plataforma_pica.rifa.repository.PremioRifaRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.TicketRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,7 @@ public class TicketService {
 
     private final TicketRepository ticketRepository;
     private final NumeroRepository numeroRepository;
+    private final PremioRifaRepository premioRifaRepository;
     private final CurrentUserProvider currentUserProvider;
 
     @Transactional(readOnly = true)
@@ -48,8 +51,13 @@ public class TicketService {
     }
 
     private TicketDetalle detalle(Ticket ticket, Long usuarioId) {
-        return TicketDetalle.de(ticket, numeros(ticket), usuarioId,
-                ReclamoRifaService.ventanaAbierta(ticket.getRifa(), Instant.now()));
+        List<Integer> numeros = numeros(ticket);
+        List<PremioRifaDetalle> ganados = premioRifaRepository.buscarPorRifa(ticket.getRifa().getId()).stream()
+                .filter(p -> p.getNumeroGanador() != null && numeros.contains(p.getNumeroGanador()))
+                .map(PremioRifaDetalle::de)
+                .toList();
+        return TicketDetalle.de(ticket, numeros, usuarioId,
+                ReclamoRifaService.ventanaAbierta(ticket.getRifa(), Instant.now()), ganados);
     }
 
     private List<Integer> numeros(Ticket ticket) {

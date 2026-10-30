@@ -55,6 +55,13 @@ public interface RifaRepository extends JpaRepository<Rifa, Long> {
     @Query("select r.id from Rifa r where r.estado = com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa.EN_VENTA "
             + "and r.eliminadoEn is null and r.ventaHasta <= :ahora order by r.ventaHasta, r.id")
     List<Long> conVentaVencida(@Param("ahora") Instant ahora);
+
+    /** Las CERRADAS cuya fecha de sorteo ya llegó (HU-504), la más vieja primero. */
+    @Query("select r.id from Rifa r where r.estado = com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa.CERRADA "
+            + "and r.eliminadoEn is null and r.sorteadaEn <= :ahora order by r.sorteadaEn, r.id")
+    List<Long> paraSortear(@Param("ahora") Instant ahora);
+
+    Page<Rifa> findByEstadoInAndEliminadoEnIsNull(Collection<EstadoRifa> estados, Pageable pageable);
 }
 
 

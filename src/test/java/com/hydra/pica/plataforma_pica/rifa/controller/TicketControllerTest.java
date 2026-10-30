@@ -36,7 +36,7 @@ class TicketControllerTest {
 
     private static final TicketDetalle TICKET = new TicketDetalle(5L, "R1-4F2K9Q", 1L, "Rifa del club", null, null,
             10L, "Ana García", "agarcia", List.of(7, 8), new BigDecimal("1000.00"), new BigDecimal("100.00"), "ARS",
-            Instant.parse("2026-10-29T12:00:00Z"), EstadoRifa.EN_VENTA, null, true, false);
+            Instant.parse("2026-10-29T12:00:00Z"), EstadoRifa.EN_VENTA, null, true, false, List.of());
 
     @Autowired private MockMvc mockMvc;
 

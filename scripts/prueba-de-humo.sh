@@ -359,6 +359,10 @@ pedir 404:PARTIDO_NO_ENCONTRADO PUT /api/v1/partidos/{id}/pronostico "/api/v1/pa
 pedir 200 GET /api/v1/pronosticos/ranking "/api/v1/pronosticos/ranking" "$USUARIO"
 # desglose de la lista sellada de una rifa (HU-407)
 pedir 404:RIFA_NO_ENCONTRADA GET /api/v1/rifas/publicas/{id}/lista-sellada "/api/v1/rifas/publicas/0/lista-sellada" ""
+# sorteo de una rifa (HU-504, PICA-265)
+pedir 200 GET /api/v1/rifas/publicas/sorteadas "/api/v1/rifas/publicas/sorteadas" ""
+pedir 404:RIFA_NO_ENCONTRADA GET /api/v1/rifas/publicas/{id}/sorteo "/api/v1/rifas/publicas/0/sorteo" ""
+pedir 404:RIFA_NO_ENCONTRADA POST /api/v1/rifas/{id}/sorteo "/api/v1/rifas/0/sorteo" "$ADMIN"
 # reclamos de rifa (HU-506, PICA-268)
 pedir 404:RIFA_NO_ENCONTRADA POST /api/v1/rifas/{id}/reclamos "/api/v1/rifas/0/reclamos" "$USUARIO" '{"motivo":"Irregularidad en sorteo"}'
 pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"

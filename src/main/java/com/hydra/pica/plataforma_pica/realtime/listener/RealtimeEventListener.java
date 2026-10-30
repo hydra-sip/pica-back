@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.event.NumerosVendidos;
 import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaRegistrado;
+import com.hydra.pica.plataforma_pica.rifa.event.RifaSorteada;
 import com.hydra.pica.plataforma_pica.rifa.event.VentaRifaCerrada;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
@@ -208,23 +209,34 @@ public class RealtimeEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onVentaRifaCerrada(VentaRifaCerrada evento) {
         log.info("Venta de la rifa {} cerrada y lista sellada", evento.rifaId());
-        Rifa rifa = rifaRepository.findById(evento.rifaId()).orElse(null);
+        avisarEstado(evento.rifaId(), evento.torneoId(), EstadoRifa.CERRADA);
+    }
+
+    /** HU-504: la rifa se sorteó; quien la mira la ve pasar a SORTEADA y recarga los ganadores. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onRifaSorteada(RifaSorteada evento) {
+        log.info("Rifa {} sorteada", evento.rifaId());
+        avisarEstado(evento.rifaId(), evento.torneoId(), EstadoRifa.SORTEADA);
+    }
+
+    private void avisarEstado(Long rifaId, Long torneoId, EstadoRifa estado) {
+        Rifa rifa = rifaRepository.findById(rifaId).orElse(null);
         if (rifa == null) {
             return;
         }
-        int totalVendidos = (int) numeroRepository.countByIdRifaIdAndEstado(evento.rifaId(), EstadoNumero.VENDIDO);
+        int totalVendidos = (int) numeroRepository.countByIdRifaIdAndEstado(rifaId, EstadoNumero.VENDIDO);
         RepartoRifa reparto = RepartoRifa.de(rifa, totalVendidos);
         EventoRifaMessage mensajeRifa = new EventoRifaMessage(
                 "ESTADO_CAMBIADO",
-                evento.rifaId(),
-                evento.torneoId(),
-                EstadoRifa.CERRADA,
+                rifaId,
+                torneoId,
+                estado,
                 java.util.List.of(),
                 totalVendidos,
                 reparto.aPremios(),
-                evento.torneoId() != null ? reparto.alPozoTorneo() : BigDecimal.ZERO
+                torneoId != null ? reparto.alPozoTorneo() : BigDecimal.ZERO
         );
-        realtimeNotifier.publicarRifa(evento.rifaId(), mensajeRifa);
+        realtimeNotifier.publicarRifa(rifaId, mensajeRifa);
     }
 
     private BracketTorneo obtenerBracket(Long torneoId) {
