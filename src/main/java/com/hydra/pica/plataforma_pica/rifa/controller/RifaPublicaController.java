@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.rifa.controller;
 
 import java.util.List;
 
+import com.hydra.pica.plataforma_pica.rifa.dto.LineaListaSellada;
 import com.hydra.pica.plataforma_pica.rifa.dto.NumeroOcupado;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaPublicaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaPublicaResumen;
@@ -42,5 +43,11 @@ public class RifaPublicaController {
     @GetMapping("/{id}/numeros")
     public List<NumeroOcupado> numeros(@PathVariable Long id) {
         return rifaPublicaService.numerosOcupados(id);
+    }
+
+    /** El desglose de la lista sellada al cerrar la venta: número y código de ticket de cada vendido (HU-407). */
+    @GetMapping("/{id}/lista-sellada")
+    public List<LineaListaSellada> listaSellada(@PathVariable Long id) {
+        return rifaPublicaService.listaSellada(id);
     }
 }

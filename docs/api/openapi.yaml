@@ -907,6 +907,25 @@ paths:
           content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/NumeroOcupado'}}}}
         '404': {$ref: '#/components/responses/Error'}
 
+  /api/v1/rifas/publicas/{id}/lista-sellada:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Rifas]
+      summary: Desglose de la lista sellada de una rifa (público)
+      x-jira: PICA-263
+      x-owner: Laura
+      security: []
+      description: >-
+        Los números vendidos al cerrar la venta, de menor a mayor, con el código de su ticket: lo que sella
+        `listaHash` (HU-407). Con una línea `número;código` por cada uno, separadas con `\n`, el SHA-256 de ese texto
+        tiene que dar `listaHash`. 404 `RIFA_NO_ENCONTRADA` como en el detalle, o si la rifa todavía no cerró la
+        venta. Accesible sin login.
+      responses:
+        '200':
+          description: La lista sellada
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/LineaListaSellada'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/rifas/{id}/reservas:
     parameters: [{$ref: '#/components/parameters/id'}]
     post:
@@ -3781,6 +3800,13 @@ components:
       properties:
         numero: {type: integer}
         estado: {type: string, enum: [VENDIDO, RESERVADO, REINTEGRADO]}
+    LineaListaSellada:
+      type: object
+      required: [numero, ticketCodigo]
+      description: Un número vendido de la lista sellada y el código de su ticket (HU-407)
+      properties:
+        numero: {type: integer}
+        ticketCodigo: {type: string}
     PageRifaPublicaResumen:
       type: object
       required: [content, page]

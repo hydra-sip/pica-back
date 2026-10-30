@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.LineaListaSellada;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaPublicaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
@@ -172,6 +173,23 @@ class CierreVentaIntegracionTest {
     }
 
     // --- cierre a mano ------------------------------------------------------------------------------
+
+    @Test
+    void elDesgloseDeLaListaSelladaDaElMismoHash() {
+        VentaRifaResultado primera = comprar(comprador, List.of(12));
+        VentaRifaResultado segunda = comprar(otro, List.of(5));
+        assertThatThrownBy(() -> rifaPublicaService.listaSellada(rifa)).isInstanceOfSatisfying(ApiException.class,
+                e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_NO_ENCONTRADA));
+
+        RifaDetalle cerrada = cierreVentaService.cerrar(organizador, rifa);
+
+        List<LineaListaSellada> lista = rifaPublicaService.listaSellada(rifa);
+        assertThat(lista).containsExactly(new LineaListaSellada(5, segunda.ticketCodigo()),
+                new LineaListaSellada(12, primera.ticketCodigo()));
+        String texto = lista.stream().map(l -> l.numero() + ";" + l.ticketCodigo())
+                .collect(java.util.stream.Collectors.joining("\n"));
+        assertThat(SelloTorneo.sha256(texto)).isEqualTo(cerrada.listaHash());
+    }
 
     @Test
     void sinVentasTambienSeCierraConLaListaVacia() {

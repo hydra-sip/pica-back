@@ -77,6 +77,7 @@ public class SecurityConfig {
                                 "/api/v1/rifas/publicas",
                                 "/api/v1/rifas/publicas/*",
                                 "/api/v1/rifas/publicas/*/numeros",
+                                "/api/v1/rifas/publicas/*/lista-sellada",
                                 "/api/v1/pronosticos/partidos",
                                 "/api/v1/pronosticos/ranking")
                         .permitAll()

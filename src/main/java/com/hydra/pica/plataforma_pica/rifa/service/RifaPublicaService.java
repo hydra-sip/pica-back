@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.config.RifaConfig.RifaProperties;
@@ -9,6 +10,7 @@ import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.LineaListaSellada;
 import com.hydra.pica.plataforma_pica.rifa.dto.NumeroOcupado;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaPublicaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaPublicaResumen;
@@ -65,6 +67,23 @@ public class RifaPublicaService {
         return numeroRepository.findByIdRifaIdOrderByIdNumero(rifa.getId()).stream()
                 .filter(n -> !n.reservaVencida(ahora, rifaProperties.duracionReserva()))
                 .map(NumeroOcupado::de)
+                .toList();
+    }
+
+    /**
+     * El desglose de {@code listaHash}: los vendidos al cerrar la venta con el código de su ticket, por número, para
+     * recalcular el sello. Sin la lista sellada todavía, 404.
+     */
+    @Transactional(readOnly = true)
+    public List<LineaListaSellada> listaSellada(Long id) {
+        Rifa rifa = buscarPublica(id);
+        if (rifa.getListaSelladaEn() == null) {
+            throw new NoEncontradoException(CodigoError.RIFA_NO_ENCONTRADA,
+                    "La rifa " + id + " todavía no cerró la venta: no tiene lista sellada");
+        }
+        return numeroRepository.findByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO).stream()
+                .map(LineaListaSellada::de)
+                .sorted(Comparator.comparingInt(LineaListaSellada::numero))
                 .toList();
     }
 
