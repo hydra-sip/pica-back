@@ -857,6 +857,26 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/rifas/{id}/sorteo:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Rifas]
+      summary: Sortear la rifa
+      x-jira: PICA-265
+      x-permiso: RIFA_GESTIONAR
+      x-owner: Laura
+      description: >-
+        HU-504. El organizador sortea su rifa CERRADA desde `fechaSorteo`; al llegar esa fecha la sortea sola una
+        tarea programada. Obtiene la semilla (solo con el compromiso publicado, 409 `COMPROMISO_NO_PUBLICADO`), ordena
+        los vendidos por el SHA-256 de `semilla:número`, de menor a mayor, y el primero gana el premio del puesto 1,
+        el segundo el del 2, y así; los premios que sobran quedan sin ganador. La rifa pasa a SORTEADA y queda en la
+        auditoría (`SORTEO`, con la semilla, el compromiso y los ganadores). 409 `RIFA_NO_EDITABLE` si no está
+        CERRADA y `SORTEO_ANTICIPADO` antes de `fechaSorteo` (salvo con `app.rifas.sorteo-anticipado`, para la demo).
+      responses:
+        '200': {$ref: '#/components/responses/Rifa'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/rifas/publicas:
     get:
       tags: [Rifas]
@@ -925,6 +945,43 @@ paths:
           description: La lista sellada
           content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/LineaListaSellada'}}}}
         '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/rifas/publicas/sorteadas:
+    get:
+      tags: [Rifas]
+      summary: Rifas sorteadas (público)
+      x-jira: PICA-265
+      x-owner: Laura
+      security: []
+      description: >-
+        HU-504. Las rifas sorteadas, también en revisión o liquidadas, para elegir cuál verificar en el portal; la
+        última sorteada primero. Accesible sin login.
+      parameters:
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200':
+          description: Página de rifas sorteadas
+          content: {application/json: {schema: {$ref: '#/components/schemas/PageRifaSorteadaResumen'}}}
+
+  /api/v1/rifas/publicas/{id}/sorteo:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Rifas]
+      summary: Datos para verificar el sorteo de una rifa (público)
+      x-jira: PICA-265
+      x-owner: Laura
+      security: []
+      description: >-
+        HU-504. Todo lo que hace falta para recalcular el sorteo: la lista sellada con su desglose, el compromiso
+        (SHA-256 de `listaHash:fechaSorteo`, publicado antes de la semilla), la semilla y los premios con su ganador.
+        404 `RIFA_NO_ENCONTRADA` como en el detalle y 409 `RIFA_NO_SORTEADA` antes del sorteo. Accesible sin login.
+      responses:
+        '200':
+          description: El sorteo
+          content: {application/json: {schema: {$ref: '#/components/schemas/SorteoRifa'}}}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
 
   /api/v1/rifas/{id}/reservas:
     parameters: [{$ref: '#/components/parameters/id'}]
@@ -2526,7 +2583,8 @@ components:
         (la rifa tiene números vendidos: no vuelve a borrador ni se elimina; trae `numerosVendidos`) ·
         RIFA_CON_RESERVAS (alguien está pagando números de la rifa). Reclamo de una rifa (PICA-268):
         RIFA_NO_SORTEADA (todavía no se sorteó) · PLAZO_RECLAMO_VENCIDO (pasaron las 48 h o ya se liquidó o
-        canceló) · RECLAMO_DUPLICADO (el usuario ya tiene un reclamo pendiente en la rifa).
+        canceló) · RECLAMO_DUPLICADO (el usuario ya tiene un reclamo pendiente en la rifa). Sorteo de una rifa
+        (PICA-265): SORTEO_ANTICIPADO (todavía no llegó la fecha de sorteo comprometida).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
@@ -2556,7 +2614,7 @@ components:
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
-             PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, RECLAMO_DUPLICADO,
+             PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, SORTEO_ANTICIPADO, RECLAMO_DUPLICADO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR]
 
@@ -3793,6 +3851,7 @@ components:
         sorteadaEn: {type: [string, 'null'], format: date-time, description: Fecha programada del sorteo}
         esComprador: {type: boolean, description: 'False si lo mira un administrador'}
         ventanaReclamoAbierta: {type: boolean, description: 'Si ahora se puede reclamar el resultado (HU-506): la rifa SORTEADA o EN_REVISION y dentro de las 48 h del sorteo'}
+        premiosGanados: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}, description: 'Los premios que ganó alguno de sus números (HU-504); vacío antes del sorteo o si no ganó'}
     NumeroOcupado:
       type: object
       required: [numero, estado]
@@ -3807,6 +3866,50 @@ components:
       properties:
         numero: {type: integer}
         ticketCodigo: {type: string}
+    RifaSorteadaResumen:
+      type: object
+      required: [id, titulo]
+      description: Fila del listado de rifas sorteadas para el portal de verificación (HU-504)
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        titulo: {type: string}
+        torneoNombre: {type: [string, 'null']}
+        semillaObtenidaEn: {type: [string, 'null'], format: date-time, description: Cuándo se sorteó de verdad}
+    PageRifaSorteadaResumen:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/RifaSorteadaResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    SorteoRifa:
+      type: object
+      required: [id, titulo, fechaSorteo, listaHash, lista, compromisoHash, semilla, premios]
+      description: >-
+        Los datos para recalcular el sorteo de una rifa (HU-504): con el desglose se recalcula `listaHash`; con
+        `listaHash:fechaSorteo`, el compromiso; y con el SHA-256 de `semilla:número` de cada vendido, ordenados de
+        menor a mayor, los ganadores por puesto.
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        titulo: {type: string}
+        torneoNombre: {type: [string, 'null']}
+        fechaSorteo: {type: string, format: date-time, description: La fecha programada, la que entra en el compromiso}
+        listaHash: {type: string}
+        listaSelladaEn: {type: string, format: date-time}
+        lista: {type: array, items: {$ref: '#/components/schemas/LineaListaSellada'}}
+        compromisoHash: {type: string}
+        compromisoPublicadoEn: {type: string, format: date-time}
+        semilla: {type: string}
+        semillaFirma: {type: [string, 'null'], description: 'Firma del proveedor de la semilla; null mientras la genere el sistema (PICA-299)'}
+        semillaObtenidaEn: {type: string, format: date-time, description: Cuándo se obtuvo la semilla; siempre después del compromiso}
+        premios: {type: array, items: {$ref: '#/components/schemas/GanadorRifa'}}
+    GanadorRifa:
+      type: object
+      required: [puesto, pct]
+      description: Un premio de la rifa sorteada con el número que ganó y el username de quien lo compró; los dos null si hubo más premios que vendidos.
+      properties:
+        puesto: {type: integer, minimum: 1}
+        pct: {type: integer}
+        descripcion: {type: [string, 'null']}
+        numeroGanador: {type: [integer, 'null']}
+        ganador: {type: [string, 'null'], description: Username de quien compró el número ganador}
     PageRifaPublicaResumen:
       type: object
       required: [content, page]

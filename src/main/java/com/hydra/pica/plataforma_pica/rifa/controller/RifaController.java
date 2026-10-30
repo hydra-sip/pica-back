@@ -12,6 +12,7 @@ import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaResumen;
 import com.hydra.pica.plataforma_pica.rifa.service.CierreVentaService;
 import com.hydra.pica.plataforma_pica.rifa.service.RifaService;
+import com.hydra.pica.plataforma_pica.rifa.service.SorteoRifaService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -40,12 +41,14 @@ public class RifaController {
 
     private final RifaService rifaService;
     private final CierreVentaService cierreVentaService;
+    private final SorteoRifaService sorteoRifaService;
     private final CurrentUserProvider currentUserProvider;
 
     public RifaController(RifaService rifaService, CierreVentaService cierreVentaService,
-            CurrentUserProvider currentUserProvider) {
+            SorteoRifaService sorteoRifaService, CurrentUserProvider currentUserProvider) {
         this.rifaService = rifaService;
         this.cierreVentaService = cierreVentaService;
+        this.sorteoRifaService = sorteoRifaService;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -95,6 +98,12 @@ public class RifaController {
     @PostMapping("/{id}/cerrar-venta")
     public RifaDetalle cerrarVenta(@PathVariable Long id) {
         return cierreVentaService.cerrar(usuarioActual(), id);
+    }
+
+    /** HU-504: sortea la rifa cerrada desde su fecha de sorteo; los premios quedan con su ganador. */
+    @PostMapping("/{id}/sorteo")
+    public RifaDetalle sortear(@PathVariable Long id) {
+        return sorteoRifaService.sortear(usuarioActual(), id);
     }
 
     @DeleteMapping("/{id}")

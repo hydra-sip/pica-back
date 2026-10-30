@@ -6,6 +6,8 @@ import com.hydra.pica.plataforma_pica.rifa.dto.LineaListaSellada;
 import com.hydra.pica.plataforma_pica.rifa.dto.NumeroOcupado;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaPublicaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaPublicaResumen;
+import com.hydra.pica.plataforma_pica.rifa.dto.RifaSorteadaResumen;
+import com.hydra.pica.plataforma_pica.rifa.dto.SorteoRifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.service.RifaPublicaService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -49,5 +51,17 @@ public class RifaPublicaController {
     @GetMapping("/{id}/lista-sellada")
     public List<LineaListaSellada> listaSellada(@PathVariable Long id) {
         return rifaPublicaService.listaSellada(id);
+    }
+
+    /** Las rifas sorteadas, para elegir cuál verificar en el portal (HU-504). */
+    @GetMapping("/sorteadas")
+    public Page<RifaSorteadaResumen> sorteadas(@PageableDefault(size = 20) Pageable pageable) {
+        return rifaPublicaService.listarSorteadas(pageable);
+    }
+
+    /** Los datos del sorteo para recalcularlo: lista sellada, compromiso, semilla y ganadores (HU-504). */
+    @GetMapping("/{id}/sorteo")
+    public SorteoRifaDetalle sorteo(@PathVariable Long id) {
+        return rifaPublicaService.sorteo(id);
     }
 }

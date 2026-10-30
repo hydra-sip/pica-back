@@ -37,6 +37,7 @@ import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaResumen;
 import com.hydra.pica.plataforma_pica.rifa.service.CierreVentaService;
 import com.hydra.pica.plataforma_pica.rifa.service.RifaService;
+import com.hydra.pica.plataforma_pica.rifa.service.SorteoRifaService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -69,6 +70,9 @@ class RifaControllerTest {
 
     @MockitoBean
     private CierreVentaService cierreVentaService;
+
+    @MockitoBean
+    private SorteoRifaService sorteoRifaService;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
