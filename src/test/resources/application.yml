@@ -13,10 +13,13 @@ spring:
 
 app:
   partidos:
-    # Sin tareas programadas: los tests llaman a ConfirmacionAutomatica, AusenciaAutomatica y CierreAutomatico a mano.
+    # Sin tareas programadas: los tests llaman a ConfirmacionAutomatica, AusenciaAutomatica, CierreAutomatico y
+    # CierreAutomaticoRifa a mano.
     confirmacion-automatica: false
     ausencia-automatica: false
   torneos:
+    cierre-automatico: false
+  rifas:
     cierre-automatico: false
   cors:
     allowed-origins:

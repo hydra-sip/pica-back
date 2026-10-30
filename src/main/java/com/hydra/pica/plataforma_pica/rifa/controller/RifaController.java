@@ -10,6 +10,7 @@ import com.hydra.pica.plataforma_pica.rifa.dto.PublicarRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaResumen;
+import com.hydra.pica.plataforma_pica.rifa.service.CierreVentaService;
 import com.hydra.pica.plataforma_pica.rifa.service.RifaService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -38,10 +39,13 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class RifaController {
 
     private final RifaService rifaService;
+    private final CierreVentaService cierreVentaService;
     private final CurrentUserProvider currentUserProvider;
 
-    public RifaController(RifaService rifaService, CurrentUserProvider currentUserProvider) {
+    public RifaController(RifaService rifaService, CierreVentaService cierreVentaService,
+            CurrentUserProvider currentUserProvider) {
         this.rifaService = rifaService;
+        this.cierreVentaService = cierreVentaService;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -85,6 +89,12 @@ public class RifaController {
     @PostMapping("/{id}/volver-a-borrador")
     public RifaDetalle volverABorrador(@PathVariable Long id) {
         return rifaService.volverABorrador(usuarioActual(), id);
+    }
+
+    /** HU-407: cierra la venta antes de la fecha y sella la lista; el cierre es definitivo. */
+    @PostMapping("/{id}/cerrar-venta")
+    public RifaDetalle cerrarVenta(@PathVariable Long id) {
+        return cierreVentaService.cerrar(usuarioActual(), id);
     }
 
     @DeleteMapping("/{id}")

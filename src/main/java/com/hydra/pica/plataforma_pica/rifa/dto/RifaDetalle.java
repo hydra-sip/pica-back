@@ -15,6 +15,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * Sin torneo, {@code torneoId} y {@code torneoNombre} son null y {@code pctDestinadoTorneo} es 0.
  * {@code numerosVendidos}: mientras sea 0, la rifa se puede volver a borrador o eliminar (PICA-287).
  * {@code reparto}: lo recaudado con los vendidos, lo que va al pozo del torneo y lo que va a los premios (HU-405).
+ * {@code listaHash} y {@code listaSelladaEn}: el sello de los vendidos al cerrar la venta (HU-407); null hasta entonces.
  */
 public record RifaDetalle(
         Long id,
@@ -36,6 +37,8 @@ public record RifaDetalle(
         List<PremioRifaDetalle> premios,
         long numerosVendidos,
         RepartoRifa reparto,
+        String listaHash,
+        Instant listaSelladaEn,
         Instant creadoEn,
         Instant modificadoEn) {
 
@@ -48,7 +51,7 @@ public record RifaDetalle(
                 rifa.getVentaDesde(), rifa.getVentaHasta(), rifa.getSorteadaEn(), rifa.getTerminosAceptadosEn(),
                 rifa.getLoteriaDeclaradaEn(),
                 premios.stream().map(PremioRifaDetalle::de).toList(), numerosVendidos,
-                RepartoRifa.de(rifa, numerosVendidos), rifa.getCreadoEn(),
-                rifa.getModificadoEn());
+                RepartoRifa.de(rifa, numerosVendidos), rifa.getListaHash(), rifa.getListaSelladaEn(),
+                rifa.getCreadoEn(), rifa.getModificadoEn());
     }
 }

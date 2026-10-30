@@ -35,6 +35,7 @@ import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaResumen;
+import com.hydra.pica.plataforma_pica.rifa.service.CierreVentaService;
 import com.hydra.pica.plataforma_pica.rifa.service.RifaService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -65,6 +66,9 @@ class RifaControllerTest {
 
     @MockitoBean
     private RifaService rifaService;
+
+    @MockitoBean
+    private CierreVentaService cierreVentaService;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
@@ -326,6 +330,6 @@ class RifaControllerTest {
         return new RifaDetalle(7L, "Rifa del club", null, 3L, "Copa del club", 0, EstadoRifa.BORRADOR, 1, 100,
                 new BigDecimal("500.00"),
                 "ARS", null, null, null, null, null, List.of(new PremioRifaDetalle(1, 100, "Una bici", null)), 0,
-                new RepartoRifa(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), CREADA, CREADA);
+                new RepartoRifa(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), null, null, CREADA, CREADA);
     }
 }

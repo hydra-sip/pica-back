@@ -129,6 +129,8 @@ public class VentaRifaService {
             return repetida(previo.get(), compradorId, rifaId, numeros);
         }
         Instant ahora = Instant.now();
+        // antes de leer la rifa: si se está cerrando la venta, espera y la ve ya sellada (HU-407)
+        rifaRepository.bloquearParaVender(rifaId);
         Rifa rifa = buscarEnVenta(compradorId, rifaId, ahora);
         List<Integer> elegidos = validarNumeros(rifa, numeros);
 
@@ -186,6 +188,9 @@ public class VentaRifaService {
         if (rifa.getOrganizador().getId().equals(usuarioId)) {
             throw new ConflictoException(CodigoError.RIFA_PROPIA,
                     "El organizador no compra números de su propia rifa " + rifaId);
+        }
+        if (rifa.getListaSelladaEn() != null) {
+            throw CierreVentaService.listaSellada(rifaId);
         }
         boolean abierta = rifa.getEstado() == EstadoRifa.EN_VENTA
                 && !ahora.isBefore(rifa.getVentaDesde()) && ahora.isBefore(rifa.getVentaHasta());

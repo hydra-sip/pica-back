@@ -42,6 +42,19 @@ public interface RifaRepository extends JpaRepository<Rifa, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from Rifa r where r.id = :id and r.eliminadoEn is null")
     Optional<Rifa> buscarBloqueado(@Param("id") Long id);
+
+    /**
+     * Bloqueo compartido mientras se compra (HU-407): las compras de la misma rifa no se esperan entre sí, pero el
+     * cierre de la venta, que bloquea la fila, espera a que terminen. Así ninguna compra entra después del sellado.
+     */
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("select r from Rifa r where r.id = :id and r.eliminadoEn is null")
+    Optional<Rifa> bloquearParaVender(@Param("id") Long id);
+
+    /** Las que siguen EN_VENTA con la venta ya terminada (HU-407), la más vieja primero. */
+    @Query("select r.id from Rifa r where r.estado = com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa.EN_VENTA "
+            + "and r.eliminadoEn is null and r.ventaHasta <= :ahora order by r.ventaHasta, r.id")
+    List<Long> conVentaVencida(@Param("ahora") Instant ahora);
 }
 
 
