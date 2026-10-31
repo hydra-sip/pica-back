@@ -19,6 +19,7 @@ import com.hydra.pica.plataforma_pica.rifa.dto.VentaRifaResultado;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -26,7 +27,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * Pedidos simultáneos sobre los mismos números (PICA-222, prueba de aceptación de HU-403), contra Postgres y sin la
+ * Pedidos simultáneos sobre los mismos números (PICA-222, prueba de aceptación de HU-403, y RNF-CON-01), contra Postgres y sin la
  * transacción del test: cada hilo corre la suya, así que lo que se prueba es la PK del número al reservar y el
  * bloqueo de las filas al comprar. Como lo que se escribe queda confirmado, el escenario se borra al terminar.
  */
@@ -114,24 +115,45 @@ class VentaRifaConcurrenteIntegracionTest {
                 Integer.class)).isEqualTo(1);
     }
 
-    /** Corre los dos pedidos a la vez y devuelve lo que respondió cada uno, o el código del error. */
-    private static List<Object> aLaVez(Callable<?> primero, Callable<?> segundo) throws Exception {
-        CyclicBarrier salida = new CyclicBarrier(2);
-        ExecutorService hilos = Executors.newFixedThreadPool(2);
+    // RNF-CON-01: cincuenta compradores van a la vez por el mismo número y solo uno se lo lleva
+    @Test
+    void cincuentaComprasDelMismoNumeroConcretanUnaSolaYLasDemasRecibenNumeroNoDisponible() throws Exception {
+        List<Callable<?>> compras = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            Long comprador = usuario("c_venta_conc");
+            String clave = "conc50-" + i;
+            compras.add(() -> {
+                ventaRifaService.reservar(comprador, rifa, List.of(80));
+                return ventaRifaService.comprar(comprador, rifa, List.of(80), clave);
+            });
+        }
+
+        List<Object> resultados = aLaVez(compras.toArray(new Callable<?>[0]));
+
+        assertThat(resultados).filteredOn(r -> r instanceof VentaRifaResultado).hasSize(1);
+        assertThat(resultados).filteredOn(r -> r instanceof CodigoError).hasSize(49)
+                .containsOnly(CodigoError.NUMERO_NO_DISPONIBLE);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM ticket WHERE rifa_id = ?", Integer.class, rifa)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE referencia_externa LIKE '%conc50-%'",
+                Integer.class)).isEqualTo(1);
+    }
+
+    /** Corre los pedidos a la vez y devuelve lo que respondió cada uno, o el código del error. */
+    private static List<Object> aLaVez(Callable<?>... pedidos) throws Exception {
+        CyclicBarrier salida = new CyclicBarrier(pedidos.length);
+        ExecutorService hilos = Executors.newFixedThreadPool(pedidos.length);
         try {
-            List<Future<?>> pedidos = List.of(
-                    hilos.submit(() -> {
-                        salida.await();
-                        return primero.call();
-                    }),
-                    hilos.submit(() -> {
-                        salida.await();
-                        return segundo.call();
-                    }));
+            List<Future<?>> enviados = new ArrayList<>();
+            for (Callable<?> pedido : pedidos) {
+                enviados.add(hilos.submit(() -> {
+                    salida.await();
+                    return pedido.call();
+                }));
+            }
             List<Object> resultados = new ArrayList<>();
-            for (Future<?> pedido : pedidos) {
+            for (Future<?> pedido : enviados) {
                 try {
-                    resultados.add(pedido.get(30, TimeUnit.SECONDS));
+                    resultados.add(pedido.get(60, TimeUnit.SECONDS));
                 } catch (ExecutionException e) {
                     assertThat(e.getCause()).isInstanceOf(ApiException.class);
                     resultados.add(((ApiException) e.getCause()).getCodigo());

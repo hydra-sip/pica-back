@@ -33,6 +33,7 @@ import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -89,16 +90,7 @@ class InscripcionPagoConcurrenteIntegracionTest {
 
     @RepeatedTest(5)
     void dosPagosPorElUltimoLugarConfirmanUnoYElOtroLlegaConLaInscripcionCerrada() throws Exception {
-        Long organizador = usuario("org_conc");
-        torneo = jdbc.queryForObject("""
-                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
-                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion,
-                                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
-                VALUES (?, 'Torneo', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL', 2, 2,
-                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
-                RETURNING id
-                """, Long.class, organizador);
-        inscripcion(usuario("ya_conc"), "CONFIRMADA");
+        torneoConUnLugarLibre();
         Long jugadorA = usuario("a_conc");
         Long jugadorB = usuario("b_conc");
         long inscripcionA = inscripcion(jugadorA, "PENDIENTE_PAGO");
@@ -136,6 +128,57 @@ class InscripcionPagoConcurrenteIntegracionTest {
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM movimiento WHERE inscripcion_id IN (SELECT id FROM inscripcion WHERE torneo_id = ?)",
                 Integer.class, torneo)).isEqualTo(1);
+    }
+
+    // RNF-CON-01: veinte pagos a la vez por el último lugar confirman uno solo y no cobran a nadie más
+    @Test
+    void veintePagosPorElUltimoLugarConfirmanUnoSoloYLosDemasLleganConLaInscripcionCerrada() throws Exception {
+        torneoConUnLugarLibre();
+        int pedidos = 20;
+        CyclicBarrier salida = new CyclicBarrier(pedidos);
+        List<Callable<EstadoInscripcion>> pagos = new ArrayList<>();
+        for (int i = 0; i < pedidos; i++) {
+            Long jugador = usuario("p" + i + "_conc");
+            pagos.add(pago(salida, jugador, inscripcion(jugador, "PENDIENTE_PAGO")));
+        }
+
+        ExecutorService hilos = Executors.newFixedThreadPool(pedidos);
+        try {
+            List<EstadoInscripcion> confirmados = new ArrayList<>();
+            List<CodigoError> rechazos = new ArrayList<>();
+            for (Future<EstadoInscripcion> pago : hilos.invokeAll(pagos, 60, TimeUnit.SECONDS)) {
+                try {
+                    confirmados.add(pago.get());
+                } catch (ExecutionException e) {
+                    assertThat(e.getCause()).isInstanceOf(ApiException.class);
+                    rechazos.add(((ApiException) e.getCause()).getCodigo());
+                }
+            }
+
+            assertThat(confirmados).containsExactly(EstadoInscripcion.CONFIRMADA);
+            assertThat(rechazos).hasSize(pedidos - 1).containsOnly(CodigoError.INSCRIPCION_NO_ABIERTA);
+        } finally {
+            hilos.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM inscripcion WHERE torneo_id = ? AND estado = 'CONFIRMADA'", Integer.class, torneo)).isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM movimiento WHERE inscripcion_id IN (SELECT id FROM inscripcion WHERE torneo_id = ?)",
+                Integer.class, torneo)).isEqualTo(1);
+    }
+
+    // un torneo individual de dos lugares con uno ya confirmado
+    private void torneoConUnLugarLibre() {
+        Long organizador = usuario("org_conc");
+        torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion,
+                                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
+                VALUES (?, 'Torneo', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL', 2, 2,
+                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        inscripcion(usuario("ya_conc"), "CONFIRMADA");
     }
 
     @RepeatedTest(5)
