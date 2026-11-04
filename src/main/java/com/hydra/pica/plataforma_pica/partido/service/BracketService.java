@@ -52,9 +52,8 @@ import org.springframework.transaction.annotation.Transactional;
  * EN_CURSO.</li>
  * <li>Se crean los partidos de todas las rondas; los de las siguientes, sin lados hasta que avance la llave. Un BYE es
  * un partido de primera ronda con un solo lado, ya CONFIRMADO, y quien lo recibe ya está en la segunda ronda.</li>
- * <li>Cada partido necesita un árbitro designado (FK de V9): se reparten en rueda entre los que aceptaron. Si ninguno
- * aceptó todavía (aceptar es la HU-807), entre los pendientes: igual solo arbitra el que aceptó
- * ({@link com.hydra.pica.plataforma_pica.torneo.service.Arbitraje}).</li>
+ * <li>Cada partido necesita un árbitro designado (FK de V9): se reparten en rueda entre los que aceptaron la
+ * designación (HU-807). Sin ninguno que haya aceptado, el bracket no se genera (409 SIN_ARBITROS).</li>
  * <li>Regenerar es otro sorteo con otra semilla, mientras no haya ningún resultado cargado. Cada sorteo queda en la
  * auditoría, con la semilla anterior si la hubo: rearmar el cuadro hasta que guste queda a la vista.</li>
  * </ul>
@@ -135,7 +134,7 @@ public class BracketService {
         List<Usuario> arbitros = arbitros(torneo.getId());
         if (arbitros.isEmpty()) {
             throw new ConflictoException(CodigoError.SIN_ARBITROS,
-                    "El torneo " + torneo.getId() + " no tiene árbitros: cada partido necesita uno");
+                    "El torneo " + torneo.getId() + " no tiene árbitros que hayan aceptado: cada partido necesita uno");
         }
 
         String semilla = SorteoBracket.nuevaSemilla();
@@ -167,14 +166,12 @@ public class BracketService {
                 torneo.getId(), EstadoTorneo.INSCRIPCION_CERRADA, EstadoTorneo.EN_CURSO));
     }
 
+    /** Solo los que aceptaron la designación (HU-807): un pendiente no arbitra, así que tampoco recibe partidos. */
     private List<Usuario> arbitros(Long torneoId) {
-        List<ArbitroDesignado> designados = arbitroDesignadoRepository.delTorneo(torneoId);
-        List<Usuario> aceptaron = conEstado(designados, EstadoDesignacion.ACEPTADO);
-        return aceptaron.isEmpty() ? conEstado(designados, EstadoDesignacion.PENDIENTE) : aceptaron;
-    }
-
-    private static List<Usuario> conEstado(List<ArbitroDesignado> designados, EstadoDesignacion estado) {
-        return designados.stream().filter(a -> a.getEstado() == estado).map(ArbitroDesignado::getUsuario).toList();
+        return arbitroDesignadoRepository.delTorneo(torneoId).stream()
+                .filter(a -> a.getEstado() == EstadoDesignacion.ACEPTADO)
+                .map(ArbitroDesignado::getUsuario)
+                .toList();
     }
 
     /** Todos, con el árbitro en rueda; IDENTITY: cada uno tiene id al guardarlo, que es lo que pide {@link Juega}. */
