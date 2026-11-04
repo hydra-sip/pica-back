@@ -3002,7 +3002,8 @@ components:
       description: >-
         Pasos 1 y 2 del asistente; el front manda todo cada vez y lo que falta queda vacío. Reglas entre campos
         (400 `VALIDACION`): `FECHAS_INVALIDAS` en `fechaInicio` o `cierreInscripcionEn` si no son futuras, en
-        `fechaFin` si es anterior al inicio y en `cierreInscripcionEn` si es posterior al inicio · `REQUERIDO` en
+        `fechaFin` si es anterior al inicio y en `cierreInscripcionEn` si no cierra al menos
+        `OpcionesTorneo.margenCierreInicioMin` minutos antes del inicio · `REQUERIDO` en
         `sede` si es presencial o trae canchas · `VALOR_INVALIDO` en `canchas` si es online · `RANGO_INVALIDO` en
         `cupoMaximo` fuera de 2 a `OpcionesTorneo.cupoMaximo`, en `cupoMinimo` menor que 2 o mayor que el cupo, y
         en `nominaMaxima` menor que `tamanioEquipo` · `VALOR_INVALIDO` en `tamanioEquipo` o `nominaMaxima` si no
@@ -3461,7 +3462,7 @@ components:
         disciplinas: {type: array, items: {type: string}, description: 'Las de los torneos del organizador, para el filtro'}
     OpcionesTorneo:
       type: object
-      required: [disciplinas, formatos, modalidades, cupoMaximo, pctGastosAdministrativos, canchas]
+      required: [disciplinas, formatos, modalidades, cupoMaximo, pctGastosAdministrativos, margenCierreInicioMin, canchas]
       properties:
         disciplinas:
           type: array
@@ -3488,6 +3489,7 @@ components:
         modalidades: {type: array, items: {$ref: '#/components/schemas/Modalidad'}}
         cupoMaximo: {type: integer, description: Máximo de participantes que admite la plataforma, examples: [64]}
         pctGastosAdministrativos: {type: number, description: '% vigente de gastos administrativos que paga aparte quien se inscribe; al publicar queda fijo en el torneo', examples: [10]}
+        margenCierreInicioMin: {type: integer, minimum: 0, description: 'Minutos que tienen que pasar como mínimo entre el cierre de la inscripción y el inicio; lo fija la plataforma', examples: [60]}
         canchas: {type: array, items: {type: string}, description: Las que ya existen en la `sede` pedida}
     # --- rifas ---------------------------------------------------------------
     EstadoRifa: {type: string, enum: [BORRADOR, EN_VENTA, CERRADA, SORTEADA, EN_REVISION, LIQUIDADA, CANCELADA]}

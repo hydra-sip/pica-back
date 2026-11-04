@@ -151,6 +151,30 @@ class TorneoServiceIntegracionTest {
     }
 
     @Test
+    void laInscripcionTieneQueCerrarConElMargenAntesDelInicio() {
+        Instant cierre = EN_DOS_SEMANAS.minus(59, ChronoUnit.MINUTES);
+        assertThatValidacion(() -> torneoService.crear(organizador, conFechas(EN_DOS_SEMANAS, EN_UN_MES, cierre)))
+                .containsEntry("cierreInscripcionEn", ErrorCampo.Codigo.FECHAS_INVALIDAS);
+    }
+
+    @Test
+    void conElMargenJustoLaInscripcionPuedeCerrar() {
+        Instant cierre = EN_DOS_SEMANAS.minus(60, ChronoUnit.MINUTES);
+        TorneoInformacion torneo = torneoService.crear(organizador, conFechas(EN_DOS_SEMANAS, EN_UN_MES, cierre));
+
+        assertThat(torneo.cierreInscripcionEn()).isNotNull();
+    }
+
+    @Test
+    void elMargenEsElDeLaPlataforma() {
+        jdbc.update("UPDATE parametro_plataforma SET valor = 0 WHERE clave = 'MARGEN_CIERRE_INICIO_MIN'");
+
+        TorneoInformacion torneo = torneoService.crear(organizador, conFechas(EN_DOS_SEMANAS, EN_UN_MES, EN_DOS_SEMANAS));
+
+        assertThat(torneo.cierreInscripcionEn()).isNotNull();
+    }
+
+    @Test
     void presencialSinSedeLaPide() {
         assertThatValidacion(() -> torneoService.crear(organizador, new InformacionTorneoRequest("Apertura F5",
                 "Fútbol 5", null, null, Modalidad.PRESENCIAL, null, " ", null, null, null, null, null, null, null,
