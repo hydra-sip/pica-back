@@ -1421,10 +1421,15 @@ paths:
       x-jira: PICA-313
       x-owner: Tomás
       description: >-
-        HU-807. Desde ahora arbitra el torneo con los permisos que le dio el organizador, y al organizador le llega un
-        mail. 404 `DESIGNACION_NO_ENCONTRADA` si no está designado en el torneo. 409 `DESIGNACION_YA_RESPONDIDA` si
-        ya aceptó o rechazó (el estado va en `estado`), `TORNEO_NO_EDITABLE` si el torneo terminó y
-        `USUARIO_NO_ES_ARBITRO` si ya no tiene el rol ÁRBITRO.
+        HU-807 (wireframe 49). Desde ahora arbitra el torneo con los permisos que le dio el organizador, y al
+        organizador le llega un mail. Hay que aceptar el código de imparcialidad. 404 `DESIGNACION_NO_ENCONTRADA` si
+        no está designado en el torneo. 409 `COMPROMISO_NO_ACEPTADO` sin `compromisoAceptado` en true (o sin cuerpo),
+        `DESIGNACION_YA_RESPONDIDA` si ya aceptó o rechazó (el estado va en `estado`), `TORNEO_NO_EDITABLE` si el
+        torneo terminó y `USUARIO_NO_ES_ARBITRO` si ya no tiene el rol ÁRBITRO.
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AceptarDesignacionRequest'}
       responses:
         '200':
           description: Aceptada
@@ -1443,15 +1448,21 @@ paths:
       x-jira: PICA-313
       x-owner: Tomás
       description: >-
-        HU-807. No arbitra el torneo y al organizador le llega un mail; en el paso 2 figura RECHAZADO y lo puede
-        volver a designar. 404 `DESIGNACION_NO_ENCONTRADA` si no está designado en el torneo. 409
-        `DESIGNACION_YA_RESPONDIDA` si ya aceptó o rechazó y `TORNEO_NO_EDITABLE` si el torneo terminó.
+        HU-807 (wireframes 48 y 49). No arbitra el torneo y al organizador le llega un mail con el motivo, si lo
+        hay; en el paso 2 figura RECHAZADO con el motivo y lo puede volver a designar. 400 `VALIDACION` con
+        `LONGITUD` en `motivo` si pasa los 500 caracteres. 404 `DESIGNACION_NO_ENCONTRADA` si no está designado en el
+        torneo. 409 `DESIGNACION_YA_RESPONDIDA` si ya aceptó o rechazó y `TORNEO_NO_EDITABLE` si el torneo terminó.
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RechazarDesignacionRequest'}
       responses:
         '200':
           description: Rechazada
           content:
             application/json:
               schema: {$ref: '#/components/schemas/MiDesignacion'}
+        '400': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
@@ -2631,7 +2642,8 @@ components:
         USUARIO_NO_ES_ARBITRO (no está activo o no tiene el rol ÁRBITRO) · ARBITRO_DUPLICADO (ya está designado en el
         torneo) · ARBITRO_NO_PERMITIDO (es el organizador o juega el torneo) · ARBITRO_CON_PARTIDOS (quitar a un
         árbitro con partidos asignados) · ARBITRO_NO_HABILITADO (asignarle un partido a quien no aceptó la
-        designación) · DESIGNACION_YA_RESPONDIDA (el árbitro ya aceptó o rechazó) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
+        designación) · DESIGNACION_YA_RESPONDIDA (el árbitro ya aceptó o rechazó) · COMPROMISO_NO_ACEPTADO (aceptar
+        la designación sin el código de imparcialidad) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
         PARTICIPANTES_INSUFICIENTES (menos de 2 inscripciones confirmadas) · BRACKET_YA_GENERADO (se puede regenerar) ·
         SIN_ARBITROS (cada partido necesita un árbitro designado) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
         regenera) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
@@ -2678,7 +2690,7 @@ components:
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
-             ARBITRO_NO_HABILITADO, DESIGNACION_YA_RESPONDIDA, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
+             ARBITRO_NO_HABILITADO, DESIGNACION_YA_RESPONDIDA, COMPROMISO_NO_ACEPTADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
@@ -3179,20 +3191,35 @@ components:
         estado: {$ref: '#/components/schemas/EstadoDesignacion'}
         permisos: {type: array, items: {$ref: '#/components/schemas/PermisoArbitro'}}
         designadoEn: {type: string, format: date-time}
+        respondidoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo aceptó o rechazó (HU-807)'}
+        motivoRechazo: {type: [string, 'null'], description: 'El que dio al rechazar, si dio uno'}
     MiDesignacion:
       type: object
-      required: [torneoId, torneo, estadoTorneo, organizador, estado, permisos, designadoEn]
-      description: Una designación como la ve el árbitro (HU-807).
+      required: [torneoId, torneo, disciplina, estadoTorneo, organizador, estado, permisos, designadoEn]
+      description: Una designación como la ve el árbitro (HU-807, wireframes 48 y 49).
       properties:
         torneoId: {$ref: '#/components/schemas/Id'}
         torneo: {type: string, description: Nombre del torneo}
         slug: {type: [string, 'null'], description: 'null mientras el torneo está en BORRADOR'}
+        disciplina: {type: string}
         estadoTorneo: {$ref: '#/components/schemas/EstadoTorneo'}
         fechaInicio: {type: [string, 'null'], format: date-time}
+        fechaFin: {type: [string, 'null'], format: date-time, description: Estimada}
         organizador: {type: string, description: Nombres y apellidos}
         estado: {$ref: '#/components/schemas/EstadoDesignacion'}
         permisos: {type: array, items: {$ref: '#/components/schemas/PermisoArbitro'}}
         designadoEn: {type: string, format: date-time}
+        respondidoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo aceptó o rechazó; null si está PENDIENTE'}
+        motivoRechazo: {type: [string, 'null'], description: 'Solo si RECHAZADO, y opcional'}
+    AceptarDesignacionRequest:
+      type: object
+      description: 'El código de imparcialidad del wireframe 49: sin el campo o en false, 409 COMPROMISO_NO_ACEPTADO.'
+      properties:
+        compromisoAceptado: {type: boolean}
+    RechazarDesignacionRequest:
+      type: object
+      properties:
+        motivo: {type: [string, 'null'], maxLength: 500, description: Opcional; le llega al organizador}
     BracketTorneo:
       type: object
       required: [torneoId, rondas]

@@ -48,9 +48,14 @@ public class DesignacionesService {
                 .toList();
     }
 
+    /** 409 COMPROMISO_NO_ACEPTADO sin el código de imparcialidad firmado. */
     @Transactional
-    public MiDesignacion aceptar(Long usuarioId, Long torneoId) {
+    public MiDesignacion aceptar(Long usuarioId, Long torneoId, boolean compromisoAceptado) {
         ArbitroDesignado designacion = pendiente(usuarioId, torneoId);
+        if (!compromisoAceptado) {
+            throw new ConflictoException(CodigoError.COMPROMISO_NO_ACEPTADO,
+                    "Hay que aceptar el código de imparcialidad para arbitrar el torneo " + torneoId);
+        }
         if (!usuarioRolRepository.tieneRolActivo(usuarioId, ArbitrosTorneoService.ROL_ARBITRO)) {
             throw new ConflictoException(CodigoError.USUARIO_NO_ES_ARBITRO,
                     "El usuario " + usuarioId + " ya no tiene el rol de árbitro");
@@ -59,10 +64,11 @@ public class DesignacionesService {
         return responder(designacion);
     }
 
+    /** El motivo es opcional: en blanco queda null. */
     @Transactional
-    public MiDesignacion rechazar(Long usuarioId, Long torneoId) {
+    public MiDesignacion rechazar(Long usuarioId, Long torneoId, String motivo) {
         ArbitroDesignado designacion = pendiente(usuarioId, torneoId);
-        designacion.rechazar();
+        designacion.rechazar(motivo == null || motivo.isBlank() ? null : motivo.strip());
         return responder(designacion);
     }
 

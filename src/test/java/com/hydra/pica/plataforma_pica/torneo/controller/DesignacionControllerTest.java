@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -47,9 +48,9 @@ class DesignacionControllerTest {
     @MockitoBean private CurrentUserProvider currentUserProvider;
 
     private static MiDesignacion designacion(EstadoDesignacion estado) {
-        return new MiDesignacion(9L, "Apertura F5", "apertura-f5", EstadoTorneo.INSCRIPCION_ABIERTA,
-                Instant.parse("2026-11-20T18:00:00Z"), "Olga Organizadora", estado,
-                Set.of(PermisoArbitro.RESOLVER_OBJECIONES), Instant.parse("2026-11-04T12:00:00Z"));
+        return new MiDesignacion(9L, "Apertura F5", "apertura-f5", "Fútbol 5", EstadoTorneo.INSCRIPCION_ABIERTA,
+                Instant.parse("2026-11-20T18:00:00Z"), null, "Olga Organizadora", estado,
+                Set.of(PermisoArbitro.RESOLVER_OBJECIONES), Instant.parse("2026-11-04T12:00:00Z"), null, null);
     }
 
     @Test
@@ -81,11 +82,46 @@ class DesignacionControllerTest {
     @DisplayName("Aceptar responde 200 con la designación aceptada")
     void aceptar() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ARBITRO));
-        when(designacionesService.aceptar(ARBITRO, 9L)).thenReturn(designacion(EstadoDesignacion.ACEPTADO));
+        when(designacionesService.aceptar(ARBITRO, 9L, true)).thenReturn(designacion(EstadoDesignacion.ACEPTADO));
 
-        mockMvc.perform(post("/api/v1/designaciones/9/aceptar"))
+        mockMvc.perform(post("/api/v1/designaciones/9/aceptar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"compromisoAceptado\": true}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.estado").value("ACEPTADO"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Aceptar sin cuerpo cuenta como sin el código de imparcialidad")
+    void aceptarSinCompromiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ARBITRO));
+        when(designacionesService.aceptar(ARBITRO, 9L, false)).thenThrow(
+                new ConflictoException(CodigoError.COMPROMISO_NO_ACEPTADO, "sin compromiso"));
+
+        mockMvc.perform(post("/api/v1/designaciones/9/aceptar"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("COMPROMISO_NO_ACEPTADO"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Rechazar pasa el motivo, y uno de más de 500 caracteres es 400")
+    void rechazarConMotivo() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ARBITRO));
+        when(designacionesService.rechazar(ARBITRO, 9L, "Viajo ese fin de semana"))
+                .thenReturn(designacion(EstadoDesignacion.RECHAZADO));
+
+        mockMvc.perform(post("/api/v1/designaciones/9/rechazar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\": \"Viajo ese fin de semana\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("RECHAZADO"));
+
+        mockMvc.perform(post("/api/v1/designaciones/9/rechazar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\": \"" + "x".repeat(501) + "\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -93,7 +129,7 @@ class DesignacionControllerTest {
     @DisplayName("Rechazar una ya respondida es 409 DESIGNACION_YA_RESPONDIDA con el estado")
     void yaRespondida() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ARBITRO));
-        when(designacionesService.rechazar(ARBITRO, 9L)).thenThrow(
+        when(designacionesService.rechazar(ARBITRO, 9L, null)).thenThrow(
                 new ConflictoException(CodigoError.DESIGNACION_YA_RESPONDIDA, "ya está ACEPTADO")
                         .con("estado", EstadoDesignacion.ACEPTADO));
 
@@ -108,7 +144,7 @@ class DesignacionControllerTest {
     @DisplayName("Sin designación responde 404 DESIGNACION_NO_ENCONTRADA")
     void noDesignado() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ARBITRO));
-        when(designacionesService.aceptar(ARBITRO, 9L)).thenThrow(
+        when(designacionesService.aceptar(ARBITRO, 9L, false)).thenThrow(
                 new NoEncontradoException(CodigoError.DESIGNACION_NO_ENCONTRADA, "no designado"));
 
         mockMvc.perform(post("/api/v1/designaciones/9/aceptar"))

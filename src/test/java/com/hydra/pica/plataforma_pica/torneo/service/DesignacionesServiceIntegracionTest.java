@@ -92,6 +92,7 @@ class DesignacionesServiceIntegracionTest {
             assertThat(d.organizador()).isEqualTo("org_desig Test");
             assertThat(d.estado()).isEqualTo(EstadoDesignacion.PENDIENTE);
             assertThat(d.permisos()).containsExactly(PermisoArbitro.RESOLVER_OBJECIONES);
+            assertThat(d.disciplina()).isEqualTo("Fútbol 5");
         });
         assertThat(designacionesService.mias(organizador)).isEmpty();
     }
@@ -101,7 +102,7 @@ class DesignacionesServiceIntegracionTest {
         Long otro = torneoService.crear(organizador, new InformacionTorneoRequest("Clausura F5", "Fútbol 5", null,
                 null, null, null, null, null, null, null, null, null, 16, 2, null, null)).id();
         arbitrosService.designar(organizador, otro, new DesignarArbitroRequest(arbitro.getId(), LOS_DOS));
-        designacionesService.aceptar(arbitro.getId(), otro);
+        designacionesService.aceptar(arbitro.getId(), otro, true);
 
         assertThat(designacionesService.mias(arbitro.getId())).extracting(MiDesignacion::estado)
                 .containsExactly(EstadoDesignacion.PENDIENTE, EstadoDesignacion.ACEPTADO);
@@ -124,7 +125,7 @@ class DesignacionesServiceIntegracionTest {
 
     @Test
     void alAceptarArbitraConLosPermisosDefinidosYSeLeAvisaAlOrganizador() {
-        MiDesignacion aceptada = designacionesService.aceptar(arbitro.getId(), torneo);
+        MiDesignacion aceptada = designacionesService.aceptar(arbitro.getId(), torneo, true);
 
         assertThat(aceptada.estado()).isEqualTo(EstadoDesignacion.ACEPTADO);
         assertThat(arbitraje.puedeArbitrar(torneo, arbitro.getId(), PermisoArbitro.RESOLVER_OBJECIONES)).isTrue();
@@ -136,10 +137,22 @@ class DesignacionesServiceIntegracionTest {
     }
 
     @Test
-    void alRechazarNoQuedaComoArbitroYSeLeAvisaAlOrganizador() {
-        MiDesignacion rechazada = designacionesService.rechazar(arbitro.getId(), torneo);
+    void sinElCodigoDeImparcialidadNoAcepta() {
+        assertThatThrownBy(() -> designacionesService.aceptar(arbitro.getId(), torneo, false))
+                .extracting("codigo").isEqualTo(CodigoError.COMPROMISO_NO_ACEPTADO);
+        assertThat(designacionesService.mias(arbitro.getId())).singleElement()
+                .extracting(MiDesignacion::estado).isEqualTo(EstadoDesignacion.PENDIENTE);
+    }
+
+    @Test
+    void alRechazarNoQuedaComoArbitroYSeLeAvisaAlOrganizadorConElMotivo() {
+        MiDesignacion rechazada = designacionesService.rechazar(arbitro.getId(), torneo, "  Viajo ese fin de semana ");
 
         assertThat(rechazada.estado()).isEqualTo(EstadoDesignacion.RECHAZADO);
+        assertThat(rechazada.motivoRechazo()).isEqualTo("Viajo ese fin de semana");
+        assertThat(rechazada.respondidoEn()).isNotNull();
+        assertThat(arbitrosService.listar(organizador, torneo)).singleElement()
+                .extracting(ArbitroDetalle::motivoRechazo).isEqualTo("Viajo ese fin de semana");
         assertThat(torneoRepository.esArbitro(torneo, arbitro.getId())).isFalse();
         assertThat(arbitraje.puedeArbitrar(torneo, arbitro.getId(), PermisoArbitro.RESOLVER_OBJECIONES)).isFalse();
         assertThat(arbitrosService.listar(organizador, torneo)).extracting(ArbitroDetalle::estado)
@@ -147,16 +160,16 @@ class DesignacionesServiceIntegracionTest {
 
         avisoDesignacion.avisarRespuesta(new DesignacionRespondida(torneo, arbitro.getId(), EstadoDesignacion.RECHAZADO));
         verify(emailService).enviarAviso(eq("org_desig@example.com"),
-                eq("juez_desig Test rechazó ser árbitro de Apertura F5"), contains("designar a otro"));
+                eq("juez_desig Test rechazó ser árbitro de Apertura F5"), contains("Motivo: Viajo ese fin de semana"));
     }
 
     @Test
     void unaDesignacionSeRespondeUnaSolaVez() {
-        designacionesService.aceptar(arbitro.getId(), torneo);
+        designacionesService.aceptar(arbitro.getId(), torneo, true);
 
-        assertThatThrownBy(() -> designacionesService.rechazar(arbitro.getId(), torneo))
+        assertThatThrownBy(() -> designacionesService.rechazar(arbitro.getId(), torneo, null))
                 .extracting("codigo").isEqualTo(CodigoError.DESIGNACION_YA_RESPONDIDA);
-        assertThatThrownBy(() -> designacionesService.aceptar(arbitro.getId(), torneo))
+        assertThatThrownBy(() -> designacionesService.aceptar(arbitro.getId(), torneo, true))
                 .extracting("codigo").isEqualTo(CodigoError.DESIGNACION_YA_RESPONDIDA);
     }
 
@@ -164,9 +177,9 @@ class DesignacionesServiceIntegracionTest {
     void sinDesignacionEs404() {
         Usuario otro = usuario("juez_otro", "ARBITRO");
 
-        assertThatThrownBy(() -> designacionesService.aceptar(otro.getId(), torneo))
+        assertThatThrownBy(() -> designacionesService.aceptar(otro.getId(), torneo, true))
                 .extracting("codigo").isEqualTo(CodigoError.DESIGNACION_NO_ENCONTRADA);
-        assertThatThrownBy(() -> designacionesService.rechazar(arbitro.getId(), 999_999L))
+        assertThatThrownBy(() -> designacionesService.rechazar(arbitro.getId(), 999_999L, null))
                 .extracting("codigo").isEqualTo(CodigoError.DESIGNACION_NO_ENCONTRADA);
     }
 
@@ -181,7 +194,7 @@ class DesignacionesServiceIntegracionTest {
                 WHERE id = ?""", torneo);
         entityManager.clear();
 
-        assertThatThrownBy(() -> designacionesService.aceptar(arbitro.getId(), torneo))
+        assertThatThrownBy(() -> designacionesService.aceptar(arbitro.getId(), torneo, true))
                 .extracting("codigo").isEqualTo(CodigoError.TORNEO_NO_EDITABLE);
     }
 
@@ -190,18 +203,20 @@ class DesignacionesServiceIntegracionTest {
         jdbc.update("UPDATE usuario_rol SET eliminado_en = now() WHERE usuario_id = ?", arbitro.getId());
         entityManager.clear();
 
-        assertThatThrownBy(() -> designacionesService.aceptar(arbitro.getId(), torneo))
+        assertThatThrownBy(() -> designacionesService.aceptar(arbitro.getId(), torneo, true))
                 .extracting("codigo").isEqualTo(CodigoError.USUARIO_NO_ES_ARBITRO);
     }
 
     @Test
     void aQuienRechazoSeLoPuedeVolverADesignar() {
-        designacionesService.rechazar(arbitro.getId(), torneo);
+        designacionesService.rechazar(arbitro.getId(), torneo, null);
 
         ArbitroDetalle otraVez = arbitrosService.designar(organizador, torneo,
                 new DesignarArbitroRequest(arbitro.getId(), LOS_DOS));
 
         assertThat(otraVez.estado()).isEqualTo(EstadoDesignacion.PENDIENTE);
+        assertThat(otraVez.motivoRechazo()).isNull();
+        assertThat(otraVez.respondidoEn()).isNull();
         assertThat(otraVez.permisos()).containsExactlyInAnyOrderElementsOf(LOS_DOS);
         assertThatThrownBy(() -> arbitrosService.designar(organizador, torneo,
                 new DesignarArbitroRequest(arbitro.getId(), LOS_DOS)))

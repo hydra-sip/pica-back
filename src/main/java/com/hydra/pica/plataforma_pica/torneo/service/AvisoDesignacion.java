@@ -89,10 +89,10 @@ public class AvisoDesignacion {
                   Ya puede arbitrar los partidos que le toquen: %s/torneos/%d/editar?paso=2
                   """.formatted(arbitro, torneo.getNombre(), permisos(designacion), webUrl, torneo.getId())
                 : """
-                  %s rechazó ser árbitro de %s: no va a arbitrar ningún partido.
+                  %s rechazó ser árbitro de %s: no va a arbitrar ningún partido.%s
 
                   Podés designar a otro en el paso 2 del torneo: %s/torneos/%d/editar?paso=2
-                  """.formatted(arbitro, torneo.getNombre(), webUrl, torneo.getId());
+                  """.formatted(arbitro, torneo.getNombre(), motivo(designacion), webUrl, torneo.getId());
         enviar(torneo.getOrganizador().getEmail(),
                 arbitro + (acepto ? " aceptó" : " rechazó") + " ser árbitro de " + torneo.getNombre(), texto,
                 evento.torneoId());
@@ -113,6 +113,10 @@ public class AvisoDesignacion {
     private static String nombre(Usuario usuario) {
         Persona persona = usuario.getPersona();
         return persona == null ? usuario.getUsername() : persona.getNombres() + " " + persona.getApellidos();
+    }
+
+    private static String motivo(ArbitroDesignado designacion) {
+        return designacion.getMotivoRechazo() == null ? "" : "\n\nMotivo: " + designacion.getMotivoRechazo();
     }
 
     private static String permisos(ArbitroDesignado designacion) {
