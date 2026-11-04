@@ -296,3 +296,31 @@ El requisito no funcional **RNF-TRE-01** exige que la entrega de eventos a **2 c
 - **p95 en Rifa (`/topic/rifas/{id}`):** ~0.27 ms ($\le$ 5000 ms) ✓
 - **Veredicto:** Aprobado con holgura superior a 10.000x respecto al límite exigido.
 
+---
+
+## Auditoría de Solo Agregado (RNF-AUD-01 / PICA-279)
+
+El requisito no funcional **RNF-AUD-01** exige que la plataforma implemente un registro de auditoría de **solo agregado** (*append-only*): la aplicación no puede modificar ni borrar registros de auditoría bajo ninguna circunstancia, y una suite de pruebas automatizadas lo comprueba intentando alterar y eliminar registros.
+
+### Mecanismos de Protección en Múltiples Capas
+
+1. **Capa de Aplicación y ORM (Hibernate / JPA):**
+   - La entidad `Auditoria` está declarada con `@Immutable` y todas sus columnas persistentes (`usuario_id`, `accion`, `entidad`, `entidad_id`, `ip`, `detalle`, `creado_en`) están configuradas con `updatable = false`. Esto previene que dirty-checking o merges de JPA generen sentencias `UPDATE` accidentales.
+   - En la capa de servicios, ningún componente de la aplicación realiza operaciones de modificación ni eliminación sobre `AuditoriaRepository` (únicamente métodos `save` de inserción y consultas de solo lectura).
+
+2. **Capa de Base de Datos (PostgreSQL):**
+   - Trigger `trg_auditoria_solo_agregar` (`BEFORE UPDATE OR DELETE ON auditoria`): ejecuta la función `fn_auditoria_solo_agregar()`, rechazando cualquier intento de actualización o borrado a nivel de fila con error `insufficient_privilege` (`'La auditoría no se modifica ni se borra'`).
+   - Trigger `trg_auditoria_sin_truncate` (`BEFORE TRUNCATE ON auditoria`): impide vaciar la tabla mediante sentencias `TRUNCATE`.
+
+### Verificación Automatizada
+
+La suite de integración contra PostgreSQL real (Testcontainers) verifica de punta a punta que la aplicación intenta modificar y borrar registros y no puede:
+- **Intento de modificación vía JPA / Repositorio (`saveAndFlush` / `flush` tras mutar campos):** Hibernate no genera sentencias `UPDATE` gracias a `@Immutable` y `updatable = false`, manteniendo los valores originales intactos tras despejar el contexto de persistencia (`entityManager.clear()`).
+- **Intento de modificación vía JPQL / SQL nativo:** Rechazado por PostgreSQL con la excepción `La auditoría no se modifica ni se borra` y el registro original permanece sin cambios.
+- **Intento de borrado vía Repositorio (`delete`, `deleteById`, `deleteAllInBatch`) y `TRUNCATE`:** Rechazados por PostgreSQL y se comprueba que los registros continúan existiendo en la tabla.
+
+```bash
+# Ejecutar los tests de integración que verifican RNF-AUD-01
+./mvnw test -Dtest=AuditoriaSoloAgregadoIntegracionTest
+```
+
