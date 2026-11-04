@@ -23,10 +23,14 @@
     </properties>
 
     <dependencies>
-        <!-- Web / REST -->
+        <!-- Web / REST / WebSocket -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
         <!-- Persistencia -->
@@ -159,6 +163,12 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
+                    <!-- Solo para spring-boot:run: claves JWT efímeras y Google opcional (dev) y datos de prueba
+                         (seed). El jar no los usa. -->
+                    <profiles>
+                        <profile>dev</profile>
+                        <profile>seed</profile>
+                    </profiles>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>

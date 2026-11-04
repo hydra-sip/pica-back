@@ -12,6 +12,7 @@ import com.hydra.pica.plataforma_pica.common.config.SesionConfig.SesionPropertie
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.RefreshToken;
@@ -43,6 +44,8 @@ public class AuthService {
     private final UsuarioService usuarioService;
     private final OAuthCodeStore oAuthCodeStore;
     private final SesionProperties sesion;
+    private final BloqueoService bloqueoService;
+    private final IntentosLogin intentosLogin;
 
     @Transactional
     public Usuario procesarLoginGoogle(
@@ -96,14 +99,26 @@ public class AuthService {
 
     @Transactional
     public TokenPair login(LoginRequest request, String userAgent) {
+        return login(request, userAgent, null);
+    }
+
+    /**
+     * Con 5 fallidos del mismo identificador en 15 minutos responde 429 antes de mirar la clave (RNF-SEG-06,
+     * {@link IntentosLogin}). Los intentos quedan en la auditoría con la IP.
+     */
+    @Transactional
+    public TokenPair login(LoginRequest request, String userAgent, String ip) {
         Usuario usuario = buscarPorIdentificador(request.identificador());
+        intentosLogin.exigirDisponible(request.identificador(), usuario);
         if (usuario == null
                 || usuario.getPasswordHash() == null
                 || !passwordEncoder.matches(request.password(), usuario.getPasswordHash())) {
+            intentosLogin.registrarFallido(request.identificador(), usuario, ip);
             throw credencialesInvalidas();
         }
 
         validarEstado(usuario);
+        intentosLogin.registrarLogin(request.identificador(), usuario, ip);
         return emitirPar(usuario, userAgent, Instant.now());
     }
 
@@ -187,7 +202,8 @@ public class AuthService {
     }
 
     private void validarEstado(Usuario usuario) {
-        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO) {
+        // un bloqueo con fecha de fin se levanta en el primer login después de que vence
+        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO && !bloqueoService.levantarSiVencio(usuario)) {
             throw new ApiException(HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO,
                     "El usuario está bloqueado");
         }

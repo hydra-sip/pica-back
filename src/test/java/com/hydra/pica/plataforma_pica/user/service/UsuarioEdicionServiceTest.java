@@ -20,6 +20,8 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.control.domain.Bloqueo;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -66,12 +68,15 @@ class UsuarioEdicionServiceTest {
     @Mock
     private CurrentUserProvider currentUserProvider;
 
+    @Mock
+    private BloqueoService bloqueoService;
+
     private UsuarioEdicionService servicio;
 
     @BeforeEach
     void crearServicio() {
         servicio = new UsuarioEdicionService(usuarioRepository, personaRepository, passwordEncoder,
-                new AdminProperties("admin", "admin@pica.local", "x"), eventos, currentUserProvider);
+                new AdminProperties("admin", "admin@pica.local", "x"), eventos, currentUserProvider, bloqueoService);
     }
 
     // --- modificar ---------------------------------------------------------------
@@ -518,6 +523,96 @@ class UsuarioEdicionServiceTest {
     }
 
     // --- helpers -----------------------------------------------------------------
+
+    // --- bloqueo con motivo (HU-703) ------------------------------------------------
+
+    @Test
+    @DisplayName("bloquear: registra el bloqueo con motivo y fecha, lo deja BLOQUEADO y cierra sus sesiones")
+    void bloquearConMotivo() {
+        Usuario usuario = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+        Instant hasta = Instant.parse("2026-12-01T00:00:00Z");
+        Bloqueo bloqueo = new Bloqueo();
+        bloqueo.setMotivo("Agresión al árbitro");
+        bloqueo.setHasta(hasta);
+        when(bloqueoService.bloquear(usuario, "Agresión al árbitro", hasta)).thenAnswer(invocacion -> {
+            usuario.setEstado(EstadoUsuario.BLOQUEADO);
+            return bloqueo;
+        });
+
+        UsuarioDetalle detalle = servicio.bloquear(ID, "Agresión al árbitro", hasta);
+
+        assertThat(detalle.estado()).isEqualTo(EstadoUsuario.BLOQUEADO);
+        assertThat(detalle.bloqueo().motivo()).isEqualTo("Agresión al árbitro");
+        assertThat(detalle.bloqueo().hasta()).isEqualTo(hasta);
+        verify(usuarioRepository).saveAndFlush(usuario);
+        verify(eventos).publishEvent(new SesionesDeUsuarioInvalidadas(ID));
+    }
+
+    @Test
+    @DisplayName("bloquear: a uno ya bloqueado es 409 USUARIO_YA_BLOQUEADO y no registra otro bloqueo")
+    void bloquearAUnoYaBloqueado() {
+        Usuario usuario = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        usuario.setEstado(EstadoUsuario.BLOQUEADO);
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+
+        assertThatThrownBy(() -> servicio.bloquear(ID, "Otra vez", null))
+                .isInstanceOf(ConflictoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.USUARIO_YA_BLOQUEADO);
+        verifyNoInteractions(bloqueoService, eventos);
+    }
+
+    @Test
+    @DisplayName("bloquear: a uno mismo es 403 ACCION_SOBRE_SI_MISMO; al Admin del sistema, USUARIO_PROTEGIDO; inexistente, 404")
+    void bloquearRespetaLasProtecciones() {
+        Usuario yo = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        Usuario admin = usuario(1L, "admin", "admin@pica.local", persona(PERSONA_ID));
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(yo));
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(admin));
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));
+
+        assertThatThrownBy(() -> servicio.bloquear(ID, "Motivo", null))
+                .isInstanceOf(ProhibidoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.ACCION_SOBRE_SI_MISMO);
+        assertThatThrownBy(() -> servicio.bloquear(1L, "Motivo", null))
+                .isInstanceOf(ProhibidoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.USUARIO_PROTEGIDO);
+        assertThatThrownBy(() -> servicio.bloquear(99L, "Motivo", null))
+                .isInstanceOf(NoEncontradoException.class)
+                .extracting("codigo").isEqualTo(CodigoError.USUARIO_NO_ENCONTRADO);
+        verifyNoInteractions(bloqueoService, eventos);
+    }
+
+    @Test
+    @DisplayName("levantarBloqueo: a uno bloqueado lo levanta; a uno activo lo devuelve igual")
+    void levantarBloqueoEsIdempotente() {
+        Usuario bloqueado = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        bloqueado.setEstado(EstadoUsuario.BLOQUEADO);
+        Usuario activo = usuario(4L, "ana", "ana@example.com", persona(PERSONA_ID));
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(bloqueado));
+        when(usuarioRepository.findById(4L)).thenReturn(Optional.of(activo));
+
+        servicio.levantarBloqueo(ID);
+        UsuarioDetalle detalle = servicio.levantarBloqueo(4L);
+
+        verify(bloqueoService).levantar(bloqueado);
+        verify(bloqueoService, never()).levantar(activo);
+        assertThat(detalle.estado()).isEqualTo(EstadoUsuario.ACTIVO);
+    }
+
+    @Test
+    @DisplayName("modificar: pasar a BLOQUEADO registra un bloqueo sin motivo propio; volver a ACTIVO lo levanta")
+    void modificarAcompanaLaTablaDeBloqueos() {
+        Usuario usuario = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
+
+        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.BLOQUEADO, PERSONA_ID));
+        verify(bloqueoService).bloquear(usuario, UsuarioEdicionService.MOTIVO_DESDE_EDICION, null);
+
+        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.ACTIVO, PERSONA_ID));
+        verify(bloqueoService).levantar(usuario);
+        assertThat(usuario.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
+    }
 
     private static UsuarioUpdateRequest pedido(String username, String email, String descripcion,
                                                EstadoEditable estado, Long personaId) {

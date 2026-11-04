@@ -35,7 +35,11 @@ public interface UsuarioRepository extends
     @Query("select distinct u from Usuario u left join fetch u.roles ur left join fetch ur.rol where u.id in :ids")
     List<Usuario> findConRolesByIdIn(@Param("ids") Collection<Long> ids);
 
+    @Query("select u from Usuario u join fetch u.persona where u.id in :ids")
+    List<Usuario> findConPersonaByIdIn(@Param("ids") Collection<Long> ids);
+
     Optional<Usuario> findByEmailIgnoreCase(String email);
+
 
     Optional<Usuario> findByUsernameIgnoreCase(String username);
 

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -19,6 +20,7 @@ import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
+import com.hydra.pica.plataforma_pica.common.error.DemasiadosIntentosException;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.dto.LoginRequest;
@@ -196,9 +198,27 @@ class AuthControllerTest {
     }
 
     @Test
+    @DisplayName("Login con demasiados fallidos: 429 con Retry-After")
+    void loginConDemasiadosIntentos() throws Exception {
+        when(authService.login(any(LoginRequest.class), any(), any()))
+                .thenThrow(new DemasiadosIntentosException(840, "Demasiados intentos fallidos"));
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"identificador":"jperez","password":"Pica2026"}
+                                """))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "840"))
+                .andExpect(jsonPath("$.codigo").value("DEMASIADOS_INTENTOS"))
+                .andExpect(jsonPath("$.reintentarEnSegundos").value(840));
+    }
+
+    @Test
     @DisplayName("Login válido: devuelve el par de tokens")
     void loginValido() throws Exception {
-        when(authService.login(any(LoginRequest.class), org.mockito.ArgumentMatchers.eq("test-agent")))
+        when(authService.login(any(LoginRequest.class), org.mockito.ArgumentMatchers.eq("test-agent"),
+                org.mockito.ArgumentMatchers.eq("127.0.0.1")))
                 .thenReturn(new TokenPair("access", "refresh", "Bearer", 900));
 
         mockMvc.perform(post("/api/v1/auth/login")

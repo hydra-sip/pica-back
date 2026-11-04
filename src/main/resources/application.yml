@@ -14,6 +14,13 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
+  # El PDF del reglamento (PICA-200) y la evidencia de los partidos (PICA-241): el tope de cada archivo lo controla
+  # su servicio; este es el del más grande, un video de evidencia
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 21MB
+
   jpa:
     hibernate:
       ddl-auto: validate
@@ -87,8 +94,36 @@ app:
     access-ttl: ${APP_AUTH_ACCESS_TTL:15m}        # vida del access token
     refresh-ttl: ${APP_AUTH_REFRESH_TTL:24h}      # inactividad: el refresh rota en cada uso
     sesion-maxima: ${APP_AUTH_SESION_MAXIMA:7d}   # tope desde el login, aunque se use
+    intentos-login:   # RNF-SEG-06: con este máximo de fallidos en la ventana, 429 hasta que se libere
+      maximo: ${APP_AUTH_INTENTOS_LOGIN_MAXIMO:5}
+      ventana: ${APP_AUTH_INTENTOS_LOGIN_VENTANA:15m}
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+  torneos:
+    cupo-maximo: ${APP_TORNEOS_CUPO_MAXIMO:64}   # tope de participantes por torneo (HU-201)
+    cierre-automatico: ${APP_TORNEOS_CIERRE_AUTOMATICO:true}   # cerrar las inscripciones vencidas (HU-206)
+    revision-cierres: ${APP_TORNEOS_REVISION_CIERRES:60s}   # cada cuánto se buscan
+  partidos:
+    plazo-objecion: ${APP_PARTIDOS_PLAZO_OBJECION:15m}   # para aceptar u objetar un resultado cargado (HU-301)
+    tolerancia-checkin: ${APP_PARTIDOS_TOLERANCIA_CHECKIN:2m}   # margen en cada extremo de la ventana de check-in (HU-308)
+    confirmacion-automatica: ${APP_PARTIDOS_CONFIRMACION_AUTOMATICA:true}   # confirmar los que vencieron (PICA-242)
+    ausencia-automatica: ${APP_PARTIDOS_AUSENCIA_AUTOMATICA:true}   # declarar las ausencias al vencer el check-in (HU-309)
+    revision-plazos: ${APP_PARTIDOS_REVISION_PLAZOS:30s}   # cada cuánto se buscan
+  rifas:
+    duracion-reserva: ${APP_RIFAS_DURACION_RESERVA:10m}   # lo que dura un número reservado mientras se paga (HU-403)
+    cierre-automatico: ${APP_RIFAS_CIERRE_AUTOMATICO:true}   # cerrar las ventas vencidas y sellar la lista (HU-407)
+    revision-cierres: ${APP_RIFAS_REVISION_CIERRES:60s}   # cada cuánto se buscan (también las rifas para sortear)
+    sorteo-automatico: ${APP_RIFAS_SORTEO_AUTOMATICO:true}   # sortear las rifas cerradas cuando llega su fecha (HU-504)
+    sorteo-anticipado: ${APP_RIFAS_SORTEO_ANTICIPADO:false}   # solo para la demo: el organizador sortea antes de la fecha
+  # Los archivos que se suben (PICA-200): local, en una carpeta, o supabase, en un bucket privado de Storage
+  almacenamiento:
+    tipo: ${APP_ALMACENAMIENTO_TIPO:local}
+    local:
+      directorio: ${APP_ALMACENAMIENTO_DIRECTORIO:}   # sin valor, pica-archivos en la carpeta temporal
+    supabase:
+      url: ${APP_ALMACENAMIENTO_SUPABASE_URL:}        # https://<proyecto>.supabase.co
+      clave: ${APP_ALMACENAMIENTO_SUPABASE_CLAVE:}    # service_role: no sale del back
+      bucket: ${APP_ALMACENAMIENTO_SUPABASE_BUCKET:reglamentos}
   admin:
     username: ${ADMIN_USERNAME:admin}
     email: ${ADMIN_EMAIL:admin@pica.local}

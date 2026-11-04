@@ -8,10 +8,13 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.control.domain.Bloqueo;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
+import com.hydra.pica.plataforma_pica.user.dto.BloqueoDatos;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioDetalle;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioUpdateRequest;
 import com.hydra.pica.plataforma_pica.user.event.EmailDeUsuarioCambiado;
@@ -41,12 +44,15 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UsuarioEdicionService {
 
+    static final String MOTIVO_DESDE_EDICION = "Bloqueado desde la edición del usuario, sin motivo cargado";
+
     private final UsuarioRepository usuarioRepository;
     private final PersonaRepository personaRepository;
     private final PasswordEncoder passwordEncoder;
     private final AdminProperties adminProperties;
     private final ApplicationEventPublisher eventos;
     private final CurrentUserProvider currentUserProvider;
+    private final BloqueoService bloqueoService;
 
     /**
      * Reemplaza username, email, descripción, estado y persona. Si cambia el email el usuario queda
@@ -88,6 +94,14 @@ public class UsuarioEdicionService {
             usuario.setEmailVerificado(false);
         }
         usuario.setEstado(estadoResultante(request.estado(), usuario.isEmailVerificado()));
+        // la tabla bloqueo acompaña al estado: el PUT de siempre bloquea sin motivo propio
+        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO && estadoAnterior != EstadoUsuario.BLOQUEADO) {
+            bloqueoService.bloquear(usuario, MOTIVO_DESDE_EDICION, null);
+        } else if (estadoAnterior == EstadoUsuario.BLOQUEADO && usuario.getEstado() != EstadoUsuario.BLOQUEADO) {
+            EstadoUsuario resultante = usuario.getEstado();
+            bloqueoService.levantar(usuario);
+            usuario.setEstado(resultante);
+        }
 
         try {
             // flush acá para que un choque con los índices únicos (dos pedidos a la vez) salte ahora
@@ -103,6 +117,38 @@ public class UsuarioEdicionService {
             eventos.publishEvent(new SesionesDeUsuarioInvalidadas(usuario.getId()));
         }
         return UsuarioDetalle.desde(usuario, persona, false);
+    }
+
+    /**
+     * Bloquea con motivo y fecha de fin opcional (HU-703). Con fecha, el login lo levanta solo cuando
+     * vence. Un usuario ya bloqueado da 409 USUARIO_YA_BLOQUEADO: para cambiar el motivo o la fecha se
+     * levanta y se vuelve a bloquear.
+     */
+    @Transactional
+    public UsuarioDetalle bloquear(Long id, String motivo, Instant hasta) {
+        Usuario usuario = buscarVivo(id);
+        exigirNoProtegido(usuario, "bloquear");
+        exigirQueNoSeaElMismo(usuario, "bloquearte");
+        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO) {
+            throw new ConflictoException(CodigoError.USUARIO_YA_BLOQUEADO,
+                    "El usuario " + usuario.getUsername() + " ya está bloqueado");
+        }
+
+        Bloqueo bloqueo = bloqueoService.bloquear(usuario, motivo, hasta);
+        usuarioRepository.saveAndFlush(usuario);
+        eventos.publishEvent(new SesionesDeUsuarioInvalidadas(usuario.getId()));
+        return UsuarioDetalle.desde(usuario, usuario.getPersona(), false, BloqueoDatos.desde(bloqueo));
+    }
+
+    /** Levanta el bloqueo. Idempotente: si no estaba bloqueado lo devuelve igual. */
+    @Transactional
+    public UsuarioDetalle levantarBloqueo(Long id) {
+        Usuario usuario = buscarVivo(id);
+        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO) {
+            bloqueoService.levantar(usuario);
+            usuarioRepository.saveAndFlush(usuario);
+        }
+        return UsuarioDetalle.desde(usuario, usuario.getPersona(), esProtegido(usuario));
     }
 
     /**

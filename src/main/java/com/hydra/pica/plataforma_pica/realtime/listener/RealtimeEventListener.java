@@ -1,0 +1,256 @@
+package com.hydra.pica.plataforma_pica.realtime.listener;
+
+import java.math.BigDecimal;
+
+import com.hydra.pica.plataforma_pica.partido.dto.BracketTorneo;
+import com.hydra.pica.plataforma_pica.partido.event.PartidoSinPresentes;
+import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
+import com.hydra.pica.plataforma_pica.partido.event.ResultadoObjetado;
+import com.hydra.pica.plataforma_pica.partido.service.BracketService;
+import com.hydra.pica.plataforma_pica.realtime.dto.EventoRifaMessage;
+import com.hydra.pica.plataforma_pica.realtime.dto.EventoTorneoMessage;
+import com.hydra.pica.plataforma_pica.realtime.service.RealtimeNotifier;
+import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
+import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
+import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
+import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.event.NumerosVendidos;
+import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaRegistrado;
+import com.hydra.pica.plataforma_pica.rifa.event.RifaSorteada;
+import com.hydra.pica.plataforma_pica.rifa.event.VentaRifaCerrada;
+import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
+import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+
+import com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
+import com.hydra.pica.plataforma_pica.torneo.service.PozoTorneoService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+
+/**
+ * Escucha eventos de dominio y publica actualizaciones por WebSocket a /topic/torneos/{id}
+ * y /topic/rifas/{id} (HU-305, T305-1).
+ */
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class RealtimeEventListener {
+
+    private final RealtimeNotifier realtimeNotifier;
+    private final BracketService bracketService;
+    private final TorneoRepository torneoRepository;
+    private final PozoTorneoService pozoTorneoService;
+    private final RifaRepository rifaRepository;
+    private final NumeroRepository numeroRepository;
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onResultadoConfirmado(ResultadoConfirmado evento) {
+        log.info("Resultado confirmado para partido {} en torneo {}. Finalizado: {}",
+                evento.partidoId(), evento.torneoId(), evento.torneoFinalizado());
+
+        BracketTorneo bracket = obtenerBracket(evento.torneoId());
+        EstadoTorneo estado = evento.torneoFinalizado() ? EstadoTorneo.FINALIZADO : obtenerEstadoTorneo(evento.torneoId());
+        BigDecimal pozo = pozoTorneoService.calcularPozo(evento.torneoId());
+
+        EventoTorneoMessage mensaje = new EventoTorneoMessage(
+                "RESULTADO_CONFIRMADO",
+                evento.torneoId(),
+                estado,
+                evento.partidoId(),
+                evento.ganadorId(),
+                evento.torneoFinalizado(),
+                bracket,
+                pozo
+        );
+
+        realtimeNotifier.publicarTorneo(evento.torneoId(), mensaje);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onResultadoObjetado(ResultadoObjetado evento) {
+        log.info("Resultado objetado para partido {} en torneo {}", evento.partidoId(), evento.torneoId());
+
+        BracketTorneo bracket = obtenerBracket(evento.torneoId());
+        EstadoTorneo estado = obtenerEstadoTorneo(evento.torneoId());
+        BigDecimal pozo = pozoTorneoService.calcularPozo(evento.torneoId());
+
+        EventoTorneoMessage mensaje = new EventoTorneoMessage(
+                "RESULTADO_OBJETADO",
+                evento.torneoId(),
+                estado,
+                evento.partidoId(),
+                null,
+                false,
+                bracket,
+                pozo
+        );
+
+        realtimeNotifier.publicarTorneo(evento.torneoId(), mensaje);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onPartidoSinPresentes(PartidoSinPresentes evento) {
+        log.info("Partido {} sin presentes en torneo {}", evento.partidoId(), evento.torneoId());
+
+        EventoTorneoMessage mensaje = new EventoTorneoMessage(
+                "PARTIDO_SIN_PRESENTES",
+                evento.torneoId(),
+                obtenerEstadoTorneo(evento.torneoId()),
+                evento.partidoId(),
+                null,
+                false,
+                obtenerBracket(evento.torneoId()),
+                pozoTorneoService.calcularPozo(evento.torneoId())
+        );
+
+        realtimeNotifier.publicarTorneo(evento.torneoId(), mensaje);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onTorneoEstadoCambiado(TorneoEstadoCambiado evento) {
+        log.info("Estado del torneo {} cambió a {}", evento.torneoId(), evento.estadoNuevo());
+
+        BracketTorneo bracket = obtenerBracket(evento.torneoId());
+        BigDecimal pozo = pozoTorneoService.calcularPozo(evento.torneoId());
+
+        EventoTorneoMessage mensaje = new EventoTorneoMessage(
+                "ESTADO_CAMBIADO",
+                evento.torneoId(),
+                evento.estadoNuevo(),
+                null,
+                null,
+                evento.estadoNuevo() == EstadoTorneo.FINALIZADO,
+                bracket,
+                pozo
+        );
+
+        realtimeNotifier.publicarTorneo(evento.torneoId(), mensaje);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onNumerosVendidos(NumerosVendidos evento) {
+        log.info("Números vendidos para rifa {}: {}. Nuevo pozo rifa: {}",
+                evento.rifaId(), evento.numeros(), evento.pozoRifa());
+
+        Rifa rifa = rifaRepository.findById(evento.rifaId()).orElse(null);
+        EstadoRifa estadoRifa = rifa != null ? rifa.getEstado() : EstadoRifa.EN_VENTA;
+
+        int totalVendidos = (int) numeroRepository.countByIdRifaIdAndEstado(evento.rifaId(), EstadoNumero.VENDIDO);
+
+        BigDecimal aporteTorneo = evento.torneoId() != null && rifa != null
+                ? RepartoRifa.de(rifa, totalVendidos).alPozoTorneo()
+                : BigDecimal.ZERO;
+
+        EventoRifaMessage mensajeRifa = new EventoRifaMessage(
+                "NUMEROS_VENDIDOS",
+                evento.rifaId(),
+                evento.torneoId(),
+                estadoRifa,
+                evento.numeros(),
+                totalVendidos,
+                evento.pozoRifa(),
+                aporteTorneo
+        );
+        realtimeNotifier.publicarRifa(evento.rifaId(), mensajeRifa);
+
+        if (evento.torneoId() != null) {
+            log.info("Actualizando pozo del torneo {} en tiempo real a {}",
+                    evento.torneoId(), evento.pozoTorneo());
+
+            BracketTorneo bracket = obtenerBracket(evento.torneoId());
+            EstadoTorneo estadoTorneo = obtenerEstadoTorneo(evento.torneoId());
+
+            EventoTorneoMessage mensajeTorneo = new EventoTorneoMessage(
+                    "POZO_ACTUALIZADO",
+                    evento.torneoId(),
+                    estadoTorneo,
+                    null,
+                    null,
+                    estadoTorneo == EstadoTorneo.FINALIZADO,
+                    bracket,
+                    evento.pozoTorneo()
+            );
+            realtimeNotifier.publicarTorneo(evento.torneoId(), mensajeTorneo);
+        }
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onReclamoRifaRegistrado(ReclamoRifaRegistrado evento) {
+        log.info("Reclamo registrado en rifa {}. Estado pasa a EN_REVISION", evento.rifaId());
+        Rifa rifa = rifaRepository.findById(evento.rifaId()).orElse(null);
+        if (rifa == null) {
+            return;
+        }
+        int totalVendidos = (int) numeroRepository.countByIdRifaIdAndEstado(evento.rifaId(), EstadoNumero.VENDIDO);
+        // lo vendido se reparte entre el pozo del torneo y los premios (HU-405)
+        RepartoRifa reparto = RepartoRifa.de(rifa, totalVendidos);
+        BigDecimal pozoRifa = reparto.aPremios();
+        Long torneoId = rifa.getTorneo() != null ? rifa.getTorneo().getId() : null;
+        BigDecimal aporteTorneo = torneoId != null ? reparto.alPozoTorneo() : BigDecimal.ZERO;
+        EventoRifaMessage mensajeRifa = new EventoRifaMessage(
+                "RECLAMO_REGISTRADO",
+                evento.rifaId(),
+                torneoId,
+                EstadoRifa.EN_REVISION,
+                java.util.List.of(),
+                totalVendidos,
+                pozoRifa,
+                aporteTorneo
+        );
+        realtimeNotifier.publicarRifa(evento.rifaId(), mensajeRifa);
+    }
+
+    /** HU-407: la venta se cerró y la lista quedó sellada; quien mira la rifa la ve pasar a CERRADA. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onVentaRifaCerrada(VentaRifaCerrada evento) {
+        log.info("Venta de la rifa {} cerrada y lista sellada", evento.rifaId());
+        avisarEstado(evento.rifaId(), evento.torneoId(), EstadoRifa.CERRADA);
+    }
+
+    /** HU-504: la rifa se sorteó; quien la mira la ve pasar a SORTEADA y recarga los ganadores. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onRifaSorteada(RifaSorteada evento) {
+        log.info("Rifa {} sorteada", evento.rifaId());
+        avisarEstado(evento.rifaId(), evento.torneoId(), EstadoRifa.SORTEADA);
+    }
+
+    private void avisarEstado(Long rifaId, Long torneoId, EstadoRifa estado) {
+        Rifa rifa = rifaRepository.findById(rifaId).orElse(null);
+        if (rifa == null) {
+            return;
+        }
+        int totalVendidos = (int) numeroRepository.countByIdRifaIdAndEstado(rifaId, EstadoNumero.VENDIDO);
+        RepartoRifa reparto = RepartoRifa.de(rifa, totalVendidos);
+        EventoRifaMessage mensajeRifa = new EventoRifaMessage(
+                "ESTADO_CAMBIADO",
+                rifaId,
+                torneoId,
+                estado,
+                java.util.List.of(),
+                totalVendidos,
+                reparto.aPremios(),
+                torneoId != null ? reparto.alPozoTorneo() : BigDecimal.ZERO
+        );
+        realtimeNotifier.publicarRifa(rifaId, mensajeRifa);
+    }
+
+    private BracketTorneo obtenerBracket(Long torneoId) {
+        try {
+            return bracketService.ver(torneoId);
+        } catch (Exception e) {
+            log.debug("No se pudo obtener el bracket para el torneo {}: {}", torneoId, e.getMessage());
+            return null;
+        }
+    }
+
+    private EstadoTorneo obtenerEstadoTorneo(Long torneoId) {
+        return torneoRepository.findById(torneoId)
+                .map(Torneo::getEstado)
+                .orElse(null);
+    }
+}

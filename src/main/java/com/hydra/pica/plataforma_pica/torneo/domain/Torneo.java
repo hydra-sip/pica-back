@@ -1,0 +1,177 @@
+package com.hydra.pica.plataforma_pica.torneo.domain;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
+
+import com.hydra.pica.plataforma_pica.common.domain.AuditableEntity;
+import com.hydra.pica.plataforma_pica.user.domain.Usuario;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+/**
+ * En BORRADOR casi todo puede faltar (V18): el asistente lo va completando y fuera de BORRADOR la base exige
+ * lo que antes era NOT NULL.
+ *
+ * Baja lógica con {@code eliminadoEn}, sin {@code @SQLRestriction}: inscripciones, partidos y
+ * movimientos viejos siguen apuntando al torneo, así que cada consulta filtra los eliminados.
+ */
+@Entity
+@Table(name = "torneo")
+@Getter
+@Setter
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+public class Torneo extends AuditableEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id", nullable = false)
+    @EqualsAndHashCode.Include
+    @Setter(AccessLevel.NONE)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "organizador_id", nullable = false)
+    private Usuario organizador;
+
+    @Column(name = "nombre", length = 100, nullable = false)
+    private String nombre;
+
+    @Column(name = "descripcion", columnDefinition = "TEXT")
+    private String descripcion;
+
+    /** Texto del paso 1 del asistente; para publicar alcanza con este o con el PDF. */
+    @Column(name = "reglamento_texto", length = 2000)
+    private String reglamentoTexto;
+
+    /** El PDF (T201-2), opcional. */
+    @Column(name = "reglamento_url", length = 500)
+    private String reglamentoUrl;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "reglamento_hash", length = 64)
+    private String reglamentoHash;
+
+    @Column(name = "disciplina", length = 50, nullable = false)
+    private String disciplina;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "formato", length = 30, nullable = false)
+    private Formato formato = Formato.ELIMINACION_DIRECTA;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "modalidad", length = 20)
+    private Modalidad modalidad;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_participante", length = 20)
+    private TipoParticipante tipoParticipante;
+
+    @Column(name = "sede", length = 255)
+    private String sede;
+
+    @Column(name = "cupo_maximo")
+    private Integer cupoMaximo;
+
+    @Column(name = "cupo_minimo")
+    private Integer cupoMinimo;
+
+    /** Solo en torneos por equipos: el mínimo de la nómina, los titulares. */
+    @Column(name = "tamanio_equipo")
+    private Integer tamanioEquipo;
+
+    /** Solo en torneos por equipos: el máximo de la nómina, con los suplentes incluidos. */
+    @Column(name = "nomina_maxima")
+    private Integer nominaMaxima;
+
+    @Column(name = "valor_inscripcion", precision = 14, scale = 2)
+    private BigDecimal valorInscripcion;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "moneda", length = 3, nullable = false)
+    private String moneda = "ARS";
+
+    /**
+     * % de gastos administrativos que paga aparte quien se inscribe (V27): se copia del parámetro de la plataforma al
+     * publicar. En BORRADOR es null.
+     */
+    @Column(name = "pct_gastos_administrativos", precision = 5, scale = 2)
+    private BigDecimal pctGastosAdministrativos;
+
+    @Column(name = "cierre_inscripcion_en")
+    private Instant cierreInscripcionEn;
+
+    @Column(name = "fecha_inicio")
+    private Instant fechaInicio;
+
+    @Column(name = "fecha_fin")
+    private Instant fechaFin;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "estado", length = 30, nullable = false)
+    private EstadoTorneo estado = EstadoTorneo.BORRADOR;
+
+    @Column(name = "motivo_cancelacion", columnDefinition = "TEXT")
+    private String motivoCancelacion;
+
+    /** Enlace público; se fija al publicar. */
+    @Column(name = "slug", length = 150, unique = true)
+    private String slug;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "esquema_hash", length = 64)
+    private String esquemaHash;
+
+    @Column(name = "publicado_en")
+    private Instant publicadoEn;
+
+    /** Sella la lista de inscriptos al cerrar la inscripción. */
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "lista_hash", length = 64)
+    private String listaHash;
+
+    @Column(name = "lista_sellada_en")
+    private Instant listaSelladaEn;
+
+    @Column(name = "semilla_bracket", length = 64)
+    private String semillaBracket;
+
+    @Column(name = "checkin_min_antes")
+    private Integer checkinMinAntes;
+
+    @Column(name = "checkin_duracion_min")
+    private Integer checkinDuracionMin;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "checkin_sin_presentes", length = 20, nullable = false)
+    private CriterioSinPresentes checkinSinPresentes = CriterioSinPresentes.REPROGRAMAR;
+
+    @Column(name = "eliminado_en")
+    private Instant eliminadoEn;
+
+    // torneo_cancha no tiene columnas propias, como rol_permiso; torneo_arbitro sí (ArbitroDesignado)
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "torneo_cancha",
+            joinColumns = @JoinColumn(name = "torneo_id"),
+            inverseJoinColumns = @JoinColumn(name = "cancha_id"))
+    private Set<Cancha> canchas = new HashSet<>();
+}

@@ -1,0 +1,12 @@
+# Perfil seed: datos de prueba para desarrollo (B1-3). Lo activa ./mvnw spring-boot:run junto con dev
+# (pom.xml); la imagen Docker, el CI, Railway y los tests con @ActiveProfiles("dev") no lo usan.
+
+spring:
+  flyway:
+    # Suma el seed de desarrollo a las migraciones
+    locations: classpath:db/migration,classpath:db/seed
+
+app:
+  admin:
+    # En local siempre hay Admin; con ADMIN_INITIAL_PASSWORD se usa esa
+    initial-password: ${ADMIN_INITIAL_PASSWORD:PicaDev2026}

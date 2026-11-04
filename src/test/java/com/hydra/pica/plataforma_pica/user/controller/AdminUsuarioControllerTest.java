@@ -584,4 +584,73 @@ class AdminUsuarioControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("ACCION_SOBRE_SI_MISMO"));
     }
+
+    // --- bloqueo con motivo (HU-703) ------------------------------------------------
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("POST /admin/usuarios/{id}/bloqueo con motivo y fecha de fin responde 200 con el usuario")
+    void bloquearResponde200() throws Exception {
+        Instant hasta = Instant.parse("2099-01-01T00:00:00Z");
+        when(usuarioEdicionService.bloquear(3L, "Agresión al árbitro", hasta)).thenReturn(detalleDe(3L));
+
+        mockMvc.perform(post("/api/v1/admin/usuarios/3/bloqueo").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\": \"Agresión al árbitro\", \"hasta\": \"2099-01-01T00:00:00Z\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(3));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("POST /admin/usuarios/{id}/bloqueo sin motivo o con la fecha de fin pasada responde 400")
+    void bloquearInvalidoResponde400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/usuarios/3/bloqueo").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\": \"  \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[0].campo").value("motivo"))
+                .andExpect(jsonPath("$.errores[0].codigo").value("REQUERIDO"));
+        mockMvc.perform(post("/api/v1/admin/usuarios/3/bloqueo").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\": \"Motivo\", \"hasta\": \"2020-01-01T00:00:00Z\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[0].campo").value("hasta"));
+        verifyNoInteractions(usuarioEdicionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("POST /admin/usuarios/{id}/bloqueo a uno ya bloqueado responde 409 USUARIO_YA_BLOQUEADO")
+    void bloquearYaBloqueadoResponde409() throws Exception {
+        when(usuarioEdicionService.bloquear(eq(3L), any(), any()))
+                .thenThrow(new ConflictoException(CodigoError.USUARIO_YA_BLOQUEADO, "ya bloqueado"));
+
+        mockMvc.perform(post("/api/v1/admin/usuarios/3/bloqueo").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\": \"Motivo\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("USUARIO_YA_BLOQUEADO"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_VER")
+    @DisplayName("Bloquear y levantar el bloqueo sin USUARIO_EDITAR responden 403 SIN_PERMISO")
+    void bloqueoSinPermisoResponde403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/usuarios/3/bloqueo").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motivo\": \"Motivo\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
+        mockMvc.perform(delete("/api/v1/admin/usuarios/3/bloqueo"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
+        verifyNoInteractions(usuarioEdicionService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @DisplayName("DELETE /admin/usuarios/{id}/bloqueo responde 200 con el usuario")
+    void levantarBloqueoResponde200() throws Exception {
+        when(usuarioEdicionService.levantarBloqueo(3L)).thenReturn(detalleDe(3L));
+
+        mockMvc.perform(delete("/api/v1/admin/usuarios/3/bloqueo"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("ACTIVO"));
+    }
 }

@@ -6,6 +6,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -61,8 +62,27 @@ public class SecurityConfig {
                                 "/api/v1/auth/**",
                                 "/oauth2/**",
                                 "/login/oauth2/**",
-                                "/.well-known/**")
+                                "/.well-known/**",
+                                "/ws/**")
                         .permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/torneos/resumen",
+                                "/api/v1/torneos/slug/*",
+                                // el servicio decide: el de un borrador lo ve solo su organizador
+                                "/api/v1/torneos/*/reglamento",
+                                // el de un torneo publicado (PICA-216)
+                                "/api/v1/torneos/*/bracket",
+                                // las rifas para quien compra (PICA-221)
+                                "/api/v1/rifas/publicas",
+                                "/api/v1/rifas/publicas/*",
+                                "/api/v1/rifas/publicas/*/numeros",
+                                "/api/v1/rifas/publicas/*/lista-sellada",
+                                "/api/v1/rifas/publicas/*/sorteo",
+                                "/api/v1/pronosticos/partidos",
+                                "/api/v1/pronosticos/ranking")
+                        .permitAll()
+
                         .anyRequest().authenticated());
 
         if (clientRegistrationRepository != null) {

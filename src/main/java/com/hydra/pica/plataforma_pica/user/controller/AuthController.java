@@ -81,7 +81,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public TokenPair login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
-        return authService.login(request, httpRequest.getHeader("User-Agent"));
+        return authService.login(request, httpRequest.getHeader("User-Agent"), httpRequest.getRemoteAddr());
     }
 
     @PostMapping("/refresh")

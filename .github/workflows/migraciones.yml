@@ -1,0 +1,62 @@
+# Revisa el orden de las migraciones de Flyway (scripts/revisar-migraciones.sh) y deja el resultado como
+# estado "migraciones" en el último commit del PR, que es el check obligatorio de dev (PICA-294).
+# Cada PR se revisa contra la punta de su base al abrirlo o actualizarlo, y otra vez cada vez que algo
+# entra a dev: si otro PR mergeó antes la misma versión, el que quedó atrás pasa a rojo.
+name: Migraciones
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: migraciones-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Revisar las migraciones
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENTO: ${{ github.event_name }}
+          PR_BASE: ${{ github.base_ref }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # Revisa un commit contra la punta de su base y publica el estado en ese commit
+          revisar() {
+            local base=$1 sha=$2 salida estado=success
+            salida=$(scripts/revisar-migraciones.sh "origin/$base" "$sha" 2>&1) || estado=failure
+            echo "$salida"
+            local primera=${salida%%$'\n'*}
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$sha" -f state="$estado" -f context=migraciones \
+              -f description="${primera:0:140}" -f target_url="$RUN_URL" > /dev/null
+            [ "$estado" = success ]
+          }
+
+          if [ "$EVENTO" = pull_request ]; then
+            revisar "$PR_BASE" "$PR_SHA"
+          else
+            gh pr list --state open --json number,baseRefName,headRefOid \
+              --jq '.[] | "\(.number) \(.baseRefName) \(.headRefOid)"' |
+            while read -r pr base sha; do
+              echo "== #$pr"
+              if ! git cat-file -e "$sha^{commit}" 2>/dev/null; then
+                echo "No está el commit $sha (¿PR de un fork?): se saltea"
+                continue
+              fi
+              revisar "$base" "$sha" || true
+            done
+          fi

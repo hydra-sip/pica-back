@@ -43,6 +43,26 @@ docker compose up -d
 ./mvnw spring-boot:run
 ```
 
+### Datos de prueba (perfil `seed`)
+
+`./mvnw spring-boot:run` arranca con los perfiles `dev` (claves JWT efímeras, Google opcional) y `seed`: además de las migraciones, Flyway corre el seed `db/seed/R__seed_desarrollo.sql`. La imagen Docker, el CI y Railway no lo usan. Para arrancar sin datos de prueba: `./mvnw spring-boot:run -Dspring-boot.run.profiles=dev`.
+
+Todos los usuarios tienen la contraseña `PicaDev2026`, también el `admin` (salvo que se pase `ADMIN_INITIAL_PASSWORD`):
+
+| Usuario | Rol |
+|---|---|
+| `dev_organizador` | Organizador |
+| `dev_arbitro` | Árbitro |
+| `dev_jugador1` a `dev_jugador6` | Participante |
+
+- **Equipos:** Los Halcones (capitán `dev_jugador1`, con 2 y 3) y Las Panteras (capitán `dev_jugador4`, con 5 y 6).
+- **Copa abierta** (`dev-copa-abierta`): por equipos, con la inscripción abierta, Los Halcones inscriptos y pagados, y la rifa en venta (números 1 a 100; 7, 13 y 42 vendidos a `dev_jugador5`).
+- **Torneo cerrado** (`dev-torneo-cerrado`): individual, con `dev_jugador1` a 4 confirmados, el árbitro designado y el bracket generado: dos semifinales con sus lados y la final vacía.
+
+El seed es repetible: si se modifica, Flyway lo vuelve a correr en el próximo arranque y solo agrega lo que falta.
+
+Para probar las objeciones (HU-303 y HU-304), `scripts/escenario-objeciones.sh` pone el Torneo cerrado en curso y, por la API, deja sus dos semifinales objetadas, con evidencia; con `--laudar`, además lauda la primera. Va por la API para que queden los archivos de evidencia y la auditoría como en uso real, y no toca una semifinal que ya tiene resultado.
+
 ### Probar que levantó
 
 Una vez levantada la aplicación en `http://localhost:8080`:
@@ -55,7 +75,7 @@ Responde 200 con `"status": "UP"` si la app y la base andan, y 503 con `DOWN` si
 
 ### Prueba de humo del contrato
 
-`scripts/prueba-de-humo.sh` recorre todas las operaciones de `docs/api/openapi.yaml` contra una API levantada y compara cada código HTTP con el del contrato. Termina con `Contrato: 34/34 operaciones` y falla si alguna operación quedó sin probar, así que un endpoint nuevo en el contrato obliga a sumarlo al script.
+`scripts/prueba-de-humo.sh` recorre todas las operaciones de `docs/api/openapi.yaml` contra una API levantada y compara cada código HTTP con el del contrato. Termina con `Contrato: 35/35 operaciones` y falla si alguna operación quedó sin probar, así que un endpoint nuevo en el contrato obliga a sumarlo al script. Los torneos todavía no tienen API: para probar las inscripciones el script carga tres torneos (uno gratis, uno con costo y uno por equipos, con un equipo del usuario de prueba) por SQL y los borra al limpiar, junto con la nómina, el equipo, el movimiento y la billetera del pago.
 
 Crea un rol, una persona y dos usuarios marcados con el id de la corrida (`humo-…`). Al final los borra de la base por SQL, porque la API solo hace bajas lógicas. La limpieza corre aunque un paso falle o se corte con Ctrl+C, y al final verifica que no quedó nada de la corrida. Si no puede llegar a la base, no arranca. Lo único que queda son las líneas de log de la API.
 
@@ -245,3 +265,34 @@ docker compose -f docker-compose.replicas.yml down -v
 El script corta con error en el primer chequeo que falle, y cada paso lo tienen que atender las dos réplicas.
 
 **Login con Google (a mano).** El script no puede pasar por Google. Para probarlo completo: poner en `.env.replicas` las credenciales reales (`GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`), con `http://localhost:8080/login/oauth2/code/google` entre las URIs de redirección autorizadas del cliente; levantar el front con la API en `http://localhost:8080` y entrar con Google. La redirección a Google, la vuelta y el canje del código caen en réplicas distintas (se ve con `docker compose -f docker-compose.replicas.yml logs -f api1 api2`).
+
+---
+
+## Actualización en Tiempo Real (WebSocket / STOMP) y RNF-TRE-01
+
+Para cumplir con la historia de usuario **HU-305** (*actualización automática de bracket, pozo y estado del torneo sin recargar página*), el backend implementa comunicación bidireccional vía **WebSocket + STOMP** sobre el endpoint `/ws`:
+
+- **Topics públicos:**
+  - `/topic/torneos/{id}`: Notifica confirmación u objeción de partidos, avance de la llave del bracket, cambio de estado del torneo y actualización del pozo acumulado.
+  - `/topic/rifas/{id}`: Notifica números comprados y actualización del acumulado de la rifa.
+- **Sincronización al reconectar:** Los clientes que sufren desconexión transitoria se sincronizan automáticamente suscribiéndose a `/app/torneos/{id}` o enviando una petición de snapshot a `/app/torneos/{id}/sync`.
+
+Para más detalles sobre los eventos, esquemas de payload y arquitectura, ver [docs/realtime.md](docs/realtime.md).
+
+### Prueba Automatizada de Rendimiento (RNF-TRE-01)
+
+El requisito no funcional **RNF-TRE-01** exige que la entrega de eventos a **2 clientes concurrentes** a lo largo de **100 repeticiones** tenga un percentil 95 (**p95**) de latencia de **5 segundos o menos** (5000 ms).
+
+```bash
+# Ejecutar la prueba automatizada
+./scripts/probar-rnf-tre-01.sh
+
+# O mediante Maven directamente
+./mvnw test -Dtest=RnfTre01Test
+```
+
+**Resultados obtenidos:**
+- **p95 en Torneo (`/topic/torneos/{id}`):** ~0.15 ms ($\le$ 5000 ms) ✓
+- **p95 en Rifa (`/topic/rifas/{id}`):** ~0.27 ms ($\le$ 5000 ms) ✓
+- **Veredicto:** Aprobado con holgura superior a 10.000x respecto al límite exigido.
+

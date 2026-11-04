@@ -10,6 +10,7 @@ import com.hydra.pica.plataforma_pica.common.audit.AuditConstants;
 import com.hydra.pica.plataforma_pica.common.config.AdminConfig;
 import com.hydra.pica.plataforma_pica.common.config.JpaAuditingConfig;
 import com.hydra.pica.plataforma_pica.common.security.SecurityContextCurrentUserProvider;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -46,7 +47,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
         TestcontainersConfiguration.class,
         AdminConfig.class,
         JacksonAutoConfiguration.class,
-        UsuarioAdminService.class
+        UsuarioAdminService.class,
+        BloqueoService.class
 })
 class UsuarioAdminServiceListadoTest {
 

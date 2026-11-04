@@ -39,4 +39,19 @@ public class SmtpEmailService implements EmailService {
         message.setText("Completá la verificación desde este enlace: " + url);
         mailSender.getObject().send(message);
     }
+
+    @Override
+    public void enviarAviso(String email, String asunto, String texto) {
+        if (mailHost.isBlank() || mailSender.getIfAvailable() == null) {
+            log.info("Aviso para {}: {} - {}", email, asunto, texto);
+            return;
+        }
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(from);
+        message.setTo(email);
+        message.setSubject(asunto);
+        message.setText(texto);
+        mailSender.getObject().send(message);
+    }
 }

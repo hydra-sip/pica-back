@@ -23,9 +23,24 @@ public record UsuarioDetalle(
         PersonaDatos persona,
         List<RolMinimo> roles,
         Instant creadoEn,
-        Instant modificadoEn) {
+        Instant modificadoEn,
+        BloqueoDatos bloqueo) {
+
+    /** Sin bloqueo: las respuestas que no lo informan (alta, roles, reactivar). */
+    public UsuarioDetalle(
+            Long id, String username, String email, String descripcion, EstadoUsuario estado,
+            boolean emailVerificado, boolean eliminado, Instant eliminadoEn, boolean protegido,
+            boolean tieneContrasena, boolean conGoogle, PersonaDatos persona, List<RolMinimo> roles,
+            Instant creadoEn, Instant modificadoEn) {
+        this(id, username, email, descripcion, estado, emailVerificado, eliminado, eliminadoEn, protegido,
+                tieneContrasena, conGoogle, persona, roles, creadoEn, modificadoEn, null);
+    }
 
     public static UsuarioDetalle desde(Usuario usuario, Persona persona, boolean protegido) {
+        return desde(usuario, persona, protegido, null);
+    }
+
+    public static UsuarioDetalle desde(Usuario usuario, Persona persona, boolean protegido, BloqueoDatos bloqueo) {
         List<RolMinimo> roles = usuario.getRoles().stream()
                 .map(usuarioRol -> RolMinimo.desde(usuarioRol.getRol()))
                 .sorted(Comparator.comparing(RolMinimo::nombre))
@@ -46,6 +61,7 @@ public record UsuarioDetalle(
                 PersonaDatos.desde(persona),
                 roles,
                 usuario.getCreadoEn(),
-                usuario.getModificadoEn());
+                usuario.getModificadoEn(),
+                bloqueo);
     }
 }

@@ -104,6 +104,9 @@ class UsuarioServiceIntegracionTest {
     }
 
     @Test
+    @WithMockUser(authorities = {"USUARIO_VER", "USUARIO_CREAR", "USUARIO_EDITAR", "USUARIO_ELIMINAR",
+            "PERSONA_VER", "PERSONA_CREAR", "PERSONA_EDITAR", "PERSONA_ELIMINAR", "ROL_VER", "ROL_ASIGNAR",
+            "RIFA_GESTIONAR", "INSCRIPCION_GESTIONAR", "TORNEO_GESTIONAR", "RIFA_ADMINISTRAR"})
     void altaPorAdminConPersonaExistenteYRolesPorId() {
         Persona persona = personaRepository.saveAndFlush(persona("40111222"));
         Long organizador = rolRepository.findByNombre("ORGANIZADOR").orElseThrow().getId();
@@ -127,7 +130,8 @@ class UsuarioServiceIntegracionTest {
 
     @Test
     @WithMockUser(authorities = {"USUARIO_VER", "USUARIO_CREAR", "USUARIO_EDITAR", "USUARIO_ELIMINAR",
-            "PERSONA_VER", "PERSONA_CREAR", "PERSONA_EDITAR", "PERSONA_ELIMINAR", "ROL_VER", "ROL_ASIGNAR"})
+            "PERSONA_VER", "PERSONA_CREAR", "PERSONA_EDITAR", "PERSONA_ELIMINAR", "ROL_VER", "ROL_ASIGNAR",
+            "RIFA_GESTIONAR", "INSCRIPCION_GESTIONAR", "TORNEO_GESTIONAR", "RIFA_ADMINISTRAR"})
     void altaPorAdminNoDaRolesConPermisosQueQuienLlamaNoTiene() {
         Persona persona = personaRepository.saveAndFlush(persona("40111222"));
         Long superUsuario = rolRepository.findByNombre("SUPER_USUARIO").orElseThrow().getId();
@@ -204,6 +208,7 @@ class UsuarioServiceIntegracionTest {
 
     @Test
     void personaInactivaOEliminadaRechazaElRegistro() {
+        long usuariosAntes = usuarioRepository.count();
         Persona inactiva = persona("30123456");
         inactiva.setEstado(EstadoGeneral.INACTIVO);
         personaRepository.saveAndFlush(inactiva);
@@ -218,7 +223,7 @@ class UsuarioServiceIntegracionTest {
         assertThatThrownBy(() -> usuarioService.crear(NuevoUsuario.autoRegistro("agarcia", "ana@example.com",
                 "Pica2026", new DatosPersona(TipoDoc.DNI, "40111222", "Ana", "García", null, null, null))))
                 .extracting("codigo").isEqualTo(CodigoError.PERSONA_INACTIVA);
-        assertThat(usuarioRepository.count()).isZero();
+        assertThat(usuarioRepository.count()).isEqualTo(usuariosAntes);
     }
 
     private static Persona persona(String nroDoc) {

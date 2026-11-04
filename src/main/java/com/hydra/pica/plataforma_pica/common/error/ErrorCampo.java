@@ -12,6 +12,8 @@ public record ErrorCampo(String campo, Codigo codigo, String mensaje) {
     /**
      * Se deriva de la anotación de Bean Validation que falló. Si aparece una anotación nueva
      * que no está acá, cae en VALOR_INVALIDO; agregarla si el front necesita distinguirla.
+     * RANGO_INVALIDO, VENTANA_INVALIDA y PREMIOS_INVALIDOS no salen de una anotación: los arma el
+     * servicio de rifas porque comparan un campo con otro.
      */
     public enum Codigo {
         REQUERIDO,
@@ -21,6 +23,10 @@ public record ErrorCampo(String campo, Codigo codigo, String mensaje) {
         PASSWORD_DEBIL,
         NOMBRE_INVALIDO,
         EDAD_FUERA_DE_RANGO,
+        RANGO_INVALIDO,
+        VENTANA_INVALIDA,
+        PREMIOS_INVALIDOS,
+        FECHAS_INVALIDAS,
         VALOR_INVALIDO;
 
         /** {@code anotacion} es lo que devuelve {@code FieldError.getCode()}: "NotBlank", "Email", etc. */
@@ -29,7 +35,7 @@ public record ErrorCampo(String campo, Codigo codigo, String mensaje) {
                 return VALOR_INVALIDO;
             }
             return switch (anotacion) {
-                case "NotNull", "NotBlank", "NotEmpty" -> REQUERIDO;
+                case "NotNull", "NotBlank", "NotEmpty", "AssertTrue" -> REQUERIDO;
                 case "Email", "Pattern", "DocumentoValido" -> FORMATO_INVALIDO;
                 case "Size", "Length", "Min", "Max" -> LONGITUD;
                 case "Past", "PastOrPresent" -> FECHA_FUTURA;

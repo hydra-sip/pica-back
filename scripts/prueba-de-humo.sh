@@ -107,7 +107,9 @@ if ! previo=$(sql <<SQL
 SELECT now() - interval '1 minute',
        (SELECT count(*) FROM usuario WHERE username LIKE '$CORRIDA-%')
      + (SELECT count(*) FROM persona WHERE nro_doc IN ('$DNI_REG', '$DNI_PER'))
-     + (SELECT count(*) FROM rol WHERE nombre = '$ROL');
+     + (SELECT count(*) FROM rol WHERE nombre = '$ROL')
+     + (SELECT count(*) FROM torneo WHERE nombre = '$CORRIDA')
+     + (SELECT count(*) FROM equipo WHERE nombre LIKE '$CORRIDA%');
 SQL
 ); then
     echo "No llego a la base: sin eso no se puede limpiar, así que no arranco" >&2
@@ -169,12 +171,30 @@ CREATE TEMP TABLE humo_p ON COMMIT DROP AS
     UNION SELECT id FROM persona WHERE nro_doc IN ('$DNI_REG', '$DNI_PER') AND creado_en >= '$INICIO';
 CREATE TEMP TABLE humo_r ON COMMIT DROP AS
     SELECT id FROM rol WHERE nombre = '$ROL' AND creado_en >= '$INICIO';
+CREATE TEMP TABLE humo_tor ON COMMIT DROP AS
+    SELECT id FROM torneo WHERE nombre = '$CORRIDA' AND creado_en >= '$INICIO';
 CREATE TEMP TABLE humo_t ON COMMIT DROP AS
     SELECT id FROM refresh_token
     WHERE usuario_id IN (SELECT id FROM humo_u) OR (user_agent = '$AGENTE' AND creado_en >= '$INICIO');
 SELECT (SELECT count(*) FROM humo_u), (SELECT count(*) FROM humo_p),
        (SELECT count(*) FROM humo_r), (SELECT count(*) FROM humo_t);
 DELETE FROM refresh_token WHERE id IN (SELECT id FROM humo_t);
+DELETE FROM reemplazo
+    WHERE inscripcion_id IN (SELECT id FROM inscripcion
+        WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u));
+DELETE FROM movimiento
+    WHERE inscripcion_id IN (SELECT id FROM inscripcion
+        WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u));
+DELETE FROM billetera WHERE usuario_id IN (SELECT id FROM humo_u);
+DELETE FROM nomina
+    WHERE inscripcion_id IN (SELECT id FROM inscripcion
+        WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u));
+DELETE FROM inscripcion
+    WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u);
+DELETE FROM usuario_equipo
+    WHERE equipo_id IN (SELECT id FROM equipo WHERE capitan_id IN (SELECT id FROM humo_u));
+DELETE FROM equipo WHERE capitan_id IN (SELECT id FROM humo_u);
+DELETE FROM torneo WHERE id IN (SELECT id FROM humo_tor);
 DELETE FROM usuario_rol WHERE usuario_id IN (SELECT id FROM humo_u) OR rol_id IN (SELECT id FROM humo_r);
 DELETE FROM rol_permiso WHERE rol_id IN (SELECT id FROM humo_r);
 DELETE FROM usuario WHERE id IN (SELECT id FROM humo_u);
@@ -184,6 +204,7 @@ COMMIT;
 SELECT (SELECT count(*) FROM usuario WHERE username LIKE '$CORRIDA-%')
      + (SELECT count(*) FROM persona WHERE nro_doc IN ('$DNI_REG', '$DNI_PER'))
      + (SELECT count(*) FROM rol WHERE nombre = '$ROL')
+     + (SELECT count(*) FROM torneo WHERE nombre = '$CORRIDA')
      + (SELECT count(*) FROM refresh_token WHERE user_agent = '$AGENTE');
 SQL
 }
@@ -254,7 +275,7 @@ echo "Admin: roles y permisos"
 pedir 200 GET /api/v1/admin/permisos "" "$ADMIN"
 pedir 201 POST /api/v1/admin/roles "" "$ADMIN" "$(jq -nc --arg r "$ROL" '{nombre: $r, nombreAmigable: "Rol de la prueba de humo"}')"
 ROL_ID=$(campo .id)
-pedir 200 PUT /api/v1/admin/roles/{id}/permisos "/api/v1/admin/roles/$ROL_ID/permisos" "$ADMIN" '{"permisos":["USUARIO_VER"]}'
+pedir 200 PUT /api/v1/admin/roles/{id}/permisos "/api/v1/admin/roles/$ROL_ID/permisos" "$ADMIN" '{"permisos":["USUARIO_VER","INSCRIPCION_GESTIONAR"]}'
 pedir 200 GET /api/v1/admin/roles "/api/v1/admin/roles?q=$ROL" "$ADMIN"
 en_listado "$ROL_ID"
 pedir 200 GET /api/v1/admin/roles/{id} "/api/v1/admin/roles/$ROL_ID" "$ADMIN"
@@ -296,11 +317,167 @@ pedir 200 POST /api/v1/auth/login "" "" "$(jq -nc --arg u "$USER_ADM" --arg c "$
 USUARIO=$(campo .accessToken)
 USUARIO_REFRESH=$(campo .refreshToken)
 pedir 200 GET /api/v1/me "" "$USUARIO"
+# sin permiso especial: cualquier usuario logueado busca jugadores, y se encuentra a sí mismo
+pedir 200 GET /api/v1/usuarios "/api/v1/usuarios?q=$USER_ADM" "$USUARIO"
+en_listado "$USR_ID"
+pedir 400:VALIDACION GET /api/v1/usuarios "/api/v1/usuarios?q=ab" "$USUARIO"
 pedir 200 PUT /api/v1/me "" "$USUARIO" \
     '{"nombres":"Prueba","apellidos":"Humo","fechaNacimiento":"1990-05-17","domicilioPostal":"Calle Falsa 123","telefono":"1133333333"}'
 pedir 200 POST /api/v1/auth/refresh "" "" "$(jq -nc --arg t "$USUARIO_REFRESH" '{refreshToken: $t}')"
 USUARIO=$(campo .accessToken)
 USUARIO_REFRESH=$(campo .refreshToken)
+
+echo
+echo "Inscripciones (en torneos y equipos cargados por SQL: todavía no hay API para crearlos)"
+TORNEO_ID=$(sql <<SQL
+INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad, tipo_participante,
+                    cupo_maximo, cupo_minimo, valor_inscripcion, pct_pozo_competidores, pct_premio_rifa,
+                    cierre_inscripcion_en, fecha_inicio, estado)
+SELECT id, '$CORRIDA', 'https://example.com/reglamento', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL',
+       8, 2, 0, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA'
+FROM usuario WHERE username = '$ADMIN_USER'
+RETURNING id;
+SQL
+)
+[[ $TORNEO_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudo cargar el torneo de la prueba"; exit 1; }
+pedir 404:TORNEO_NO_ENCONTRADO POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/0/inscripciones" "$USUARIO"
+# las objeciones del torneo las ve el organizador o un árbitro con permiso para resolverlas
+pedir 404:TORNEO_NO_ENCONTRADO GET /api/v1/torneos/{id}/objeciones "/api/v1/torneos/0/objeciones" "$USUARIO"
+pedir 403:SIN_PERMISO GET /api/v1/torneos/{id}/objeciones "/api/v1/torneos/$TORNEO_ID/objeciones" "$USUARIO"
+pedir 404:PARTIDO_NO_ENCONTRADO GET /api/v1/partidos/{id}/objecion "/api/v1/partidos/0/objecion" "$USUARIO"
+# la programación del partido y la ventana de check-in son del organizador del torneo
+pedir 404:PARTIDO_NO_ENCONTRADO PUT /api/v1/partidos/{id}/programacion "/api/v1/partidos/0/programacion" "$USUARIO" \
+    '{"fechaProgramada":"2031-03-10T18:00:00Z"}'
+pedir 403:SIN_PERMISO PUT /api/v1/torneos/{id}/checkin "/api/v1/torneos/0/checkin" "$USUARIO" '{"minAntes":30,"duracion":20}'
+# el check-in lo ve cualquiera con sesión y lo hace el capitán de cada lado
+pedir 404:PARTIDO_NO_ENCONTRADO GET /api/v1/partidos/{id}/checkin "/api/v1/partidos/0/checkin" "$USUARIO"
+pedir 404:PARTIDO_NO_ENCONTRADO POST /api/v1/partidos/{id}/checkin "/api/v1/partidos/0/checkin" "$USUARIO"
+# pronósticos de partidos (HU-306, PICA-256)
+pedir 200 GET /api/v1/pronosticos/partidos "/api/v1/pronosticos/partidos" "$USUARIO"
+pedir 404:PARTIDO_NO_ENCONTRADO PUT /api/v1/partidos/{id}/pronostico "/api/v1/partidos/0/pronostico" "$USUARIO" '{"eleccion":"1"}'
+# ranking de pronósticos (HU-307, PICA-258)
+pedir 200 GET /api/v1/pronosticos/ranking "/api/v1/pronosticos/ranking" "$USUARIO"
+# desglose de la lista sellada de una rifa (HU-407)
+pedir 404:RIFA_NO_ENCONTRADA GET /api/v1/rifas/publicas/{id}/lista-sellada "/api/v1/rifas/publicas/0/lista-sellada" ""
+# sorteo de una rifa (HU-504, PICA-265)
+pedir 200 GET /api/v1/rifas/publicas/sorteadas "/api/v1/rifas/publicas/sorteadas" ""
+pedir 404:RIFA_NO_ENCONTRADA GET /api/v1/rifas/publicas/{id}/sorteo "/api/v1/rifas/publicas/0/sorteo" ""
+pedir 404:RIFA_NO_ENCONTRADA POST /api/v1/rifas/{id}/sorteo "/api/v1/rifas/0/sorteo" "$ADMIN"
+# reclamos de rifa (HU-506, PICA-268)
+pedir 404:RIFA_NO_ENCONTRADA POST /api/v1/rifas/{id}/reclamos "/api/v1/rifas/0/reclamos" "$USUARIO" '{"motivo":"Irregularidad en sorteo"}'
+pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
+
+
+INSCRIPCION_ID=$(campo .id)
+pedir 200 GET /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
+pedir 204 DELETE /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
+pedir 409:INSCRIPCION_NO_EDITABLE DELETE /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
+# el torneo de la prueba es gratis: al confirmar queda CONFIRMADA
+pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
+INSCRIPCION_ID=$(campo .id)
+pedir 409:REGLAMENTO_NO_ACEPTADO PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":false}'
+pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+pedir 409:INSCRIPCION_NO_EDITABLE PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+# un torneo con costo: confirmar la deja pendiente de pago y se paga por la interfaz de cobro simulada
+TORNEO_PAGO_ID=$(sql <<SQL
+INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad, tipo_participante,
+                    cupo_maximo, cupo_minimo, valor_inscripcion, pct_pozo_competidores, pct_premio_rifa,
+                    cierre_inscripcion_en, fecha_inicio, estado)
+SELECT id, '$CORRIDA', 'https://example.com/reglamento', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL',
+       8, 2, 1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA'
+FROM usuario WHERE username = '$ADMIN_USER'
+RETURNING id;
+SQL
+)
+[[ $TORNEO_PAGO_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudo cargar el torneo con costo de la prueba"; exit 1; }
+pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_PAGO_ID/inscripciones" "$USUARIO"
+INSCRIPCION_ID=$(campo .id)
+pedir 409:INSCRIPCION_NO_EDITABLE GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
+pedir 409:INSCRIPCION_NO_EDITABLE POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
+pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+# reabrir la deja otra vez en borrador y sin el reglamento aceptado: hay que confirmarla de nuevo
+pedir 200 PUT /api/v1/inscripciones/{id}/reabrir "/api/v1/inscripciones/$INSCRIPCION_ID/reabrir" "$USUARIO"
+pedir 409:INSCRIPCION_NO_EDITABLE PUT /api/v1/inscripciones/{id}/reabrir "/api/v1/inscripciones/$INSCRIPCION_ID/reabrir" "$USUARIO"
+pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+pedir 200 GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
+pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
+pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
+pedir 409:INSCRIPCION_NO_EDITABLE GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
+# el organizador cierra la inscripción a mano (HU-206): es definitivo y nadie más se inscribe
+pedir 200 POST /api/v1/torneos/{id}/cerrar-inscripcion "/api/v1/torneos/$TORNEO_PAGO_ID/cerrar-inscripcion" "$ADMIN"
+pedir 409:INSCRIPCION_NO_ABIERTA POST /api/v1/torneos/{id}/cerrar-inscripcion "/api/v1/torneos/$TORNEO_PAGO_ID/cerrar-inscripcion" "$ADMIN"
+pedir 409:INSCRIPCION_NO_ABIERTA POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_PAGO_ID/inscripciones" "$USUARIO"
+# el organizador ve la lista de su torneo, con la inscripción pagada
+pedir 200 GET /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_PAGO_ID/inscripciones?estado=CONFIRMADA" "$ADMIN"
+en_listado "$INSCRIPCION_ID"
+# un torneo por equipos y un equipo del usuario de prueba (tampoco hay API de equipos): borrador, edición,
+# confirmación y pago. El torneo pide una nómina de 2 a 4 jugadores y el usuario de prueba está solo.
+TORNEO_EQUIPO_ID=$(sql <<SQL
+INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad, tipo_participante,
+                    cupo_maximo, cupo_minimo, tamanio_equipo, nomina_maxima, valor_inscripcion,
+                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
+SELECT id, '$CORRIDA', 'https://example.com/reglamento', 'Fútbol 5', 'ELIMINACION_DIRECTA', 'PRESENCIAL', 'EQUIPO',
+       8, 2, 2, 4, 1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA'
+FROM usuario WHERE username = '$ADMIN_USER'
+RETURNING id;
+SQL
+)
+[[ $TORNEO_EQUIPO_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudo cargar el torneo por equipos de la prueba"; exit 1; }
+EQUIPO_ID=$(sql <<SQL
+WITH e AS (INSERT INTO equipo (capitan_id, nombre) VALUES ($USR_ID, '$CORRIDA') RETURNING id),
+     i AS (INSERT INTO usuario_equipo (usuario_id, equipo_id) SELECT $USR_ID, id FROM e)
+SELECT id FROM e;
+SQL
+)
+[[ $EQUIPO_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudo cargar el equipo de la prueba"; exit 1; }
+SALE_ID=$(sql <<SQL
+WITH p AS (INSERT INTO persona (nombres, apellidos) VALUES ('Sale', 'Humo') RETURNING id)
+INSERT INTO usuario (username, email, estado, email_verificado, persona_id)
+SELECT '$CORRIDA-sale', '$CORRIDA-sale@example.com', 'ACTIVO', true, id FROM p
+RETURNING id;
+SQL
+)
+ENTRA_ID=$(sql <<SQL
+WITH p AS (INSERT INTO persona (nombres, apellidos) VALUES ('Entra', 'Humo') RETURNING id)
+INSERT INTO usuario (username, email, estado, email_verificado, persona_id)
+SELECT '$CORRIDA-entra', '$CORRIDA-entra@example.com', 'ACTIVO', true, id FROM p
+RETURNING id;
+SQL
+)
+[[ $SALE_ID =~ ^[0-9]+$ && $ENTRA_ID =~ ^[0-9]+$ ]] || { echo "    ✗ no se pudieron cargar los jugadores de reemplazo"; exit 1; }
+sql <<SQL >/dev/null
+INSERT INTO usuario_equipo (usuario_id, equipo_id) VALUES ($SALE_ID, $EQUIPO_ID);
+SQL
+pedir 200 GET /api/v1/equipos/mios "/api/v1/equipos/mios" "$USUARIO"
+en_listado "$EQUIPO_ID"
+pedir 400:VALIDACION POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIPO_ID/inscripciones" "$USUARIO"
+pedir 404:EQUIPO_NO_ENCONTRADO POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIPO_ID/inscripciones" "$USUARIO" '{"equipoId":0,"nomina":[]}'
+pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIPO_ID/inscripciones" "$USUARIO" \
+    "$(jq -nc --argjson e "$EQUIPO_ID" --argjson s "$SALE_ID" '{equipoId: $e, nomina: [$s]}')"
+INSCRIPCION_ID=$(campo .id)
+pedir 200 GET /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
+pedir 200 PUT /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO" \
+    "$(jq -nc --arg n "$CORRIDA nuevo" '{nombreEquipoNuevo: $n, nomina: []}')"
+pedir 404:EQUIPO_NO_ENCONTRADO PUT /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO" '{"equipoId":0,"nomina":[]}'
+pedir 204 DELETE /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO"
+# el equipo de una inscripción cancelada no vuelve a inscribirse en el torneo: se arma otro borrador con uno nuevo
+pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_EQUIPO_ID/inscripciones" "$USUARIO" \
+    "$(jq -nc --arg n "$CORRIDA dos" '{nombreEquipoNuevo: $n, nomina: []}')"
+INSCRIPCION_ID=$(campo .id)
+pedir 409:NOMINA_INVALIDA PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+EQUIPO_ID=$(campo .equipo.id)
+pedir 200 PUT /api/v1/inscripciones/{id} "/api/v1/inscripciones/$INSCRIPCION_ID" "$USUARIO" \
+    "$(jq -nc --argjson e "$EQUIPO_ID" --argjson s "$SALE_ID" '{equipoId: $e, nomina: [$s]}')"
+pedir 200 PUT /api/v1/inscripciones/{id}/confirmar "/api/v1/inscripciones/$INSCRIPCION_ID/confirmar" "$USUARIO" '{"reglamentoAceptado":true}'
+pedir 200 GET /api/v1/inscripciones/{id}/resumen-pago "/api/v1/inscripciones/$INSCRIPCION_ID/resumen-pago" "$USUARIO"
+pedir 200 POST /api/v1/inscripciones/{id}/pago "/api/v1/inscripciones/$INSCRIPCION_ID/pago" "$USUARIO"
+pedir 200 POST /api/v1/inscripciones/{id}/reemplazos "/api/v1/inscripciones/$INSCRIPCION_ID/reemplazos" "$USUARIO" \
+    "$(jq -nc --argjson s "$SALE_ID" --argjson e "$ENTRA_ID" '{saleUsuarioId: $s, entraUsuarioId: $e}')"
+pedir 200 GET /api/v1/inscripciones/{id}/reemplazos "/api/v1/inscripciones/$INSCRIPCION_ID/reemplazos" "$USUARIO"
+pedir 200 GET /api/v1/inscripciones/mias "/api/v1/inscripciones/mias" "$USUARIO"
+en_listado "$INSCRIPCION_ID"
+pedir 200 GET /api/v1/inscripciones/mias "/api/v1/inscripciones/mias?torneoId=$TORNEO_EQUIPO_ID" "$USUARIO"
+en_listado "$INSCRIPCION_ID"
 # cierra todas sus sesiones: después de esto su access ya no sirve
 pedir 204 PUT /api/v1/me/password "" "$USUARIO" "$(jq -nc --arg a "$CLAVE_2" --arg n "$CLAVE_3" \
     '{passwordActual: $a, passwordNueva: $n}')"
