@@ -86,6 +86,22 @@ public class ArbitroDesignado {
         return permisos;
     }
 
+    /** El árbitro acepta (HU-807): desde ahora arbitra con los permisos que le dieron. */
+    public void aceptar() {
+        this.estado = EstadoDesignacion.ACEPTADO;
+    }
+
+    /** El árbitro rechaza (HU-807): sigue la fila para que el organizador lo vea, pero no arbitra. */
+    public void rechazar() {
+        this.estado = EstadoDesignacion.RECHAZADO;
+    }
+
+    /** El organizador vuelve a designar a uno que había rechazado: otra vez PENDIENTE, con los permisos nuevos. */
+    public void volverADesignar(Set<PermisoArbitro> permisos) {
+        this.estado = EstadoDesignacion.PENDIENTE;
+        setPermisos(permisos);
+    }
+
     public void setPermisos(Set<PermisoArbitro> permisos) {
         this.cargaResultados = permisos.contains(PermisoArbitro.CARGAR_RESULTADOS);
         this.resuelveObjeciones = permisos.contains(PermisoArbitro.RESOLVER_OBJECIONES);
