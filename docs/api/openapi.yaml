@@ -1255,7 +1255,8 @@ paths:
         Queda en `reglamentoUrl` (este mismo endpoint, para el GET) y su SHA-256 en `reglamentoHash`, que es lo que
         se sella al publicar en lugar del texto. Hasta 5 MB y tiene que ser un PDF de verdad: se mira el contenido,
         no la extensión. 400 `VALIDACION` en `archivo`: `REQUERIDO` si no viene, `FORMATO_INVALIDO` si no es un PDF,
-        `LONGITUD` si pasa los 5 MB. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
+        `LONGITUD` si pasa los 5 MB. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR. 502
+        `ALMACENAMIENTO_NO_DISPONIBLE` si el almacenamiento no lo pudo guardar (el torneo queda como estaba).
       requestBody:
         required: true
         content:
@@ -1272,6 +1273,7 @@ paths:
         '400': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
+        '502': {$ref: '#/components/responses/Error'}
     get:
       tags: [Torneos]
       summary: Ver el reglamento en PDF
@@ -1281,7 +1283,8 @@ paths:
       description: >-
         Sin sesión si el torneo está publicado, como su ficha. En BORRADOR lo ve solo su organizador (con el token);
         para cualquier otro el torneo no existe: 404 `TORNEO_NO_ENCONTRADO`. 404 `REGLAMENTO_NO_ENCONTRADO` si no se
-        subió el PDF. Va con `Content-Disposition: inline`, para abrirlo en el navegador.
+        subió el PDF. 502 `ALMACENAMIENTO_NO_DISPONIBLE` si el almacenamiento no respondió. Va con
+        `Content-Disposition: inline`, para abrirlo en el navegador.
       responses:
         '200':
           description: El PDF
@@ -1289,6 +1292,7 @@ paths:
             application/pdf:
               schema: {type: string, format: binary}
         '404': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
     delete:
       tags: [Torneos]
       summary: Quitar el reglamento en PDF (en BORRADOR)
@@ -1298,10 +1302,12 @@ paths:
       description: >-
         Borra el archivo y deja `reglamentoUrl` y `reglamentoHash` en null; sin PDF no hace nada. Si tampoco hay
         `reglamentoTexto`, el paso 1 vuelve a quedar incompleto. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
+        502 `ALMACENAMIENTO_NO_DISPONIBLE` si el almacenamiento no lo pudo borrar.
       responses:
         '200': {$ref: '#/components/responses/TorneoInformacion'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
+        '502': {$ref: '#/components/responses/Error'}
 
   /api/v1/arbitros:
     get:
@@ -2539,7 +2545,8 @@ components:
       description: |
         Todos los códigos de la API; el front mapea cada uno a un mensaje. Quien agrega uno en el
         backend lo agrega acá.
-        Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO / SESION_REVOCADA 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404.
+        Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO / SESION_REVOCADA 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404 ·
+        ALMACENAMIENTO_NO_DISPONIBLE 502 (el almacenamiento de archivos no respondió; se puede reintentar).
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
         DEMASIADOS_INTENTOS 429 (login).
@@ -2593,6 +2600,7 @@ components:
         NO_ES_COMPRADOR (reclamar el resultado de una rifa sin haber comprado un ticket).
 
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
+             ALMACENAMIENTO_NO_DISPONIBLE,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
