@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -84,7 +85,8 @@ public class TorneoService {
                         .map(Cancha::getNombre)
                         .toList();
         return new OpcionesTorneo(CatalogoTorneo.DISCIPLINAS, CatalogoTorneo.FORMATOS, List.of(Modalidad.values()),
-                torneoProperties.cupoMaximo(), parametrosPlataforma.gastosAdministrativos(), canchas);
+                torneoProperties.cupoMaximo(), parametrosPlataforma.gastosAdministrativos(),
+                parametrosPlataforma.margenCierreInicio().toMinutes(), canchas);
     }
 
     @Transactional(readOnly = true)
@@ -339,7 +341,7 @@ public class TorneoService {
                 .toList());
     }
 
-    private static void validarFechas(InformacionTorneoRequest request, Collection<String> cambiados,
+    private void validarFechas(InformacionTorneoRequest request, Collection<String> cambiados,
             List<ErrorCampo> errores) {
         Instant ahora = Instant.now();
         Instant inicio = request.fechaInicio();
@@ -354,7 +356,24 @@ public class TorneoService {
             errores.add(fechas("cierreInscripcionEn", "No puede ser anterior a hoy"));
         } else if (cierre != null && inicio != null && cierre.isAfter(inicio)) {
             errores.add(fechas("cierreInscripcionEn", "La inscripción tiene que cerrar antes del inicio"));
+        } else if (cierre != null && inicio != null
+                && (cambiados.contains("cierreInscripcionEn") || cambiados.contains("fechaInicio"))) {
+            validarMargen(cierre, inicio, errores);
         }
+    }
+
+    /** Entre el cierre y el inicio va el margen de la plataforma (CE4-5), para programar los partidos y el check-in. */
+    private void validarMargen(Instant cierre, Instant inicio, List<ErrorCampo> errores) {
+        Duration margen = parametrosPlataforma.margenCierreInicio();
+        if (cierre.plus(margen).isAfter(inicio)) {
+            errores.add(fechas("cierreInscripcionEn",
+                    "La inscripción tiene que cerrar al menos " + texto(margen) + " antes del inicio"));
+        }
+    }
+
+    private static String texto(Duration margen) {
+        long minutos = margen.toMinutes();
+        return minutos % 60 == 0 && minutos > 0 ? minutos / 60 + " h" : minutos + " min";
     }
 
     private static void validarSede(InformacionTorneoRequest request, List<ErrorCampo> errores) {

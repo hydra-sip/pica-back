@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.control.service;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 
 import com.hydra.pica.plataforma_pica.control.repository.ParametroPlataformaRepository;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ParametrosPlataforma {
 
     static final String GASTOS_ADMINISTRATIVOS = "GASTOS_ADMINISTRATIVOS";
+    static final String MARGEN_CIERRE_INICIO_MIN = "MARGEN_CIERRE_INICIO_MIN";
 
     private final ParametroPlataformaRepository parametroPlataformaRepository;
 
@@ -23,6 +25,12 @@ public class ParametrosPlataforma {
     @Transactional(readOnly = true)
     public BigDecimal gastosAdministrativos() {
         return valor(GASTOS_ADMINISTRATIVOS);
+    }
+
+    /** Lo mínimo que tiene que pasar entre el cierre de la inscripción y el inicio del torneo (V33). */
+    @Transactional(readOnly = true)
+    public Duration margenCierreInicio() {
+        return Duration.ofMinutes(valor(MARGEN_CIERRE_INICIO_MIN).longValueExact());
     }
 
     private BigDecimal valor(String clave) {
