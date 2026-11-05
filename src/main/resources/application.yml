@@ -114,7 +114,13 @@ app:
     cierre-automatico: ${APP_RIFAS_CIERRE_AUTOMATICO:true}   # cerrar las ventas vencidas y sellar la lista (HU-407)
     revision-cierres: ${APP_RIFAS_REVISION_CIERRES:60s}   # cada cuánto se buscan (también las rifas para sortear)
     sorteo-automatico: ${APP_RIFAS_SORTEO_AUTOMATICO:true}   # sortear las rifas cerradas cuando llega su fecha (HU-504)
-    sorteo-anticipado: ${APP_RIFAS_SORTEO_ANTICIPADO:false}   # solo para la demo: el organizador sortea antes de la fecha
+    sorteo-anticipado: ${APP_RIFAS_SORTEO_ANTICIPADO:false}   # solo para la demo: al cerrar a mano, el sorteo pasa a 3 segundos después
+    # De donde sale la semilla del sorteo (HU-503): la red quicknet de drand, una ronda cada 3 segundos
+    drand:
+      url: ${APP_RIFAS_DRAND_URL:https://api.drand.sh}   # o un espejo, como https://drand.cloudflare.com
+      chain-hash: 52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971
+      genesis: 1692803367   # segundos desde 1970 en que salió la ronda 1
+      periodo: 3            # segundos entre rondas
   # Los archivos que se suben (PICA-200): local, en una carpeta, o supabase, en un bucket privado de Storage
   almacenamiento:
     tipo: ${APP_ALMACENAMIENTO_TIPO:local}

@@ -851,6 +851,9 @@ paths:
         `RIFA_NO_EDITABLE` si no está EN_VENTA y `LISTA_SELLADA` si ya se cerró. Queda en la auditoría
         (`CIERRE_VENTA`, con el motivo MANUAL o FECHA). Con el sello se publica el compromiso del sorteo (HU-502):
         `compromisoHash` = SHA-256 de `listaHash:fechaSorteo` y `compromisoPublicadoEn`, antes de que exista la semilla.
+        Antes del compromiso se acomodan las fechas (PICA-264): a mano, `ventaHasta` pasa a ser el cierre; y si
+        `fechaSorteo` ya pasó, o se cierra a mano con `app.rifas.sorteo-anticipado` (para la demo), `fechaSorteo` pasa
+        a ser 3 segundos (un período de drand) después del cierre, así su ronda de drand sale después del compromiso.
       parameters: [{$ref: '#/components/parameters/id'}]
       responses:
         '200': {$ref: '#/components/responses/Rifa'}
@@ -871,7 +874,8 @@ paths:
         los vendidos por el SHA-256 de `semilla:número`, de menor a mayor, y el primero gana el premio del puesto 1,
         el segundo el del 2, y así; los premios que sobran quedan sin ganador. La rifa pasa a SORTEADA y queda en la
         auditoría (`SORTEO`, con la semilla, el compromiso y los ganadores). 409 `RIFA_NO_EDITABLE` si no está
-        CERRADA y `SORTEO_ANTICIPADO` antes de `fechaSorteo` (salvo con `app.rifas.sorteo-anticipado`, para la demo).
+        CERRADA y `SORTEO_ANTICIPADO` antes de `fechaSorteo`. La semilla es el `randomness` de drand en la ronda
+        vigente en `fechaSorteo` (HU-503); se controla que sea el SHA-256 de la firma.
       responses:
         '200': {$ref: '#/components/responses/Rifa'}
         '404': {$ref: '#/components/responses/Error'}
@@ -3897,7 +3901,9 @@ components:
         compromisoHash: {type: string}
         compromisoPublicadoEn: {type: string, format: date-time}
         semilla: {type: string}
-        semillaFirma: {type: [string, 'null'], description: 'Firma del proveedor de la semilla; null mientras la genere el sistema (PICA-299)'}
+        semillaFirma: {type: [string, 'null'], description: 'Firma BLS de drand para la ronda; null en las sorteadas con la semilla del sistema, antes de PICA-264'}
+        semillaRonda: {type: [integer, 'null'], format: int64, description: 'Ronda de drand (red quicknet) de la que salió la semilla: la vigente en fechaSorteo (HU-503)'}
+        semillaUrl: {type: [string, 'null'], description: 'Donde se consulta la ronda en drand para comparar la semilla (`randomness`) y la firma'}
         semillaObtenidaEn: {type: string, format: date-time, description: Cuándo se obtuvo la semilla; siempre después del compromiso}
         premios: {type: array, items: {$ref: '#/components/schemas/GanadorRifa'}}
     GanadorRifa:
