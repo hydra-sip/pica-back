@@ -31,6 +31,9 @@ info:
       `SIN_PERMISO`, todo `{id}` **404** (`USUARIO_NO_ENCONTRADO`, `PERSONA_NO_ENCONTRADA`,
       `ROL_NO_ENCONTRADO`), y todo request con body **400** `VALIDACION`.
       Abajo solo figuran los errores con código propio de cada operación.
+    - Toda respuesta trae el header `X-Request-Id` (RNF-OBS-01), que también sale en cada línea de log del request
+      y en el `requestId` de los errores. El pedido puede mandar el suyo (hasta 64 caracteres de `A-Z a-z 0-9 . _ -`)
+      y vuelve el mismo; si no lo manda o no cumple, se genera un UUID.
     - Fechas ISO-8601: `date` = `YYYY-MM-DD`, `date-time` = UTC.
     - Baja lógica en todo: lo eliminado no sale en listados salvo `incluirEliminados=true`,
       y viene con `eliminado: true`.
@@ -2656,6 +2659,7 @@ components:
         detail: {type: string}
         instance: {type: string}
         codigo: {$ref: '#/components/schemas/CodigoError'}
+        requestId: {type: string, maxLength: 64, description: 'El mismo del header X-Request-Id, para que el front lo muestre al reportar un error'}
         errores: {type: array, items: {$ref: '#/components/schemas/ErrorCampo'}}
         invalidos: {type: array, items: {type: string}, description: 'Solo en PERMISO_NO_ENCONTRADO: los códigos que no existen'}
         roles: {type: array, items: {type: string}, description: 'Solo en SIN_PERMISO al asignar roles (alta o PUT de roles): los que tienen permisos que quien llama no tiene'}
