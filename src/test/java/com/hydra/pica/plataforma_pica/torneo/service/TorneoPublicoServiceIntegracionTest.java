@@ -168,10 +168,13 @@ class TorneoPublicoServiceIntegracionTest {
         assertThat(resumen.cupoDisponible()).isEqualTo(6); // 8 - 2
         assertThat(resumen.pozoEstimado()).isEqualByComparingTo("32000.00");
         assertThat(resumen.gastosAdministrativos()).isEqualByComparingTo("500.00");
+        assertThat(resumen.fechaInicio()).isNotNull();
+        assertThat(resumen.fechaFin()).isNotNull();
+        assertThat(resumen.cierreInscripcionEn()).isNotNull();
     }
 
     @Test
-    @DisplayName("detallePublico: devuelve todos los datos, organizador, premios y reglamento")
+    @DisplayName("detallePublico: devuelve todos los datos, organizador, premios, fechas y reglamento")
     void detallePublicoExitoso() {
         Torneo torneo = crearTorneo("t-detalle", "Torneo Detalle", "Tenis", EstadoTorneo.INSCRIPCION_ABIERTA, null);
         torneo.setDescripcion("Descripción del torneo");
@@ -215,7 +218,13 @@ class TorneoPublicoServiceIntegracionTest {
         assertThat(detalle.gastosAdministrativos()).isEqualByComparingTo("300.00");
         assertThat(detalle.totalAPagar()).isEqualByComparingTo("3300.00");
         assertThat(detalle.reglamentoTexto()).isEqualTo("Dos sets a 6 games.");
+        assertThat(detalle.fechaInicio()).isNotNull();
+        assertThat(detalle.fechaFin()).isNotNull();
+        assertThat(detalle.cierreInscripcionEn()).isNotNull();
+        assertThat(detalle.organizador().id()).isEqualTo(organizador.getId());
         assertThat(detalle.organizador().username()).isEqualTo(organizador.getUsername());
+        assertThat(detalle.organizador().nombreCompleto())
+                .isEqualTo(organizador.getPersona().getNombres() + " " + organizador.getPersona().getApellidos());
     }
 
     @Test
@@ -248,6 +257,7 @@ class TorneoPublicoServiceIntegracionTest {
         t.setValorInscripcion(new BigDecimal("1000.00"));
         t.setCierreInscripcionEn(Instant.now().plus(5, ChronoUnit.DAYS));
         t.setFechaInicio(Instant.now().plus(7, ChronoUnit.DAYS));
+        t.setFechaFin(Instant.now().plus(10, ChronoUnit.DAYS));
         t.setEstado(estado);
         t.setPublicadoEn(estado != EstadoTorneo.BORRADOR ? Instant.now() : null);
         t.setEliminadoEn(eliminadoEn);
