@@ -46,6 +46,7 @@ tags:
   - {name: Admin – Usuarios, description: 'ABM de usuarios. HU-101, Laura. Roles de un usuario: HU-105, Tomás.'}
   - {name: Admin – Personas, description: 'ABM de personas. HU-104, Laura.'}
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
+  - {name: Admin – Parámetros, description: 'Parámetros de la plataforma (gastos administrativos, plazos y retiros). HU-702, Tomás.'}
   - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
   - {name: Torneos, description: 'Asistente de crear torneo del organizador logueado (HU-201, PICA-38; HU-601, PICA-55), Tomás. Catálogo y ficha públicos (HU-208), Salvador.'}
   - {name: Equipos, description: 'Equipos del capitán para elegir al inscribirse. HU-204 (PICA-234), Mateo.'}
@@ -686,6 +687,43 @@ paths:
         permisos vienen en el orden del seed.
       responses:
         '200': {description: Permisos agrupados, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ModuloPermisos'}}}}}
+
+  /api/v1/admin/parametros:
+    get:
+      tags: [Admin – Parámetros]
+      summary: Ver los parámetros de la plataforma
+      x-jira: PICA-282
+      x-owner: Tomás
+      x-permiso: PARAMETRO_ADMINISTRAR
+      description: >-
+        HU-702. Todos, siempre en el mismo orden: gastos administrativos y su tope, margen entre el cierre y el inicio,
+        duración máxima del check-in, y retiro mínimo y máximo. `modificadoPor` es el username de quien lo cambió por
+        última vez, o `SISTEMA` si sigue el valor de la migración.
+      responses:
+        '200': {description: Los parámetros, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ParametroDetalle'}}}}}
+    put:
+      tags: [Admin – Parámetros]
+      summary: Cambiar uno o varios parámetros
+      x-jira: PICA-282
+      x-owner: Tomás
+      x-permiso: PARAMETRO_ADMINISTRAR
+      description: >-
+        HU-702. Se cambian todos o ninguno, y rigen desde ese momento: lo ya publicado conserva el valor que copió
+        (por ejemplo, los gastos administrativos de un torneo publicado). 400 `VALIDACION` con un error por clave en
+        `errores` (`campo` es la clave): `VALOR_INVALIDO` si la clave no existe; `REQUERIDO` sin valor; `RANGO_INVALIDO`
+        si un % no está entre 0 y 100, unos minutos o pesos no son mayores que 0 (el margen admite 0), los gastos
+        administrativos superan el tope o el tope queda por debajo de los gastos vigentes, o el retiro mínimo supera al
+        máximo (el error va en el que se cambió); `FORMATO_INVALIDO` con minutos no enteros o más de dos decimales.
+        Cada valor que cambia queda en la auditoría (MODIFICACION, entidad PARAMETRO, `entidadId` la clave, con
+        `anterior` y `nuevo`); guardar el mismo valor no cambia nada. Responde todos los parámetros.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ActualizarParametrosRequest'}
+      responses:
+        '200': {description: Los parámetros después del cambio, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ParametroDetalle'}}}}}
+        '400': {$ref: '#/components/responses/Error'}
 
   # --- Rifas -------------------------------------------------------------------
   # Todas exigen RIFA_GESTIONAR (ORGANIZADOR, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO. La rifa de otro
@@ -1546,7 +1584,9 @@ paths:
         `duracion` minutos, así que nunca llega al horario del cruce. Solo el organizador (si no, 404
         `TORNEO_NO_ENCONTRADO`), con el torneo publicado y sin terminar ni cancelar (si no, 409 `TORNEO_NO_EDITABLE`).
         400 `VALIDACION`: `REQUERIDO` o `RANGO_INVALIDO` en `minAntes` y `duracion` si faltan o no son mayores que 0, y
-        `VENTANA_INVALIDA` en `duracion` si pasa a `minAntes` (la ventana se superpondría con el cruce). Rige desde
+        `VENTANA_INVALIDA` en `duracion` si pasa a `minAntes` (la ventana se superpondría con el cruce). HU-702
+        (PICA-282): `RANGO_INVALIDO` en `duracion` si pasa el máximo de la plataforma (`checkinDuracionMaxMin` de
+        `GET /torneos/opciones`), que se valida al configurar; lo ya configurado queda. Rige desde
         ese momento para todas las ventanas, aun una ya abierta; los check-ins hechos quedan. HU-309 (PICA-252):
         `sinPresentes` es el criterio para un partido al que, al vencer la ventana, no se presentó ninguno de los dos
         (ver `POST /partidos/{id}/checkin`); es opcional, si no viene queda el vigente (`REPROGRAMAR` por defecto) y
@@ -2603,14 +2643,14 @@ components:
       type: string
       enum: [PENDIENTE_VERIFICACION, ACTIVO, BLOQUEADO]
       description: PENDIENTE hasta el clic en el mail; BLOQUEADO lo pone un admin. La baja lógica no es un estado.
-    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS]}
+    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199) y RIFA_ADMINISTRAR de V31 (PICA-224). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224) y PARAMETRO_ADMINISTRAR de V35 (PICA-282). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
-             RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR]
+             RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -3056,6 +3096,34 @@ components:
         estado:
           allOf: [{$ref: '#/components/schemas/Estado'}]
           description: En el alta, ACTIVO si no viene; en la modificación, si no viene se mantiene.
+    ParametroDetalle:
+      type: object
+      required: [clave, unidad, valor, descripcion, modificadoEn, modificadoPor]
+      properties:
+        clave: {$ref: '#/components/schemas/ClaveParametro'}
+        unidad: {type: string, enum: [PORCENTAJE, MINUTOS, PESOS], description: 'PORCENTAJE de 0 a 100; MINUTOS enteros; PESOS con hasta dos decimales'}
+        valor: {type: number, examples: [10]}
+        descripcion: {type: string}
+        modificadoEn: {type: string, format: date-time}
+        modificadoPor: {type: string, description: 'Username de quien lo cambió por última vez, o SISTEMA', examples: [admin]}
+    ClaveParametro:
+      type: string
+      enum: [GASTOS_ADMINISTRATIVOS, GASTOS_ADMINISTRATIVOS_TOPE, MARGEN_CIERRE_INICIO_MIN, CHECKIN_DURACION_MAX_MIN,
+             RETIRO_MINIMO, RETIRO_MAXIMO]
+      description: >-
+        HU-702. GASTOS_ADMINISTRATIVOS (% que paga aparte quien se inscribe o compra) y su tope;
+        MARGEN_CIERRE_INICIO_MIN (CE4-5); CHECKIN_DURACION_MAX_MIN (máximo de la ventana de check-in);
+        RETIRO_MINIMO y RETIRO_MAXIMO (pesos, para HU-607).
+    ActualizarParametrosRequest:
+      type: object
+      required: [valores]
+      properties:
+        valores:
+          type: object
+          minProperties: 1
+          description: Valor nuevo por clave; las que no vienen quedan como están
+          additionalProperties: {type: number}
+          examples: [{GASTOS_ADMINISTRATIVOS: 12.5, CHECKIN_DURACION_MAX_MIN: 30}]
     ModuloPermisos:
       type: object
       required: [modulo, permisos]
@@ -3362,7 +3430,7 @@ components:
       required: [minAntes, duracion]
       properties:
         minAntes: {type: integer, minimum: 1, description: Cuántos minutos antes del cruce abre la ventana}
-        duracion: {type: integer, minimum: 1, description: 'Cuántos minutos dura; no más que `minAntes`'}
+        duracion: {type: integer, minimum: 1, description: 'Cuántos minutos dura; no más que `minAntes` ni que el máximo de la plataforma'}
         sinPresentes: {$ref: '#/components/schemas/CriterioSinPresentes'}
     CriterioSinPresentes:
       type: string
@@ -3565,7 +3633,7 @@ components:
         disciplinas: {type: array, items: {type: string}, description: 'Las de los torneos del organizador, para el filtro'}
     OpcionesTorneo:
       type: object
-      required: [disciplinas, formatos, modalidades, cupoMaximo, pctGastosAdministrativos, margenCierreInicioMin, canchas]
+      required: [disciplinas, formatos, modalidades, cupoMaximo, pctGastosAdministrativos, margenCierreInicioMin, checkinDuracionMaxMin, canchas]
       properties:
         disciplinas:
           type: array
@@ -3593,6 +3661,7 @@ components:
         cupoMaximo: {type: integer, description: Máximo de participantes que admite la plataforma, examples: [64]}
         pctGastosAdministrativos: {type: number, description: '% vigente de gastos administrativos que paga aparte quien se inscribe; al publicar queda fijo en el torneo', examples: [10]}
         margenCierreInicioMin: {type: integer, minimum: 0, description: 'Minutos que tienen que pasar como mínimo entre el cierre de la inscripción y el inicio; lo fija la plataforma', examples: [60]}
+        checkinDuracionMaxMin: {type: integer, minimum: 1, description: 'Minutos que puede durar como máximo la ventana de check-in; lo fija la plataforma (HU-702)', examples: [60]}
         canchas: {type: array, items: {type: string}, description: Las que ya existen en la `sede` pedida}
     # --- rifas ---------------------------------------------------------------
     EstadoRifa: {type: string, enum: [BORRADOR, EN_VENTA, CERRADA, SORTEADA, EN_REVISION, LIQUIDADA, CANCELADA]}
