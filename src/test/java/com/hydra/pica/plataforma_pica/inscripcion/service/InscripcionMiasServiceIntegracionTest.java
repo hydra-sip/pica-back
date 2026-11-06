@@ -28,9 +28,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Mis inscripciones (PICA-234) contra Postgres: las que armó el usuario (la individual, o las de sus equipos si
- * es capitán), en todos los estados, la más nueva primero y filtrables por torneo. Cada test hace rollback al
- * terminar.
+ * Mis inscripciones (PICA-234, HU-209) contra Postgres: las que armó el usuario (la individual, o las de sus
+ * equipos si es capitán), en todos los estados, más las confirmadas de equipos ajenos en cuya nómina figura; la
+ * más nueva primero y filtrables por torneo. También el rol con que cada uno ve el detalle. Cada test hace
+ * rollback al terminar.
  */
 @SpringBootTest
 @ActiveProfiles("dev")
@@ -235,6 +236,23 @@ class InscripcionMiasServiceIntegracionTest {
         assertThat(pagina.getTotalElements()).isEqualTo(3);
         assertThat(pagina.getTotalPages()).isEqualTo(2);
         assertThat(siguiente.getContent()).extracting(InscripcionResumen::id).containsExactly(primera);
+    }
+
+    @Test
+    void elDetalleDiceConQueRolLoMiraCadaUno() {
+        Long capitan = usuario("cap_detalle_mias").getId();
+        long halcones = equipo("Los Halcones", capitan);
+        integrante(halcones, jugador);
+        long deEquipo = inscripcionDeEquipo(torneoPorEquipos(), halcones, "CONFIRMADA");
+        enNomina(deEquipo, capitan, halcones);
+        enNomina(deEquipo, jugador, halcones);
+        long individual = inscripcionIndividual(torneoIndividual, jugador, "CONFIRMADA");
+
+        assertThat(inscripcionService.detalle(capitan, deEquipo).rol()).isEqualTo(RolEnInscripcion.CAPITAN);
+        assertThat(inscripcionService.detalle(jugador, deEquipo).rol()).isEqualTo(RolEnInscripcion.JUGADOR);
+        assertThat(inscripcionService.detalle(organizador, deEquipo).rol()).isEqualTo(RolEnInscripcion.ORGANIZADOR);
+        assertThat(inscripcionService.detalle(jugador, individual).rol()).isEqualTo(RolEnInscripcion.INDIVIDUAL);
+        assertThat(inscripcionService.detalle(organizador, individual).rol()).isEqualTo(RolEnInscripcion.ORGANIZADOR);
     }
 
     // --- escenario ----------------------------------------------------------

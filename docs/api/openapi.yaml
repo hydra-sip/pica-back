@@ -3846,10 +3846,11 @@ components:
           description: Ids de los demás jugadores de este torneo. Los que no son integrantes se suman al equipo.
     InscripcionDetalle:
       type: object
-      required: [id, torneoId, torneo, estado, creadoEn, modificadoEn]
+      required: [id, torneoId, torneo, estado, creadoEn, modificadoEn, rol]
       description: >-
         Una inscripción. La individual lleva `usuarioId`; la de equipo lleva `equipo` y `nomina`, y su `usuarioId`
-        es null (el capitán es el del equipo).
+        es null (el capitán es el del equipo). `rol` es el de quien la pide (HU-209, PICA-324): con `JUGADOR` u
+        `ORGANIZADOR` el front la muestra en solo lectura.
       properties:
         id: {$ref: '#/components/schemas/Id'}
         torneoId: {$ref: '#/components/schemas/Id'}
@@ -3866,6 +3867,7 @@ components:
           type: [array, 'null']
           description: Solo en la de equipo; incluye siempre al capitán
           items: {$ref: '#/components/schemas/UsuarioPublico'}
+        rol: {$ref: '#/components/schemas/RolEnInscripcion'}
     ReemplazoRequest:
       type: object
       required: [saleUsuarioId, entraUsuarioId]

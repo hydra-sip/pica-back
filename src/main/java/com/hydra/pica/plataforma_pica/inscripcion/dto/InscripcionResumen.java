@@ -23,25 +23,13 @@ public record InscripcionResumen(
         EquipoInscripto equipo,
         RolEnInscripcion rol) {
 
-    /**
-     * Una fila de Mis inscripciones de {@code usuarioId}: si no es la individual ni la de un equipo que capitanea,
-     * vino por la nómina.
-     */
+    /** Una fila de Mis inscripciones de {@code usuarioId}. */
     public static InscripcionResumen de(Inscripcion inscripcion, Long usuarioId) {
         Equipo equipo = inscripcion.getEquipo();
         return new InscripcionResumen(inscripcion.getId(), inscripcion.getTorneo().getId(),
                 TorneoDeInscripcion.de(inscripcion.getTorneo()),
                 inscripcion.getUsuario() == null ? null : inscripcion.getUsuario().getId(), inscripcion.getEstado(),
                 inscripcion.getCreadoEn(), inscripcion.getModificadoEn(),
-                EquipoInscripto.de(equipo), rolDe(inscripcion, usuarioId));
-    }
-
-    private static RolEnInscripcion rolDe(Inscripcion inscripcion, Long usuarioId) {
-        if (!inscripcion.esDeEquipo()) {
-            return RolEnInscripcion.INDIVIDUAL;
-        }
-        return inscripcion.getEquipo().getCapitan().getId().equals(usuarioId)
-                ? RolEnInscripcion.CAPITAN
-                : RolEnInscripcion.JUGADOR;
+                EquipoInscripto.de(equipo), RolEnInscripcion.de(inscripcion, usuarioId));
     }
 }

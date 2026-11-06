@@ -12,5 +12,19 @@ public enum RolEnInscripcion {
     /** El participante de una inscripción individual. */
     INDIVIDUAL,
     /** El organizador del torneo. */
-    ORGANIZADOR
+    ORGANIZADOR;
+
+    /**
+     * El de {@code usuarioId}, que ya se sabe que puede ver la inscripción: si no organiza el torneo, no es la
+     * individual y no capitanea el equipo, figura en la nómina.
+     */
+    public static RolEnInscripcion de(Inscripcion inscripcion, Long usuarioId) {
+        if (inscripcion.getTorneo().getOrganizador().getId().equals(usuarioId)) {
+            return ORGANIZADOR;
+        }
+        if (!inscripcion.esDeEquipo()) {
+            return INDIVIDUAL;
+        }
+        return inscripcion.getEquipo().getCapitan().getId().equals(usuarioId) ? CAPITAN : JUGADOR;
+    }
 }
