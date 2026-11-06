@@ -86,7 +86,8 @@ public class TorneoService {
                         .toList();
         return new OpcionesTorneo(CatalogoTorneo.DISCIPLINAS, CatalogoTorneo.FORMATOS, List.of(Modalidad.values()),
                 torneoProperties.cupoMaximo(), parametrosPlataforma.gastosAdministrativos(),
-                parametrosPlataforma.margenCierreInicio().toMinutes(), canchas);
+                parametrosPlataforma.margenCierreInicio().toMinutes(),
+                parametrosPlataforma.checkinDuracionMaxima().toMinutes(), canchas);
     }
 
     @Transactional(readOnly = true)
@@ -184,7 +185,7 @@ public class TorneoService {
      * La ventana de check-in de todos los cruces (HU-308): abre {@code minAntes} minutos antes y dura
      * {@code duracion}, sin llegar al horario del partido. Con el torneo publicado y sin terminar; rige desde ahora,
      * aun para una ventana abierta, y los check-ins hechos quedan. El criterio sin presentes (HU-309) es opcional: si
-     * no viene, queda el vigente.
+     * no viene, queda el vigente. La duración no pasa el máximo de la plataforma (HU-702).
      */
     @Transactional
     public TorneoInformacion configurarCheckin(Long organizadorId, Long id, CheckinTorneoRequest request) {
@@ -193,7 +194,8 @@ public class TorneoService {
             throw new ConflictoException(CodigoError.TORNEO_NO_EDITABLE,
                     "El torneo " + id + " está " + torneo.getEstado() + ": el check-in se configura publicado");
         }
-        CriterioSinPresentes sinPresentes = validarCheckin(request);
+        CriterioSinPresentes sinPresentes =
+                validarCheckin(request, parametrosPlataforma.checkinDuracionMaxima().toMinutes());
         torneo.setCheckinMinAntes(request.minAntes());
         torneo.setCheckinDuracionMin(request.duracion());
         if (sinPresentes != null) {
@@ -216,11 +218,14 @@ public class TorneoService {
     }
 
     /** @return el criterio sin presentes que vino, o null si no vino */
-    private static CriterioSinPresentes validarCheckin(CheckinTorneoRequest request) {
+    private static CriterioSinPresentes validarCheckin(CheckinTorneoRequest request, long duracionMaxima) {
         List<ErrorCampo> errores = new ArrayList<>();
         positivo("minAntes", request.minAntes(), errores);
         positivo("duracion", request.duracion(), errores);
-        if (errores.isEmpty() && request.duracion() > request.minAntes()) {
+        if (errores.isEmpty() && request.duracion() > duracionMaxima) {
+            errores.add(new ErrorCampo("duracion", ErrorCampo.Codigo.RANGO_INVALIDO,
+                    "La plataforma admite hasta " + duracionMaxima + " minutos de ventana"));
+        } else if (errores.isEmpty() && request.duracion() > request.minAntes()) {
             errores.add(new ErrorCampo("duracion", ErrorCampo.Codigo.VENTANA_INVALIDA,
                     "La ventana se superpondría con el cruce: tiene que durar como mucho lo que anticipa"));
         }
