@@ -73,7 +73,7 @@ class ArbitrosTorneoControllerTest {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
         when(arbitrosService.designar(eq(ORGANIZADOR), eq(9L), any())).thenReturn(new ArbitroDetalle(7L, "juez",
                 "Mario", "Gómez", EstadoDesignacion.PENDIENTE, Set.of(PermisoArbitro.CARGAR_RESULTADOS),
-                Instant.parse("2026-10-26T12:00:00Z")));
+                Instant.parse("2026-10-26T12:00:00Z"), null, null));
 
         mockMvc.perform(post("/api/v1/torneos/9/arbitros")
                         .contentType(MediaType.APPLICATION_JSON)
