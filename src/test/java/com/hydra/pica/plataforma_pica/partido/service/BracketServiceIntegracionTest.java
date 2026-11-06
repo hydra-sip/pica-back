@@ -91,6 +91,7 @@ class BracketServiceIntegracionTest {
                 "Partidas de 10 minutos", 16, 2, null, null)).id();
         arbitrosService.designar(organizador, torneo,
                 new DesignarArbitroRequest(arbitro, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
+        jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO' WHERE torneo_id = ?", torneo);
         estado(EstadoTorneo.INSCRIPCION_CERRADA);
     }
 
@@ -175,36 +176,46 @@ class BracketServiceIntegracionTest {
     // --- árbitros -------------------------------------------------------------
 
     @Test
-    void cadaPartidoTieneUnArbitroYSinArbitrosNoSeGenera() {
+    void cadaPartidoTieneUnArbitroAceptado() {
         inscribir(4);
-        ArbitroDesignado designado = arbitroRepository.findById(new ArbitroDesignadoId(torneo, arbitro)).orElseThrow();
-        designado.setEstado(EstadoDesignacion.RECHAZADO);
-        arbitroRepository.saveAndFlush(designado);
 
-        assertThatThrownBy(() -> bracketService.generar(organizador, torneo))
-                .extracting("codigo").isEqualTo(CodigoError.SIN_ARBITROS);
-
-        designado.setEstado(EstadoDesignacion.PENDIENTE);
-        arbitroRepository.saveAndFlush(designado);
         BracketTorneo bracket = bracketService.generar(organizador, torneo);
+
         assertThat(bracket.rondas().stream().flatMap(r -> r.partidos().stream()))
                 .allMatch(p -> "juez_bracket Test".equals(p.arbitro()));
     }
 
     @Test
-    void siAlgunoAceptoLosPartidosVanALosQueAceptaron() {
+    void sinUnArbitroQueHayaAceptadoNoSeGenera() {
         inscribir(4);
-        Long otro = usuario("juez2_bracket", "ARBITRO").getId();
+        ArbitroDesignado designado = arbitroRepository.findById(new ArbitroDesignadoId(torneo, arbitro)).orElseThrow();
+        for (EstadoDesignacion estado : List.of(EstadoDesignacion.PENDIENTE, EstadoDesignacion.RECHAZADO)) {
+            designado.setEstado(estado);
+            arbitroRepository.saveAndFlush(designado);
+
+            assertThatThrownBy(() -> bracketService.generar(organizador, torneo))
+                    .extracting("codigo").isEqualTo(CodigoError.SIN_ARBITROS);
+        }
+    }
+
+    @Test
+    void losPartidosSeRepartenSoloEntreLosQueAceptaron() {
+        inscribir(8);
+        Long pendiente = usuario("juez2_bracket", "ARBITRO").getId();
         arbitrosService.designar(organizador, torneo,
-                new DesignarArbitroRequest(otro, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
-        ArbitroDesignado acepto = arbitroRepository.findById(new ArbitroDesignadoId(torneo, otro)).orElseThrow();
-        acepto.setEstado(EstadoDesignacion.ACEPTADO);
-        arbitroRepository.saveAndFlush(acepto);
+                new DesignarArbitroRequest(pendiente, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
+        Long acepto = usuario("juez3_bracket", "ARBITRO").getId();
+        arbitrosService.designar(organizador, torneo,
+                new DesignarArbitroRequest(acepto, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
+        jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO' WHERE torneo_id = ? AND usuario_id = ?",
+                torneo, acepto);
+        entityManager.clear();
 
         BracketTorneo bracket = bracketService.generar(organizador, torneo);
 
-        assertThat(bracket.rondas().stream().flatMap(r -> r.partidos().stream()))
-                .allMatch(p -> "juez2_bracket Test".equals(p.arbitro()));
+        assertThat(bracket.rondas().stream().flatMap(r -> r.partidos().stream()).map(PartidoBracket::arbitro))
+                .containsOnly("juez_bracket Test", "juez3_bracket Test")
+                .contains("juez_bracket Test", "juez3_bracket Test");
     }
 
     // --- regenerar ------------------------------------------------------------

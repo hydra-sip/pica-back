@@ -1496,11 +1496,11 @@ paths:
         lo puede recalcular. El cuadro es la potencia de dos que alcanza; los lugares de más son BYE y los reciben los
         primeros del sorteo, uno por partido de primera ronda (primero en posiciones impares). Se crean los partidos de
         todas las rondas: un BYE es un partido de primera ronda con solo `local`, CONFIRMADO, y ese participante ya
-        figura en la segunda ronda. Cada partido lleva un árbitro designado, en rueda entre los que aceptaron (si
-        ninguno aceptó todavía, entre los pendientes). El torneo pasa a EN_CURSO y el sorteo queda en la auditoría
+        figura en la segunda ronda. Cada partido lleva un árbitro designado, en rueda entre los que aceptaron la
+        designación (HU-807); los pendientes no reciben partidos. El torneo pasa a EN_CURSO y el sorteo queda en la auditoría
         (SORTEO). 409 `INSCRIPCION_NO_CERRADA` si la inscripción no está cerrada, `PARTICIPANTES_INSUFICIENTES` con
-        menos de 2 confirmadas, `BRACKET_YA_GENERADO` si ya lo tiene, `SIN_ARBITROS` sin árbitros que no hayan
-        rechazado. Solo el organizador del torneo; para otro, 404 `TORNEO_NO_ENCONTRADO`.
+        menos de 2 confirmadas, `BRACKET_YA_GENERADO` si ya lo tiene, `SIN_ARBITROS` si ningún árbitro aceptó la
+        designación. Solo el organizador del torneo; para otro, 404 `TORNEO_NO_ENCONTRADO`.
       responses:
         '201':
           description: El bracket generado
@@ -2645,7 +2645,7 @@ components:
         designación) · DESIGNACION_YA_RESPONDIDA (el árbitro ya aceptó o rechazó) · COMPROMISO_NO_ACEPTADO (aceptar
         la designación sin el código de imparcialidad) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
         PARTICIPANTES_INSUFICIENTES (menos de 2 inscripciones confirmadas) · BRACKET_YA_GENERADO (se puede regenerar) ·
-        SIN_ARBITROS (cada partido necesita un árbitro designado) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
+        SIN_ARBITROS (cada partido necesita un árbitro que haya aceptado la designación) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
         regenera) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
         sin resultado) · PARTIDO_CERRADO (ya no se le suma evidencia) · RESULTADO_NO_PENDIENTE (no hay un resultado
         cargado para aceptar u objetar) · RESULTADO_PROPIO (el resultado lo acepta u objeta el rival, no quien lo
