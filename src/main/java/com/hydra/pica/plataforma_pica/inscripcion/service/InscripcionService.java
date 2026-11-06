@@ -210,7 +210,9 @@ public class InscripcionService {
             validarQueNoOrganiza(torneo, jugador.getId());
             if (nominaRepository.figuraEnOtraInscripcion(torneo.getId(), jugador.getId(), ACTIVAS, editada)) {
                 throw new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO,
-                        "El jugador " + jugador.getId() + " ya figura en otra inscripción activa del torneo " + torneo.getId());
+                        "El jugador " + jugador.getId() + " ya figura en otra inscripción activa del torneo " + torneo.getId())
+                        // para que el front diga cuál (CE4-4)
+                        .con("jugador", UsuarioPublico.desde(jugador));
             }
         }
     }
@@ -567,7 +569,8 @@ public class InscripcionService {
         validarQueNoOrganiza(torneo, entra.getId());
         if (nominaRepository.figuraEnOtraInscripcion(torneoId, entra.getId(), ACTIVAS, id)) {
             throw new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO,
-                    "El jugador " + entra.getId() + " ya figura en otra inscripción activa del torneo " + torneoId);
+                    "El jugador " + entra.getId() + " ya figura en otra inscripción activa del torneo " + torneoId)
+                    .con("jugador", UsuarioPublico.desde(entra));
         }
 
         Equipo equipo = inscripcion.getEquipo();

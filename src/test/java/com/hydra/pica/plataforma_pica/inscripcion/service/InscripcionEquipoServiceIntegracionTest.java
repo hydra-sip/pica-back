@@ -435,8 +435,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, sale, equipo);
         inscripcionActivaDeOtroEquipoCon(entra, "PENDIENTE_PAGO");
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
-                HttpStatus.CONFLICT, CodigoError.JUGADOR_YA_INSCRIPTO);
+        assertJugadorYaInscripto(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)), entra);
     }
 
     @Test
@@ -739,7 +738,14 @@ class InscripcionEquipoServiceIntegracionTest {
         integrante(equipo, compartido);
         inscripcionActivaDeOtroEquipoCon(compartido, "PENDIENTE_PAGO");
 
-        assertError(() -> inscripcionService.crear(capitan, torneo, existente(equipo, compartido)), HttpStatus.CONFLICT, CodigoError.JUGADOR_YA_INSCRIPTO);
+        assertJugadorYaInscripto(() -> inscripcionService.crear(capitan, torneo, existente(equipo, compartido)), compartido);
+    }
+
+    @Test
+    void siElQueYaFiguraEsElCapitanElErrorLoNombraAEl() {
+        inscripcionActivaDeOtroEquipoCon(capitan, "CONFIRMADA");
+
+        assertJugadorYaInscripto(() -> inscripcionService.crear(capitan, torneo, existente(equipo)), capitan);
     }
 
     @Test
@@ -1433,6 +1439,18 @@ class InscripcionEquipoServiceIntegracionTest {
         assertThat(error).isNotNull();
         assertThat(error.getStatus()).isEqualTo(status);
         assertThat(error.getCodigo()).isEqualTo(codigo);
+    }
+
+    // CE4-4: el 409 dice cuál es el jugador, con lo mismo que muestra la nómina
+    private void assertJugadorYaInscripto(ThrowingCallable accion, Long jugadorId) {
+        ApiException error = catchThrowableOfType(ApiException.class, accion);
+        assertThat(error).isNotNull();
+        assertThat(error.getCodigo()).isEqualTo(CodigoError.JUGADOR_YA_INSCRIPTO);
+        assertThat(error.getPropiedades().get("jugador")).isInstanceOfSatisfying(UsuarioPublico.class, jugador -> {
+            assertThat(jugador.id()).isEqualTo(jugadorId);
+            assertThat(jugador.username()).isNotBlank();
+            assertThat(jugador.nombres()).isNotBlank();
+        });
     }
 
     // inscripciones de equipo ya confirmadas, de otros capitanes, que ocupan lugares del torneo
