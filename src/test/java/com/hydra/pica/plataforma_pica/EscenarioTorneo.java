@@ -75,9 +75,9 @@ public class EscenarioTorneo {
     }
 
     /**
-     * Un torneo individual de ajedrez del organizador, con el árbitro designado para cargar resultados (sin aceptar
-     * todavía), {@code jugadores} inscripciones confirmadas de "{prefijo}0", "{prefijo}1"... y el bracket generado:
-     * queda EN_CURSO.
+     * Un torneo individual de ajedrez del organizador, con el árbitro designado para cargar resultados (aceptó: sin
+     * eso el bracket no se genera, HU-807), {@code jugadores} inscripciones confirmadas de "{prefijo}0",
+     * "{prefijo}1"... y el bracket generado: queda EN_CURSO.
      */
     public Long individualEnCurso(Long organizador, Long arbitro, String nombre, String prefijo, int jugadores) {
         Long torneo = torneoService.crear(organizador, new InformacionTorneoRequest(nombre, "Ajedrez", null, null,
@@ -85,6 +85,7 @@ public class EscenarioTorneo {
                 "Partidas de 10 minutos", 16, 2, null, null)).id();
         arbitrosService.designar(organizador, torneo,
                 new DesignarArbitroRequest(arbitro, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
+        jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO' WHERE torneo_id = ?", torneo);
         jdbc.update("""
                 UPDATE torneo SET valor_inscripcion = 1000, pct_pozo_competidores = 90, pct_premio_rifa = 0,
                                   estado = 'INSCRIPCION_CERRADA', publicado_en = now()

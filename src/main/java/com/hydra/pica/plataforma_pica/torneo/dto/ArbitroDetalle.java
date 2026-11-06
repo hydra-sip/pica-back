@@ -16,12 +16,14 @@ public record ArbitroDetalle(
         String apellidos,
         EstadoDesignacion estado,
         Set<PermisoArbitro> permisos,
-        Instant designadoEn) {
+        Instant designadoEn,
+        Instant respondidoEn,
+        String motivoRechazo) {
 
     public static ArbitroDetalle de(ArbitroDesignado arbitro) {
         Usuario usuario = arbitro.getUsuario();
         return new ArbitroDetalle(usuario.getId(), usuario.getUsername(), usuario.getPersona().getNombres(),
                 usuario.getPersona().getApellidos(), arbitro.getEstado(), arbitro.getPermisos(),
-                arbitro.getDesignadoEn());
+                arbitro.getDesignadoEn(), arbitro.getRespondidoEn(), arbitro.getMotivoRechazo());
     }
 }

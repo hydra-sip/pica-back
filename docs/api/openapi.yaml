@@ -1259,7 +1259,8 @@ paths:
         Queda en `reglamentoUrl` (este mismo endpoint, para el GET) y su SHA-256 en `reglamentoHash`, que es lo que
         se sella al publicar en lugar del texto. Hasta 5 MB y tiene que ser un PDF de verdad: se mira el contenido,
         no la extensión. 400 `VALIDACION` en `archivo`: `REQUERIDO` si no viene, `FORMATO_INVALIDO` si no es un PDF,
-        `LONGITUD` si pasa los 5 MB. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
+        `LONGITUD` si pasa los 5 MB. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR. 502
+        `ALMACENAMIENTO_NO_DISPONIBLE` si el almacenamiento no lo pudo guardar (el torneo queda como estaba).
       requestBody:
         required: true
         content:
@@ -1276,6 +1277,7 @@ paths:
         '400': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
+        '502': {$ref: '#/components/responses/Error'}
     get:
       tags: [Torneos]
       summary: Ver el reglamento en PDF
@@ -1285,7 +1287,8 @@ paths:
       description: >-
         Sin sesión si el torneo está publicado, como su ficha. En BORRADOR lo ve solo su organizador (con el token);
         para cualquier otro el torneo no existe: 404 `TORNEO_NO_ENCONTRADO`. 404 `REGLAMENTO_NO_ENCONTRADO` si no se
-        subió el PDF. Va con `Content-Disposition: inline`, para abrirlo en el navegador.
+        subió el PDF. 502 `ALMACENAMIENTO_NO_DISPONIBLE` si el almacenamiento no respondió. Va con
+        `Content-Disposition: inline`, para abrirlo en el navegador.
       responses:
         '200':
           description: El PDF
@@ -1293,6 +1296,7 @@ paths:
             application/pdf:
               schema: {type: string, format: binary}
         '404': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
     delete:
       tags: [Torneos]
       summary: Quitar el reglamento en PDF (en BORRADOR)
@@ -1302,10 +1306,12 @@ paths:
       description: >-
         Borra el archivo y deja `reglamentoUrl` y `reglamentoHash` en null; sin PDF no hace nada. Si tampoco hay
         `reglamentoTexto`, el paso 1 vuelve a quedar incompleto. 409 `TORNEO_NO_EDITABLE` si ya no está en BORRADOR.
+        502 `ALMACENAMIENTO_NO_DISPONIBLE` si el almacenamiento no lo pudo borrar.
       responses:
         '200': {$ref: '#/components/responses/TorneoInformacion'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
+        '502': {$ref: '#/components/responses/Error'}
 
   /api/v1/arbitros:
     get:
@@ -1349,11 +1355,13 @@ paths:
       x-permiso: TORNEO_GESTIONAR
       x-owner: Tomás
       description: >-
-        HU-203. Queda PENDIENTE hasta que el árbitro acepta (HU-807); solo uno aceptado arbitra. Los árbitros se
+        HU-203. Queda PENDIENTE hasta que el árbitro acepta (HU-807); solo uno aceptado arbitra. Al árbitro le llega
+        un mail con el torneo y los permisos propuestos. A uno que rechazó se lo puede volver a designar: vuelve a
+        PENDIENTE con los permisos nuevos. Los árbitros se
         cambian desde el BORRADOR hasta que el torneo termina: 409 `TORNEO_NO_EDITABLE` en FINALIZADO o CANCELADO.
         400 `VALIDACION` con `REQUERIDO` en `permisos` si viene vacío. 404 `USUARIO_NO_ENCONTRADO` si el usuario no
         existe. 409 `USUARIO_NO_ES_ARBITRO` si no está activo o no tiene el rol ÁRBITRO, `ARBITRO_DUPLICADO` si ya
-        está designado en el torneo y `ARBITRO_NO_PERMITIDO` si es el organizador o juega el torneo (inscripción
+        está designado en el torneo (PENDIENTE o ACEPTADO) y `ARBITRO_NO_PERMITIDO` si es el organizador o juega el torneo (inscripción
         pendiente de pago o confirmada, propia o en una nómina).
       requestBody:
         required: true
@@ -1391,6 +1399,77 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/designaciones/mias:
+    get:
+      tags: [Torneos]
+      summary: Mis designaciones como árbitro
+      x-jira: PICA-313
+      x-owner: Tomás
+      description: >-
+        HU-807. Los torneos donde designaron a quien llama, con los permisos propuestos: primero las PENDIENTE y
+        después de la más nueva a la más vieja. Sin permiso propio: cada uno ve las suyas (vacío si no tiene). Los
+        torneos dados de baja no aparecen.
+      responses:
+        '200':
+          description: Designaciones
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/MiDesignacion'}}
+
+  /api/v1/designaciones/{torneoId}/aceptar:
+    parameters:
+      - {name: torneoId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+    post:
+      tags: [Torneos]
+      summary: Aceptar la designación
+      x-jira: PICA-313
+      x-owner: Tomás
+      description: >-
+        HU-807 (wireframe 49). Desde ahora arbitra el torneo con los permisos que le dio el organizador, y al
+        organizador le llega un mail. Hay que aceptar el código de imparcialidad. 404 `DESIGNACION_NO_ENCONTRADA` si
+        no está designado en el torneo. 409 `COMPROMISO_NO_ACEPTADO` sin `compromisoAceptado` en true (o sin cuerpo),
+        `DESIGNACION_YA_RESPONDIDA` si ya aceptó o rechazó (el estado va en `estado`), `TORNEO_NO_EDITABLE` si el
+        torneo terminó y `USUARIO_NO_ES_ARBITRO` si ya no tiene el rol ÁRBITRO.
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AceptarDesignacionRequest'}
+      responses:
+        '200':
+          description: Aceptada
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MiDesignacion'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/designaciones/{torneoId}/rechazar:
+    parameters:
+      - {name: torneoId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+    post:
+      tags: [Torneos]
+      summary: Rechazar la designación
+      x-jira: PICA-313
+      x-owner: Tomás
+      description: >-
+        HU-807 (wireframes 48 y 49). No arbitra el torneo y al organizador le llega un mail con el motivo, si lo
+        hay; en el paso 2 figura RECHAZADO con el motivo y lo puede volver a designar. 400 `VALIDACION` con
+        `LONGITUD` en `motivo` si pasa los 500 caracteres. 404 `DESIGNACION_NO_ENCONTRADA` si no está designado en el
+        torneo. 409 `DESIGNACION_YA_RESPONDIDA` si ya aceptó o rechazó y `TORNEO_NO_EDITABLE` si el torneo terminó.
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RechazarDesignacionRequest'}
+      responses:
+        '200':
+          description: Rechazada
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MiDesignacion'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/torneos/{id}/bracket:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -1421,11 +1500,11 @@ paths:
         lo puede recalcular. El cuadro es la potencia de dos que alcanza; los lugares de más son BYE y los reciben los
         primeros del sorteo, uno por partido de primera ronda (primero en posiciones impares). Se crean los partidos de
         todas las rondas: un BYE es un partido de primera ronda con solo `local`, CONFIRMADO, y ese participante ya
-        figura en la segunda ronda. Cada partido lleva un árbitro designado, en rueda entre los que aceptaron (si
-        ninguno aceptó todavía, entre los pendientes). El torneo pasa a EN_CURSO y el sorteo queda en la auditoría
+        figura en la segunda ronda. Cada partido lleva un árbitro designado, en rueda entre los que aceptaron la
+        designación (HU-807); los pendientes no reciben partidos. El torneo pasa a EN_CURSO y el sorteo queda en la auditoría
         (SORTEO). 409 `INSCRIPCION_NO_CERRADA` si la inscripción no está cerrada, `PARTICIPANTES_INSUFICIENTES` con
-        menos de 2 confirmadas, `BRACKET_YA_GENERADO` si ya lo tiene, `SIN_ARBITROS` sin árbitros que no hayan
-        rechazado. Solo el organizador del torneo; para otro, 404 `TORNEO_NO_ENCONTRADO`.
+        menos de 2 confirmadas, `BRACKET_YA_GENERADO` si ya lo tiene, `SIN_ARBITROS` si ningún árbitro aceptó la
+        designación. Solo el organizador del torneo; para otro, 404 `TORNEO_NO_ENCONTRADO`.
       responses:
         '201':
           description: El bracket generado
@@ -2543,7 +2622,8 @@ components:
       description: |
         Todos los códigos de la API; el front mapea cada uno a un mensaje. Quien agrega uno en el
         backend lo agrega acá.
-        Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO / SESION_REVOCADA 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404.
+        Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO / SESION_REVOCADA 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404 ·
+        ALMACENAMIENTO_NO_DISPONIBLE 502 (el almacenamiento de archivos no respondió; se puede reintentar).
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
         DEMASIADOS_INTENTOS 429 (login).
@@ -2566,9 +2646,10 @@ components:
         USUARIO_NO_ES_ARBITRO (no está activo o no tiene el rol ÁRBITRO) · ARBITRO_DUPLICADO (ya está designado en el
         torneo) · ARBITRO_NO_PERMITIDO (es el organizador o juega el torneo) · ARBITRO_CON_PARTIDOS (quitar a un
         árbitro con partidos asignados) · ARBITRO_NO_HABILITADO (asignarle un partido a quien no aceptó la
-        designación) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
+        designación) · DESIGNACION_YA_RESPONDIDA (el árbitro ya aceptó o rechazó) · COMPROMISO_NO_ACEPTADO (aceptar
+        la designación sin el código de imparcialidad) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
         PARTICIPANTES_INSUFICIENTES (menos de 2 inscripciones confirmadas) · BRACKET_YA_GENERADO (se puede regenerar) ·
-        SIN_ARBITROS (cada partido necesita un árbitro designado) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
+        SIN_ARBITROS (cada partido necesita un árbitro que haya aceptado la designación) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
         regenera) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
         sin resultado) · PARTIDO_CERRADO (ya no se le suma evidencia) · RESULTADO_NO_PENDIENTE (no hay un resultado
         cargado para aceptar u objetar) · RESULTADO_PROPIO (el resultado lo acepta u objeta el rival, no quien lo
@@ -2597,9 +2678,10 @@ components:
         NO_ES_COMPRADOR (reclamar el resultado de una rifa sin haber comprado un ticket).
 
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
+             ALMACENAMIENTO_NO_DISPONIBLE,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
-             REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
+             REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
              OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
@@ -2612,7 +2694,7 @@ components:
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
-             ARBITRO_NO_HABILITADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
+             ARBITRO_NO_HABILITADO, DESIGNACION_YA_RESPONDIDA, COMPROMISO_NO_ACEPTADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
@@ -2998,7 +3080,8 @@ components:
       description: >-
         Pasos 1 y 2 del asistente; el front manda todo cada vez y lo que falta queda vacío. Reglas entre campos
         (400 `VALIDACION`): `FECHAS_INVALIDAS` en `fechaInicio` o `cierreInscripcionEn` si no son futuras, en
-        `fechaFin` si es anterior al inicio y en `cierreInscripcionEn` si es posterior al inicio · `REQUERIDO` en
+        `fechaFin` si es anterior al inicio y en `cierreInscripcionEn` si no cierra al menos
+        `OpcionesTorneo.margenCierreInicioMin` minutos antes del inicio · `REQUERIDO` en
         `sede` si es presencial o trae canchas · `VALOR_INVALIDO` en `canchas` si es online · `RANGO_INVALIDO` en
         `cupoMaximo` fuera de 2 a `OpcionesTorneo.cupoMaximo`, en `cupoMinimo` menor que 2 o mayor que el cupo, y
         en `nominaMaxima` menor que `tamanioEquipo` · `VALOR_INVALIDO` en `tamanioEquipo` o `nominaMaxima` si no
@@ -3112,6 +3195,35 @@ components:
         estado: {$ref: '#/components/schemas/EstadoDesignacion'}
         permisos: {type: array, items: {$ref: '#/components/schemas/PermisoArbitro'}}
         designadoEn: {type: string, format: date-time}
+        respondidoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo aceptó o rechazó (HU-807)'}
+        motivoRechazo: {type: [string, 'null'], description: 'El que dio al rechazar, si dio uno'}
+    MiDesignacion:
+      type: object
+      required: [torneoId, torneo, disciplina, estadoTorneo, organizador, estado, permisos, designadoEn]
+      description: Una designación como la ve el árbitro (HU-807, wireframes 48 y 49).
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {type: string, description: Nombre del torneo}
+        slug: {type: [string, 'null'], description: 'null mientras el torneo está en BORRADOR'}
+        disciplina: {type: string}
+        estadoTorneo: {$ref: '#/components/schemas/EstadoTorneo'}
+        fechaInicio: {type: [string, 'null'], format: date-time}
+        fechaFin: {type: [string, 'null'], format: date-time, description: Estimada}
+        organizador: {type: string, description: Nombres y apellidos}
+        estado: {$ref: '#/components/schemas/EstadoDesignacion'}
+        permisos: {type: array, items: {$ref: '#/components/schemas/PermisoArbitro'}}
+        designadoEn: {type: string, format: date-time}
+        respondidoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo aceptó o rechazó; null si está PENDIENTE'}
+        motivoRechazo: {type: [string, 'null'], description: 'Solo si RECHAZADO, y opcional'}
+    AceptarDesignacionRequest:
+      type: object
+      description: 'El código de imparcialidad del wireframe 49: sin el campo o en false, 409 COMPROMISO_NO_ACEPTADO.'
+      properties:
+        compromisoAceptado: {type: boolean}
+    RechazarDesignacionRequest:
+      type: object
+      properties:
+        motivo: {type: [string, 'null'], maxLength: 500, description: Opcional; le llega al organizador}
     BracketTorneo:
       type: object
       required: [torneoId, rondas]
@@ -3457,7 +3569,7 @@ components:
         disciplinas: {type: array, items: {type: string}, description: 'Las de los torneos del organizador, para el filtro'}
     OpcionesTorneo:
       type: object
-      required: [disciplinas, formatos, modalidades, cupoMaximo, pctGastosAdministrativos, canchas]
+      required: [disciplinas, formatos, modalidades, cupoMaximo, pctGastosAdministrativos, margenCierreInicioMin, canchas]
       properties:
         disciplinas:
           type: array
@@ -3484,6 +3596,7 @@ components:
         modalidades: {type: array, items: {$ref: '#/components/schemas/Modalidad'}}
         cupoMaximo: {type: integer, description: Máximo de participantes que admite la plataforma, examples: [64]}
         pctGastosAdministrativos: {type: number, description: '% vigente de gastos administrativos que paga aparte quien se inscribe; al publicar queda fijo en el torneo', examples: [10]}
+        margenCierreInicioMin: {type: integer, minimum: 0, description: 'Minutos que tienen que pasar como mínimo entre el cierre de la inscripción y el inicio; lo fija la plataforma', examples: [60]}
         canchas: {type: array, items: {type: string}, description: Las que ya existen en la `sede` pedida}
     # --- rifas ---------------------------------------------------------------
     EstadoRifa: {type: string, enum: [BORRADOR, EN_VENTA, CERRADA, SORTEADA, EN_REVISION, LIQUIDADA, CANCELADA]}

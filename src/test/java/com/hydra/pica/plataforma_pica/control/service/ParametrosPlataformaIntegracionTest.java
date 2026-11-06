@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,25 @@ class ParametrosPlataformaIntegracionTest {
     @Test
     void losGastosAdministrativosVienenPreconfiguradosEn10() {
         assertThat(parametrosPlataforma.gastosAdministrativos()).isEqualByComparingTo(BigDecimal.TEN);
+    }
+
+    @Test
+    void elMargenEntreElCierreYElInicioVienePreconfiguradoEnUnaHora() {
+        assertThat(parametrosPlataforma.margenCierreInicio()).isEqualTo(Duration.ofHours(1));
+    }
+
+    @Test
+    void elMargenSonMinutosEnteros() {
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE parametro_plataforma SET valor = 1.5 WHERE clave = 'MARGEN_CIERRE_INICIO_MIN'"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void elMargenNoPuedeSerNegativo() {
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE parametro_plataforma SET valor = -1 WHERE clave = 'MARGEN_CIERRE_INICIO_MIN'"))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
