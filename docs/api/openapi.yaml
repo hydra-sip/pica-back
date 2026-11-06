@@ -2513,10 +2513,14 @@ paths:
       x-owner: Tomás
       security: []
       description: >-
-        Lista paginada de torneos públicos con filtros opcionales por disciplina y estado.
-        No muestra borradores ni torneos eliminados. Accesible sin autenticación.
+        Lista paginada de torneos públicos con filtros opcionales, que se combinan: texto libre, disciplina,
+        modalidad y estado. No muestra borradores ni torneos eliminados. Accesible sin autenticación.
+        Sin `sort`, primero los que todavía no empezaron, del más cercano al más lejano, y después los ya empezados
+        (PICA-304).
       parameters:
-        - {name: disciplina, in: query, schema: {type: string}, description: Filtro por disciplina}
+        - {name: q, in: query, schema: {type: string}, description: 'Busca en nombre, disciplina y sede, por coincidencia parcial y sin importar tildes ni mayúsculas. Con varias palabras tienen que aparecer todas.'}
+        - {name: disciplina, in: query, schema: {type: string}, description: Filtro por disciplina exacta}
+        - {name: modalidad, in: query, schema: {$ref: '#/components/schemas/Modalidad'}, description: Filtro por modalidad del torneo}
         - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoTorneo'}, description: Filtro por estado del torneo}
         - {$ref: '#/components/parameters/page'}
         - {$ref: '#/components/parameters/size'}

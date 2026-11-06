@@ -11,6 +11,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.ConteoInscripciones;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.PremioDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoDetalle;
@@ -52,11 +53,15 @@ public class TorneoPublicoService {
         this.gastoRepository = gastoRepository;
     }
 
-    public Page<TorneoResumen> listarPublicos(String disciplina, EstadoTorneo estado, Pageable pageable) {
+    public Page<TorneoResumen> listarPublicos(
+            String q, String disciplina, Modalidad modalidad, EstadoTorneo estado, Pageable pageable) {
         Specification<Torneo> spec = Specification.where(TorneoSpecifications.noEliminado())
                 .and(TorneoSpecifications.noBorrador())
+                .and(TorneoSpecifications.conTexto(q))
                 .and(TorneoSpecifications.conDisciplina(disciplina))
-                .and(TorneoSpecifications.conEstado(estado));
+                .and(TorneoSpecifications.conModalidad(modalidad))
+                .and(TorneoSpecifications.conEstado(estado))
+                .and(TorneoSpecifications.proximosPrimero());
 
         Page<Torneo> pagina = torneoRepository.findAll(spec, pageable);
         if (pagina.isEmpty()) {
