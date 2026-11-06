@@ -1,10 +1,13 @@
 package com.hydra.pica.plataforma_pica.inscripcion.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.domain.RolEnInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionResumen;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -71,7 +74,7 @@ class InscripcionMiasServiceIntegracionTest {
     }
 
     @Test
-    void cadaInscripcionTraeSuTorneoConNombreYSlug() {
+    void cadaInscripcionTraeSuTorneoConNombreSlugYEstado() {
         jdbc.update("UPDATE torneo SET slug = ? WHERE id = ?", "torneo-mias", torneoIndividual);
         inscripcionIndividual(torneoIndividual, jugador, "BORRADOR");
 
@@ -81,6 +84,7 @@ class InscripcionMiasServiceIntegracionTest {
         assertThat(resumen.torneo().nombre())
                 .isEqualTo(jdbc.queryForObject("SELECT nombre FROM torneo WHERE id = ?", String.class, torneoIndividual));
         assertThat(resumen.torneo().slug()).isEqualTo("torneo-mias");
+        assertThat(resumen.torneo().estado()).isEqualTo(EstadoTorneo.INSCRIPCION_ABIERTA);
     }
 
     @Test
@@ -101,14 +105,64 @@ class InscripcionMiasServiceIntegracionTest {
     }
 
     @Test
-    void noTraeLasAjenasNiLasDeUnEquipoDondeSoloFiguroEnLaNomina() {
+    void traeLaConfirmadaDeUnEquipoAjenoDondeFiguroEnLaNomina() {
         Long capitan = usuario("cap_ajeno_mias").getId();
         long halcones = equipo("Los Halcones", capitan);
         integrante(halcones, jugador);
-        long deEquipo = inscripcionDeEquipo(torneoPorEquipos(), halcones, "PENDIENTE_PAGO");
+        long confirmada = inscripcionDeEquipo(torneoPorEquipos(), halcones, "CONFIRMADA");
+        enNomina(confirmada, capitan, halcones);
+        enNomina(confirmada, jugador, halcones);
+
+        Page<InscripcionResumen> mias = inscripcionService.listarMias(jugador, null, PRIMERA_PAGINA);
+
+        assertThat(mias.getContent()).extracting(InscripcionResumen::id).containsExactly(confirmada);
+        assertThat(mias.getContent().get(0).equipo().nombre()).isEqualTo("Los Halcones");
+    }
+
+    @Test
+    void cadaFilaDiceConQueRolParticipo() {
+        Long capitan = usuario("cap_rol_mias").getId();
+        long halcones = equipo("Los Halcones", capitan);
+        integrante(halcones, jugador);
+        long deEquipo = inscripcionDeEquipo(torneoPorEquipos(), halcones, "CONFIRMADA");
         enNomina(deEquipo, capitan, halcones);
         enNomina(deEquipo, jugador, halcones);
-        inscripcionIndividual(torneoIndividual, usuario("otro_mias").getId(), "BORRADOR");
+        long individual = inscripcionIndividual(torneoIndividual, jugador, "BORRADOR");
+
+        assertThat(inscripcionService.listarMias(jugador, null, PRIMERA_PAGINA).getContent())
+                .extracting(InscripcionResumen::id, InscripcionResumen::rol)
+                .containsExactly(tuple(individual, RolEnInscripcion.INDIVIDUAL), tuple(deEquipo, RolEnInscripcion.JUGADOR));
+    }
+
+    @Test
+    void elCapitanQueTambienFiguraEnSuNominaVeSuInscripcionUnaSolaVezComoCapitan() {
+        Long capitan = usuario("cap_unica_mias").getId();
+        long halcones = equipo("Los Halcones", capitan);
+        integrante(halcones, jugador);
+        long deEquipo = inscripcionDeEquipo(torneoPorEquipos(), halcones, "CONFIRMADA");
+        enNomina(deEquipo, capitan, halcones);
+        enNomina(deEquipo, jugador, halcones);
+
+        Page<InscripcionResumen> mias = inscripcionService.listarMias(capitan, null, PRIMERA_PAGINA);
+
+        assertThat(mias.getContent()).extracting(InscripcionResumen::id, InscripcionResumen::rol)
+                .containsExactly(tuple(deEquipo, RolEnInscripcion.CAPITAN));
+        assertThat(mias.getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void deUnEquipoAjenoNoTraeLasQueNoEstanConfirmadasNiLasAjenasDondeNoFiguro() {
+        Long capitan = usuario("cap_ajeno_mias").getId();
+        long halcones = equipo("Los Halcones", capitan);
+        integrante(halcones, jugador);
+        for (String estado : new String[] {"BORRADOR", "PENDIENTE_PAGO", "CANCELADA"}) {
+            long deEquipo = inscripcionDeEquipo(torneoPorEquipos(), halcones, estado);
+            enNomina(deEquipo, capitan, halcones);
+            enNomina(deEquipo, jugador, halcones);
+        }
+        long sinMi = inscripcionDeEquipo(torneoPorEquipos(), halcones, "CONFIRMADA");
+        enNomina(sinMi, capitan, halcones);
+        inscripcionIndividual(torneoIndividual, usuario("otro_mias").getId(), "CONFIRMADA");
 
         assertThat(inscripcionService.listarMias(jugador, null, PRIMERA_PAGINA).getContent()).isEmpty();
     }
@@ -139,6 +193,32 @@ class InscripcionMiasServiceIntegracionTest {
 
         assertThat(mias.getContent()).extracting(InscripcionResumen::id).containsExactly(buscada);
         assertThat(mias.getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void conTorneoIdTambienFiltraLasDeLaNomina() {
+        Long capitan = usuario("cap_filtro_nomina_mias").getId();
+        long halcones = equipo("Los Halcones", capitan);
+        integrante(halcones, jugador);
+        long otroTorneo = torneoPorEquipos();
+        for (long torneo : new long[] {torneoPorEquipos(), otroTorneo}) {
+            long deEquipo = inscripcionDeEquipo(torneo, halcones, "CONFIRMADA");
+            enNomina(deEquipo, capitan, halcones);
+            enNomina(deEquipo, jugador, halcones);
+        }
+
+        Page<InscripcionResumen> mias = inscripcionService.listarMias(jugador, otroTorneo, PRIMERA_PAGINA);
+
+        assertThat(mias.getContent()).extracting(InscripcionResumen::torneoId).containsExactly(otroTorneo);
+        assertThat(mias.getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void sinInscripcionesDevuelveUnaPaginaVacia() {
+        Page<InscripcionResumen> mias = inscripcionService.listarMias(jugador, null, PRIMERA_PAGINA);
+
+        assertThat(mias.getContent()).isEmpty();
+        assertThat(mias.getTotalElements()).isZero();
     }
 
     @Test

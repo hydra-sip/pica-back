@@ -498,11 +498,11 @@ public class InscripcionService {
         }
     }
 
-    /** Las que armó el usuario, la más nueva primero; el orden no se elige desde afuera. */
+    /** Mis inscripciones (HU-209), la más nueva primero; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
     public Page<InscripcionResumen> listarMias(Long usuarioId, Long torneoId, Pageable pageable) {
         Pageable masNuevaPrimero = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "id"));
-        return inscripcionRepository.buscarPropias(usuarioId, torneoId, masNuevaPrimero).map(InscripcionResumen::de);
+        return inscripcionRepository.buscarMias(usuarioId, torneoId, masNuevaPrimero).map(i -> InscripcionResumen.de(i, usuarioId));
     }
 
     /**

@@ -33,6 +33,7 @@ import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.TorneoDeInscripcion;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
@@ -58,7 +59,8 @@ import org.springframework.test.web.servlet.MockMvc;
 class InscripcionControllerTest {
 
     private static final Long PARTICIPANTE = 5L;
-    private static final TorneoDeInscripcion TORNEO = new TorneoDeInscripcion(3L, "Torneo Apertura F5", "torneo-apertura-f5");
+    private static final TorneoDeInscripcion TORNEO = new TorneoDeInscripcion(3L, "Torneo Apertura F5", "torneo-apertura-f5",
+            EstadoTorneo.INSCRIPCION_ABIERTA);
     private static final Instant CREADA = Instant.parse("2026-10-24T12:00:00Z");
 
     @Autowired
