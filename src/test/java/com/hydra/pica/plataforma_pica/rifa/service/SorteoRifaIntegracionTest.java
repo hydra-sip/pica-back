@@ -2,6 +2,8 @@ package com.hydra.pica.plataforma_pica.rifa.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -38,6 +40,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.AopTestUtils;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,6 +70,8 @@ class SorteoRifaIntegracionTest {
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
+    // los tests no salen a internet: drand contesta un valor fijo por ronda
+    @MockitoSpyBean private Drand drand;
 
     private Long organizador;
     private Long comprador;
@@ -75,6 +80,10 @@ class SorteoRifaIntegracionTest {
 
     @BeforeEach
     void escenario() {
+        doAnswer(i -> {
+            long ronda = i.getArgument(0);
+            return new Drand.Pulso(ronda, SelloTorneo.sha256("ronda:" + ronda), "firma");
+        }).when(drand).pulso(anyLong());
         organizador = usuario("org_sorteo").getId();
         comprador = usuario("comprador_sorteo").getId();
         otro = usuario("otro_sorteo").getId();
@@ -126,6 +135,25 @@ class SorteoRifaIntegracionTest {
         assertThat(sorteo.premios().get(0).numeroGanador()).isEqualTo(orden.get(0));
     }
 
+    // --- pruebas de aceptación de HU-503 --------------------------------------------------------------
+
+    @Test
+    void laSemillaEsLaDeDrandEnLaRondaVigenteEnLaFechaDelSorteo() {
+        cerrarConElSorteoVencido();
+        sorteoRifaService.sortear(organizador, rifa);
+        entityManager.flush();
+        entityManager.clear();
+
+        SorteoRifaDetalle sorteo = rifaPublicaService.sorteo(rifa);
+
+        long ronda = drand.ronda(sorteo.fechaSorteo());
+        assertThat(sorteo.semillaRonda()).isEqualTo(ronda);
+        assertThat(sorteo.semilla()).isEqualTo(SelloTorneo.sha256("ronda:" + ronda));
+        assertThat(sorteo.semillaFirma()).isEqualTo("firma");
+        assertThat(sorteo.semillaUrl()).isEqualTo(
+                "https://api.drand.sh/52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971/public/" + ronda);
+    }
+
     @Test
     void sinUnaSemillaVerificadaNoSeSortea() {
         cerrarConElSorteoVencido();
@@ -146,15 +174,21 @@ class SorteoRifaIntegracionTest {
     }
 
     @Test
-    void conElSorteoAnticipadoSeSorteaApenasSeCierraLaVenta() {
-        cierreVentaService.cerrar(organizador, rifa);
-        Object servicio = AopTestUtils.getTargetObject(sorteoRifaService);
+    void conElSorteoAnticipadoSeSorteaUnPeriodoDeDrandDespuesDelCierre() {
+        Object servicio = AopTestUtils.getTargetObject(cierreVentaService);
         ReflectionTestUtils.setField(servicio, "anticipado", true);
         try {
-            RifaDetalle sorteada = sorteoRifaService.sortear(organizador, rifa);
+            RifaDetalle cerrada = cierreVentaService.cerrar(organizador, rifa);
+            entityManager.flush();
+            entityManager.clear();
 
+            // sin esperar los 3 segundos: la tarea programada la sortea apenas llega la nueva fecha
+            assertThat(sorteoRifaService.sortearSiLlegoLaFecha(rifa, cerrada.fechaSorteo())).isTrue();
+
+            RifaDetalle sorteada = rifaService.detalle(organizador, rifa);
             assertThat(sorteada.estado()).isEqualTo(EstadoRifa.SORTEADA);
             assertThat(sorteada.premios()).allSatisfy(p -> assertThat(p.numeroGanador()).isNotNull());
+            assertThat(rifaPublicaService.sorteo(rifa).semillaRonda()).isEqualTo(drand.ronda(cerrada.fechaSorteo()));
         } finally {
             ReflectionTestUtils.setField(servicio, "anticipado", false);
         }
@@ -225,12 +259,15 @@ class SorteoRifaIntegracionTest {
         entityManager.clear();
     }
 
-    /** La venta terminó y el sorteo ya llegó (CHECK sorteada_en > venta_hasta); después se cierra y se sella. */
+    /**
+     * La venta terminó hace dos horas y se cerró sola hace una y media, antes del sorteo, que ya llegó hace una (CHECK
+     * sorteada_en > venta_hasta).
+     */
     private void cerrarConElSorteoVencido() {
         jdbc.update("UPDATE rifa SET venta_desde = now() - interval '3 hours', venta_hasta = now() - interval '2 hours', "
                 + "sorteada_en = now() - interval '1 hour' WHERE id = ?", rifa);
         entityManager.clear();
-        cierreVentaService.cerrarSiVencio(rifa, Instant.now());
+        cierreVentaService.cerrarSiVencio(rifa, Instant.now().minus(90, ChronoUnit.MINUTES));
         entityManager.flush();
         entityManager.clear();
     }

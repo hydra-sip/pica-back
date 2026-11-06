@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +24,7 @@ import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +35,11 @@ import org.springframework.transaction.annotation.Transactional;
  * torneo. La rifa pasa a CERRADA, se borran las reservas que no se pagaron y se sella la lista de vendidos con
  * {@link SelloRifa}; desde ahí la lista no se modifica (409 LISTA_SELLADA). Con el sello se publica el compromiso
  * del sorteo (HU-502, PICA-263), antes de que exista la semilla. Queda en la auditoría con el motivo.
+ *
+ * <p>Al cerrar se acomodan las fechas antes del compromiso (PICA-264): a mano, {@code ventaHasta} pasa a ser el
+ * cierre; y si {@code fechaSorteo} ya pasó, o se cierra a mano con {@code app.rifas.sorteo-anticipado=true} (solo para
+ * la demo), el sorteo pasa a ser un período de drand después del cierre. Así la fecha del sorteo nunca es anterior al
+ * cierre y su ronda de drand siempre es posterior al compromiso.
  */
 @Service
 @RequiredArgsConstructor
@@ -44,6 +51,10 @@ public class CierreVentaService {
     private final UsuarioRepository usuarioRepository;
     private final RifaService rifaService;
     private final ApplicationEventPublisher eventos;
+    private final Drand drand;
+
+    @Value("${app.rifas.sorteo-anticipado:false}")
+    private boolean anticipado;
 
     /** El organizador cierra la venta antes de {@code ventaHasta}; el cierre es definitivo. */
     @Transactional
@@ -58,7 +69,7 @@ public class CierreVentaService {
             throw new ConflictoException(CodigoError.RIFA_NO_EDITABLE,
                     "La rifa " + id + " está " + rifa.getEstado() + ": solo se cierra la venta de una EN_VENTA");
         }
-        sellar(rifa, MotivoCierre.MANUAL, organizadorId);
+        sellar(rifa, MotivoCierre.MANUAL, organizadorId, Instant.now());
         return rifaService.detalle(organizadorId, id);
     }
 
@@ -74,7 +85,7 @@ public class CierreVentaService {
         if (rifa == null || rifa.getEstado() != EstadoRifa.EN_VENTA || rifa.getVentaHasta().isAfter(ahora)) {
             return false;
         }
-        sellar(rifa, MotivoCierre.FECHA, null);
+        sellar(rifa, MotivoCierre.FECHA, null, ahora);
         return true;
     }
 
@@ -84,11 +95,21 @@ public class CierreVentaService {
     }
 
     /** @param actorId el organizador que cierra a mano; null si la cierra la tarea programada */
-    private void sellar(Rifa rifa, MotivoCierre motivo, Long actorId) {
+    private void sellar(Rifa rifa, MotivoCierre motivo, Long actorId, Instant ahora) {
         Long torneoId = rifa.getTorneo() != null ? rifa.getTorneo().getId() : null;
         int reservas = numeroRepository.borrarReservas(rifa.getId());
         List<Numero> vendidos = numeroRepository.findByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO);
-        Instant ahora = Instant.now();
+        // a mano, la venta termina ahora; si todavía no empezó, ventaHasta queda (ck_rifa_venta)
+        if (motivo == MotivoCierre.MANUAL && rifa.getVentaDesde().isBefore(ahora)) {
+            rifa.setVentaHasta(ahora);
+        }
+        // el sorteo nunca antes del cierre: la ronda de drand vigente un período después sale con el compromiso ya
+        // publicado. Va antes de calcular el compromiso, que incluye la fecha; en segundos enteros, porque Postgres
+        // redondea a microsegundos y el compromiso tiene que dar igual con la fecha guardada (las rondas salen en
+        // segundos enteros, así que la ronda sigue siendo posterior al cierre)
+        if ((motivo == MotivoCierre.MANUAL && anticipado) || !rifa.getSorteadaEn().isAfter(ahora)) {
+            rifa.setSorteadaEn(ahora.plus(drand.periodo()).truncatedTo(ChronoUnit.SECONDS));
+        }
         rifa.setListaHash(SelloRifa.lista(vendidos));
         rifa.setListaSelladaEn(ahora);
         rifa.setCompromisoHash(SelloRifa.compromiso(rifa.getListaHash(), rifa.getSorteadaEn()));

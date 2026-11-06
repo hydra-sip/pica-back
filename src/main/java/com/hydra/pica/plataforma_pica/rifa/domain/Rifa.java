@@ -119,6 +119,10 @@ public class Rifa extends AuditableEntity {
     @Column(name = "semilla_firma", columnDefinition = "TEXT")
     private String semillaFirma;
 
+    /** Ronda de drand de la que salió la semilla (V36); null en las sorteadas con la semilla del sistema. */
+    @Column(name = "semilla_ronda")
+    private Long semillaRonda;
+
     /** Cuándo se obtuvo la semilla, o sea, cuándo se sorteó de verdad. */
     @Column(name = "semilla_obtenida_en")
     private Instant semillaObtenidaEn;
