@@ -36,11 +36,13 @@ public record InscripcionDetalle(
                 EquipoInscripto.de(equipo), nomina, RolEnInscripcion.de(inscripcion, usuarioId));
     }
 
-    public record EquipoInscripto(Long id, String nombre) {
+    /** {@code capitanId}: para marcar al capitán en la nómina, mire quien mire (HU-209). */
+    public record EquipoInscripto(Long id, String nombre, Long capitanId) {
 
         /** Nulo en las individuales, que no tienen equipo. */
         public static EquipoInscripto de(Equipo equipo) {
-            return equipo == null ? null : new EquipoInscripto(equipo.getId(), equipo.getNombre());
+            return equipo == null ? null
+                    : new EquipoInscripto(equipo.getId(), equipo.getNombre(), equipo.getCapitan().getId());
         }
     }
 }

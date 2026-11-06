@@ -108,7 +108,7 @@ class InscripcionMiasControllerTest {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         when(inscripcionService.listarMias(eq(PARTICIPANTE), eq(null), any(Pageable.class))).thenReturn(new PageImpl<>(List.of(
                 new InscripcionResumen(7L, 3L, TORNEO, null, EstadoInscripcion.PENDIENTE_PAGO, CREADA, CREADA,
-                        new EquipoInscripto(9L, "Los Halcones"), RolEnInscripcion.JUGADOR),
+                        new EquipoInscripto(9L, "Los Halcones", 5L), RolEnInscripcion.JUGADOR),
                 new InscripcionResumen(6L, 2L, TORNEO, PARTICIPANTE, EstadoInscripcion.BORRADOR, CREADA, CREADA, null,
                         RolEnInscripcion.INDIVIDUAL)),
                 PageRequest.of(0, 20), 2));
@@ -125,6 +125,7 @@ class InscripcionMiasControllerTest {
                 .andExpect(jsonPath("$.content[0].estado").value("PENDIENTE_PAGO"))
                 .andExpect(jsonPath("$.content[0].equipo.id").value(9))
                 .andExpect(jsonPath("$.content[0].equipo.nombre").value("Los Halcones"))
+                .andExpect(jsonPath("$.content[0].equipo.capitanId").value(5))
                 .andExpect(jsonPath("$.content[0].nomina").doesNotExist())
                 .andExpect(jsonPath("$.content[1].usuarioId").value(PARTICIPANTE))
                 .andExpect(jsonPath("$.content[1].equipo").value(nullValue()))

@@ -3765,10 +3765,11 @@ components:
         cierreInscripcionEn: {type: string, format: date-time}
     EquipoInscripto:
       type: object
-      required: [id, nombre]
+      required: [id, nombre, capitanId]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         nombre: {type: string}
+        capitanId: {$ref: '#/components/schemas/Id', description: 'Para marcar al capitán en la nómina, mire quien mire (HU-209)'}
     EquipoResumen:
       type: object
       required: [id, nombre]

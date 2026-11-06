@@ -529,7 +529,7 @@ class InscripcionControllerTest {
     void resumenDePagoDeEquipo() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         when(inscripcionService.resumenPago(PARTICIPANTE, 7L)).thenReturn(new ResumenPago(7L,
-                new ResumenPago.TorneoPago(3L, "Copa"), null, new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones"),
+                new ResumenPago.TorneoPago(3L, "Copa"), null, new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones", PARTICIPANTE),
                 new BigDecimal("1500.00"), new BigDecimal("150.00"), new BigDecimal("1650.00"), "ARS", 8, 5L, CREADA));
 
         mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago"))
@@ -622,7 +622,7 @@ class InscripcionControllerTest {
 
     private InscripcionDetalle borradorDeEquipo() {
         return new InscripcionDetalle(7L, 3L, TORNEO, null, EstadoInscripcion.BORRADOR, null, CREADA, CREADA,
-                new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones"),
+                new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones", PARTICIPANTE),
                 List.of(new UsuarioPublico(PARTICIPANTE, "capitan", "Ana", "Paz")), RolEnInscripcion.CAPITAN);
     }
 

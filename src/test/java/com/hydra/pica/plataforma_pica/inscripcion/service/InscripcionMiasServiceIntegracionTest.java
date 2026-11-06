@@ -255,6 +255,20 @@ class InscripcionMiasServiceIntegracionTest {
         assertThat(inscripcionService.detalle(organizador, individual).rol()).isEqualTo(RolEnInscripcion.ORGANIZADOR);
     }
 
+    @Test
+    void elEquipoDiceQuienEsSuCapitanParaQueLoVeaElJugador() {
+        Long capitan = usuario("cap_equipo_mias").getId();
+        long halcones = equipo("Los Halcones", capitan);
+        integrante(halcones, jugador);
+        long deEquipo = inscripcionDeEquipo(torneoPorEquipos(), halcones, "CONFIRMADA");
+        enNomina(deEquipo, capitan, halcones);
+        enNomina(deEquipo, jugador, halcones);
+
+        assertThat(inscripcionService.detalle(jugador, deEquipo).equipo().capitanId()).isEqualTo(capitan);
+        assertThat(inscripcionService.listarMias(jugador, null, PRIMERA_PAGINA).getContent().get(0).equipo().capitanId())
+                .isEqualTo(capitan);
+    }
+
     // --- escenario ----------------------------------------------------------
 
     private long inscripcionIndividual(long torneoId, long usuario, String estado) {
