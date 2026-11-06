@@ -73,11 +73,14 @@ class TorneoPublicoControllerTest {
                 Instant.parse("2026-11-05T10:00:00Z"),
                 null);
 
-        when(torneoPublicoService.listarPublicos(eq("Fútbol 5"), eq(EstadoTorneo.INSCRIPCION_ABIERTA), any(Pageable.class)))
+        when(torneoPublicoService.listarPublicos(
+                        eq("futbol"), eq("Fútbol 5"), eq(Modalidad.PRESENCIAL), eq(EstadoTorneo.INSCRIPCION_ABIERTA), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(resumen), PageRequest.of(0, 20), 1));
 
         mockMvc.perform(get("/api/v1/torneos/resumen")
+                        .param("q", "futbol")
                         .param("disciplina", "Fútbol 5")
+                        .param("modalidad", "PRESENCIAL")
                         .param("estado", "INSCRIPCION_ABIERTA")
                         .param("page", "0")
                         .param("size", "20"))
@@ -87,7 +90,8 @@ class TorneoPublicoControllerTest {
                 .andExpect(jsonPath("$.content[0].pozoEstimado").value(56000.00))
                 .andExpect(jsonPath("$.page.totalElements").value(1));
 
-        verify(torneoPublicoService).listarPublicos(eq("Fútbol 5"), eq(EstadoTorneo.INSCRIPCION_ABIERTA), any(Pageable.class));
+        verify(torneoPublicoService).listarPublicos(
+                eq("futbol"), eq("Fútbol 5"), eq(Modalidad.PRESENCIAL), eq(EstadoTorneo.INSCRIPCION_ABIERTA), any(Pageable.class));
     }
 
     @Test
