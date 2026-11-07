@@ -23,7 +23,6 @@ import com.hydra.pica.plataforma_pica.rifa.repository.PremioRifaRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,7 +34,8 @@ import org.springframework.transaction.annotation.Transactional;
  * rifa pasa a SORTEADA y queda en la auditoría con la semilla, el compromiso y los ganadores.
  *
  * <p>El organizador sortea desde {@code fechaSorteo}, que es parte del compromiso; antes, 409 SORTEO_ANTICIPADO. Con
- * {@code app.rifas.sorteo-anticipado=true} (solo para la demo) puede sortear apenas se cierra la venta.
+ * {@code app.rifas.sorteo-anticipado=true} (solo para la demo) el cierre a mano adelanta {@code fechaSorteo} a unos
+ * segundos después del cierre ({@link CierreVentaService}), así puede sortear enseguida.
  */
 @Service
 @RequiredArgsConstructor
@@ -50,9 +50,6 @@ public class SorteoRifaService {
     private final RifaService rifaService;
     private final ApplicationEventPublisher eventos;
 
-    @Value("${app.rifas.sorteo-anticipado:false}")
-    private boolean anticipado;
-
     @Transactional
     public RifaDetalle sortear(Long organizadorId, Long id) {
         Rifa rifa = rifaRepository.buscarBloqueado(id)
@@ -62,7 +59,7 @@ public class SorteoRifaService {
             throw new ConflictoException(CodigoError.RIFA_NO_EDITABLE,
                     "La rifa " + id + " está " + rifa.getEstado() + ": solo se sortea una CERRADA");
         }
-        if (!anticipado && Instant.now().isBefore(rifa.getSorteadaEn())) {
+        if (Instant.now().isBefore(rifa.getSorteadaEn())) {
             throw new ConflictoException(CodigoError.SORTEO_ANTICIPADO,
                     "La rifa " + id + " se sortea desde la fecha comprometida: " + rifa.getSorteadaEn());
         }

@@ -51,6 +51,7 @@ public class RifaPublicaService {
     private final PremioRifaRepository premioRifaRepository;
     private final NumeroRepository numeroRepository;
     private final RifaProperties rifaProperties;
+    private final Drand drand;
 
     /**
      * En venta y con la venta sin terminar, también las que todavía no empezaron. Primero las que cierran antes; el
@@ -121,7 +122,8 @@ public class RifaPublicaService {
         List<GanadorRifa> premios = premioRifaRepository.buscarPorRifa(rifa.getId()).stream()
                 .map(p -> GanadorRifa.de(p, p.getNumeroGanador() == null ? null : compradores.get(p.getNumeroGanador())))
                 .toList();
-        return SorteoRifaDetalle.de(rifa, listaSellada(id), premios);
+        return SorteoRifaDetalle.de(rifa, listaSellada(id), premios,
+                rifa.getSemillaRonda() == null ? null : drand.url(rifa.getSemillaRonda()));
     }
 
     private Rifa buscarPublica(Long id) {

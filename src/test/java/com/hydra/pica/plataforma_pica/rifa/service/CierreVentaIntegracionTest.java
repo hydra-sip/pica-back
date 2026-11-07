@@ -2,6 +2,8 @@ package com.hydra.pica.plataforma_pica.rifa.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.within;
 
@@ -38,6 +40,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.AopTestUtils;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -65,6 +70,8 @@ class CierreVentaIntegracionTest {
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
+    // los tests no salen a internet: drand contesta un valor fijo por ronda
+    @MockitoSpyBean private Drand drand;
 
     private Long organizador;
     private Long comprador;
@@ -73,6 +80,10 @@ class CierreVentaIntegracionTest {
 
     @BeforeEach
     void escenario() {
+        doAnswer(i -> {
+            long ronda = i.getArgument(0);
+            return new Drand.Pulso(ronda, SelloTorneo.sha256("ronda:" + ronda), "firma");
+        }).when(drand).pulso(anyLong());
         organizador = usuario("org_cierre").getId();
         comprador = usuario("comprador_cierre").getId();
         otro = usuario("otro_cierre").getId();
@@ -137,6 +148,54 @@ class CierreVentaIntegracionTest {
         assertThat(cerrada.listaSelladaEn()).isCloseTo(Instant.now(), within(1, ChronoUnit.MINUTES));
         assertThat(cerrada.listaHash()).hasSize(64);
         assertThat(auditoria(rifa)).isEqualTo("MANUAL");
+    }
+
+    // --- las fechas al cerrar (PICA-264) -------------------------------------------------------------
+
+    @Test
+    void aManoLaVentaTerminaAlCerrarYElSorteoQuedaEnSuFecha() {
+        RifaDetalle cerrada = cierreVentaService.cerrar(organizador, rifa);
+
+        assertThat(cerrada.ventaHasta()).isEqualTo(cerrada.listaSelladaEn());
+        assertThat(cerrada.fechaSorteo()).isCloseTo(SORTEO, within(1, ChronoUnit.MILLIS));
+    }
+
+    @Test
+    void siElSorteoYaPasoAlCerrarPasaAUnPeriodoDeDrandDespuesDelCierre() {
+        jdbc.update("UPDATE rifa SET venta_desde = now() - interval '3 hours', venta_hasta = now() - interval '2 hours', "
+                + "sorteada_en = now() - interval '1 hour' WHERE id = ?", rifa);
+        entityManager.clear();
+
+        cierreVentaService.cerrarSiVencio(rifa, Instant.now());
+        entityManager.flush();
+        entityManager.clear();
+
+        assertElSorteoEsUnPeriodoDespuesDelCierreYEntraEnElCompromiso();
+    }
+
+    @Test
+    void conElSorteoAnticipadoElCierreAManoAdelantaElSorteo() {
+        Object servicio = AopTestUtils.getTargetObject(cierreVentaService);
+        ReflectionTestUtils.setField(servicio, "anticipado", true);
+        try {
+            cierreVentaService.cerrar(organizador, rifa);
+            entityManager.flush();
+            entityManager.clear();
+
+            assertElSorteoEsUnPeriodoDespuesDelCierreYEntraEnElCompromiso();
+        } finally {
+            ReflectionTestUtils.setField(servicio, "anticipado", false);
+        }
+    }
+
+    private void assertElSorteoEsUnPeriodoDespuesDelCierreYEntraEnElCompromiso() {
+        RifaPublicaDetalle publica = rifaPublicaService.detalle(rifa);
+        assertThat(publica.fechaSorteo())
+                .isEqualTo(publica.compromisoPublicadoEn().plusSeconds(3).truncatedTo(ChronoUnit.SECONDS));
+        assertThat(publica.compromisoHash())
+                .isEqualTo(SelloTorneo.sha256(publica.listaHash() + ":" + publica.fechaSorteo()));
+        // la ronda del sorteo sale después de la vigente al publicar el compromiso
+        assertThat(drand.ronda(publica.fechaSorteo())).isGreaterThan(drand.ronda(publica.compromisoPublicadoEn()));
     }
 
     // --- pruebas de aceptación de HU-502 --------------------------------------------------------------

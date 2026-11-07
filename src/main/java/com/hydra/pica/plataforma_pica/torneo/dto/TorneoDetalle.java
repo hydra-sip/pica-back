@@ -15,7 +15,9 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * La ficha pública de un torneo publicado (HU-208). Los montos son estimados con el cupo completo, como en el paso 3
  * (HU-601): {@code pozoEstimado} es el pozo neto que se reparte en premios (la recaudación menos los gastos previstos)
  * y cada premio trae su monto. Quien se inscribe paga {@code totalAPagar}: el valor más los gastos administrativos
- * sellados al publicar (PICA-283). El reglamento puede venir escrito, en PDF o los dos.
+ * sellados al publicar (PICA-283).
+ * En los torneos por equipos, {@code tamanioEquipo} es el mínimo de la nómina y {@code nominaMaxima} el máximo, con
+ * suplentes; en los individuales, los dos son null. El reglamento puede venir escrito, en PDF o los dos.
  */
 public record TorneoDetalle(
         Long id,
@@ -32,6 +34,7 @@ public record TorneoDetalle(
         Integer cupoMinimo,
         Integer cupoDisponible,
         Integer tamanioEquipo,
+        Integer nominaMaxima,
         BigDecimal valorInscripcion,
         String moneda,
         BigDecimal pctGastosAdministrativos,
@@ -68,6 +71,7 @@ public record TorneoDetalle(
                 torneo.getCupoMinimo(),
                 cupoDisponible,
                 torneo.getTamanioEquipo(),
+                torneo.getNominaMaxima(),
                 torneo.getValorInscripcion(),
                 torneo.getMoneda(),
                 torneo.getPctGastosAdministrativos(),
