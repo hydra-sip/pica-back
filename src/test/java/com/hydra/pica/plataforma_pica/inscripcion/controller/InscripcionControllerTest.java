@@ -31,8 +31,10 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.domain.RolEnInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.TorneoDeInscripcion;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
@@ -58,7 +60,8 @@ import org.springframework.test.web.servlet.MockMvc;
 class InscripcionControllerTest {
 
     private static final Long PARTICIPANTE = 5L;
-    private static final TorneoDeInscripcion TORNEO = new TorneoDeInscripcion(3L, "Torneo Apertura F5", "torneo-apertura-f5");
+    private static final TorneoDeInscripcion TORNEO = new TorneoDeInscripcion(3L, "Torneo Apertura F5", "torneo-apertura-f5",
+            EstadoTorneo.INSCRIPCION_ABIERTA);
     private static final Instant CREADA = Instant.parse("2026-10-24T12:00:00Z");
 
     @Autowired
@@ -142,7 +145,9 @@ class InscripcionControllerTest {
                 .andExpect(jsonPath("$.torneo.id").value(3))
                 .andExpect(jsonPath("$.torneo.nombre").value("Torneo Apertura F5"))
                 .andExpect(jsonPath("$.torneo.slug").value("torneo-apertura-f5"))
-                .andExpect(jsonPath("$.usuarioId").value(PARTICIPANTE));
+                .andExpect(jsonPath("$.torneo.estado").value("INSCRIPCION_ABIERTA"))
+                .andExpect(jsonPath("$.usuarioId").value(PARTICIPANTE))
+                .andExpect(jsonPath("$.rol").value("INDIVIDUAL"));
     }
 
     @Test
@@ -259,7 +264,8 @@ class InscripcionControllerTest {
     void confirma() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         when(inscripcionService.confirmar(PARTICIPANTE, 7L, true))
-                .thenReturn(new InscripcionDetalle(7L, 3L, TORNEO, PARTICIPANTE, EstadoInscripcion.PENDIENTE_PAGO, CREADA, CREADA, CREADA, null, null));
+                .thenReturn(new InscripcionDetalle(7L, 3L, TORNEO, PARTICIPANTE, EstadoInscripcion.PENDIENTE_PAGO, CREADA, CREADA, CREADA, null, null,
+                        RolEnInscripcion.INDIVIDUAL));
 
         mockMvc.perform(put("/api/v1/inscripciones/7/confirmar").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reglamentoAceptado\":true}"))
@@ -377,7 +383,8 @@ class InscripcionControllerTest {
     void paga() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         when(inscripcionService.pagar(PARTICIPANTE, 7L))
-                .thenReturn(new InscripcionDetalle(7L, 3L, TORNEO, PARTICIPANTE, EstadoInscripcion.CONFIRMADA, CREADA, CREADA, CREADA, null, null));
+                .thenReturn(new InscripcionDetalle(7L, 3L, TORNEO, PARTICIPANTE, EstadoInscripcion.CONFIRMADA, CREADA, CREADA, CREADA, null, null,
+                        RolEnInscripcion.INDIVIDUAL));
 
         mockMvc.perform(post("/api/v1/inscripciones/7/pago"))
                 .andExpect(status().isOk())
@@ -451,7 +458,8 @@ class InscripcionControllerTest {
         when(inscripcionService.crear(eq(PARTICIPANTE), eq(1L), any()))
                 .thenThrow(new NoEncontradoException(CodigoError.EQUIPO_NO_ENCONTRADO, "no es tuyo"));
         when(inscripcionService.crear(eq(PARTICIPANTE), eq(2L), any()))
-                .thenThrow(new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO, "ya figura"));
+                .thenThrow(new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO, "ya figura")
+                        .con("jugador", new UsuarioPublico(9L, "juanp", "Juan", "Pérez")));
         when(inscripcionService.crear(eq(PARTICIPANTE), eq(3L), any()))
                 .thenThrow(new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA, "ya tiene"));
         String cuerpo = "{\"equipoId\":4,\"nomina\":[]}";
@@ -459,7 +467,11 @@ class InscripcionControllerTest {
         mockMvc.perform(post("/api/v1/torneos/1/inscripciones").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.codigo").value("EQUIPO_NO_ENCONTRADO"));
         mockMvc.perform(post("/api/v1/torneos/2/inscripciones").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
-                .andExpect(status().isConflict()).andExpect(jsonPath("$.codigo").value("JUGADOR_YA_INSCRIPTO"));
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.codigo").value("JUGADOR_YA_INSCRIPTO"))
+                .andExpect(jsonPath("$.jugador.id").value(9))
+                .andExpect(jsonPath("$.jugador.username").value("juanp"))
+                .andExpect(jsonPath("$.jugador.nombres").value("Juan"))
+                .andExpect(jsonPath("$.jugador.apellidos").value("Pérez"));
         mockMvc.perform(post("/api/v1/torneos/3/inscripciones").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.codigo").value("INSCRIPCION_DUPLICADA"));
     }
@@ -522,7 +534,7 @@ class InscripcionControllerTest {
     void resumenDePagoDeEquipo() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         when(inscripcionService.resumenPago(PARTICIPANTE, 7L)).thenReturn(new ResumenPago(7L,
-                new ResumenPago.TorneoPago(3L, "Copa"), null, new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones"),
+                new ResumenPago.TorneoPago(3L, "Copa"), null, new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones", PARTICIPANTE),
                 new BigDecimal("1500.00"), new BigDecimal("150.00"), new BigDecimal("1650.00"), "ARS", 8, 5L, CREADA));
 
         mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago"))
@@ -615,11 +627,12 @@ class InscripcionControllerTest {
 
     private InscripcionDetalle borradorDeEquipo() {
         return new InscripcionDetalle(7L, 3L, TORNEO, null, EstadoInscripcion.BORRADOR, null, CREADA, CREADA,
-                new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones"),
-                List.of(new UsuarioPublico(PARTICIPANTE, "capitan", "Ana", "Paz")));
+                new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones", PARTICIPANTE),
+                List.of(new UsuarioPublico(PARTICIPANTE, "capitan", "Ana", "Paz")), RolEnInscripcion.CAPITAN);
     }
 
     private InscripcionDetalle detalle() {
-        return new InscripcionDetalle(7L, 3L, TORNEO, PARTICIPANTE, EstadoInscripcion.BORRADOR, null, CREADA, CREADA, null, null);
+        return new InscripcionDetalle(7L, 3L, TORNEO, PARTICIPANTE, EstadoInscripcion.BORRADOR, null, CREADA, CREADA, null, null,
+                RolEnInscripcion.INDIVIDUAL);
     }
 }

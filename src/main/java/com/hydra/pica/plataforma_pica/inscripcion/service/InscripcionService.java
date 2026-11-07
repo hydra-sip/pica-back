@@ -140,13 +140,13 @@ public class InscripcionService {
         Inscripcion inscripcion = new Inscripcion();
         inscripcion.setTorneo(torneo);
         inscripcion.setUsuario(usuario);
-        return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
+        return detalleDe(inscripcionRepository.saveAndFlush(inscripcion), usuario.getId());
     }
 
     private InscripcionDetalle crearDeEquipo(Usuario capitan, Torneo torneo, InscripcionEquipoRequest request) {
         Inscripcion inscripcion = new Inscripcion();
         inscripcion.setTorneo(torneo);
-        return detalleDe(guardarEquipoYNomina(inscripcion, capitan, request));
+        return detalleDe(guardarEquipoYNomina(inscripcion, capitan, request), capitan.getId());
     }
 
     // Valida todo antes de escribir (el equipo, y que cada jugador exista, esté activo y sin bloqueo y no figure
@@ -210,7 +210,9 @@ public class InscripcionService {
             validarQueNoOrganiza(torneo, jugador.getId());
             if (nominaRepository.figuraEnOtraInscripcion(torneo.getId(), jugador.getId(), ACTIVAS, editada)) {
                 throw new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO,
-                        "El jugador " + jugador.getId() + " ya figura en otra inscripción activa del torneo " + torneo.getId());
+                        "El jugador " + jugador.getId() + " ya figura en otra inscripción activa del torneo " + torneo.getId())
+                        // para que el front diga cuál (CE4-4)
+                        .con("jugador", UsuarioPublico.desde(jugador));
             }
         }
     }
@@ -282,14 +284,14 @@ public class InscripcionService {
         nominaRepository.flush();
     }
 
-    // los de equipo llevan además el equipo y la nómina
-    private InscripcionDetalle detalleDe(Inscripcion inscripcion) {
+    // los de equipo llevan además el equipo y la nómina; el rol es el de usuarioId
+    private InscripcionDetalle detalleDe(Inscripcion inscripcion, Long usuarioId) {
         if (!inscripcion.esDeEquipo()) {
-            return InscripcionDetalle.de(inscripcion);
+            return InscripcionDetalle.de(inscripcion, null, usuarioId);
         }
         List<UsuarioPublico> nomina = nominaRepository.jugadoresDe(inscripcion.getId()).stream()
                 .map(UsuarioPublico::desde).toList();
-        return InscripcionDetalle.de(inscripcion, nomina);
+        return InscripcionDetalle.de(inscripcion, nomina, usuarioId);
     }
 
     /**
@@ -303,7 +305,7 @@ public class InscripcionService {
         if (!organiza && !esDe(inscripcion, usuarioId) && !figuraEnLaNomina(inscripcion, usuarioId)) {
             throw noEncontrada(id);
         }
-        return detalleDe(inscripcion);
+        return detalleDe(inscripcion, usuarioId);
     }
 
     /**
@@ -370,7 +372,7 @@ public class InscripcionService {
         if (gratis) {
             cerrarSiSeCompletoElCupo(torneo);
         }
-        return detalleDe(guardada);
+        return detalleDe(guardada, usuarioId);
     }
 
     private void exigirBorrador(Long id, EstadoInscripcion estado) {
@@ -428,7 +430,7 @@ public class InscripcionService {
         validarUsuario(capitan);
         validarTorneoAbierto(inscripcion.getTorneo());
         validarQueNoOrganiza(inscripcion.getTorneo(), capitan.getId());
-        return detalleDe(guardarEquipoYNomina(inscripcion, capitan, request));
+        return detalleDe(guardarEquipoYNomina(inscripcion, capitan, request), usuarioId);
     }
 
     /** Lo que va a pagar el participante o el capitán; solo se ve mientras la inscripción está pendiente de pago. */
@@ -461,7 +463,7 @@ public class InscripcionService {
         Torneo torneo = torneoBloqueado(torneoId);
         Inscripcion inscripcion = buscar(id);
         if (inscripcion.getEstado() == EstadoInscripcion.CONFIRMADA) {
-            return detalleDe(inscripcion);
+            return detalleDe(inscripcion, usuarioId);
         }
         // antes que el estado: el cierre cancela las pendientes, y a quien llega tarde le sirve saber que cerró
         validarTorneoAbierto(torneo);
@@ -487,7 +489,7 @@ public class InscripcionService {
         inscripcion.setEstado(EstadoInscripcion.CONFIRMADA);
         Inscripcion pagada = inscripcionRepository.saveAndFlush(inscripcion);
         cerrarSiSeCompletoElCupo(torneo);
-        return detalleDe(pagada);
+        return detalleDe(pagada, usuarioId);
     }
 
     // HU-206: la confirmación que completa el cupo cierra la inscripción en la misma transacción, con el torneo ya
@@ -498,11 +500,11 @@ public class InscripcionService {
         }
     }
 
-    /** Las que armó el usuario, la más nueva primero; el orden no se elige desde afuera. */
+    /** Mis inscripciones (HU-209), la más nueva primero; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
     public Page<InscripcionResumen> listarMias(Long usuarioId, Long torneoId, Pageable pageable) {
         Pageable masNuevaPrimero = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "id"));
-        return inscripcionRepository.buscarPropias(usuarioId, torneoId, masNuevaPrimero).map(InscripcionResumen::de);
+        return inscripcionRepository.buscarMias(usuarioId, torneoId, masNuevaPrimero).map(i -> InscripcionResumen.de(i, usuarioId));
     }
 
     /**
@@ -522,7 +524,7 @@ public class InscripcionService {
         }
         inscripcion.setEstado(EstadoInscripcion.BORRADOR);
         inscripcion.setReglamentoAceptadoEn(null);
-        return detalleDe(inscripcionRepository.saveAndFlush(inscripcion));
+        return detalleDe(inscripcionRepository.saveAndFlush(inscripcion), usuarioId);
     }
 
     @Transactional
@@ -567,7 +569,8 @@ public class InscripcionService {
         validarQueNoOrganiza(torneo, entra.getId());
         if (nominaRepository.figuraEnOtraInscripcion(torneoId, entra.getId(), ACTIVAS, id)) {
             throw new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO,
-                    "El jugador " + entra.getId() + " ya figura en otra inscripción activa del torneo " + torneoId);
+                    "El jugador " + entra.getId() + " ya figura en otra inscripción activa del torneo " + torneoId)
+                    .con("jugador", UsuarioPublico.desde(entra));
         }
 
         Equipo equipo = inscripcion.getEquipo();
@@ -576,7 +579,7 @@ public class InscripcionService {
         nominaRepository.flush();
         nominaRepository.saveAndFlush(new Nomina(entra.getId(), equipo.getId(), id));
         reemplazoRepository.saveAndFlush(new Reemplazo(inscripcion, equipo, sale, entra, inscripcion.titular()));
-        return detalleDe(inscripcion);
+        return detalleDe(inscripcion, usuarioId);
     }
 
     @Transactional(readOnly = true)

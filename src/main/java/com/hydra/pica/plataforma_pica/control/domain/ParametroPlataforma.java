@@ -11,7 +11,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 
 /**
- * Un valor que fija la plataforma (V26). Por ahora solo se lee: se cargan por migración y editarlos es HU-702.
+ * Un valor que fija la plataforma (V26). Se cargan por migración y el admin los edita (HU-702, PICA-282).
  */
 @Entity
 @Table(name = "parametro_plataforma")
@@ -35,4 +35,11 @@ public class ParametroPlataforma {
 
     @Column(name = "modificado_por", length = 100)
     private String modificadoPor;
+
+    /** {@code por} es el id del usuario, como en el resto de las columnas {@code *_por}. */
+    public void cambiar(BigDecimal valor, String por) {
+        this.valor = valor;
+        this.modificadoEn = Instant.now();
+        this.modificadoPor = por;
+    }
 }

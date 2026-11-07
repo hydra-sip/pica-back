@@ -211,6 +211,18 @@ class CheckinIntegracionTest {
     }
 
     @Test
+    void laDuracionNoPasaElMaximoDeLaPlataformaQueRigeAlConfigurar() {
+        jdbc.update("UPDATE parametro_plataforma SET valor = 15 WHERE clave = 'CHECKIN_DURACION_MAX_MIN'");
+
+        assertThatThrownBy(() -> torneoService.configurarCheckin(organizador, torneo, new CheckinTorneoRequest(30, 20)))
+                .satisfies(e -> assertThat(errores(e))
+                        .containsExactly(new ErrorCampo("duracion", ErrorCampo.Codigo.RANGO_INVALIDO,
+                                "La plataforma admite hasta 15 minutos de ventana")));
+        assertThat(torneoService.configurarCheckin(organizador, torneo, new CheckinTorneoRequest(30, 15))
+                .checkinDuracion()).isEqualTo(15);
+    }
+
+    @Test
     void soloElOrganizadorConfiguraYSoloConElTorneoPublicadoSinTerminar() {
         assertThatThrownBy(() -> torneoService.configurarCheckin(arbitro, torneo, new CheckinTorneoRequest(30, 20)))
                 .extracting("codigo").isEqualTo(CodigoError.TORNEO_NO_ENCONTRADO);
