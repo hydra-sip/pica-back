@@ -21,7 +21,7 @@
 #                        Railway, no la del front.
 #   PICA_ADMIN_USER      default admin
 #   PICA_ADMIN_PASSWORD  si no está, se pide
-#   PICA_DEMO_PASSWORD   la clave de los usuarios de la demo (default PicaDemo2026)
+#   PICA_DEMO_PASSWORD   la clave de los usuarios de la demo; si no está, se pide (el repo es público: no va acá)
 #
 # Necesita bash 4, curl y jq.
 
@@ -48,7 +48,11 @@ if [[ -z ${PICA_ADMIN_PASSWORD:-} ]]; then
     read -rsp "Clave de $ADMIN_USER: " PICA_ADMIN_PASSWORD
     echo
 fi
-CLAVE=${PICA_DEMO_PASSWORD:-PicaDemo2026}
+if [[ -z ${PICA_DEMO_PASSWORD:-} ]]; then
+    read -rsp "Clave para los usuarios de la demo: " PICA_DEMO_PASSWORD
+    echo
+fi
+CLAVE=$PICA_DEMO_PASSWORD
 
 iso() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
 local_() { TZ=$ZONA date -d "@$1" '+%d/%m %H:%M'; }
@@ -122,7 +126,7 @@ usuario() {
     printf '%s' "$id"
 }
 
-echo "Usuarios (clave $CLAVE)"
+echo "Usuarios"
 ORG_ID=$(usuario demo_organizador Olga Organizadora ORGANIZADOR)
 ARB_ID=$(usuario demo_arbitro Arturo Arbitro ARBITRO)
 P=demo_${CLAVE_TORNEO}
@@ -211,5 +215,5 @@ CIERRA=$(date -d "$(jq -r .cierraEn <<<"$VENTANA_JSON")" +%s)
 echo
 echo "Listo: torneo $TORNEO, final (partido $PARTIDO) el $(local_ "$PARTIDO_EPOCH")"
 echo "  check-in de $(local_ "$ABRE") a $(local_ "$CIERRA") (con 2 minutos de tolerancia en cada punta)"
-echo "  capitanes: ${P}_capitan1 ($EQUIPO1) y ${P}_capitan2 ($EQUIPO2), clave $CLAVE"
+echo "  capitanes: ${P}_capitan1 ($EQUIPO1) y ${P}_capitan2 ($EQUIPO2)"
 echo "  organizador demo_organizador, árbitro demo_arbitro"
