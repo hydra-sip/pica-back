@@ -451,7 +451,8 @@ class InscripcionControllerTest {
         when(inscripcionService.crear(eq(PARTICIPANTE), eq(1L), any()))
                 .thenThrow(new NoEncontradoException(CodigoError.EQUIPO_NO_ENCONTRADO, "no es tuyo"));
         when(inscripcionService.crear(eq(PARTICIPANTE), eq(2L), any()))
-                .thenThrow(new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO, "ya figura"));
+                .thenThrow(new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO, "ya figura")
+                        .con("jugador", new UsuarioPublico(9L, "juanp", "Juan", "Pérez")));
         when(inscripcionService.crear(eq(PARTICIPANTE), eq(3L), any()))
                 .thenThrow(new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA, "ya tiene"));
         String cuerpo = "{\"equipoId\":4,\"nomina\":[]}";
@@ -459,7 +460,11 @@ class InscripcionControllerTest {
         mockMvc.perform(post("/api/v1/torneos/1/inscripciones").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.codigo").value("EQUIPO_NO_ENCONTRADO"));
         mockMvc.perform(post("/api/v1/torneos/2/inscripciones").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
-                .andExpect(status().isConflict()).andExpect(jsonPath("$.codigo").value("JUGADOR_YA_INSCRIPTO"));
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.codigo").value("JUGADOR_YA_INSCRIPTO"))
+                .andExpect(jsonPath("$.jugador.id").value(9))
+                .andExpect(jsonPath("$.jugador.username").value("juanp"))
+                .andExpect(jsonPath("$.jugador.nombres").value("Juan"))
+                .andExpect(jsonPath("$.jugador.apellidos").value("Pérez"));
         mockMvc.perform(post("/api/v1/torneos/3/inscripciones").contentType(MediaType.APPLICATION_JSON).content(cuerpo))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.codigo").value("INSCRIPCION_DUPLICADA"));
     }

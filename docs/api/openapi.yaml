@@ -2679,7 +2679,7 @@ components:
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
-        JUGADOR_YA_INSCRIPTO (figura en otra inscripción activa del torneo, como capitán o en la nómina) ·
+        JUGADOR_YA_INSCRIPTO (figura en otra inscripción activa del torneo, como capitán o en la nómina; cuál va en `jugador`) ·
         NOMINA_INVALIDA (al confirmar: menos jugadores que el tamaño de equipo, más que el máximo de nómina, o
         sin el capitán) · REEMPLAZO_INVALIDO (el jugador que sale no está en la nómina, es el capitán, el que entra
         ya está en la nómina o la inscripción es individual) ·
@@ -2794,6 +2794,11 @@ components:
         campos: {type: array, items: {type: string}, description: 'Solo en CAMPOS_BLOQUEADOS: los campos de InformacionTorneoRequest que cambiaban y ya no se pueden cambiar'}
         abreEn: {type: string, format: date-time, description: 'Solo en CHECKIN_FUERA_DE_VENTANA: cuándo abre la ventana, sin la tolerancia'}
         cierraEn: {type: string, format: date-time, description: 'Solo en CHECKIN_FUERA_DE_VENTANA: cuándo cierra la ventana, sin la tolerancia'}
+        jugador:
+          allOf: [{$ref: '#/components/schemas/UsuarioPublico'}]
+          description: >-
+            Solo en JUGADOR_YA_INSCRIPTO: el que ya figura en otra inscripción activa del torneo (puede ser el propio
+            capitán; en el reemplazo, el que entra), para que el front diga cuál.
       examples:
         - {type: 'about:blank', title: Bad Request, status: 400, detail: Hay campos inválidos, instance: /api/v1/auth/registro,
          codigo: VALIDACION, errores: [{campo: password, codigo: PASSWORD_DEBIL, mensaje: 'Mínimo 8, una mayúscula y un número'}]}
@@ -4158,7 +4163,8 @@ components:
         cupoMaximo: {type: integer}
         cupoMinimo: {type: integer}
         cupoDisponible: {type: integer}
-        tamanioEquipo: {type: [integer, 'null']}
+        tamanioEquipo: {type: [integer, 'null'], description: 'Solo por equipos: el mínimo de jugadores de la nómina'}
+        nominaMaxima: {type: [integer, 'null'], description: 'Solo por equipos: el máximo de jugadores de la nómina, con suplentes'}
         valorInscripcion: {type: number}
         moneda: {type: string, examples: [ARS]}
         pctGastosAdministrativos: {type: [number, 'null'], description: 'Sellado al publicar; null en los publicados antes de que existiera (sin gastos)'}

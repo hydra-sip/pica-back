@@ -216,6 +216,24 @@ class TorneoPublicoServiceIntegracionTest {
         assertThat(detalle.totalAPagar()).isEqualByComparingTo("3300.00");
         assertThat(detalle.reglamentoTexto()).isEqualTo("Dos sets a 6 games.");
         assertThat(detalle.organizador().username()).isEqualTo(organizador.getUsername());
+        // individual: sin nómina
+        assertThat(detalle.tamanioEquipo()).isNull();
+        assertThat(detalle.nominaMaxima()).isNull();
+    }
+
+    @Test
+    @DisplayName("detallePublico: en un torneo por equipos trae el mínimo y el máximo de la nómina (CE4-4)")
+    void detallePorEquiposTraeLaNominaMaxima() {
+        Torneo torneo = crearTorneo("t-equipos", "Torneo Equipos", "Fútbol 5", EstadoTorneo.INSCRIPCION_ABIERTA, null);
+        torneo.setTipoParticipante(TipoParticipante.EQUIPO);
+        torneo.setTamanioEquipo(5);
+        torneo.setNominaMaxima(8);
+        torneoRepository.save(torneo);
+
+        TorneoDetalle detalle = torneoPublicoService.detallePublico("t-equipos");
+
+        assertThat(detalle.tamanioEquipo()).isEqualTo(5);
+        assertThat(detalle.nominaMaxima()).isEqualTo(8);
     }
 
     @Test

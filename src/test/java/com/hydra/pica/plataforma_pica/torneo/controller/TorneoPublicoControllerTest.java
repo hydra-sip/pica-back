@@ -108,6 +108,7 @@ class TorneoPublicoControllerTest {
                 4,
                 12,
                 5,
+                8,
                 new BigDecimal("5000.00"),
                 "ARS",
                 new BigDecimal("10.00"),
@@ -131,6 +132,8 @@ class TorneoPublicoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.slug").value("copa-verano"))
                 .andExpect(jsonPath("$.cupoDisponible").value(12))
+                .andExpect(jsonPath("$.tamanioEquipo").value(5))
+                .andExpect(jsonPath("$.nominaMaxima").value(8))
                 .andExpect(jsonPath("$.pozoEstimado").value(56000.00))
                 .andExpect(jsonPath("$.totalAPagar").value(5500.00))
                 .andExpect(jsonPath("$.reglamentoUrl").value("https://pica.local/reglamento.pdf"))
