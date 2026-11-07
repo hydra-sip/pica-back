@@ -2265,9 +2265,12 @@ paths:
       x-jira: PICA-234
       x-owner: Mateo
       description: >-
-        Las que armó el usuario logueado: la suya en un torneo individual, o las de sus equipos si es capitán. No
-        incluye las de equipos en los que solo figura en la nómina. Trae todos los estados, canceladas incluidas
-        (un equipo no puede volver a inscribirse en un torneo donde ya tiene una cancelada). La más nueva primero;
+        Las que armó el usuario logueado (la suya en un torneo individual, o las de sus equipos si es capitán), en
+        todos los estados, canceladas incluidas (un equipo no puede volver a inscribirse en un torneo donde ya tiene
+        una cancelada). Además, las confirmadas de equipos ajenos en cuya nómina figura (HU-209, PICA-324); de esos
+        equipos no trae borradores, pendientes ni canceladas. Cada inscripción sale una sola vez, con el `rol` del
+        usuario: el capitán, que también está en la nómina, sale como `CAPITAN`. Nunca trae `ORGANIZADOR`: el
+        organizador no se inscribe en su propio torneo. La más nueva primero;
         `sort` se ignora. Con `torneoId` solo las de ese torneo: así el front sabe si hay un borrador para
         retomar antes de abrir el formulario en blanco. Trae el resumen; el equipo y la nómina se piden con
         `GET /inscripciones/{id}`.
@@ -3771,10 +3774,11 @@ components:
         cierreInscripcionEn: {type: string, format: date-time}
     EquipoInscripto:
       type: object
-      required: [id, nombre]
+      required: [id, nombre, capitanId]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         nombre: {type: string}
+        capitanId: {$ref: '#/components/schemas/Id', description: 'Para marcar al capitán en la nómina, mire quien mire (HU-209)'}
     EquipoResumen:
       type: object
       required: [id, nombre]
@@ -3784,7 +3788,7 @@ components:
         nombre: {type: string}
     TorneoDeInscripcion:
       type: object
-      required: [id, nombre, slug]
+      required: [id, nombre, slug, estado]
       description: >-
         El torneo de una inscripción, para mostrarlo y llegar a su ficha pública con `GET /torneos/slug/{slug}`.
         El `slug` es null mientras el torneo no se publicó, cosa que no pasa con uno que ya tiene inscripciones.
@@ -3792,12 +3796,20 @@ components:
         id: {$ref: '#/components/schemas/Id'}
         nombre: {type: string}
         slug: {type: [string, 'null']}
+        estado: {$ref: '#/components/schemas/EstadoTorneo'}
+    RolEnInscripcion:
+      type: string
+      enum: [CAPITAN, JUGADOR, INDIVIDUAL, ORGANIZADOR]
+      description: >-
+        Con qué rol participa en la inscripción el usuario que la consulta: `CAPITAN` del equipo, `JUGADOR` de la
+        nómina sin ser el capitán, `INDIVIDUAL` en un torneo individual, u `ORGANIZADOR` del torneo (solo en el
+        detalle; el organizador no puede inscribirse en su torneo). Nunca es null.
     InscripcionResumen:
       type: object
-      required: [id, torneoId, torneo, estado, creadoEn, modificadoEn]
+      required: [id, torneoId, torneo, estado, creadoEn, modificadoEn, rol]
       description: >-
         Una inscripción sin la nómina. La individual lleva `usuarioId`; la de equipo lleva `equipo` y su `usuarioId`
-        es null, como en `InscripcionDetalle`.
+        es null, como en `InscripcionDetalle`. `rol` es el del usuario que la consulta.
       properties:
         id: {$ref: '#/components/schemas/Id'}
         torneoId: {$ref: '#/components/schemas/Id'}
@@ -3809,6 +3821,7 @@ components:
         equipo:
           oneOf: [{$ref: '#/components/schemas/EquipoInscripto'}, {type: 'null'}]
           description: Solo en la de equipo
+        rol: {$ref: '#/components/schemas/RolEnInscripcion'}
     InscripcionDelTorneo:
       type: object
       required: [id, estado, creadoEn]
@@ -3843,10 +3856,11 @@ components:
           description: Ids de los demás jugadores de este torneo. Los que no son integrantes se suman al equipo.
     InscripcionDetalle:
       type: object
-      required: [id, torneoId, torneo, estado, creadoEn, modificadoEn]
+      required: [id, torneoId, torneo, estado, creadoEn, modificadoEn, rol]
       description: >-
         Una inscripción. La individual lleva `usuarioId`; la de equipo lleva `equipo` y `nomina`, y su `usuarioId`
-        es null (el capitán es el del equipo).
+        es null (el capitán es el del equipo). `rol` es el de quien la pide (HU-209, PICA-324): con `JUGADOR` u
+        `ORGANIZADOR` el front la muestra en solo lectura.
       properties:
         id: {$ref: '#/components/schemas/Id'}
         torneoId: {$ref: '#/components/schemas/Id'}
@@ -3863,6 +3877,7 @@ components:
           type: [array, 'null']
           description: Solo en la de equipo; incluye siempre al capitán
           items: {$ref: '#/components/schemas/UsuarioPublico'}
+        rol: {$ref: '#/components/schemas/RolEnInscripcion'}
     ReemplazoRequest:
       type: object
       required: [saleUsuarioId, entraUsuarioId]

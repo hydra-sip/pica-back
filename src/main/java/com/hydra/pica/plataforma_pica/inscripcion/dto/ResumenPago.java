@@ -32,7 +32,7 @@ public record ResumenPago(
         UsuarioPublico participante = null;
         InscripcionDetalle.EquipoInscripto equipo = null;
         if (inscripcion.esDeEquipo()) {
-            equipo = new InscripcionDetalle.EquipoInscripto(inscripcion.getEquipo().getId(), inscripcion.getEquipo().getNombre());
+            equipo = InscripcionDetalle.EquipoInscripto.de(inscripcion.getEquipo());
         } else {
             participante = UsuarioPublico.desde(inscripcion.getUsuario());
         }
