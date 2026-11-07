@@ -5,7 +5,7 @@ package com.hydra.pica.plataforma_pica.rifa.dto;
  * (PICA-219) para que el front muestre qué corregir y en qué paso.
  */
 public enum FaltantePublicacion {
-    /** No están cargadas las fechas de venta. */
+    /** No está cargado el fin de la venta; sin inicio, la venta arranca al publicar (PICA-308). */
     VENTANA,
     /**
      * El fin de la venta ya pasó: hay que actualizarlo en el paso 1. Un inicio pasado sí se acepta: la venta

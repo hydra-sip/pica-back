@@ -123,6 +123,21 @@ class RifaServiceIntegracionTest {
     }
 
     @Test
+    void conElFinYSinInicioSeGuardaParaArrancarAlPublicar() {
+        RifaDetalle rifa = rifaService.crear(organizador, request(1, 10, null, EN_UNA_SEMANA));
+
+        assertThat(rifa.ventaDesde()).isNull();
+        assertThat(rifa.ventaHasta()).isNotNull();
+    }
+
+    @Test
+    void sinInicioElFinNoPuedeSerPasado() {
+        Instant ayer = Instant.now().minus(1, ChronoUnit.DAYS);
+        assertThatValidacion(() -> rifaService.crear(organizador, request(1, 10, null, ayer)))
+                .containsEntry("ventaHasta", ErrorCampo.Codigo.VENTANA_INVALIDA);
+    }
+
+    @Test
     void ventanaQueTerminaAntesDeEmpezarEsInvalida() {
         assertThatValidacion(() -> rifaService.crear(organizador, request(1, 10, EN_UNA_SEMANA, MANIANA)))
                 .containsEntry("ventaHasta", ErrorCampo.Codigo.VENTANA_INVALIDA);
@@ -329,6 +344,18 @@ class RifaServiceIntegracionTest {
         rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("100", null)));
 
         assertThat(rifaService.publicar(organizador, creada.id()).estado()).isEqualTo(EstadoRifa.EN_VENTA);
+    }
+
+    @Test
+    void sinInicioLaVentaArrancaAlPublicar() {
+        RifaDetalle creada = rifaService.crear(organizador, requestConSorteo(null, EN_UNA_SEMANA, SORTEO));
+        rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("100", null)));
+        Instant antes = Instant.now();
+
+        RifaDetalle publicada = rifaService.publicar(organizador, creada.id());
+
+        assertThat(publicada.estado()).isEqualTo(EstadoRifa.EN_VENTA);
+        assertThat(publicada.ventaDesde()).isBetween(antes.minus(1, ChronoUnit.SECONDS), Instant.now());
     }
 
     @Test
@@ -569,6 +596,18 @@ class RifaServiceIntegracionTest {
 
         assertThat(publicada.estado()).isEqualTo(EstadoRifa.EN_VENTA);
         assertThat(publicada.pctDestinadoTorneo()).isEqualTo(35);
+    }
+
+    @Test
+    void sinInicioConTorneoSeControlaElFinYSePublica() {
+        Long torneo = torneo(organizador, Instant.now().minus(1, ChronoUnit.DAYS), EN_UNA_SEMANA);
+        assertThatValidacion(() -> rifaService.crear(organizador, conTorneo(null, SORTEO, SORTEO.plus(1, ChronoUnit.DAYS), torneo, 0)))
+                .containsEntry("ventaHasta", ErrorCampo.Codigo.VENTANA_INVALIDA);
+
+        RifaDetalle creada = rifaService.crear(organizador, conTorneo(null, MANIANA, SORTEO, torneo, 0));
+        rifaService.reemplazarPremios(organizador, creada.id(), List.of(premio("100", null)));
+
+        assertThat(rifaService.publicar(organizador, creada.id()).ventaDesde()).isNotNull();
     }
 
     @Test
