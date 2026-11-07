@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.common.error;
 
+import com.hydra.pica.plataforma_pica.common.web.RequestIdFilter;
 import jakarta.validation.ConstraintViolationException;
 import java.util.List;
 import java.util.Objects;
@@ -196,6 +197,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     private static ProblemDetail problema(HttpStatus status, CodigoError codigo, String detalle, List<ErrorCampo> errores) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(status, detalle);
         pd.setProperty("codigo", codigo.name());
+        RequestIdFilter.agregarA(pd);
         if (errores != null && !errores.isEmpty()) {
             pd.setProperty("errores", errores);
         }
