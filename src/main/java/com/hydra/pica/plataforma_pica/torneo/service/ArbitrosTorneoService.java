@@ -12,10 +12,12 @@ import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionReposito
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignado;
 import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignadoId;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.ArbitroDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.DesignarArbitroRequest;
+import com.hydra.pica.plataforma_pica.torneo.event.ArbitroDesignadoEnTorneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.ArbitroDesignadoRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
@@ -24,6 +26,7 @@ import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioSpecifications;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -33,7 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Los árbitros del torneo (HU-203, PICA-236): el organizador designa usuarios con rol ARBITRO y elige qué les
- * delega. La designación nace PENDIENTE hasta que el árbitro la acepta (HU-807).
+ * delega. La designación nace PENDIENTE hasta que el árbitro la acepta o la rechaza (HU-807,
+ * {@link DesignacionesService}); a uno que rechazó se lo puede volver a designar.
  *
  * Se cambian desde el borrador hasta que el torneo termina, para poder reemplazar a uno que no puede ir. El torneo
  * queda bloqueado mientras tanto, como en el asistente.
@@ -55,6 +59,7 @@ public class ArbitrosTorneoService {
     private final InscripcionRepository inscripcionRepository;
     private final NominaRepository nominaRepository;
     private final PartidoRepository partidoRepository;
+    private final ApplicationEventPublisher eventos;
 
     /** Usuarios activos con rol ARBITRO, por usuario, nombres o apellidos; sin texto, todos. */
     @Transactional(readOnly = true)
@@ -83,13 +88,21 @@ public class ArbitrosTorneoService {
             throw new ConflictoException(CodigoError.USUARIO_NO_ES_ARBITRO,
                     "El usuario " + usuario.getId() + " no es un árbitro activo");
         }
-        if (arbitroRepository.existsById(new ArbitroDesignadoId(id, usuario.getId()))) {
+        ArbitroDesignado previo = arbitroRepository.findById(new ArbitroDesignadoId(id, usuario.getId())).orElse(null);
+        if (previo != null && previo.getEstado() != EstadoDesignacion.RECHAZADO) {
             throw new ConflictoException(CodigoError.ARBITRO_DUPLICADO,
                     "El usuario " + usuario.getId() + " ya es árbitro del torneo " + id);
         }
         validarQueNoJuegaNiOrganiza(torneo, usuario.getId());
-        ArbitroDesignado arbitro = arbitroRepository.saveAndFlush(
-                new ArbitroDesignado(torneo, usuario, request.permisos()));
+        ArbitroDesignado arbitro;
+        if (previo != null) {
+            // Había rechazado: se le vuelve a preguntar, con los permisos de ahora.
+            previo.volverADesignar(request.permisos());
+            arbitro = arbitroRepository.saveAndFlush(previo);
+        } else {
+            arbitro = arbitroRepository.saveAndFlush(new ArbitroDesignado(torneo, usuario, request.permisos()));
+        }
+        eventos.publishEvent(new ArbitroDesignadoEnTorneo(id, usuario.getId()));
         return ArbitroDetalle.de(arbitro);
     }
 

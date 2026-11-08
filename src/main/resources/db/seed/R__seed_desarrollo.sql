@@ -11,6 +11,7 @@
 --   - "Torneo cerrado" (dev-torneo-cerrado): individual, inscripción cerrada con dev_jugador1 a 4,
 --     el árbitro designado, la Mesa 1 y el bracket: dos semifinales con sus lados y la final vacía.
 --   - Cada pago es un movimiento CONFIRMADO en la billetera del que paga, como lo deja el cobro simulado.
+--   - Cada jugador arranca con una carga de $100.000 para pagar con saldo (HU-603).
 -- Las fechas son relativas al momento en que corre.
 
 -- ---------------------------------------------------------------------------------------------------
@@ -61,6 +62,23 @@ SELECT u.id, 'SEED', 'SEED'
 FROM usuario u
 WHERE u.username LIKE 'dev\_jugador%'
 ON CONFLICT DO NOTHING;
+
+-- La carga inicial, una sola vez por jugador: el movimiento y el disponible van juntos.
+WITH cargas AS (
+    INSERT INTO movimiento (billetera_id, tipo, monto, saldo_resultante, estado, referencia_externa, descripcion,
+                            creado_por, modificado_por)
+    SELECT b.id, 'CARGA', 100000.00, b.saldo_disponible + 100000.00, 'CONFIRMADO', 'seed-carga-' || u.username,
+           'Carga inicial del seed', 'SEED', 'SEED'
+    FROM billetera b
+    JOIN usuario u ON u.id = b.usuario_id
+    WHERE u.username LIKE 'dev\_jugador%'
+      AND NOT EXISTS (SELECT 1 FROM movimiento m WHERE m.referencia_externa = 'seed-carga-' || u.username)
+    RETURNING billetera_id, monto
+)
+UPDATE billetera b
+SET saldo_disponible = b.saldo_disponible + c.monto
+FROM cargas c
+WHERE b.id = c.billetera_id;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Equipos (el capitán se chequea al final de la transacción, así que va después del equipo)
@@ -243,3 +261,34 @@ FROM ticket tk
 CROSS JOIN unnest(ARRAY[7, 13, 42]) AS n
 WHERE tk.codigo = 'SEED-0001'
 ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Custodia (HU-603): los pagos del seed entran a la de su torneo o su rifa, como los de antes en V39
+-- ---------------------------------------------------------------------------------------------------
+
+INSERT INTO custodia (torneo_id, creado_por, modificado_por)
+SELECT DISTINCT i.torneo_id, 'SEED', 'SEED'
+FROM movimiento m
+JOIN inscripcion i ON i.id = m.inscripcion_id
+WHERE m.tipo IN ('INSCRIPCION', 'COMISION')
+ON CONFLICT DO NOTHING;
+
+UPDATE movimiento m
+SET custodia_id = c.id
+FROM inscripcion i
+JOIN custodia c ON c.torneo_id = i.torneo_id
+WHERE m.inscripcion_id = i.id
+  AND m.tipo IN ('INSCRIPCION', 'COMISION')
+  AND m.custodia_id IS NULL;
+
+INSERT INTO custodia (rifa_id, creado_por, modificado_por)
+SELECT DISTINCT t.rifa_id, 'SEED', 'SEED'
+FROM ticket t
+ON CONFLICT DO NOTHING;
+
+UPDATE movimiento m
+SET custodia_id = c.id
+FROM ticket t
+JOIN custodia c ON c.rifa_id = t.rifa_id
+WHERE m.id = t.movimiento_id
+  AND m.custodia_id IS NULL;

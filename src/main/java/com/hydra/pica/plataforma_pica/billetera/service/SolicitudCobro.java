@@ -12,10 +12,12 @@ import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
  *
  * @param usuarioId         quien paga
  * @param tipo              INSCRIPCION, COMPRA_NUMERO o COMISION
- * @param torneoId          opcional
+ * @param torneoId          opcional; sin rifa, el pago entra a la custodia del torneo
  * @param inscripcionId     obligatorio en una INSCRIPCION
  * @param claveIdempotencia la arma quien cobra ("inscripcion-42", la clave del ticket...): con la
  *                          misma clave no se cobra dos veces
+ * @param rifaId            en una compra de números y sus gastos: el pago entra a la custodia de la rifa, aunque la
+ *                          rifa tenga torneo (HU-603)
  */
 public record SolicitudCobro(
         Long usuarioId,
@@ -24,10 +26,17 @@ public record SolicitudCobro(
         Long torneoId,
         Long inscripcionId,
         String claveIdempotencia,
-        String descripcion) {
+        String descripcion,
+        Long rifaId) {
 
     private static final Set<TipoMovimiento> TIPOS_DE_PAGO =
             Set.of(TipoMovimiento.INSCRIPCION, TipoMovimiento.COMPRA_NUMERO, TipoMovimiento.COMISION);
+
+    /** Un pago que no es de una rifa. */
+    public SolicitudCobro(Long usuarioId, TipoMovimiento tipo, BigDecimal monto, Long torneoId, Long inscripcionId,
+            String claveIdempotencia, String descripcion) {
+        this(usuarioId, tipo, monto, torneoId, inscripcionId, claveIdempotencia, descripcion, null);
+    }
 
     public SolicitudCobro {
         Objects.requireNonNull(usuarioId, "usuarioId");

@@ -36,6 +36,15 @@ jobs:
           name: surefire-reports
           path: target/surefire-reports/
 
+      # Si fallan los tests no llega a generarse y no sube nada; si falla el mínimo de cobertura, sí
+      - name: Guardar reporte de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco
+          path: target/site/jacoco/
+          if-no-files-found: ignore
+
   # En los PR solo comprueba que el Dockerfile construye; en dev la publica
   imagen:
     needs: verify

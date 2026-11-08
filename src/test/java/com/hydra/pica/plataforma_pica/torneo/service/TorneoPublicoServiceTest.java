@@ -114,7 +114,7 @@ class TorneoPublicoServiceTest {
         when(inscripcionRepository.contarPorTorneoIdInYEstado(any(), eq(EstadoInscripcion.CONFIRMADA)))
                 .thenReturn(List.of(conteo));
 
-        Page<TorneoResumen> resultado = service.listarPublicos("Fútbol 5", EstadoTorneo.INSCRIPCION_ABIERTA, pageable);
+        Page<TorneoResumen> resultado = service.listarPublicos(null, "Fútbol 5", null, EstadoTorneo.INSCRIPCION_ABIERTA, pageable);
 
         assertThat(resultado.getContent()).hasSize(1);
         TorneoResumen resumen = resultado.getContent().get(0);
@@ -133,7 +133,7 @@ class TorneoPublicoServiceTest {
         when(torneoRepository.findAll(any(Specification.class), eq(pageable)))
                 .thenReturn(Page.empty(pageable));
 
-        Page<TorneoResumen> resultado = service.listarPublicos("Tenis", null, pageable);
+        Page<TorneoResumen> resultado = service.listarPublicos(null, "Tenis", null, null, pageable);
 
         assertThat(resultado.getContent()).isEmpty();
     }

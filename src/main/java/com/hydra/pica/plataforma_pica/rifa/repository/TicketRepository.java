@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -15,6 +16,8 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
     List<Ticket> findByCompradorIdOrderByIdDesc(Long compradorId);
 
     boolean existsByRifaIdAndCompradorId(Long rifaId, Long compradorId);
+
+    List<Ticket> findByMovimientoIdIn(Collection<Long> movimientoIds);
 
 }
 

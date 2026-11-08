@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.util.List;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import org.junit.jupiter.api.Test;
@@ -30,6 +32,25 @@ class ParametrosPlataformaIntegracionTest {
     }
 
     @Test
+    void elMargenEntreElCierreYElInicioVienePreconfiguradoEnUnaHora() {
+        assertThat(parametrosPlataforma.margenCierreInicio()).isEqualTo(Duration.ofHours(1));
+    }
+
+    @Test
+    void elMargenSonMinutosEnteros() {
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE parametro_plataforma SET valor = 1.5 WHERE clave = 'MARGEN_CIERRE_INICIO_MIN'"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void elMargenNoPuedeSerNegativo() {
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE parametro_plataforma SET valor = -1 WHERE clave = 'MARGEN_CIERRE_INICIO_MIN'"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
     void leeElValorVigente() {
         jdbc.update("UPDATE parametro_plataforma SET valor = 7.5 WHERE clave = 'GASTOS_ADMINISTRATIVOS'");
 
@@ -41,6 +62,23 @@ class ParametrosPlataformaIntegracionTest {
         assertThatThrownBy(() -> jdbc.update(
                 "UPDATE parametro_plataforma SET valor = 101 WHERE clave = 'GASTOS_ADMINISTRATIVOS'"))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void losParametrosDeV35TienenSusRangosEnLaBase() {
+        assertThat(parametrosPlataforma.checkinDuracionMaxima()).isEqualTo(Duration.ofHours(1));
+        assertThat(parametrosPlataforma.retiroMinimo()).isEqualByComparingTo("1000");
+        assertThat(parametrosPlataforma.retiroMaximo()).isEqualByComparingTo("500000");
+        for (String invalido : List.of(
+                "UPDATE parametro_plataforma SET valor = 101 WHERE clave = 'GASTOS_ADMINISTRATIVOS_TOPE'",
+                "UPDATE parametro_plataforma SET valor = 0 WHERE clave = 'CHECKIN_DURACION_MAX_MIN'",
+                "UPDATE parametro_plataforma SET valor = 10.5 WHERE clave = 'CHECKIN_DURACION_MAX_MIN'",
+                "UPDATE parametro_plataforma SET valor = 0 WHERE clave = 'RETIRO_MINIMO'")) {
+            assertThatThrownBy(() -> jdbc.execute("SAVEPOINT v35; " + invalido))
+                    .as(invalido)
+                    .isInstanceOf(DataIntegrityViolationException.class);
+            jdbc.execute("ROLLBACK TO SAVEPOINT v35");
+        }
     }
 
     @Test

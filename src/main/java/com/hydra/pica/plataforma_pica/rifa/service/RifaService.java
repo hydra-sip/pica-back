@@ -50,8 +50,8 @@ import org.springframework.transaction.annotation.Transactional;
  * mientras la rifa es borrador). Las reglas que cruzan las dos (que no haya más premios que números,
  * y que los premios y lo destinado al torneo no pasen de 100 %) se controlan desde los dos lados.
  *
- * En BORRADOR se guarda incompleta: la ventana de venta puede faltar (las dos fechas van juntas) y
- * los premios pueden sumar menos de 100 %. Que sumen exactamente 100 y que estén los términos lo
+ * En BORRADOR se guarda incompleta: la ventana de venta puede faltar (un fin sin inicio es una venta que
+ * arranca al publicar; un inicio sin fin no vale) y los premios pueden sumar menos de 100 %. Que sumen exactamente 100 y que estén los términos lo
  * exige la publicación.
  *
  * Sin torneo, la ventana de venta no se compara con fechas de torneo (alcanza con que sean fechas
@@ -141,8 +141,9 @@ public class RifaService {
      *
      * Si le falta algo para venderse, 409 RIFA_INCOMPLETA con todo lo que falta en {@code faltantes}
      * (y la suma en {@code sumaPremios}). Un inicio de venta pasado se acepta y la venta arranca al
-     * publicar (PICA-287); un fin pasado no. Con torneo, el torneo tiene que estar publicado y la venta
-     * dentro de sus fechas: en BORRADOR pudieron faltar o cambiar.
+     * publicar (PICA-287); un fin pasado no. Sin inicio, la venta arranca en este momento (PICA-308). Con
+     * torneo, el torneo tiene que estar publicado y la venta dentro de sus fechas: en BORRADOR pudieron
+     * faltar o cambiar.
      */
     @Transactional
     public RifaDetalle publicar(Long organizadorId, Long id) {
@@ -150,7 +151,7 @@ public class RifaService {
         Instant ahora = Instant.now();
         List<PremioRifa> premios = premioRifaRepository.buscarPorRifa(rifa.getId());
         int sumaPremios = premios.stream().mapToInt(PremioRifa::getPct).sum();
-        boolean conVentana = rifa.getVentaDesde() != null && rifa.getVentaHasta() != null;
+        boolean conVentana = rifa.getVentaHasta() != null;
 
         List<FaltantePublicacion> faltantes = new ArrayList<>();
         if (!conVentana) {
@@ -180,6 +181,9 @@ public class RifaService {
                     .con("sumaPremios", sumaPremios);
         }
 
+        if (rifa.getVentaDesde() == null) {
+            rifa.setVentaDesde(ahora);
+        }
         rifa.setTerminosAceptadosEn(ahora);
         rifa.setLoteriaDeclaradaEn(ahora);
         // los gastos que paga el comprador quedan fijos desde acá, aunque después cambie el parámetro (V27)
@@ -345,18 +349,17 @@ public class RifaService {
 
     /**
      * Tienen que ser fechas posibles: desde antes que hasta, y hasta en el futuro. Con torneo, además,
-     * dentro de las fechas que el torneo ya tenga.
+     * dentro de las fechas que el torneo ya tenga. Sin desde, la venta arranca al publicar (PICA-308).
      */
     private void validarVentana(Instant desde, Instant hasta, Torneo torneo, List<ErrorCampo> errores) {
-        if (desde == null && hasta == null) {
+        if (hasta == null) {
+            if (desde != null) {
+                errores.add(new ErrorCampo("ventaHasta", ErrorCampo.Codigo.REQUERIDO,
+                        "Con ventaDesde hace falta ventaHasta"));
+            }
             return;
         }
-        if (desde == null || hasta == null) {
-            errores.add(new ErrorCampo(desde == null ? "ventaDesde" : "ventaHasta", ErrorCampo.Codigo.REQUERIDO,
-                    "ventaDesde y ventaHasta van juntas: las dos o ninguna"));
-            return;
-        }
-        if (!desde.isBefore(hasta)) {
+        if (desde != null && !desde.isBefore(hasta)) {
             errores.add(new ErrorCampo("ventaHasta", ErrorCampo.Codigo.VENTANA_INVALIDA,
                     "Tiene que ser posterior a ventaDesde"));
         } else if (!hasta.isAfter(Instant.now())) {
@@ -381,7 +384,7 @@ public class RifaService {
      * su inicio. La fecha que el torneo todavía no tiene (borrador) no se controla.
      */
     private static boolean empiezaAntesDelTorneo(Instant ventaDesde, Torneo torneo) {
-        return torneo.getPublicadoEn() != null && ventaDesde.isBefore(torneo.getPublicadoEn());
+        return ventaDesde != null && torneo.getPublicadoEn() != null && ventaDesde.isBefore(torneo.getPublicadoEn());
     }
 
     private static boolean terminaDespuesDelTorneo(Instant ventaHasta, Torneo torneo) {

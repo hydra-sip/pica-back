@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.torneo.controller;
 
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoResumen;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoPublicoService;
@@ -29,10 +30,12 @@ public class TorneoPublicoController {
 
     @GetMapping("/resumen")
     public Page<TorneoResumen> listar(
+            @RequestParam(required = false) String q,
             @RequestParam(required = false) String disciplina,
+            @RequestParam(required = false) Modalidad modalidad,
             @RequestParam(required = false) EstadoTorneo estado,
             @PageableDefault(size = 20) Pageable pageable) {
-        return torneoPublicoService.listarPublicos(disciplina, estado, pageable);
+        return torneoPublicoService.listarPublicos(q, disciplina, modalidad, estado, pageable);
     }
 
     @GetMapping("/slug/{slug}")

@@ -74,15 +74,18 @@ public interface InscripcionRepository extends JpaRepository<Inscripcion, Long> 
     Optional<EstadoInscripcion> estadoDe(@Param("id") Long id);
 
     /**
-     * Las que armó el usuario: la individual, o las de los equipos de los que es capitán, en todos los estados.
-     * {@code torneoId} es opcional. Trae el equipo en la misma consulta.
+     * Mis inscripciones (HU-209): las que armó el usuario (la individual, o las de los equipos de los que es
+     * capitán) en todos los estados, más las confirmadas de equipos ajenos en cuya nómina figura. Con
+     * {@code exists} y no con un join a la nómina: cada inscripción sale una vez y el conteo no se duplica.
+     * {@code torneoId} es opcional. Trae el torneo y el equipo en la misma consulta.
      */
-    @Query(value = "select i from Inscripcion i join fetch i.torneo left join fetch i.equipo e "
-            + "where (i.usuario.id = :usuarioId or e.capitan.id = :usuarioId) "
-            + "and (:torneoId is null or i.torneo.id = :torneoId)",
-            countQuery = "select count(i) from Inscripcion i left join i.equipo e "
-                    + "where (i.usuario.id = :usuarioId or e.capitan.id = :usuarioId) "
-                    + "and (:torneoId is null or i.torneo.id = :torneoId)")
-    Page<Inscripcion> buscarPropias(@Param("usuarioId") Long usuarioId, @Param("torneoId") Long torneoId,
+    @Query(value = "select i from Inscripcion i join fetch i.torneo left join fetch i.equipo e where " + DE_MIS_INSCRIPCIONES,
+            countQuery = "select count(i) from Inscripcion i left join i.equipo e where " + DE_MIS_INSCRIPCIONES)
+    Page<Inscripcion> buscarMias(@Param("usuarioId") Long usuarioId, @Param("torneoId") Long torneoId,
             Pageable pageable);
+
+    String DE_MIS_INSCRIPCIONES = "(i.usuario.id = :usuarioId or e.capitan.id = :usuarioId "
+            + "or (i.estado = com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion.CONFIRMADA "
+            + "and exists (select 1 from Nomina n where n.id.inscripcionId = i.id and n.id.usuarioId = :usuarioId))) "
+            + "and (:torneoId is null or i.torneo.id = :torneoId)";
 }

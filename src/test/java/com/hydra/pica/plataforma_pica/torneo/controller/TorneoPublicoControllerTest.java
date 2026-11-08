@@ -50,7 +50,7 @@ class TorneoPublicoControllerTest {
     private TorneoPublicoService torneoPublicoService;
 
     @Test
-    @DisplayName("GET /api/v1/torneos/resumen es público y devuelve la página con filtros")
+    @DisplayName("GET /api/v1/torneos/resumen es público y devuelve la página con filtros, fechas de inicio y fin con hora")
     void listarPublicoSinAutenticacion() throws Exception {
         TorneoResumen resumen = new TorneoResumen(
                 1L,
@@ -71,13 +71,16 @@ class TorneoPublicoControllerTest {
                 new BigDecimal("56000.00"),
                 Instant.parse("2026-11-01T12:00:00Z"),
                 Instant.parse("2026-11-05T10:00:00Z"),
-                null);
+                Instant.parse("2026-11-10T18:00:00Z"));
 
-        when(torneoPublicoService.listarPublicos(eq("Fútbol 5"), eq(EstadoTorneo.INSCRIPCION_ABIERTA), any(Pageable.class)))
+        when(torneoPublicoService.listarPublicos(
+                        eq("futbol"), eq("Fútbol 5"), eq(Modalidad.PRESENCIAL), eq(EstadoTorneo.INSCRIPCION_ABIERTA), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(resumen), PageRequest.of(0, 20), 1));
 
         mockMvc.perform(get("/api/v1/torneos/resumen")
+                        .param("q", "futbol")
                         .param("disciplina", "Fútbol 5")
+                        .param("modalidad", "PRESENCIAL")
                         .param("estado", "INSCRIPCION_ABIERTA")
                         .param("page", "0")
                         .param("size", "20"))
@@ -85,13 +88,17 @@ class TorneoPublicoControllerTest {
                 .andExpect(jsonPath("$.content[0].slug").value("copa-verano"))
                 .andExpect(jsonPath("$.content[0].cupoDisponible").value(12))
                 .andExpect(jsonPath("$.content[0].pozoEstimado").value(56000.00))
+                .andExpect(jsonPath("$.content[0].fechaInicio").value("2026-11-05T10:00:00Z"))
+                .andExpect(jsonPath("$.content[0].fechaFin").value("2026-11-10T18:00:00Z"))
+                .andExpect(jsonPath("$.content[0].cierreInscripcionEn").value("2026-11-01T12:00:00Z"))
                 .andExpect(jsonPath("$.page.totalElements").value(1));
 
-        verify(torneoPublicoService).listarPublicos(eq("Fútbol 5"), eq(EstadoTorneo.INSCRIPCION_ABIERTA), any(Pageable.class));
+        verify(torneoPublicoService).listarPublicos(
+                eq("futbol"), eq("Fútbol 5"), eq(Modalidad.PRESENCIAL), eq(EstadoTorneo.INSCRIPCION_ABIERTA), any(Pageable.class));
     }
 
     @Test
-    @DisplayName("GET /api/v1/torneos/slug/{slug} es público y devuelve el detalle completo")
+    @DisplayName("GET /api/v1/torneos/slug/{slug} es público y devuelve el detalle completo con inicio, fin y organizador")
     void detallePublicoPorSlug() throws Exception {
         TorneoDetalle detalle = new TorneoDetalle(
                 1L,
@@ -108,6 +115,7 @@ class TorneoPublicoControllerTest {
                 4,
                 12,
                 5,
+                8,
                 new BigDecimal("5000.00"),
                 "ARS",
                 new BigDecimal("10.00"),
@@ -118,7 +126,7 @@ class TorneoPublicoControllerTest {
                         new PremioDetalle(2, new BigDecimal("30.00"), new BigDecimal("16800.00"))),
                 Instant.parse("2026-11-01T12:00:00Z"),
                 Instant.parse("2026-11-05T10:00:00Z"),
-                null,
+                Instant.parse("2026-11-10T18:00:00Z"),
                 "Reglamento escrito",
                 "https://pica.local/reglamento.pdf",
                 "abc123hash",
@@ -131,11 +139,18 @@ class TorneoPublicoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.slug").value("copa-verano"))
                 .andExpect(jsonPath("$.cupoDisponible").value(12))
+                .andExpect(jsonPath("$.tamanioEquipo").value(5))
+                .andExpect(jsonPath("$.nominaMaxima").value(8))
                 .andExpect(jsonPath("$.pozoEstimado").value(56000.00))
                 .andExpect(jsonPath("$.totalAPagar").value(5500.00))
                 .andExpect(jsonPath("$.reglamentoUrl").value("https://pica.local/reglamento.pdf"))
                 .andExpect(jsonPath("$.premios[0].puesto").value(1))
-                .andExpect(jsonPath("$.organizador.username").value("juanp"));
+                .andExpect(jsonPath("$.fechaInicio").value("2026-11-05T10:00:00Z"))
+                .andExpect(jsonPath("$.fechaFin").value("2026-11-10T18:00:00Z"))
+                .andExpect(jsonPath("$.cierreInscripcionEn").value("2026-11-01T12:00:00Z"))
+                .andExpect(jsonPath("$.organizador.id").value(2))
+                .andExpect(jsonPath("$.organizador.username").value("juanp"))
+                .andExpect(jsonPath("$.organizador.nombreCompleto").value("Juan Perez"));
     }
 
     @Test

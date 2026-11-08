@@ -39,30 +39,30 @@ public class Auditoria {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false)
+    @Column(name = "id", nullable = false, updatable = false)
     @EqualsAndHashCode.Include
     @Setter(AccessLevel.NONE)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "usuario_id")
+    @JoinColumn(name = "usuario_id", updatable = false)
     private Usuario usuario;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "accion", length = 50, nullable = false)
+    @Column(name = "accion", length = 50, nullable = false, updatable = false)
     private AccionAuditoria accion;
 
-    @Column(name = "entidad", length = 50)
+    @Column(name = "entidad", length = 50, updatable = false)
     private String entidad;
 
-    @Column(name = "entidad_id", length = 50)
+    @Column(name = "entidad_id", length = 50, updatable = false)
     private String entidadId;
 
-    @Column(name = "ip", length = 45)
+    @Column(name = "ip", length = 45, updatable = false)
     private String ip;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "detalle", columnDefinition = "JSONB")
+    @Column(name = "detalle", columnDefinition = "JSONB", updatable = false)
     private Map<String, Object> detalle;
 
     @Column(name = "creado_en", nullable = false, updatable = false)

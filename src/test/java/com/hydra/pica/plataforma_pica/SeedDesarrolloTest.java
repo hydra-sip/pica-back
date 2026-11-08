@@ -37,7 +37,9 @@ class SeedDesarrolloTest {
                    (SELECT count(*) FROM partido) AS partidos,
                    (SELECT count(*) FROM juega) AS lados,
                    (SELECT count(*) FROM numero) AS numeros,
-                   (SELECT count(*) FROM ticket) AS tickets
+                   (SELECT count(*) FROM ticket) AS tickets,
+                   (SELECT sum(saldo_disponible) FROM billetera) AS disponible,
+                   (SELECT count(*) FROM custodia) AS custodias
             """;
 
     @Autowired private JdbcTemplate jdbc;
@@ -99,6 +101,27 @@ class SeedDesarrolloTest {
                   AND NOT EXISTS (SELECT 1 FROM movimiento m
                                   WHERE m.inscripcion_id = i.id AND m.tipo = 'INSCRIPCION' AND m.estado = 'CONFIRMADO')
                 """, Integer.class)).isZero();
+    }
+
+    @Test
+    void cadaJugadorArrancaConSaldoParaPagar() {
+        assertThat(jdbc.queryForList("""
+                SELECT b.saldo_disponible FROM billetera b
+                JOIN usuario u ON u.id = b.usuario_id
+                JOIN movimiento m ON m.billetera_id = b.id AND m.tipo = 'CARGA' AND m.estado = 'CONFIRMADO'
+                WHERE u.username LIKE 'dev\\_jugador%'
+                """, java.math.BigDecimal.class))
+                .hasSize(6).allSatisfy(saldo -> assertThat(saldo).isEqualByComparingTo("100000"));
+    }
+
+    @Test
+    void cadaPagoDelSeedEstaEnLaCustodiaDeSuEvento() {
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE tipo <> 'CARGA' AND custodia_id IS NULL",
+                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM movimiento m JOIN ticket t ON t.movimiento_id = m.id
+                JOIN custodia c ON c.id = m.custodia_id AND c.rifa_id = t.rifa_id
+                """, Integer.class)).isEqualTo(1);
     }
 
     @Test

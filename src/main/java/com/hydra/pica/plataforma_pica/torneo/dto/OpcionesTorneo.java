@@ -12,6 +12,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
  * @param disciplinas sugeridas, con sus valores por defecto; el organizador puede escribir otra
  * @param cupoMaximo el máximo de participantes que admite la plataforma
  * @param pctGastosAdministrativos el % vigente que paga aparte quien se inscribe (PICA-283); al publicar queda fijo
+ * @param margenCierreInicioMin los minutos que tienen que pasar como mínimo entre el cierre y el inicio (CE4-5)
+ * @param checkinDuracionMaxMin lo máximo que puede durar la ventana de check-in, en minutos (HU-702)
  * @param canchas las que ya existen en la sede pedida (vacío si no se pidió ninguna)
  */
 public record OpcionesTorneo(
@@ -20,6 +22,8 @@ public record OpcionesTorneo(
         List<Modalidad> modalidades,
         int cupoMaximo,
         BigDecimal pctGastosAdministrativos,
+        long margenCierreInicioMin,
+        long checkinDuracionMaxMin,
         List<String> canchas) {
 
     /**

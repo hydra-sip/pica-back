@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -42,6 +43,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -93,7 +95,7 @@ class TorneoPublicoServiceIntegracionTest {
         Torneo publicado = crearTorneo("t-publicado", "Torneo Publicado", "Fútbol 5", EstadoTorneo.INSCRIPCION_ABIERTA, null);
         Torneo eliminado = crearTorneo("t-eliminado", "Torneo Eliminado", "Fútbol 5", EstadoTorneo.INSCRIPCION_ABIERTA, Instant.now());
 
-        Page<TorneoResumen> pagina = torneoPublicoService.listarPublicos(null, null, PageRequest.of(0, 10));
+        Page<TorneoResumen> pagina = listar(null, null, null, null);
 
         assertThat(pagina.getContent())
                 .extracting(TorneoResumen::slug)
@@ -108,19 +110,84 @@ class TorneoPublicoServiceIntegracionTest {
         crearTorneo("t-ajedrez-abierto", "Torneo Ajedrez Abierto", "Ajedrez", EstadoTorneo.INSCRIPCION_ABIERTA, null);
         crearTorneo("t-ajedrez-cerrado", "Torneo Ajedrez Cerrado", "Ajedrez", EstadoTorneo.INSCRIPCION_CERRADA, null);
 
-        Page<TorneoResumen> soloAjedrez = torneoPublicoService.listarPublicos("ajedrez", null, PageRequest.of(0, 10));
+        Page<TorneoResumen> soloAjedrez = listar(null, "ajedrez", null, null);
         assertThat(soloAjedrez.getContent())
                 .extracting(TorneoResumen::slug)
                 .containsExactlyInAnyOrder("t-ajedrez-abierto", "t-ajedrez-cerrado");
 
-        Page<TorneoResumen> ajedrezCerrado = torneoPublicoService.listarPublicos("Ajedrez", EstadoTorneo.INSCRIPCION_CERRADA, PageRequest.of(0, 10));
+        Page<TorneoResumen> ajedrezCerrado = listar(null, "Ajedrez", null, EstadoTorneo.INSCRIPCION_CERRADA);
         assertThat(ajedrezCerrado.getContent())
                 .extracting(TorneoResumen::slug)
                 .containsExactly("t-ajedrez-cerrado");
 
         // Filtrar por BORRADOR devuelve vacío porque nunca se muestran borradores
-        Page<TorneoResumen> borrador = torneoPublicoService.listarPublicos(null, EstadoTorneo.BORRADOR, PageRequest.of(0, 10));
+        Page<TorneoResumen> borrador = listar(null, null, null, EstadoTorneo.BORRADOR);
         assertThat(borrador.getContent()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("listarPublicos: q busca en nombre, disciplina y sede, parcial y sin importar tildes ni mayúsculas")
+    void buscaPorTextoSinTildes() {
+        crearTorneo("t-futbol", "Liga del barrio", "Fútbol 5", EstadoTorneo.INSCRIPCION_ABIERTA, null);
+        crearTorneo("t-copa", "Copa Primavera", "Ajedrez", EstadoTorneo.INSCRIPCION_ABIERTA, null);
+        Torneo enElClub = crearTorneo("t-sede", "Torneo Apertura", "Tenis", EstadoTorneo.INSCRIPCION_ABIERTA, null);
+        enElClub.setSede("Club Atlético Luján");
+        torneoRepository.save(enElClub);
+
+        assertThat(slugs(listar("futbol", null, null, null))).containsExactly("t-futbol");
+        assertThat(slugs(listar("FÚTBOL", null, null, null))).containsExactly("t-futbol");
+        assertThat(slugs(listar("copa", null, null, null))).containsExactly("t-copa");
+        assertThat(slugs(listar("atletico", null, null, null))).containsExactly("t-sede");
+        // cada palabra puede estar en una columna distinta, pero tienen que aparecer todas
+        assertThat(slugs(listar("tenis lujan", null, null, null))).containsExactly("t-sede");
+        assertThat(slugs(listar("tenis cordoba", null, null, null))).isEmpty();
+        // los comodines de LIKE se buscan como texto
+        assertThat(slugs(listar("%%%", null, null, null))).isEmpty();
+        assertThat(slugs(listar("   ", null, null, null))).contains("t-futbol", "t-copa", "t-sede");
+    }
+
+    @Test
+    @DisplayName("listarPublicos: modalidad filtra aparte y se combina con la búsqueda y el estado")
+    void filtraPorModalidadYCombina() {
+        crearTorneo("t-futbol-presencial", "Liga presencial", "Fútbol 5", EstadoTorneo.INSCRIPCION_ABIERTA, null);
+        Torneo online = crearTorneo("t-futbol-online", "Liga virtual", "Fútbol 5", EstadoTorneo.INSCRIPCION_ABIERTA, null);
+        online.setModalidad(Modalidad.ONLINE);
+        torneoRepository.save(online);
+        Torneo ajedrez = crearTorneo("t-ajedrez-online", "Ajedrez rápido", "Ajedrez", EstadoTorneo.INSCRIPCION_CERRADA, null);
+        ajedrez.setModalidad(Modalidad.ONLINE);
+        torneoRepository.save(ajedrez);
+
+        assertThat(slugs(listar(null, null, Modalidad.ONLINE, null)))
+                .containsExactlyInAnyOrder("t-futbol-online", "t-ajedrez-online");
+        assertThat(slugs(listar("futbol", null, Modalidad.ONLINE, null))).containsExactly("t-futbol-online");
+        assertThat(slugs(listar("futbol", null, Modalidad.PRESENCIAL, null))).containsExactly("t-futbol-presencial");
+        assertThat(slugs(listar(null, null, Modalidad.ONLINE, EstadoTorneo.INSCRIPCION_CERRADA)))
+                .containsExactly("t-ajedrez-online");
+    }
+
+    @Test
+    @DisplayName("listarPublicos: sin sort, primero el próximo a empezar y los ya empezados al final; la página cuenta bien")
+    void ordenaPorProximosAEmpezar() {
+        conInicioEn(crearTorneo("t-lejano", "Lejano", "Tenis", EstadoTorneo.INSCRIPCION_ABIERTA, null), 30);
+        conInicioEn(crearTorneo("t-empezado", "Empezado", "Tenis", EstadoTorneo.EN_CURSO, null), -10);
+        conInicioEn(crearTorneo("t-cercano", "Cercano", "Tenis", EstadoTorneo.INSCRIPCION_ABIERTA, null), 3);
+
+        Page<TorneoResumen> pagina = listar(null, null, null, null);
+
+        assertThat(slugs(pagina)).containsExactly("t-cercano", "t-lejano", "t-empezado");
+        assertThat(pagina.getTotalElements()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("listarPublicos: un sort explícito reemplaza el orden por defecto")
+    void sortExplicitoReemplazaElOrden() {
+        conInicioEn(crearTorneo("t-b", "B", "Tenis", EstadoTorneo.INSCRIPCION_ABIERTA, null), 3);
+        conInicioEn(crearTorneo("t-a", "A", "Tenis", EstadoTorneo.INSCRIPCION_ABIERTA, null), 30);
+
+        Page<TorneoResumen> pagina = torneoPublicoService.listarPublicos(
+                null, null, null, null, PageRequest.of(0, 10, Sort.by("nombre")));
+
+        assertThat(slugs(pagina)).containsExactly("t-a", "t-b");
     }
 
     @Test
@@ -160,7 +227,7 @@ class TorneoPublicoServiceIntegracionTest {
         inscribir(torneo, jugador1, EstadoInscripcion.CONFIRMADA);
         inscribir(torneo, jugador2, EstadoInscripcion.CONFIRMADA);
 
-        Page<TorneoResumen> pagina = torneoPublicoService.listarPublicos("Paddle", null, PageRequest.of(0, 10));
+        Page<TorneoResumen> pagina = listar(null, "Paddle", null, null);
 
         assertThat(pagina.getContent()).hasSize(1);
         TorneoResumen resumen = pagina.getContent().get(0);
@@ -168,10 +235,13 @@ class TorneoPublicoServiceIntegracionTest {
         assertThat(resumen.cupoDisponible()).isEqualTo(6); // 8 - 2
         assertThat(resumen.pozoEstimado()).isEqualByComparingTo("32000.00");
         assertThat(resumen.gastosAdministrativos()).isEqualByComparingTo("500.00");
+        assertThat(resumen.fechaInicio()).isNotNull();
+        assertThat(resumen.fechaFin()).isNotNull();
+        assertThat(resumen.cierreInscripcionEn()).isNotNull();
     }
 
     @Test
-    @DisplayName("detallePublico: devuelve todos los datos, organizador, premios y reglamento")
+    @DisplayName("detallePublico: devuelve todos los datos, organizador, premios, fechas y reglamento")
     void detallePublicoExitoso() {
         Torneo torneo = crearTorneo("t-detalle", "Torneo Detalle", "Tenis", EstadoTorneo.INSCRIPCION_ABIERTA, null);
         torneo.setDescripcion("Descripción del torneo");
@@ -215,7 +285,31 @@ class TorneoPublicoServiceIntegracionTest {
         assertThat(detalle.gastosAdministrativos()).isEqualByComparingTo("300.00");
         assertThat(detalle.totalAPagar()).isEqualByComparingTo("3300.00");
         assertThat(detalle.reglamentoTexto()).isEqualTo("Dos sets a 6 games.");
+        assertThat(detalle.fechaInicio()).isNotNull();
+        assertThat(detalle.fechaFin()).isNotNull();
+        assertThat(detalle.cierreInscripcionEn()).isNotNull();
+        assertThat(detalle.organizador().id()).isEqualTo(organizador.getId());
         assertThat(detalle.organizador().username()).isEqualTo(organizador.getUsername());
+        assertThat(detalle.organizador().nombreCompleto())
+                .isEqualTo(organizador.getPersona().getNombres() + " " + organizador.getPersona().getApellidos());
+        // individual: sin nómina
+        assertThat(detalle.tamanioEquipo()).isNull();
+        assertThat(detalle.nominaMaxima()).isNull();
+    }
+
+    @Test
+    @DisplayName("detallePublico: en un torneo por equipos trae el mínimo y el máximo de la nómina (CE4-4)")
+    void detallePorEquiposTraeLaNominaMaxima() {
+        Torneo torneo = crearTorneo("t-equipos", "Torneo Equipos", "Fútbol 5", EstadoTorneo.INSCRIPCION_ABIERTA, null);
+        torneo.setTipoParticipante(TipoParticipante.EQUIPO);
+        torneo.setTamanioEquipo(5);
+        torneo.setNominaMaxima(8);
+        torneoRepository.save(torneo);
+
+        TorneoDetalle detalle = torneoPublicoService.detallePublico("t-equipos");
+
+        assertThat(detalle.tamanioEquipo()).isEqualTo(5);
+        assertThat(detalle.nominaMaxima()).isEqualTo(8);
     }
 
     @Test
@@ -230,6 +324,21 @@ class TorneoPublicoServiceIntegracionTest {
         assertThatThrownBy(() -> torneoPublicoService.detallePublico("slug-inexistente"))
                 .isInstanceOf(NoEncontradoException.class)
                 .satisfies(e -> assertThat(((NoEncontradoException) e).getCodigo()).isEqualTo(CodigoError.TORNEO_NO_ENCONTRADO));
+    }
+
+    private Page<TorneoResumen> listar(String q, String disciplina, Modalidad modalidad, EstadoTorneo estado) {
+        return torneoPublicoService.listarPublicos(q, disciplina, modalidad, estado, PageRequest.of(0, 10));
+    }
+
+    private static List<String> slugs(Page<TorneoResumen> pagina) {
+        return pagina.getContent().stream().map(TorneoResumen::slug).toList();
+    }
+
+    private void conInicioEn(Torneo torneo, int dias) {
+        torneo.setFechaInicio(Instant.now().plus(dias, ChronoUnit.DAYS));
+        torneo.setCierreInscripcionEn(torneo.getFechaInicio().minus(2, ChronoUnit.DAYS));
+        torneo.setFechaFin(torneo.getFechaInicio().plus(3, ChronoUnit.DAYS));
+        torneoRepository.save(torneo);
     }
 
     private Torneo crearTorneo(String slug, String nombre, String disciplina, EstadoTorneo estado, Instant eliminadoEn) {
@@ -248,6 +357,7 @@ class TorneoPublicoServiceIntegracionTest {
         t.setValorInscripcion(new BigDecimal("1000.00"));
         t.setCierreInscripcionEn(Instant.now().plus(5, ChronoUnit.DAYS));
         t.setFechaInicio(Instant.now().plus(7, ChronoUnit.DAYS));
+        t.setFechaFin(Instant.now().plus(10, ChronoUnit.DAYS));
         t.setEstado(estado);
         t.setPublicadoEn(estado != EstadoTorneo.BORRADOR ? Instant.now() : null);
         t.setEliminadoEn(eliminadoEn);

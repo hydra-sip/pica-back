@@ -145,14 +145,17 @@ public class VentaRifaService {
         BigDecimal monto = rifa.getPrecioNumero().multiply(BigDecimal.valueOf(elegidos.size()));
         BigDecimal gastos = GastosAdministrativos.monto(monto, rifa.getPctGastosAdministrativos());
         Long torneoId = rifa.getTorneo() != null ? rifa.getTorneo().getId() : null;
+        // HU-603: si el saldo no alcanza para los números y los gastos, falla antes de cobrar, con el faltante del total
+        cobroService.exigirSaldo(compradorId, monto.add(gastos));
         Movimiento pago = cobroService.cobrar(new SolicitudCobro(compradorId, TipoMovimiento.COMPRA_NUMERO,
                 monto, torneoId, null, claveIdempotencia,
-                "Compra de " + elegidos.size() + " números de la rifa " + rifa.getTitulo()));
+                "Compra de " + elegidos.size() + " números de la rifa " + rifa.getTitulo(), rifaId));
         // los gastos administrativos van aparte, en otro movimiento, igual que en la inscripción: los números son del
         // pozo de la rifa y esto de la plataforma (PICA-283)
         if (gastos.signum() > 0) {
             cobroService.cobrar(new SolicitudCobro(compradorId, TipoMovimiento.COMISION, gastos, torneoId, null,
-                    "gastos-compra-" + pago.getId(), "Gastos administrativos de la compra en la rifa " + rifa.getTitulo()));
+                    "gastos-compra-" + pago.getId(), "Gastos administrativos de la compra en la rifa " + rifa.getTitulo(),
+                    rifaId));
         }
 
         Ticket ticket = new Ticket();

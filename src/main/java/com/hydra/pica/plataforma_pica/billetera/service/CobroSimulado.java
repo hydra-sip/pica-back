@@ -1,5 +1,7 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
+import java.math.BigDecimal;
+
 import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
@@ -10,14 +12,17 @@ import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionReposito
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Cobro sin pasarela: aprueba siempre, salvo con la billetera bloqueada. La plata "viene de afuera",
- * así que no toca el saldo; el movimiento queda como registro del pago.
+ * así que no toca el saldo; el movimiento queda como registro del pago. Desde HU-603 cobra {@link CobroConSaldo};
+ * este queda con {@code app.cobro.modo=simulado}, para los tests que no prueban el cobro.
  */
 @Service
+@ConditionalOnProperty(name = "app.cobro.modo", havingValue = "simulado")
 @RequiredArgsConstructor
 public class CobroSimulado implements CobroService {
 
@@ -62,10 +67,15 @@ public class CobroSimulado implements CobroService {
         return movimientoRepository.save(movimiento);
     }
 
-    // el registro no crea billetera: aparece con el primer pago
+    // Respaldo por si algún test persiste un Usuario directo sin pasar por UsuarioService.crear
     private Billetera nuevaBilletera(Long usuarioId) {
         Billetera billetera = new Billetera();
         billetera.setUsuario(usuarioRepository.getReferenceById(usuarioId));
+        billetera.setSaldoDisponible(BigDecimal.ZERO);
+        billetera.setSaldoRetenido(BigDecimal.ZERO);
+        billetera.setGananciaAcumulada(BigDecimal.ZERO);
+        billetera.setMoneda("ARS");
+        billetera.setEstado(EstadoBilletera.ACTIVA);
         return billeteraRepository.save(billetera);
     }
 

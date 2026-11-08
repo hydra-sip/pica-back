@@ -185,6 +185,8 @@ DELETE FROM reemplazo
 DELETE FROM movimiento
     WHERE inscripcion_id IN (SELECT id FROM inscripcion
         WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u));
+DELETE FROM movimiento
+    WHERE billetera_id IN (SELECT id FROM billetera WHERE usuario_id IN (SELECT id FROM humo_u));
 DELETE FROM billetera WHERE usuario_id IN (SELECT id FROM humo_u);
 DELETE FROM nomina
     WHERE inscripcion_id IN (SELECT id FROM inscripcion
@@ -326,6 +328,20 @@ pedir 200 PUT /api/v1/me "" "$USUARIO" \
 pedir 200 POST /api/v1/auth/refresh "" "" "$(jq -nc --arg t "$USUARIO_REFRESH" '{refreshToken: $t}')"
 USUARIO=$(campo .accessToken)
 USUARIO_REFRESH=$(campo .refreshToken)
+
+echo
+echo "Billetera"
+pedir 401 GET /api/v1/billetera
+pedir 200 GET /api/v1/billetera "" "$USUARIO"
+[[ $(campo .saldoDisponible) == "0" || $(campo .saldoDisponible) == "0.00" ]] \
+    || { echo "    ✗ el saldoDisponible inicial no es cero: $(campo .saldoDisponible)"; exit 1; }
+[[ $(campo .estado) == "ACTIVA" ]] \
+    || { echo "    ✗ el estado de la billetera no es ACTIVA: $(campo .estado)"; exit 1; }
+pedir 200 GET /api/v1/billetera/movimientos "/api/v1/billetera/movimientos?page=0&size=20" "$USUARIO"
+# POST /cargas se prueba con 401 y 400 (no con 201) porque una carga exitosa escribe en auditoria,
+# y esa tabla no admite DELETE, lo que impediría la limpieza final del usuario de prueba.
+pedir 401 POST /api/v1/billetera/cargas "" "" '{"monto":100.00}'
+pedir 400:VALIDACION POST /api/v1/billetera/cargas "" "$USUARIO" '{"monto":0.00}'
 
 echo
 echo "Inscripciones (en torneos y equipos cargados por SQL: todavía no hay API para crearlos)"

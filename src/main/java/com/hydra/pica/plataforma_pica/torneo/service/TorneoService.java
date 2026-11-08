@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -84,7 +85,9 @@ public class TorneoService {
                         .map(Cancha::getNombre)
                         .toList();
         return new OpcionesTorneo(CatalogoTorneo.DISCIPLINAS, CatalogoTorneo.FORMATOS, List.of(Modalidad.values()),
-                torneoProperties.cupoMaximo(), parametrosPlataforma.gastosAdministrativos(), canchas);
+                torneoProperties.cupoMaximo(), parametrosPlataforma.gastosAdministrativos(),
+                parametrosPlataforma.margenCierreInicio().toMinutes(),
+                parametrosPlataforma.checkinDuracionMaxima().toMinutes(), canchas);
     }
 
     @Transactional(readOnly = true)
@@ -182,7 +185,7 @@ public class TorneoService {
      * La ventana de check-in de todos los cruces (HU-308): abre {@code minAntes} minutos antes y dura
      * {@code duracion}, sin llegar al horario del partido. Con el torneo publicado y sin terminar; rige desde ahora,
      * aun para una ventana abierta, y los check-ins hechos quedan. El criterio sin presentes (HU-309) es opcional: si
-     * no viene, queda el vigente.
+     * no viene, queda el vigente. La duración no pasa el máximo de la plataforma (HU-702).
      */
     @Transactional
     public TorneoInformacion configurarCheckin(Long organizadorId, Long id, CheckinTorneoRequest request) {
@@ -191,7 +194,8 @@ public class TorneoService {
             throw new ConflictoException(CodigoError.TORNEO_NO_EDITABLE,
                     "El torneo " + id + " está " + torneo.getEstado() + ": el check-in se configura publicado");
         }
-        CriterioSinPresentes sinPresentes = validarCheckin(request);
+        CriterioSinPresentes sinPresentes =
+                validarCheckin(request, parametrosPlataforma.checkinDuracionMaxima().toMinutes());
         torneo.setCheckinMinAntes(request.minAntes());
         torneo.setCheckinDuracionMin(request.duracion());
         if (sinPresentes != null) {
@@ -214,11 +218,14 @@ public class TorneoService {
     }
 
     /** @return el criterio sin presentes que vino, o null si no vino */
-    private static CriterioSinPresentes validarCheckin(CheckinTorneoRequest request) {
+    private static CriterioSinPresentes validarCheckin(CheckinTorneoRequest request, long duracionMaxima) {
         List<ErrorCampo> errores = new ArrayList<>();
         positivo("minAntes", request.minAntes(), errores);
         positivo("duracion", request.duracion(), errores);
-        if (errores.isEmpty() && request.duracion() > request.minAntes()) {
+        if (errores.isEmpty() && request.duracion() > duracionMaxima) {
+            errores.add(new ErrorCampo("duracion", ErrorCampo.Codigo.RANGO_INVALIDO,
+                    "La plataforma admite hasta " + duracionMaxima + " minutos de ventana"));
+        } else if (errores.isEmpty() && request.duracion() > request.minAntes()) {
             errores.add(new ErrorCampo("duracion", ErrorCampo.Codigo.VENTANA_INVALIDA,
                     "La ventana se superpondría con el cruce: tiene que durar como mucho lo que anticipa"));
         }
@@ -339,7 +346,7 @@ public class TorneoService {
                 .toList());
     }
 
-    private static void validarFechas(InformacionTorneoRequest request, Collection<String> cambiados,
+    private void validarFechas(InformacionTorneoRequest request, Collection<String> cambiados,
             List<ErrorCampo> errores) {
         Instant ahora = Instant.now();
         Instant inicio = request.fechaInicio();
@@ -354,7 +361,24 @@ public class TorneoService {
             errores.add(fechas("cierreInscripcionEn", "No puede ser anterior a hoy"));
         } else if (cierre != null && inicio != null && cierre.isAfter(inicio)) {
             errores.add(fechas("cierreInscripcionEn", "La inscripción tiene que cerrar antes del inicio"));
+        } else if (cierre != null && inicio != null
+                && (cambiados.contains("cierreInscripcionEn") || cambiados.contains("fechaInicio"))) {
+            validarMargen(cierre, inicio, errores);
         }
+    }
+
+    /** Entre el cierre y el inicio va el margen de la plataforma (CE4-5), para programar los partidos y el check-in. */
+    private void validarMargen(Instant cierre, Instant inicio, List<ErrorCampo> errores) {
+        Duration margen = parametrosPlataforma.margenCierreInicio();
+        if (cierre.plus(margen).isAfter(inicio)) {
+            errores.add(fechas("cierreInscripcionEn",
+                    "La inscripción tiene que cerrar al menos " + texto(margen) + " antes del inicio"));
+        }
+    }
+
+    private static String texto(Duration margen) {
+        long minutos = margen.toMinutes();
+        return minutos % 60 == 0 && minutos > 0 ? minutos / 60 + " h" : minutos + " min";
     }
 
     private static void validarSede(InformacionTorneoRequest request, List<ErrorCampo> errores) {

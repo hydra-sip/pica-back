@@ -64,6 +64,16 @@ public class ArbitroDesignado {
     @Setter(AccessLevel.NONE)
     private Instant designadoEn;
 
+    /** Cuándo aceptó o rechazó; null mientras está PENDIENTE (V34). */
+    @Column(name = "respondido_en")
+    @Setter(AccessLevel.NONE)
+    private Instant respondidoEn;
+
+    /** Solo de un RECHAZADO, y opcional (V34). */
+    @Column(name = "motivo_rechazo", length = 500)
+    @Setter(AccessLevel.NONE)
+    private String motivoRechazo;
+
     protected ArbitroDesignado() {
     }
 
@@ -84,6 +94,27 @@ public class ArbitroDesignado {
             permisos.add(PermisoArbitro.RESOLVER_OBJECIONES);
         }
         return permisos;
+    }
+
+    /** El árbitro acepta (HU-807): desde ahora arbitra con los permisos que le dieron. */
+    public void aceptar() {
+        this.estado = EstadoDesignacion.ACEPTADO;
+        this.respondidoEn = Instant.now();
+    }
+
+    /** El árbitro rechaza (HU-807): sigue la fila para que el organizador lo vea, con el motivo, pero no arbitra. */
+    public void rechazar(String motivo) {
+        this.estado = EstadoDesignacion.RECHAZADO;
+        this.respondidoEn = Instant.now();
+        this.motivoRechazo = motivo;
+    }
+
+    /** El organizador vuelve a designar a uno que había rechazado: otra vez PENDIENTE, con los permisos nuevos. */
+    public void volverADesignar(Set<PermisoArbitro> permisos) {
+        this.estado = EstadoDesignacion.PENDIENTE;
+        this.respondidoEn = null;
+        this.motivoRechazo = null;
+        setPermisos(permisos);
     }
 
     public void setPermisos(Set<PermisoArbitro> permisos) {

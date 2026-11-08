@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.common.config;
 import com.hydra.pica.plataforma_pica.common.security.JwtAuthenticationFilter;
 import com.hydra.pica.plataforma_pica.common.security.OAuth2LoginHandler;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.web.RequestIdFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -149,6 +150,7 @@ public class SecurityConfig {
             String detalle) throws java.io.IOException {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, detalle);
         problemDetail.setProperty("codigo", codigo.name());
+        RequestIdFilter.agregarA(problemDetail);
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
         // sin charset el contenedor escribe ISO-8859-1 y "sesión" llega roto por curl

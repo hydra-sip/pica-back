@@ -290,11 +290,13 @@ class TorneoControllerTest {
     void opciones() throws Exception {
         when(torneoService.opciones("Club Mercedes")).thenReturn(new OpcionesTorneo(List.of(),
                 List.of(new OpcionesTorneo.FormatoOpcion("ELIMINACION_DIRECTA", "Eliminación directa", true)),
-                List.of(Modalidad.values()), 64, BigDecimal.TEN, List.of("Cancha 1")));
+                List.of(Modalidad.values()), 64, BigDecimal.TEN, 60, 45, List.of("Cancha 1")));
 
         mockMvc.perform(get("/api/v1/torneos/opciones").param("sede", "Club Mercedes"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cupoMaximo").value(64))
+                .andExpect(jsonPath("$.margenCierreInicioMin").value(60))
+                .andExpect(jsonPath("$.checkinDuracionMaxMin").value(45))
                 .andExpect(jsonPath("$.canchas[0]").value("Cancha 1"))
                 .andExpect(jsonPath("$.formatos[0].disponible").value(true));
     }
@@ -370,7 +372,7 @@ class TorneoControllerTest {
     void inscripcionesDelTorneo() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
         InscripcionDelTorneo fila = new InscripcionDelTorneo(31L, EstadoInscripcion.CONFIRMADA, CREADO, null,
-                new EquipoInscripto(4L, "Los Halcones"), new UsuarioPublico(7L, "cap", "Ana", "Paz"), 5);
+                new EquipoInscripto(4L, "Los Halcones", 7L), new UsuarioPublico(7L, "cap", "Ana", "Paz"), 5);
         when(inscripcionTorneoService.listar(eq(ORGANIZADOR), eq(9L), eq(EstadoInscripcion.CONFIRMADA), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(fila), PageRequest.of(0, 10), 1));
 
