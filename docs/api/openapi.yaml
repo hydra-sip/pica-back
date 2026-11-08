@@ -1175,6 +1175,48 @@ paths:
         '401': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
 
+  # --- Billetera ---------------------------------------------------------------
+
+  /api/v1/billetera:
+    get:
+      tags: [Billetera]
+      summary: Mi billetera
+      x-jira: PICA-317
+      x-owner: Salvador
+      description: >-
+        Devuelve los saldos (disponible, retenido, ganancia acumulada), la moneda y el estado de la billetera del usuario logueado.
+      responses:
+        '200':
+          description: La billetera del usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Billetera'
+        '401':
+          $ref: '#/components/responses/Error'
+
+  /api/v1/billetera/movimientos:
+    get:
+      tags: [Billetera]
+      summary: Movimientos de mi billetera
+      x-jira: PICA-317
+      x-owner: Salvador
+      description: >-
+        Historial paginado de movimientos de la billetera del usuario logueado, ordenado del más nuevo al más viejo
+        (creadoEn DESC, id DESC). El parámetro `sort` se ignora.
+      parameters:
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200':
+          description: Página de movimientos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageMovimientoBilletera'
+        '401':
+          $ref: '#/components/responses/Error'
+
   # --- Equipos -----------------------------------------------------------------
 
 
@@ -2862,6 +2904,10 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/InscripcionDelTorneo'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageMovimientoBilletera:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/MovimientoBilletera'}}, page: {$ref: '#/components/schemas/PageInfo'}}
 
     # --- auth ----------------------------------------------------------------
     RegistroRequest:
@@ -4297,5 +4343,104 @@ components:
         resueltoEn: {type: [string, 'null'], format: date-time}
         resueltoPor: {type: [string, 'null']}
         creadoEn: {type: string, format: date-time}
+
+    # --- Billetera (HU-602) ----------------------------------------------------
+    Billetera:
+      type: object
+      required: [saldoDisponible, saldoRetenido, gananciaAcumulada, moneda, estado]
+      properties:
+        saldoDisponible:
+          type: number
+          format: double
+          minimum: 0
+          example: 0.00
+        saldoRetenido:
+          type: number
+          format: double
+          minimum: 0
+          example: 0.00
+        gananciaAcumulada:
+          type: number
+          format: double
+          minimum: 0
+          example: 0.00
+        moneda:
+          type: string
+          example: ARS
+        estado:
+          type: string
+          enum: [ACTIVA, BLOQUEADA]
+          example: ACTIVA
+
+    TorneoMovimiento:
+      type: object
+      required: [id, nombre, titulo]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        nombre:
+          type: string
+          example: Torneo Apertura
+        titulo:
+          type: string
+          example: Torneo Apertura
+        slug:
+          type: [string, 'null']
+          example: torneo-apertura
+
+    RifaMovimiento:
+      type: object
+      required: [id, titulo]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        titulo:
+          type: string
+          example: Gran Rifa Solidaria
+
+    MovimientoBilletera:
+      type: object
+      required: [id, tipo, monto, moneda, saldoResultante, estado, creadoEn]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        tipo:
+          type: string
+          enum: [CARGA, INSCRIPCION, COMPRA_NUMERO, PREMIO, REINTEGRO, COMISION, RETIRO, PAGO_SERVICIO]
+          example: CARGA
+        monto:
+          type: number
+          format: double
+          minimum: 0.01
+          example: 1000.00
+        moneda:
+          type: string
+          example: ARS
+        saldoResultante:
+          type: number
+          format: double
+          minimum: 0
+          example: 1000.00
+        estado:
+          type: string
+          enum: [PENDIENTE, CONFIRMADO, RECHAZADO, REVERTIDO]
+          example: CONFIRMADO
+        referenciaExterna:
+          type: [string, 'null']
+          example: sim-carga-123
+        descripcion:
+          type: [string, 'null']
+          example: Carga de saldo
+        torneo:
+          oneOf:
+            - $ref: '#/components/schemas/TorneoMovimiento'
+            - type: 'null'
+        rifa:
+          oneOf:
+            - $ref: '#/components/schemas/RifaMovimiento'
+            - type: 'null'
+        creadoEn:
+          type: string
+          format: date-time
 
 

@@ -7,11 +7,15 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
+import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
+import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
@@ -60,6 +64,7 @@ class UsuarioServiceTest {
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private CurrentUserProvider currentUserProvider;
     @Mock private ApplicationEventPublisher eventos;
+    @Mock private BilleteraRepository billeteraRepository;
 
     @InjectMocks
     private UsuarioService usuarioService;
@@ -104,6 +109,16 @@ class UsuarioServiceTest {
         assertThat(asignacion.getValue().getAsignadoEn()).isNotNull();
         assertThat(asignacion.getValue().getAsignadoPor()).isEqualTo("SISTEMA");
         assertThat(creado.getRoles()).hasSize(1);
+
+        ArgumentCaptor<Billetera> billeteraCaptor = ArgumentCaptor.forClass(Billetera.class);
+        verify(billeteraRepository).save(billeteraCaptor.capture());
+        Billetera billetera = billeteraCaptor.getValue();
+        assertThat(billetera.getUsuario()).isSameAs(creado);
+        assertThat(billetera.getSaldoDisponible()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(billetera.getSaldoRetenido()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(billetera.getGananciaAcumulada()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(billetera.getMoneda()).isEqualTo("ARS");
+        assertThat(billetera.getEstado()).isEqualTo(EstadoBilletera.ACTIVA);
 
         ArgumentCaptor<Object> evento = ArgumentCaptor.forClass(Object.class);
         verify(eventos).publishEvent(evento.capture());
