@@ -47,10 +47,11 @@ public class BilleteraService {
     public Page<MovimientoBilleteraResponse> listarMovimientos(Long usuarioId, Pageable pageable) {
         Billetera billetera = obtenerOCrearBilletera(usuarioId);
 
+        // Se ignora el sort del cliente: el orden es siempre cronológico inverso estricto (creadoEn DESC, id DESC)
         Pageable ordenado = PageRequest.of(
                 pageable.getPageNumber(),
                 pageable.getPageSize(),
-                pageable.getSort().isSorted() ? pageable.getSort() : Sort.by(Sort.Direction.DESC, "creadoEn", "id"));
+                Sort.by(Sort.Direction.DESC, "creadoEn").and(Sort.by(Sort.Direction.DESC, "id")));
 
         Page<Movimiento> pagina = movimientoRepository.findByBilleteraId(billetera.getId(), ordenado);
 

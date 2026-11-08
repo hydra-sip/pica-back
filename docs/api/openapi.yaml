@@ -1200,11 +1200,11 @@ paths:
       x-jira: PICA-317
       x-owner: Salvador
       description: >-
-        Historial paginado de movimientos de la billetera del usuario logueado, ordenado del más nuevo al más viejo.
+        Historial paginado de movimientos de la billetera del usuario logueado, ordenado del más nuevo al más viejo
+        (creadoEn DESC, id DESC). El parámetro `sort` se ignora.
       parameters:
         - {$ref: '#/components/parameters/page'}
         - {$ref: '#/components/parameters/size'}
-        - {$ref: '#/components/parameters/sort'}
       responses:
         '200':
           description: Página de movimientos

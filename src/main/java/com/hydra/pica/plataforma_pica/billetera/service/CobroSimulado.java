@@ -1,5 +1,7 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
+import java.math.BigDecimal;
+
 import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
@@ -62,10 +64,15 @@ public class CobroSimulado implements CobroService {
         return movimientoRepository.save(movimiento);
     }
 
-    // el registro no crea billetera: aparece con el primer pago
+    // Respaldo por si algún test persiste un Usuario directo sin pasar por UsuarioService.crear
     private Billetera nuevaBilletera(Long usuarioId) {
         Billetera billetera = new Billetera();
         billetera.setUsuario(usuarioRepository.getReferenceById(usuarioId));
+        billetera.setSaldoDisponible(BigDecimal.ZERO);
+        billetera.setSaldoRetenido(BigDecimal.ZERO);
+        billetera.setGananciaAcumulada(BigDecimal.ZERO);
+        billetera.setMoneda("ARS");
+        billetera.setEstado(EstadoBilletera.ACTIVA);
         return billeteraRepository.save(billetera);
     }
 

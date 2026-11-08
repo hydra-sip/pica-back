@@ -193,6 +193,12 @@ class BilleteraIntegracionTest {
                 .andExpect(jsonPath("$.content[1].id").value(movA1.getId()))
                 .andExpect(jsonPath("$.content[1].referenciaExterna").value("ref-a1"))
                 .andExpect(jsonPath("$.content[1].saldoResultante").value(5000.00));
+
+        // El parámetro sort del cliente se ignora: el orden se mantiene estricto por creadoEn DESC, id DESC (movA2 antes que movA1 aunque movA1 tenga mayor monto)
+        mockMvc.perform(get("/api/v1/billetera/movimientos?sort=monto,desc").header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(movA2.getId()))
+                .andExpect(jsonPath("$.content[1].id").value(movA1.getId()));
     }
 
     @Test
