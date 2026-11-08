@@ -19,6 +19,9 @@ app:
     ausencia-automatica: false
   torneos:
     cierre-automatico: false
+  # Los tests que no prueban el cobro pagan sin cargar saldo; los del cobro con saldo (HU-603) lo cambian a saldo.
+  cobro:
+    modo: simulado
   rifas:
     cierre-automatico: false
     sorteo-automatico: false

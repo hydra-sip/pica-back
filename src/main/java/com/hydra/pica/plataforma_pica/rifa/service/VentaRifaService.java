@@ -145,6 +145,8 @@ public class VentaRifaService {
         BigDecimal monto = rifa.getPrecioNumero().multiply(BigDecimal.valueOf(elegidos.size()));
         BigDecimal gastos = GastosAdministrativos.monto(monto, rifa.getPctGastosAdministrativos());
         Long torneoId = rifa.getTorneo() != null ? rifa.getTorneo().getId() : null;
+        // HU-603: si el saldo no alcanza para los números y los gastos, falla antes de cobrar, con el faltante del total
+        cobroService.exigirSaldo(compradorId, monto.add(gastos));
         Movimiento pago = cobroService.cobrar(new SolicitudCobro(compradorId, TipoMovimiento.COMPRA_NUMERO,
                 monto, torneoId, null, claveIdempotencia,
                 "Compra de " + elegidos.size() + " números de la rifa " + rifa.getTitulo()));

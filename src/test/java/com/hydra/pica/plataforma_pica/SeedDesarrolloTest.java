@@ -37,7 +37,8 @@ class SeedDesarrolloTest {
                    (SELECT count(*) FROM partido) AS partidos,
                    (SELECT count(*) FROM juega) AS lados,
                    (SELECT count(*) FROM numero) AS numeros,
-                   (SELECT count(*) FROM ticket) AS tickets
+                   (SELECT count(*) FROM ticket) AS tickets,
+                   (SELECT sum(saldo_disponible) FROM billetera) AS disponible
             """;
 
     @Autowired private JdbcTemplate jdbc;
@@ -99,6 +100,17 @@ class SeedDesarrolloTest {
                   AND NOT EXISTS (SELECT 1 FROM movimiento m
                                   WHERE m.inscripcion_id = i.id AND m.tipo = 'INSCRIPCION' AND m.estado = 'CONFIRMADO')
                 """, Integer.class)).isZero();
+    }
+
+    @Test
+    void cadaJugadorArrancaConSaldoParaPagar() {
+        assertThat(jdbc.queryForList("""
+                SELECT b.saldo_disponible FROM billetera b
+                JOIN usuario u ON u.id = b.usuario_id
+                JOIN movimiento m ON m.billetera_id = b.id AND m.tipo = 'CARGA' AND m.estado = 'CONFIRMADO'
+                WHERE u.username LIKE 'dev\\_jugador%'
+                """, java.math.BigDecimal.class))
+                .hasSize(6).allSatisfy(saldo -> assertThat(saldo).isEqualByComparingTo("100000"));
     }
 
     @Test
