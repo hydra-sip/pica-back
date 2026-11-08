@@ -231,6 +231,12 @@ class BilleteraControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("VALIDACION"));
 
+        mockMvc.perform(post("/api/v1/billetera/cargas")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"monto\": 1000000.01}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+
         verifyNoInteractions(cargaService);
     }
 }

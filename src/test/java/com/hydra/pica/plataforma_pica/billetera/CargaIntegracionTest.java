@@ -49,6 +49,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Pruebas de integración de acreditación de carga e idempotencia concurrente contra PostgreSQL (HU-602, T602-2).
@@ -67,6 +69,7 @@ class CargaIntegracionTest {
     @Autowired private MovimientoRepository movimientoRepository;
     @Autowired private AuditoriaRepository auditoriaRepository;
     @Autowired private JwtService jwtService;
+    @Autowired private PlatformTransactionManager transactionManager;
 
     @Test
     @DisplayName("Endpoint POST /api/v1/billetera/cargas suma saldo, genera movimiento CARGA CONFIRMADO y audita")
@@ -271,6 +274,124 @@ class CargaIntegracionTest {
                     ConflictoException ce = (ConflictoException) ex;
                     assertThat(ce.getCodigo()).isEqualTo(CodigoError.CLAVE_IDEMPOTENCIA_USADA);
                 });
+    }
+
+    @Test
+    @DisplayName("Validación de montos: excede el límite máximo permitido (1.000.000,00) devuelve 400 VALIDACION")
+    void montoExcedeMaximoResponde400() throws Exception {
+        Usuario usuario = crearUsuarioConBilletera("usercargamax", EstadoBilletera.ACTIVA, BigDecimal.ZERO);
+        String token = generarToken(usuario);
+
+        mockMvc.perform(post("/api/v1/billetera/cargas")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"monto\": 1000000.01}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+    }
+
+    @Test
+    @DisplayName("Referencia existente vinculada a un movimiento que no es CARGA lanza CLAVE_IDEMPOTENCIA_USADA")
+    void referenciaDeOtroTipoMovimientoLanzaConflicto() {
+        Usuario usuario = crearUsuarioConBilletera("usercarganocarga", EstadoBilletera.ACTIVA, BigDecimal.ZERO);
+        Billetera billetera = billeteraRepository.findByUsuarioId(usuario.getId()).orElseThrow();
+        String referencia = "ref-premio-" + UUID.randomUUID();
+
+        Movimiento movPremio = new Movimiento();
+        movPremio.setBilletera(billetera);
+        movPremio.setTipo(TipoMovimiento.PREMIO);
+        movPremio.setMonto(new BigDecimal("500.00"));
+        movPremio.setMoneda("ARS");
+        movPremio.setSaldoResultante(new BigDecimal("500.00"));
+        movPremio.setEstado(EstadoMovimiento.CONFIRMADO);
+        movPremio.setReferenciaExterna(referencia);
+        movPremio.setDescripcion("Premio torneo");
+        movimientoRepository.save(movPremio);
+
+        assertThatThrownBy(() -> cargaService.acreditar(
+                usuario.getId(),
+                new BigDecimal("500.00"),
+                referencia,
+                "Intento de carga con referencia de premio"))
+                .isInstanceOf(ConflictoException.class)
+                .satisfies(ex -> {
+                    ConflictoException ce = (ConflictoException) ex;
+                    assertThat(ce.getCodigo()).isEqualTo(CodigoError.CLAVE_IDEMPOTENCIA_USADA);
+                });
+    }
+
+    @Test
+    @DisplayName("Concurrencia entre distintos usuarios con la misma referencia: uno acredita y el otro falla con CLAVE_IDEMPOTENCIA_USADA")
+    void concurrenciaDistintosUsuariosMismaReferenciaUnoExitosoYUnoConflicto() throws Exception {
+        Usuario userA = crearUsuarioConBilletera("usercargadistA", EstadoBilletera.ACTIVA, BigDecimal.ZERO);
+        Usuario userB = crearUsuarioConBilletera("usercargadistB", EstadoBilletera.ACTIVA, BigDecimal.ZERO);
+        String referencia = "ref-cross-" + UUID.randomUUID();
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch startGate = new CountDownLatch(1);
+        CountDownLatch endGate = new CountDownLatch(2);
+
+        List<Throwable> errores = Collections.synchronizedList(new ArrayList<>());
+        List<Movimiento> exitosos = Collections.synchronizedList(new ArrayList<>());
+
+        executor.submit(() -> {
+            try {
+                startGate.await();
+                exitosos.add(cargaService.acreditar(userA.getId(), new BigDecimal("1000.00"), referencia, "Carga user A"));
+            } catch (Throwable t) {
+                errores.add(t);
+            } finally {
+                endGate.countDown();
+            }
+        });
+
+        executor.submit(() -> {
+            try {
+                startGate.await();
+                exitosos.add(cargaService.acreditar(userB.getId(), new BigDecimal("1000.00"), referencia, "Carga user B"));
+            } catch (Throwable t) {
+                errores.add(t);
+            } finally {
+                endGate.countDown();
+            }
+        });
+
+        startGate.countDown();
+        boolean completaron = endGate.await(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertThat(completaron).isTrue();
+        assertThat(exitosos).hasSize(1);
+        assertThat(errores).hasSize(1);
+
+        Throwable error = errores.getFirst();
+        assertThat(error).isInstanceOf(ConflictoException.class);
+        assertThat(((ConflictoException) error).getCodigo()).isEqualTo(CodigoError.CLAVE_IDEMPOTENCIA_USADA);
+    }
+
+    @Test
+    @DisplayName("registrarRechazo persiste la auditoría en transacción autónoma incluso si la transacción externa hace rollback")
+    void registrarRechazoPersisteAuditoriaAunqueTransaccionExternaHagaRollback() {
+        Usuario usuario = crearUsuarioConBilletera("usercargatxrech", EstadoBilletera.ACTIVA, new BigDecimal("2000.00"));
+        String referencia = "ref-tx-rechazo-" + UUID.randomUUID();
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+
+        assertThatThrownBy(() -> tx.execute(status -> {
+            cargaService.registrarRechazo(
+                    usuario.getId(),
+                    new BigDecimal("4000.00"),
+                    referencia,
+                    "Rechazo simulado");
+            throw new RuntimeException("Forzar rollback de transacción externa");
+        })).isInstanceOf(RuntimeException.class).hasMessageContaining("Forzar rollback");
+
+        List<Auditoria> auditorias = auditoriaRepository.findAll().stream()
+                .filter(a -> a.getUsuario() != null && usuario.getId().equals(a.getUsuario().getId()))
+                .filter(a -> a.getDetalle() != null && referencia.equals(a.getDetalle().get("referencia")))
+                .toList();
+
+        assertThat(auditorias).hasSize(1);
+        assertThat(auditorias.getFirst().getDetalle().get("motivo")).isEqualTo("Rechazo simulado");
     }
 
     private Usuario crearUsuarioConBilletera(String prefijo, EstadoBilletera estadoBilletera, BigDecimal saldoInicial) {

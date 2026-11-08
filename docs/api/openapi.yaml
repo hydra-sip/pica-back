@@ -1243,6 +1243,8 @@ paths:
           $ref: '#/components/responses/Error'
         '403':
           $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Conflicto'
 
   # --- Equipos -----------------------------------------------------------------
 
@@ -2792,7 +2794,8 @@ components:
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
         figuran en una nómina) ·
         NO_ES_CAPITAN (cargar el resultado o subir evidencia sin ser el capitán de uno de los dos lados) ·
-        NO_ES_COMPRADOR (reclamar el resultado de una rifa sin haber comprado un ticket).
+        NO_ES_COMPRADOR (reclamar el resultado de una rifa sin haber comprado un ticket) ·
+        BILLETERA_BLOQUEADA (operar con una billetera bloqueada).
 
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              ALMACENAMIENTO_NO_DISPONIBLE,
@@ -4474,11 +4477,8 @@ components:
           type: number
           format: double
           minimum: 0.01
-          description: Monto a acreditar en la billetera en ARS. Mayor a 0 con hasta 2 decimales.
+          maximum: 1000000.00
+          description: Monto a acreditar en la billetera en ARS. Mayor a 0 y hasta $1.000.000,00 con máximo 2 decimales.
           example: 5000.00
-        referencia:
-          type: string
-          description: Referencia externa opcional. Si no se provee, el backend genera una automáticamente.
-          example: sim-carga-8f2a1b9c
 
 

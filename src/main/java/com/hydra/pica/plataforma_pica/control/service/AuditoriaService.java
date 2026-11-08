@@ -23,6 +23,20 @@ public class AuditoriaService {
 
     @Transactional(propagation = Propagation.REQUIRED)
     public Auditoria registrar(Long usuarioId, AccionAuditoria accion, String entidad, String entidadId, Map<String, Object> detalle) {
+        return guardar(usuarioId, accion, entidad, entidadId, detalle);
+    }
+
+    /**
+     * Registra el evento en una transacción autónoma independiente (REQUIRES_NEW), garantizando
+     * que persista en la base de datos incluso si la transacción de quien invoca falla o hace rollback
+     * (por ejemplo, ante intentos de cobro o carga rechazados).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Auditoria registrarEnTransaccionNueva(Long usuarioId, AccionAuditoria accion, String entidad, String entidadId, Map<String, Object> detalle) {
+        return guardar(usuarioId, accion, entidad, entidadId, detalle);
+    }
+
+    private Auditoria guardar(Long usuarioId, AccionAuditoria accion, String entidad, String entidadId, Map<String, Object> detalle) {
         Auditoria auditoria = new Auditoria();
         if (usuarioId != null) {
             auditoria.setUsuario(usuarioRepository.getReferenceById(usuarioId));
@@ -34,4 +48,3 @@ public class AuditoriaService {
         return auditoriaRepository.save(auditoria);
     }
 }
-

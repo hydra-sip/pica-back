@@ -51,9 +51,7 @@ public class BilleteraController {
     @PostMapping("/cargas")
     @ResponseStatus(HttpStatus.CREATED)
     public MovimientoBilleteraResponse cargarSaldo(@Valid @RequestBody CargaRequest request) {
-        String referencia = request.referencia() != null && !request.referencia().isBlank()
-                ? request.referencia().trim()
-                : "sim-carga-" + UUID.randomUUID();
+        String referencia = "sim-carga-" + UUID.randomUUID();
         Movimiento movimiento = cargaService.acreditar(
                 usuarioActual(),
                 request.monto(),

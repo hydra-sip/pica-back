@@ -22,8 +22,10 @@ import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -111,7 +113,16 @@ public class CargaService {
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(referencia);
         movimiento.setDescripcion(descripcion != null && !descripcion.isBlank() ? descripcion : "Carga de saldo");
-        movimiento = movimientoRepository.save(movimiento);
+
+        try {
+            movimiento = movimientoRepository.saveAndFlush(movimiento);
+        } catch (DataIntegrityViolationException e) {
+            if (esViolacionReferenciaUnica(e)) {
+                throw new ConflictoException(CodigoError.CLAVE_IDEMPOTENCIA_USADA,
+                        "La referencia ya fue utilizada en otra operación");
+            }
+            throw e;
+        }
 
         // 7. Registro de auditoría
         Map<String, Object> detalleAuditoria = new LinkedHashMap<>();
@@ -130,7 +141,8 @@ public class CargaService {
 
     /**
      * Registra un intento de carga rechazado por la pasarela de pagos.
-     * Los saldos de la billetera se mantienen intactos y queda registrado el evento en auditoría.
+     * Los saldos de la billetera se mantienen intactos y queda registrado el evento en auditoría
+     * dentro de una transacción autónoma independiente (REQUIRES_NEW) para sobrevivir a rollbacks externos.
      */
     @Transactional
     public Auditoria registrarRechazo(Long usuarioId, BigDecimal monto, String referencia, String motivo) {
@@ -152,14 +164,31 @@ public class CargaService {
         }
         detalle.put("estado", "RECHAZADA");
 
-        return auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, "BILLETERA", entidadId, detalle);
+        return auditoriaService.registrarEnTransaccionNueva(usuarioId, AccionAuditoria.PAGO, "BILLETERA", entidadId, detalle);
     }
 
     private Movimiento validarYDevolverExistente(Movimiento existente, Long usuarioId) {
-        if (!existente.getBilletera().getUsuario().getId().equals(usuarioId)) {
-            throw new ConflictoException(CodigoError.CLAVE_IDEMPOTENCIA_USADA, "La referencia ya fue utilizada por otro usuario");
+        if (!existente.getBilletera().getUsuario().getId().equals(usuarioId)
+                || existente.getTipo() != TipoMovimiento.CARGA
+                || existente.getEstado() != EstadoMovimiento.CONFIRMADO) {
+            throw new ConflictoException(CodigoError.CLAVE_IDEMPOTENCIA_USADA,
+                    "La referencia ya fue utilizada en otra operación");
         }
         return existente;
     }
-}
 
+    private static boolean esViolacionReferenciaUnica(DataIntegrityViolationException e) {
+        Throwable causa = e;
+        while (causa != null && !(causa instanceof ConstraintViolationException)) {
+            causa = causa.getCause();
+        }
+        if (causa instanceof ConstraintViolationException cve) {
+            String nombre = cve.getConstraintName();
+            if (nombre != null && nombre.equalsIgnoreCase("uq_movimiento_referencia_externa")) {
+                return true;
+            }
+        }
+        String msg = e.getMessage();
+        return msg != null && msg.contains("uq_movimiento_referencia_externa");
+    }
+}
