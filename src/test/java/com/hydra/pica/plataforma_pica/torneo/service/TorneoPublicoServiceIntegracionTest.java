@@ -337,6 +337,7 @@ class TorneoPublicoServiceIntegracionTest {
     private void conInicioEn(Torneo torneo, int dias) {
         torneo.setFechaInicio(Instant.now().plus(dias, ChronoUnit.DAYS));
         torneo.setCierreInscripcionEn(torneo.getFechaInicio().minus(2, ChronoUnit.DAYS));
+        torneo.setFechaFin(torneo.getFechaInicio().plus(3, ChronoUnit.DAYS));
         torneoRepository.save(torneo);
     }
 
