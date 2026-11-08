@@ -741,10 +741,11 @@ paths:
       x-owner: Laura
       description: >-
         Datos generales (pestaña 1). Nace en BORRADOR y sin premios, que se cargan con
-        `PUT /rifas/{id}/premios`. Se puede guardar incompleta: la ventana de venta puede faltar (las dos
-        fechas van juntas). 400 `VALIDACION` con `errores`: `RANGO_INVALIDO` en `numeroHasta` si es menor
-        que `numeroDesde`; `VENTANA_INVALIDA` en `ventaHasta` si no es posterior a `ventaDesde` o ya pasó;
-        `REQUERIDO` si viene una sola fecha.
+        `PUT /rifas/{id}/premios`. Se puede guardar incompleta: la ventana de venta puede faltar, y un
+        `ventaHasta` sin `ventaDesde` es una venta que arranca al publicar (PICA-308). 400 `VALIDACION` con
+        `errores`: `RANGO_INVALIDO` en `numeroHasta` si es menor que `numeroDesde`; `VENTANA_INVALIDA` en
+        `ventaHasta` si no es posterior a `ventaDesde` o ya pasó; `REQUERIDO` en `ventaHasta` si viene
+        `ventaDesde` sin ella.
         Con `torneoId` (PICA-218), el torneo tiene que ser del mismo organizador (404 `TORNEO_NO_ENCONTRADO`
         si no), estar en BORRADOR, INSCRIPCION_ABIERTA o INSCRIPCION_CERRADA (409 `TORNEO_NO_ADMITE_RIFA`) y
         no tener otra rifa (409 `TORNEO_CON_RIFA`). La venta tiene que empezar después de que se publicó el
@@ -847,8 +848,9 @@ paths:
         409 `RIFA_NO_EDITABLE` si ya no está en BORRADOR.
         409 `RIFA_INCOMPLETA` si le falta algo para venderse: la lista va en `faltantes` (ver
         `FaltantePublicacion`) y la suma de los premios en `sumaPremios`. Un `ventaDesde` pasado se acepta y
-        la venta arranca al publicar (PICA-287); un `ventaHasta` pasado no. Con torneo (PICA-218), el torneo
-        tiene que estar publicado y la venta dentro de sus fechas.
+        la venta arranca al publicar (PICA-287); un `ventaHasta` pasado no. Sin `ventaDesde`, queda con el
+        momento de publicar (PICA-308). Con torneo (PICA-218), el torneo tiene que estar publicado y la venta
+        dentro de sus fechas.
       parameters: [{$ref: '#/components/parameters/id'}]
       requestBody:
         required: true
@@ -2592,10 +2594,14 @@ paths:
       x-owner: Tomás
       security: []
       description: >-
-        Lista paginada de torneos públicos con filtros opcionales por disciplina y estado.
-        No muestra borradores ni torneos eliminados. Accesible sin autenticación.
+        Lista paginada de torneos públicos con filtros opcionales, que se combinan: texto libre, disciplina,
+        modalidad y estado. No muestra borradores ni torneos eliminados. Accesible sin autenticación.
+        Sin `sort`, primero los que todavía no empezaron, del más cercano al más lejano, y después los ya empezados
+        (PICA-304).
       parameters:
-        - {name: disciplina, in: query, schema: {type: string}, description: Filtro por disciplina}
+        - {name: q, in: query, schema: {type: string}, description: 'Busca en nombre, disciplina y sede, por coincidencia parcial y sin importar tildes ni mayúsculas. Con varias palabras tienen que aparecer todas.'}
+        - {name: disciplina, in: query, schema: {type: string}, description: Filtro por disciplina exacta}
+        - {name: modalidad, in: query, schema: {$ref: '#/components/schemas/Modalidad'}, description: Filtro por modalidad del torneo}
         - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoTorneo'}, description: Filtro por estado del torneo}
         - {$ref: '#/components/parameters/page'}
         - {$ref: '#/components/parameters/size'}
@@ -3783,7 +3789,7 @@ components:
         numeroDesde: {type: integer, minimum: 0}
         numeroHasta: {type: integer, minimum: 0, description: Mayor o igual que numeroDesde}
         precioNumero: {type: number, exclusiveMinimum: 0, description: Precio de cada número en ARS}
-        ventaDesde: {type: [string, 'null'], format: date-time, description: Va junto con ventaHasta}
+        ventaDesde: {type: [string, 'null'], format: date-time, description: 'Pide ventaHasta; sin ella, con ventaHasta cargada, la venta arranca al publicar'}
         ventaHasta: {type: [string, 'null'], format: date-time, description: Posterior a ventaDesde y en el futuro}
         fechaSorteo:
           type: [string, 'null']
@@ -4025,7 +4031,7 @@ components:
       type: string
       description: >-
         Lo que le falta a una rifa para publicarse (en `faltantes` del 409 `RIFA_INCOMPLETA`). VENTANA: no
-        están cargadas las fechas de venta · VENTA_TERMINADA: el fin de la venta ya pasó (un inicio pasado sí
+        está cargado el fin de la venta · VENTA_TERMINADA: el fin de la venta ya pasó (un inicio pasado sí
         se acepta: la venta arranca al publicar) · FECHA_SORTEO:
         falta la fecha del sorteo · SIN_PREMIOS: no hay premios · PREMIOS_NO_SUMAN_100: `pctDestinadoTorneo`
         más los premios no suman 100 % (la suma de los premios, sin el torneo, va en `sumaPremios`) ·
