@@ -338,6 +338,10 @@ pedir 200 GET /api/v1/billetera "" "$USUARIO"
 [[ $(campo .estado) == "ACTIVA" ]] \
     || { echo "    ✗ el estado de la billetera no es ACTIVA: $(campo .estado)"; exit 1; }
 pedir 200 GET /api/v1/billetera/movimientos "/api/v1/billetera/movimientos?page=0&size=20" "$USUARIO"
+# POST /cargas se prueba con 401 y 400 (no con 201) porque una carga exitosa escribe en auditoria,
+# y esa tabla no admite DELETE, lo que impediría la limpieza final del usuario de prueba.
+pedir 401 POST /api/v1/billetera/cargas "" "" '{"monto":100.00}'
+pedir 400:VALIDACION POST /api/v1/billetera/cargas "" "$USUARIO" '{"monto":0.00}'
 
 echo
 echo "Inscripciones (en torneos y equipos cargados por SQL: todavía no hay API para crearlos)"
