@@ -72,6 +72,11 @@ public class Movimiento extends AuditableEntity {
     @Column(name = "estado", length = 20, nullable = false)
     private EstadoMovimiento estado = EstadoMovimiento.PENDIENTE;
 
+    /** La custodia del evento al que entró este pago (HU-603); null en cargas, premios y retiros. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "custodia_id")
+    private Custodia custodia;
+
     @Column(name = "referencia_externa", length = 100)
     private String referenciaExterna;
 

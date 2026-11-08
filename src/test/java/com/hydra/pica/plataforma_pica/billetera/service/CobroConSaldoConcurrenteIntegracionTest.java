@@ -25,7 +25,6 @@ import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
@@ -37,7 +36,8 @@ import org.springframework.test.context.ActiveProfiles;
 
 /**
  * RNF-CON-01 en el cobro con saldo (HU-603): pagos simultáneos de la misma billetera, cada uno en su transacción y
- * sin la del test. Como lo que se escribe queda confirmado, el escenario se borra al terminar.
+ * sin la del test. Lo que se escribe queda confirmado y no se borra: cada cobro deja su ingreso a la custodia en la
+ * auditoría, que es de solo agregar. Por eso cada test usa su jugador, su torneo y sus claves.
  */
 @SpringBootTest(properties = "app.cobro.modo=saldo")
 @ActiveProfiles("dev")
@@ -51,8 +51,8 @@ class CobroConSaldoConcurrenteIntegracionTest {
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
 
-    private Long persona;
     private Long jugador;
+    private Long torneo;
 
     @BeforeEach
     void jugadorConTresMil() {
@@ -60,7 +60,7 @@ class CobroConSaldoConcurrenteIntegracionTest {
         p.setNombres("Concurrente");
         p.setApellidos("Test");
         p.setEstado(EstadoGeneral.ACTIVO);
-        persona = personaRepository.save(p).getId();
+        Long persona = personaRepository.save(p).getId();
 
         Usuario u = new Usuario();
         u.setUsername("conc603_" + System.nanoTime());
@@ -73,14 +73,14 @@ class CobroConSaldoConcurrenteIntegracionTest {
                 INSERT INTO billetera (usuario_id, saldo_disponible) VALUES (?, 3000.00)
                 ON CONFLICT (usuario_id) DO UPDATE SET saldo_disponible = 3000.00
                 """, jugador);
-    }
-
-    @AfterEach
-    void limpiar() {
-        jdbc.update("DELETE FROM movimiento WHERE billetera_id IN (SELECT id FROM billetera WHERE usuario_id = ?)", jugador);
-        jdbc.update("DELETE FROM billetera WHERE usuario_id = ?", jugador);
-        jdbc.update("DELETE FROM usuario WHERE id = ?", jugador);
-        jdbc.update("DELETE FROM persona WHERE id = ?", persona);
+        torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion,
+                                    cierre_inscripcion_en, fecha_inicio, estado)
+                VALUES (?, 'Torneo concurrente', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL',
+                        8, 2, 1000, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, jugador);
     }
 
     // diez pagos de 1000 a la vez con 3000 de saldo: pasan tres y la billetera nunca queda en negativo
@@ -103,6 +103,9 @@ class CobroConSaldoConcurrenteIntegracionTest {
                 "SELECT saldo_disponible, saldo_retenido FROM billetera WHERE usuario_id = ?", jugador);
         assertThat((BigDecimal) billetera.get("saldo_disponible")).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat((BigDecimal) billetera.get("saldo_retenido")).isEqualByComparingTo("3000.00");
+        // los tres pagos entraron a la custodia del torneo
+        assertThat(jdbc.queryForObject("SELECT sum(m.monto) FROM movimiento m JOIN custodia c ON c.id = m.custodia_id "
+                + "WHERE c.torneo_id = ?", BigDecimal.class, torneo)).isEqualByComparingTo("3000.00");
         // cada movimiento deja el saldo que quedó después de él: 2000, 1000 y 0, sin repetir
         assertThat(jdbc.queryForList("""
                 SELECT m.saldo_resultante FROM movimiento m JOIN billetera b ON b.id = m.billetera_id
@@ -132,8 +135,8 @@ class CobroConSaldoConcurrenteIntegracionTest {
     private Callable<Movimiento> pago(CyclicBarrier salida, String clave) {
         return () -> {
             salida.await(10, TimeUnit.SECONDS);
-            return cobroService.cobrar(new SolicitudCobro(jugador, TipoMovimiento.COMPRA_NUMERO, MIL, null, null,
-                    clave, "Compra simultánea"));
+            return cobroService.cobrar(new SolicitudCobro(jugador, TipoMovimiento.COMISION, MIL, torneo, null,
+                    jugador + "-" + clave, "Pago simultáneo"));
         };
     }
 
