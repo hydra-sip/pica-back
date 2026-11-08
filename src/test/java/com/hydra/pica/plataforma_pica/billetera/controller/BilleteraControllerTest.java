@@ -5,7 +5,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -14,14 +16,17 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
+import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.dto.BilleteraResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.MovimientoBilleteraResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.RifaMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.dto.TorneoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.service.BilleteraService;
+import com.hydra.pica.plataforma_pica.billetera.service.CargaService;
 import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
@@ -48,6 +53,7 @@ class BilleteraControllerTest {
     @Autowired private MockMvc mockMvc;
 
     @MockitoBean private BilleteraService billeteraService;
+    @MockitoBean private CargaService cargaService;
     @MockitoBean private CurrentUserProvider currentUserProvider;
 
     @Test
@@ -159,6 +165,73 @@ class BilleteraControllerTest {
                 .andExpect(jsonPath("$.page.totalElements").value(3));
 
         verify(billeteraService).listarMovimientos(eq(USUARIO_ID), any());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/billetera/cargas sin sesión responde 401 UNAUTHORIZED")
+    void cargarSaldoSinSesionDa401() throws Exception {
+        mockMvc.perform(post("/api/v1/billetera/cargas")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"monto\": 5000.00}"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(cargaService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("POST /api/v1/billetera/cargas con sesión y monto válido acredita y responde 201 CREATED")
+    void cargarSaldoConSesionYMontoValidoDa201() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(USUARIO_ID));
+
+        Billetera billetera = new Billetera();
+        billetera.setMoneda("ARS");
+
+        Movimiento mov = new Movimiento();
+        mov.setBilletera(billetera);
+        mov.setTipo(TipoMovimiento.CARGA);
+        mov.setMonto(new BigDecimal("5000.00"));
+        mov.setMoneda("ARS");
+        mov.setSaldoResultante(new BigDecimal("5000.00"));
+        mov.setEstado(EstadoMovimiento.CONFIRMADO);
+        mov.setReferenciaExterna("sim-carga-test-123");
+        mov.setDescripcion("Carga de saldo simulada");
+
+        when(cargaService.acreditar(eq(USUARIO_ID), eq(new BigDecimal("5000.00")), any(), any()))
+                .thenReturn(mov);
+
+        mockMvc.perform(post("/api/v1/billetera/cargas")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"monto\": 5000.00}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tipo").value("CARGA"))
+                .andExpect(jsonPath("$.monto").value(5000.00))
+                .andExpect(jsonPath("$.saldoResultante").value(5000.00))
+                .andExpect(jsonPath("$.estado").value("CONFIRMADO"))
+                .andExpect(jsonPath("$.referenciaExterna").value("sim-carga-test-123"));
+
+        verify(cargaService).acreditar(eq(USUARIO_ID), eq(new BigDecimal("5000.00")), any(), any());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("POST /api/v1/billetera/cargas con monto cero o negativo responde 400 BAD_REQUEST")
+    void cargarSaldoConMontoInvalidoDa400() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(USUARIO_ID));
+
+        mockMvc.perform(post("/api/v1/billetera/cargas")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"monto\": 0.00}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+
+        mockMvc.perform(post("/api/v1/billetera/cargas")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"monto\": -100.00}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+
+        verifyNoInteractions(cargaService);
     }
 }
 

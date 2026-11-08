@@ -1215,6 +1215,35 @@ paths:
         '401':
           $ref: '#/components/responses/Error'
 
+  /api/v1/billetera/cargas:
+    post:
+      tags: [Billetera]
+      summary: Cargar saldo en la billetera
+      x-jira: PICA-318
+      x-owner: Salvador
+      description: >-
+        Carga saldo en la billetera virtual del usuario autenticado. Acredita el monto de forma idempotente
+        por referencia externa, soportando concurrencia y reintentos automáticos.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CargaRequest'
+      responses:
+        '201':
+          description: Carga acreditada con éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovimientoBilletera'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+
   # --- Equipos -----------------------------------------------------------------
 
 
@@ -2790,7 +2819,7 @@ components:
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, SORTEO_ANTICIPADO, RECLAMO_DUPLICADO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
-             INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR]
+             INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR, BILLETERA_BLOQUEADA]
 
     ErrorCampo:
       type: object
@@ -4436,5 +4465,20 @@ components:
         creadoEn:
           type: string
           format: date-time
+
+    CargaRequest:
+      type: object
+      required: [monto]
+      properties:
+        monto:
+          type: number
+          format: double
+          minimum: 0.01
+          description: Monto a acreditar en la billetera en ARS. Mayor a 0 con hasta 2 decimales.
+          example: 5000.00
+        referencia:
+          type: string
+          description: Referencia externa opcional. Si no se provee, el backend genera una automáticamente.
+          example: sim-carga-8f2a1b9c
 
 
