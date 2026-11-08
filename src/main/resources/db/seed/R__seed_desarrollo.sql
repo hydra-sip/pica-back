@@ -11,6 +11,7 @@
 --   - "Torneo cerrado" (dev-torneo-cerrado): individual, inscripción cerrada con dev_jugador1 a 4,
 --     el árbitro designado, la Mesa 1 y el bracket: dos semifinales con sus lados y la final vacía.
 --   - Cada pago es un movimiento CONFIRMADO en la billetera del que paga, como lo deja el cobro simulado.
+--   - Cada jugador arranca con una carga de $100.000 para pagar con saldo (HU-603).
 -- Las fechas son relativas al momento en que corre.
 
 -- ---------------------------------------------------------------------------------------------------
@@ -61,6 +62,23 @@ SELECT u.id, 'SEED', 'SEED'
 FROM usuario u
 WHERE u.username LIKE 'dev\_jugador%'
 ON CONFLICT DO NOTHING;
+
+-- La carga inicial, una sola vez por jugador: el movimiento y el disponible van juntos.
+WITH cargas AS (
+    INSERT INTO movimiento (billetera_id, tipo, monto, saldo_resultante, estado, referencia_externa, descripcion,
+                            creado_por, modificado_por)
+    SELECT b.id, 'CARGA', 100000.00, b.saldo_disponible + 100000.00, 'CONFIRMADO', 'seed-carga-' || u.username,
+           'Carga inicial del seed', 'SEED', 'SEED'
+    FROM billetera b
+    JOIN usuario u ON u.id = b.usuario_id
+    WHERE u.username LIKE 'dev\_jugador%'
+      AND NOT EXISTS (SELECT 1 FROM movimiento m WHERE m.referencia_externa = 'seed-carga-' || u.username)
+    RETURNING billetera_id, monto
+)
+UPDATE billetera b
+SET saldo_disponible = b.saldo_disponible + c.monto
+FROM cargas c
+WHERE b.id = c.billetera_id;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Equipos (el capitán se chequea al final de la transacción, así que va después del equipo)

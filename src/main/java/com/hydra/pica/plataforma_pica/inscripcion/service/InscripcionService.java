@@ -452,9 +452,8 @@ public class InscripcionService {
      * fila del torneo y recién después lee la inscripción, así un pago simultáneo de la misma inscripción
      * o por el último lugar ve lo que dejó el anterior.
      *
-     * <p>El bloqueo del torneo dura todo el cobro. Con {@code CobroSimulado} no se nota; con una pasarela
-     * lenta, los pagos del mismo torneo esperan detrás del que está cobrando. Hay que revisarlo al
-     * integrar la pasarela (billetera virtual, HU-602).
+     * <p>El bloqueo del torneo dura todo el cobro. El cobro con saldo (HU-603) es en la misma base y no se nota;
+     * después del torneo bloquea la billetera, siempre en ese orden.
      */
     @Transactional
     public InscripcionDetalle pagar(Long usuarioId, Long id) {
@@ -474,6 +473,12 @@ public class InscripcionService {
         validarUsuario(usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + usuarioId)));
         validarCupo(torneo);
+        BigDecimal gastos = GastosAdministrativos.monto(torneo.getValorInscripcion(), torneo.getPctGastosAdministrativos());
+        BigDecimal total = torneo.getValorInscripcion().add(gastos);
+        // HU-603: si el saldo no alcanza para todo, falla antes de cobrar y con el faltante del total
+        if (total.signum() > 0) {
+            cobroService.exigirSaldo(usuarioId, total);
+        }
         // un torneo sin costo no pasa por el cobro: V9 exige monto > 0
         if (torneo.getValorInscripcion().signum() > 0) {
             cobroService.cobrar(new SolicitudCobro(usuarioId, TipoMovimiento.INSCRIPCION, torneo.getValorInscripcion(),
@@ -481,7 +486,6 @@ public class InscripcionService {
         }
         // los gastos administrativos van aparte, en otro movimiento: la inscripción es del torneo y esto de la
         // plataforma (PICA-283)
-        BigDecimal gastos = GastosAdministrativos.monto(torneo.getValorInscripcion(), torneo.getPctGastosAdministrativos());
         if (gastos.signum() > 0) {
             cobroService.cobrar(new SolicitudCobro(usuarioId, TipoMovimiento.COMISION, gastos, torneoId, id,
                     "gastos-inscripcion-" + id, "Gastos administrativos de la inscripción al torneo " + torneo.getNombre()));
