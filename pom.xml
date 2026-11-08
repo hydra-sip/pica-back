@@ -177,6 +177,13 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>@{argLine} -Duser.timezone=UTC</argLine>
+                </configuration>
+            </plugin>
             <!-- RNF-MAN-02: verify arma el reporte (target/site/jacoco) y falla con menos del 70 % de
                  líneas cubiertas en todo el proyecto. -->
             <plugin>
