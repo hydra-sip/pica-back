@@ -261,3 +261,34 @@ FROM ticket tk
 CROSS JOIN unnest(ARRAY[7, 13, 42]) AS n
 WHERE tk.codigo = 'SEED-0001'
 ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Custodia (HU-603): los pagos del seed entran a la de su torneo o su rifa, como los de antes en V39
+-- ---------------------------------------------------------------------------------------------------
+
+INSERT INTO custodia (torneo_id, creado_por, modificado_por)
+SELECT DISTINCT i.torneo_id, 'SEED', 'SEED'
+FROM movimiento m
+JOIN inscripcion i ON i.id = m.inscripcion_id
+WHERE m.tipo IN ('INSCRIPCION', 'COMISION')
+ON CONFLICT DO NOTHING;
+
+UPDATE movimiento m
+SET custodia_id = c.id
+FROM inscripcion i
+JOIN custodia c ON c.torneo_id = i.torneo_id
+WHERE m.inscripcion_id = i.id
+  AND m.tipo IN ('INSCRIPCION', 'COMISION')
+  AND m.custodia_id IS NULL;
+
+INSERT INTO custodia (rifa_id, creado_por, modificado_por)
+SELECT DISTINCT t.rifa_id, 'SEED', 'SEED'
+FROM ticket t
+ON CONFLICT DO NOTHING;
+
+UPDATE movimiento m
+SET custodia_id = c.id
+FROM ticket t
+JOIN custodia c ON c.rifa_id = t.rifa_id
+WHERE m.id = t.movimiento_id
+  AND m.custodia_id IS NULL;

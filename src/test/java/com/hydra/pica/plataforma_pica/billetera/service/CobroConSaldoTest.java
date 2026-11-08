@@ -21,6 +21,7 @@ import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.common.config.JpaAuditingConfig;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.SecurityContextCurrentUserProvider;
+import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
@@ -48,6 +49,8 @@ import org.springframework.context.annotation.Import;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
         CobroConSaldo.class,
+        CustodiaService.class,
+        AuditoriaService.class,
         JpaAuditingConfig.class,
         SecurityContextCurrentUserProvider.class,
         TestcontainersConfiguration.class
@@ -102,10 +105,21 @@ class CobroConSaldoTest {
         assertThat(leido.getReferenciaExterna()).isEqualTo("pago-inscripcion-1");
         assertThat(leido.getInscripcion().getId()).isEqualTo(inscripcion.getId());
         assertThat(leido.getTorneo().getId()).isEqualTo(torneo.getId());
+        // sin rifa, el pago entra a la custodia del torneo
+        assertThat(leido.getCustodia().getTorneo().getId()).isEqualTo(torneo.getId());
 
         Billetera billetera = billeteraRepository.findByUsuarioId(jugador.getId()).orElseThrow();
         assertThat(billetera.getSaldoDisponible()).isEqualByComparingTo("500.00");
         assertThat(billetera.getSaldoRetenido()).isEqualByComparingTo(MIL);
+    }
+
+    @Test
+    void unPagoSinTorneoNiRifaEsUnErrorDeQuienCobra() {
+        billeteraCon("5000.00");
+
+        assertThatThrownBy(() -> cobroService.cobrar(new SolicitudCobro(jugador.getId(), TipoMovimiento.COMISION, MIL,
+                null, null, "sin-evento", "Sin evento")))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

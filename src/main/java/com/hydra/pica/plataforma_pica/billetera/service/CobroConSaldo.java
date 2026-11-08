@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.billetera.service;
 import java.math.BigDecimal;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
+import com.hydra.pica.plataforma_pica.billetera.domain.Custodia;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
@@ -17,9 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Cobro con el saldo de la billetera (HU-603): lo pagado sale del disponible y pasa al retenido del que paga, en
- * custodia hasta que termine el evento. La billetera se bloquea (FOR UPDATE) durante el cobro, así dos pagos
- * simultáneos nunca la dejan en negativo (RNF-CON-01).
+ * Cobro con el saldo de la billetera (HU-603): lo pagado sale del disponible y pasa al retenido del que paga, y el
+ * movimiento entra a la custodia de su torneo o su rifa hasta que el evento termine ({@link CustodiaService}). La
+ * billetera se bloquea (FOR UPDATE) durante el cobro, así dos pagos simultáneos nunca la dejan en negativo
+ * (RNF-CON-01).
  */
 @Service
 @ConditionalOnProperty(name = "app.cobro.modo", havingValue = "saldo", matchIfMissing = true)
@@ -34,6 +36,7 @@ public class CobroConSaldo implements CobroService {
     private final UsuarioRepository usuarioRepository;
     private final TorneoRepository torneoRepository;
     private final InscripcionRepository inscripcionRepository;
+    private final CustodiaService custodiaService;
 
     @Override
     @Transactional
@@ -47,6 +50,7 @@ public class CobroConSaldo implements CobroService {
             return mismoCobro(anterior.get(), billetera, solicitud);
         }
         exigirDisponible(billetera, solicitud.monto());
+        Custodia custodia = custodiaService.paraIngresar(solicitud);
 
         billetera.setSaldoDisponible(billetera.getSaldoDisponible().subtract(solicitud.monto()));
         billetera.setSaldoRetenido(billetera.getSaldoRetenido().add(solicitud.monto()));
@@ -61,13 +65,16 @@ public class CobroConSaldo implements CobroService {
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(referencia);
         movimiento.setDescripcion(solicitud.descripcion());
+        movimiento.setCustodia(custodia);
         if (solicitud.torneoId() != null) {
             movimiento.setTorneo(torneoRepository.getReferenceById(solicitud.torneoId()));
         }
         if (solicitud.inscripcionId() != null) {
             movimiento.setInscripcion(inscripcionRepository.getReferenceById(solicitud.inscripcionId()));
         }
-        return movimientoRepository.save(movimiento);
+        Movimiento guardado = movimientoRepository.save(movimiento);
+        custodiaService.registrarIngreso(guardado, solicitud.usuarioId());
+        return guardado;
     }
 
     @Override

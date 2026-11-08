@@ -2591,6 +2591,91 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  # --- Custodia ----------------------------------------------------------------
+  # Lo cobrado con saldo por un torneo o una rifa queda retenido hasta que el evento termina (HU-603). Sale solo por
+  # la liquidación (HU-606) o el reintegro; antes del cierre nadie lo mueve, tampoco el organizador.
+
+  /api/v1/torneos/{id}/custodia:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Custodia de mi torneo
+      x-jira: PICA-321
+      x-owner: Tomás
+      description: >-
+        Solo el organizador del torneo: lo retenido (inscripciones y sus gastos administrativos), cuántos pagos
+        entraron y si el torneo ya terminó. Sin pagos, RETENIDA con todo en 0. 404 `TORNEO_NO_ENCONTRADO` si no existe
+        o es de otro organizador.
+      responses:
+        '200': {description: La custodia, content: {application/json: {schema: {$ref: '#/components/schemas/CustodiaResumen'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/custodia/retiro:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Billetera]
+      summary: Intentar retirar los fondos en custodia del torneo
+      x-jira: PICA-321
+      x-owner: Tomás
+      description: >-
+        Sin cuerpo. El organizador no saca plata de la custodia: antes del cierre (FINALIZADO o CANCELADO), 409
+        `FONDOS_EN_CUSTODIA`; después también, porque la libera la liquidación (HU-606) y lo que le toca va a su
+        billetera, desde donde se retira. Con la custodia ya liquidada, 409 `CUSTODIA_LIBERADA`. 404
+        `TORNEO_NO_ENCONTRADO` si no existe o es de otro organizador. No mueve nada.
+      responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/rifas/{id}/custodia:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Custodia de mi rifa
+      x-jira: PICA-321
+      x-owner: Tomás
+      description: >-
+        Como la del torneo, con lo cobrado por los números y sus gastos. La rifa tiene su propia custodia aunque tenga
+        torneo: termina al vencer las 48 h de reclamo del sorteo (o si se cancela). 404 `RIFA_NO_ENCONTRADA` si no
+        existe o es de otro organizador.
+      responses:
+        '200': {description: La custodia, content: {application/json: {schema: {$ref: '#/components/schemas/CustodiaResumen'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/rifas/{id}/custodia/retiro:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Billetera]
+      summary: Intentar retirar los fondos en custodia de la rifa
+      x-jira: PICA-321
+      x-owner: Tomás
+      description: >-
+        Como el del torneo: 409 `FONDOS_EN_CUSTODIA` (o `CUSTODIA_LIBERADA` si ya se liquidó) y 404
+        `RIFA_NO_ENCONTRADA`. No mueve nada.
+      responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/inscripciones/{id}/comprobante:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Comprobante del pago de mi inscripción
+      x-jira: PICA-321
+      x-owner: Tomás
+      description: >-
+        Solo quien se inscribió (el capitán, en una de equipo). Sale de los movimientos del pago: número, fecha,
+        quién pagó, concepto, monto, gastos administrativos, total y en qué quedó la custodia. El de una compra de
+        números es su ticket (`GET /tickets/{id}`). 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o es de otro;
+        `COMPROBANTE_NO_ENCONTRADO` si no tiene un pago (pendiente, o de un torneo sin costo).
+      responses:
+        '200': {description: El comprobante, content: {application/json: {schema: {$ref: '#/components/schemas/ComprobantePago'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
   # --- Torneos (Públicos) -----------------------------------------------------
 
   /api/v1/torneos/resumen:
@@ -2768,7 +2853,9 @@ components:
         TORNEO_INCOMPLETO (le falta algo para publicarse; la lista va en `faltantes`) ·
         CAMPOS_BLOQUEADOS (el torneo publicado ya no admite cambios en esos campos; la lista va en `campos`) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) · SALDO_INSUFICIENTE (el disponible de la
-        billetera no alcanza para el total; lo que falta va en `faltante`, HU-603) ·
+        billetera no alcanza para el total; lo que falta va en `faltante`, HU-603) · FONDOS_EN_CUSTODIA (los
+        fondos de un torneo o una rifa no se mueven antes de que termine; tampoco los saca el organizador, HU-603) ·
+        CUSTODIA_LIBERADA (la custodia ya se liquidó o reintegró; trae `estado`) ·
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
@@ -2816,7 +2903,7 @@ components:
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
-             OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO,
+             OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
@@ -2824,7 +2911,7 @@ components:
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
              USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_CON_RIFA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
              TORNEO_INCOMPLETO,
-             CAMPOS_BLOQUEADOS, COBRO_RECHAZADO, SALDO_INSUFICIENTE,
+             CAMPOS_BLOQUEADOS, COBRO_RECHAZADO, SALDO_INSUFICIENTE, FONDOS_EN_CUSTODIA, CUSTODIA_LIBERADA,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
@@ -2890,6 +2977,7 @@ components:
         abreEn: {type: string, format: date-time, description: 'Solo en CHECKIN_FUERA_DE_VENTANA: cuándo abre la ventana, sin la tolerancia'}
         cierraEn: {type: string, format: date-time, description: 'Solo en CHECKIN_FUERA_DE_VENTANA: cuándo cierra la ventana, sin la tolerancia'}
         faltante: {type: number, description: 'Solo en SALDO_INSUFICIENTE: lo que hay que cargar para pagar el total (HU-603)'}
+        estado: {type: string, description: 'En CUSTODIA_LIBERADA: LIBERADA o REINTEGRADA (también lo usa DESIGNACION_YA_RESPONDIDA)'}
         jugador:
           allOf: [{$ref: '#/components/schemas/UsuarioPublico'}]
           description: >-
@@ -4130,6 +4218,44 @@ components:
         compradoEn: {type: string, format: date-time}
         pozoRifa: {type: number, description: 'Lo que va a los premios de lo vendido hasta ahora: sin el aporte al torneo (HU-405)'}
         pozoTorneo: {type: [number, 'null'], description: 'El pozo del torneo de ahora; sin torneo, null'}
+    EstadoCustodia:
+      type: string
+      enum: [RETENIDA, LIBERADA, REINTEGRADA]
+      description: RETENIDA hasta que termina el evento; LIBERADA por la liquidación (HU-606); REINTEGRADA si se canceló.
+    CustodiaResumen:
+      type: object
+      required: [estado, total, recaudado, gastosAdministrativos, pagos, moneda, eventoTerminado]
+      description: La custodia de un torneo o una rifa (PICA-321). `total` = `recaudado` + `gastosAdministrativos`.
+      properties:
+        estado: {$ref: '#/components/schemas/EstadoCustodia'}
+        total: {type: number, description: Todo lo retenido}
+        recaudado: {type: number, description: Inscripciones o números}
+        gastosAdministrativos: {type: number}
+        pagos: {type: integer, description: Cuántos pagos entraron, sin contar los de gastos}
+        moneda: {type: string, examples: [ARS]}
+        eventoTerminado: {type: boolean, description: 'Si el evento terminó; hasta entonces nadie mueve los fondos'}
+        liberadaEn: {type: [string, 'null'], format: date-time}
+    ComprobantePago:
+      type: object
+      required: [numero, pagadoEn, pagadorNombre, pagadorUsername, concepto, torneoId, torneoNombre, monto,
+                 gastosAdministrativos, total, moneda]
+      description: El comprobante del pago de una inscripción (PICA-321). `total` = `monto` + `gastosAdministrativos`.
+      properties:
+        numero: {type: string, examples: [I12-345], description: 'I{torneo}-{movimiento del pago}'}
+        pagadoEn: {type: string, format: date-time}
+        pagadorNombre: {type: string, description: Nombres y apellidos}
+        pagadorUsername: {type: string}
+        concepto: {type: string, examples: ['Inscripción de Los Halcones al torneo Copa abierta']}
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneoNombre: {type: string}
+        equipoNombre: {type: [string, 'null']}
+        monto: {type: number, description: Valor de la inscripción; va al torneo}
+        gastosAdministrativos: {type: number}
+        total: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        custodia:
+          oneOf: [{$ref: '#/components/schemas/EstadoCustodia'}, {type: 'null'}]
+          description: En qué quedó la plata; null en un pago de antes de la custodia
     TicketDetalle:
       type: object
       required: [id, codigo, rifaId, rifaTitulo, compradorId, compradorNombre, compradorUsername, numeros, monto,
