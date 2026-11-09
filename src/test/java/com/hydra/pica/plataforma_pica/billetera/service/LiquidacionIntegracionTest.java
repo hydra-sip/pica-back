@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.billetera.dto.RepartoLiquidacion;
 import com.hydra.pica.plataforma_pica.billetera.repository.CustodiaRepository;
 import com.hydra.pica.plataforma_pica.billetera.service.LiquidacionService.LiquidacionTorneo;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
@@ -43,6 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
 class LiquidacionIntegracionTest {
 
     @Autowired private LiquidacionService liquidacionService;
+    @Autowired private RepartoLiquidacionService repartoLiquidacionService;
     @Autowired private CustodiaRepository custodiaRepository;
     @Autowired private InscripcionService inscripcionService;
     @Autowired private TorneoPublicoService torneoPublicoService;
@@ -134,6 +136,29 @@ class LiquidacionIntegracionTest {
                 """, String.class, String.valueOf(torneo)))
                 .containsExactlyInAnyOrder("LIQUIDACION_PREMIO", "LIQUIDACION_PREMIO", "LIQUIDACION_TORNEO",
                         "LIQUIDACION_TORNEO");
+    }
+
+    @Test
+    void elOrganizadorVeElRepartoQueHizoLaLiquidacion() {
+        assertThat(repartoLiquidacionService.delTorneo(organizador, torneo).liquidado()).isFalse();
+        assertThat(repartoLiquidacionService.delTorneo(organizador, torneo).lineas()).isEmpty();
+        terminar(1, 2, 3, 3);
+
+        liquidacionService.liquidarTorneo(torneo);
+        entityManager.flush();
+        entityManager.clear();
+
+        RepartoLiquidacion reparto = repartoLiquidacionService.delTorneo(organizador, torneo);
+        assertThat(reparto.liquidado()).isTrue();
+        assertThat(reparto.liquidadoEn()).isNotNull();
+        assertThat(reparto.total()).isEqualByComparingTo("4400.00");
+        assertThat(reparto.lineas()).extracting(l -> l.rol() + ":" + l.puesto() + ":" + l.beneficiarioUsername()
+                        + ":" + l.monto().toPlainString())
+                .containsExactlyInAnyOrder("PREMIO:1:jug_liq_0:2450.00", "PREMIO:2:jug_liq_1:1050.00",
+                        "ORGANIZADOR:null:org_liq:500.00", "PLATAFORMA:null:null:400.00");
+        assertThatThrownBy(() -> repartoLiquidacionService.delTorneo(jugador[0], torneo))
+                .isInstanceOfSatisfying(ApiException.class,
+                        e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.TORNEO_NO_ENCONTRADO));
     }
 
     @Test

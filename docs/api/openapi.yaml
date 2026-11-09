@@ -2659,6 +2659,39 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/liquidacion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Reparto de la liquidación de mi torneo
+      x-jira: PICA-331
+      x-owner: Tomás
+      description: >-
+        Solo el organizador del torneo: a quién le acreditó qué la liquidación (HU-606, wireframe 64). Los premios por
+        puesto, lo suyo (los gastos del torneo), los gastos administrativos de la plataforma y lo que le aportó su
+        rifa. Sin liquidar, `liquidado` en false y sin líneas. 404 `TORNEO_NO_ENCONTRADO` si no existe o es de otro
+        organizador.
+      responses:
+        '200': {description: El reparto, content: {application/json: {schema: {$ref: '#/components/schemas/RepartoLiquidacion'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/rifas/{id}/liquidacion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Reparto de la liquidación de mi rifa
+      x-jira: PICA-331
+      x-owner: Tomás
+      description: >-
+        Como el del torneo: los premios a quien compró cada número ganador, los gastos administrativos y lo que la rifa
+        aportó a los ganadores de su torneo (`APORTE_RIFA`, puede llegar después, cuando se liquida el torneo). 404
+        `RIFA_NO_ENCONTRADA` si no existe o es de otro organizador.
+      responses:
+        '200': {description: El reparto, content: {application/json: {schema: {$ref: '#/components/schemas/RepartoLiquidacion'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/inscripciones/{id}/comprobante:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -4237,6 +4270,29 @@ components:
         moneda: {type: string, examples: [ARS]}
         eventoTerminado: {type: boolean, description: 'Si el evento terminó; hasta entonces nadie mueve los fondos'}
         liberadaEn: {type: [string, 'null'], format: date-time}
+    RepartoLiquidacion:
+      type: object
+      required: [liquidado, total, moneda, lineas]
+      description: Cómo se repartió la custodia de un torneo o una rifa (PICA-331). `total` es la suma de las líneas.
+      properties:
+        liquidado: {type: boolean}
+        liquidadoEn: {type: [string, 'null'], format: date-time}
+        total: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        lineas: {type: array, items: {$ref: '#/components/schemas/LineaReparto'}}
+    LineaReparto:
+      type: object
+      required: [rol, origen, monto, acreditadoEn]
+      description: Una acreditación de la liquidación.
+      properties:
+        rol: {type: string, enum: [PREMIO, ORGANIZADOR, PLATAFORMA]}
+        origen: {type: string, enum: [TORNEO, RIFA, APORTE_RIFA], description: 'APORTE_RIFA: lo que la rifa aporta al pozo del torneo, pagado a sus ganadores'}
+        puesto: {type: [integer, 'null'], description: El de un premio}
+        beneficiarioNombre: {type: [string, 'null'], description: 'Nombres y apellidos; null en la plataforma'}
+        beneficiarioUsername: {type: [string, 'null']}
+        equipoNombre: {type: [string, 'null'], description: 'El equipo del capitán que cobra, en un torneo por equipos'}
+        monto: {type: number}
+        acreditadoEn: {type: string, format: date-time}
     ComprobantePago:
       type: object
       required: [numero, pagadoEn, pagadorNombre, pagadorUsername, concepto, torneoId, torneoNombre, monto,
