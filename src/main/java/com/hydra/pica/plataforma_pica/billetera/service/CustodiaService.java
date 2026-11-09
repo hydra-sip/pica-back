@@ -184,8 +184,7 @@ public class CustodiaService {
         if (torneo.getEstado() == EstadoTorneo.CANCELADO) {
             return EstadoCustodia.REINTEGRADA;
         }
-        throw new FondosEnCustodiaException("Los fondos del torneo " + torneo.getId()
-                + " están en custodia y no se pueden mover hasta que el torneo finalice");
+        throw new FondosEnCustodiaException(LiquidacionService.SIN_CERRAR);
     }
 
     private static EstadoCustodia destino(Rifa rifa, Instant ahora) {

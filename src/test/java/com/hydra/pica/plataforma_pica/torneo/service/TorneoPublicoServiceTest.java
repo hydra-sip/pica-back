@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+import com.hydra.pica.plataforma_pica.billetera.repository.CustodiaRepository;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
@@ -57,6 +58,9 @@ class TorneoPublicoServiceTest {
 
     @Mock
     private PremioRepository premioRepository;
+
+    @Mock
+    private CustodiaRepository custodiaRepository;
 
     @InjectMocks
     private TorneoPublicoService service;

@@ -1,10 +1,14 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.hydra.pica.plataforma_pica.billetera.domain.Custodia;
+import com.hydra.pica.plataforma_pica.billetera.domain.EstadoCustodia;
+import com.hydra.pica.plataforma_pica.billetera.repository.CustodiaRepository;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
@@ -41,16 +45,19 @@ public class TorneoPublicoService {
     private final InscripcionRepository inscripcionRepository;
     private final PremioRepository premioRepository;
     private final GastoRepository gastoRepository;
+    private final CustodiaRepository custodiaRepository;
 
     public TorneoPublicoService(
             TorneoRepository torneoRepository,
             InscripcionRepository inscripcionRepository,
             PremioRepository premioRepository,
-            GastoRepository gastoRepository) {
+            GastoRepository gastoRepository,
+            CustodiaRepository custodiaRepository) {
         this.torneoRepository = torneoRepository;
         this.inscripcionRepository = inscripcionRepository;
         this.premioRepository = premioRepository;
         this.gastoRepository = gastoRepository;
+        this.custodiaRepository = custodiaRepository;
     }
 
     public Page<TorneoResumen> listarPublicos(
@@ -105,7 +112,11 @@ public class TorneoPublicoService {
                 .map(p -> PremioDetalle.de(p, cuentas.delPuesto(p.getPct())))
                 .toList();
 
-        return TorneoDetalle.de(torneo, cupoDisponible, cuentas.pozoNeto(), premios);
+        Instant liquidadoEn = custodiaRepository.findByTorneoId(torneo.getId())
+                .filter(c -> c.getEstado() == EstadoCustodia.LIBERADA)
+                .map(Custodia::getLiberadaEn)
+                .orElse(null);
+        return TorneoDetalle.de(torneo, cupoDisponible, cuentas.pozoNeto(), premios, liquidadoEn);
     }
 
     /** Con el cupo completo, como el resumen del paso 3. */
