@@ -10,14 +10,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoCustodia;
 import com.hydra.pica.plataforma_pica.billetera.dto.ComprobantePago;
 import com.hydra.pica.plataforma_pica.billetera.dto.CustodiaResumen;
+import com.hydra.pica.plataforma_pica.billetera.dto.RepartoLiquidacion;
+import com.hydra.pica.plataforma_pica.billetera.dto.RepartoLiquidacion.Origen;
+import com.hydra.pica.plataforma_pica.billetera.service.Acreditacion.Rol;
 import com.hydra.pica.plataforma_pica.billetera.service.ComprobanteService;
 import com.hydra.pica.plataforma_pica.billetera.service.CustodiaService;
 import com.hydra.pica.plataforma_pica.billetera.service.FondosEnCustodiaException;
+import com.hydra.pica.plataforma_pica.billetera.service.RepartoLiquidacionService;
 import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
@@ -45,6 +50,7 @@ class CustodiaControllerTest {
 
     @MockitoBean private CustodiaService custodiaService;
     @MockitoBean private ComprobanteService comprobanteService;
+    @MockitoBean private RepartoLiquidacionService repartoLiquidacionService;
     @MockitoBean private CurrentUserProvider currentUserProvider;
 
     @BeforeEach
@@ -57,8 +63,9 @@ class CustodiaControllerTest {
         mockMvc.perform(get("/api/v1/torneos/7/custodia")).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/v1/torneos/7/custodia/retiro")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/v1/inscripciones/3/comprobante")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/torneos/7/liquidacion")).andExpect(status().isUnauthorized());
 
-        verifyNoInteractions(custodiaService, comprobanteService);
+        verifyNoInteractions(custodiaService, comprobanteService, repartoLiquidacionService);
     }
 
     @Test
@@ -95,6 +102,38 @@ class CustodiaControllerTest {
         mockMvc.perform(post("/api/v1/rifas/9/custodia/retiro"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.codigo").value("FONDOS_EN_CUSTODIA"));
+    }
+
+    @Test
+    @WithMockUser
+    void elOrganizadorVeElRepartoDeLaLiquidacion() throws Exception {
+        when(repartoLiquidacionService.delTorneo(USUARIO_ID, 7L)).thenReturn(new RepartoLiquidacion(true,
+                Instant.parse("2026-11-09T12:00:00Z"), new BigDecimal("1100.00"), "ARS", List.of(
+                        new RepartoLiquidacion.Linea(Rol.PREMIO, Origen.TORNEO, 1, "Juan Uno", "dev_jugador1", null,
+                                new BigDecimal("1000.00"), Instant.parse("2026-11-09T12:00:00Z")),
+                        new RepartoLiquidacion.Linea(Rol.PLATAFORMA, Origen.TORNEO, null, null, null, null,
+                                new BigDecimal("100.00"), Instant.parse("2026-11-09T12:00:00Z")))));
+
+        mockMvc.perform(get("/api/v1/torneos/7/liquidacion"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.liquidado").value(true))
+                .andExpect(jsonPath("$.total").value(1100.00))
+                .andExpect(jsonPath("$.lineas[0].rol").value("PREMIO"))
+                .andExpect(jsonPath("$.lineas[0].puesto").value(1))
+                .andExpect(jsonPath("$.lineas[0].beneficiarioUsername").value("dev_jugador1"))
+                .andExpect(jsonPath("$.lineas[1].rol").value("PLATAFORMA"))
+                .andExpect(jsonPath("$.lineas[1].beneficiarioNombre").doesNotExist());
+    }
+
+    @Test
+    @WithMockUser
+    void elRepartoDeUnaRifaAjenaEs404() throws Exception {
+        when(repartoLiquidacionService.deLaRifa(USUARIO_ID, 9L))
+                .thenThrow(new NoEncontradoException(CodigoError.RIFA_NO_ENCONTRADA, "no existe"));
+
+        mockMvc.perform(get("/api/v1/rifas/9/liquidacion"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("RIFA_NO_ENCONTRADA"));
     }
 
     @Test
