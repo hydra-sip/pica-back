@@ -2855,7 +2855,8 @@ components:
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) · SALDO_INSUFICIENTE (el disponible de la
         billetera no alcanza para el total; lo que falta va en `faltante`, HU-603) · FONDOS_EN_CUSTODIA (los
         fondos de un torneo o una rifa no se mueven antes de que termine; tampoco los saca el organizador, HU-603;
-        en un torneo: "El evento debe estar cerrado y validado oficialmente para liberar la custodia", HU-606) ·
+        en un torneo: "El evento debe estar cerrado y validado oficialmente para liberar la custodia"; en una rifa,
+        sorteada, con el plazo de reclamo vencido y sin reclamos pendientes, HU-606) ·
         CUSTODIA_LIBERADA (la custodia ya se liquidó o reintegró, también si se liquida dos veces; trae `estado`) ·
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
@@ -4282,6 +4283,7 @@ components:
         esComprador: {type: boolean, description: 'False si lo mira un administrador'}
         ventanaReclamoAbierta: {type: boolean, description: 'Si ahora se puede reclamar el resultado (HU-506): la rifa SORTEADA o EN_REVISION y dentro de las 48 h del sorteo'}
         premiosGanados: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}, description: 'Los premios que ganó alguno de sus números (HU-504); vacío antes del sorteo o si no ganó'}
+        premioAcreditado: {type: [number, 'null'], description: 'Lo que la liquidación le acreditó por esos premios (HU-606, PICA-330); null mientras la rifa no se liquidó o si no ganó'}
     NumeroOcupado:
       type: object
       required: [numero, estado]
@@ -4580,8 +4582,9 @@ components:
           type: string
           enum: [CARGA, INSCRIPCION, COMPRA_NUMERO, PREMIO, REINTEGRO, COMISION, RETIRO, PAGO_SERVICIO, LIQUIDACION]
           description: >-
-            PREMIO lo acredita la liquidación a cada ganador (HU-606, con el torneo y la inscripción); LIQUIDACION, lo
-            que la liquidación le acredita al organizador (los gastos del torneo) y a la plataforma (los gastos
+            PREMIO lo acredita la liquidación a cada ganador (HU-606): del torneo, con el torneo y la inscripción; de
+            la rifa, con la rifa; lo que la rifa aporta al pozo del torneo, con los dos. LIQUIDACION, lo que la
+            liquidación le acredita al organizador (los gastos del torneo) y a la plataforma (los gastos
             administrativos).
           example: CARGA
         monto:
@@ -4612,6 +4615,7 @@ components:
             - $ref: '#/components/schemas/TorneoMovimiento'
             - type: 'null'
         rifa:
+          description: 'La de la compra (por su ticket) o la de lo que acredita su liquidación (HU-606)'
           oneOf:
             - $ref: '#/components/schemas/RifaMovimiento'
             - type: 'null'

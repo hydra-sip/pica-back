@@ -67,7 +67,9 @@ public class BilleteraService {
                                 Ticket::getRifa,
                                 (r1, r2) -> r1));
 
-        return pagina.map(m -> MovimientoBilleteraResponse.de(m, rifasPorMovimiento.get(m.getId())));
+        // lo que acredita la liquidación de una rifa la trae; una compra, por su ticket
+        return pagina.map(m -> MovimientoBilleteraResponse.de(m,
+                m.getRifa() != null ? m.getRifa() : rifasPorMovimiento.get(m.getId())));
     }
 
     private Billetera obtenerOCrearBilletera(Long usuarioId) {

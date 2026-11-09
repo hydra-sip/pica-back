@@ -1,11 +1,15 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
+import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
+import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Ticket;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.TicketDetalle;
@@ -30,6 +34,7 @@ public class TicketService {
     private final TicketRepository ticketRepository;
     private final NumeroRepository numeroRepository;
     private final PremioRifaRepository premioRifaRepository;
+    private final MovimientoRepository movimientoRepository;
     private final CurrentUserProvider currentUserProvider;
 
     @Transactional(readOnly = true)
@@ -57,7 +62,18 @@ public class TicketService {
                 .map(PremioRifaDetalle::de)
                 .toList();
         return TicketDetalle.de(ticket, numeros, usuarioId,
-                ReclamoRifaService.ventanaAbierta(ticket.getRifa(), Instant.now()), ganados);
+                ReclamoRifaService.ventanaAbierta(ticket.getRifa(), Instant.now()), ganados,
+                premioAcreditado(ticket.getRifa(), ganados));
+    }
+
+    /** Los premios que le acreditó la liquidación (HU-606), con las referencias que usa: liq-r{rifa}-premio-{puesto}. */
+    private BigDecimal premioAcreditado(Rifa rifa, List<PremioRifaDetalle> ganados) {
+        if (ganados.isEmpty() || rifa.getEstado() != EstadoRifa.LIQUIDADA) {
+            return null;
+        }
+        return movimientoRepository.sumaDeReferencias(ganados.stream()
+                .map(p -> "liq-r" + rifa.getId() + "-premio-" + p.puesto())
+                .toList());
     }
 
     private List<Integer> numeros(Ticket ticket) {
