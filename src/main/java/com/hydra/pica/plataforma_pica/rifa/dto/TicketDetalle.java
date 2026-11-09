@@ -14,7 +14,8 @@ import com.hydra.pica.plataforma_pica.user.domain.Usuario;
  * rifa y {@code comision} los gastos administrativos; el total pagado es la suma. {@code sorteadaEn} es la fecha
  * programada del sorteo. {@code ventanaReclamoAbierta}: si ahora se puede reclamar el resultado (HU-506), ver
  * {@code ReclamoRifaService#ventanaAbierta}. {@code premiosGanados}: los premios que ganó alguno de sus números en el
- * sorteo (HU-504); vacío antes del sorteo o si no ganó.
+ * sorteo (HU-504); vacío antes del sorteo o si no ganó. {@code premioAcreditado}: lo que la liquidación le acreditó por
+ * esos premios (HU-606); null mientras la rifa no se liquidó o si no ganó.
  */
 public record TicketDetalle(
         Long id,
@@ -35,11 +36,12 @@ public record TicketDetalle(
         Instant sorteadaEn,
         boolean esComprador,
         boolean ventanaReclamoAbierta,
-        List<PremioRifaDetalle> premiosGanados) {
+        List<PremioRifaDetalle> premiosGanados,
+        BigDecimal premioAcreditado) {
 
     /** {@code usuarioId}: quien lo pide; un administrador ve el ticket con {@code esComprador} en false. */
     public static TicketDetalle de(Ticket ticket, List<Integer> numeros, Long usuarioId,
-            boolean ventanaReclamoAbierta, List<PremioRifaDetalle> premiosGanados) {
+            boolean ventanaReclamoAbierta, List<PremioRifaDetalle> premiosGanados, BigDecimal premioAcreditado) {
         Rifa rifa = ticket.getRifa();
         Usuario comprador = ticket.getComprador();
         return new TicketDetalle(ticket.getId(), ticket.getCodigo(), rifa.getId(), rifa.getTitulo(),
@@ -48,6 +50,6 @@ public record TicketDetalle(
                 comprador.getId(), comprador.getPersona().getNombres() + " " + comprador.getPersona().getApellidos(),
                 comprador.getUsername(), numeros, ticket.getMonto(), ticket.getComision(), ticket.getMoneda(),
                 ticket.getCreadoEn(), rifa.getEstado(), rifa.getSorteadaEn(), comprador.getId().equals(usuarioId),
-                ventanaReclamoAbierta, premiosGanados);
+                ventanaReclamoAbierta, premiosGanados, premioAcreditado);
     }
 }

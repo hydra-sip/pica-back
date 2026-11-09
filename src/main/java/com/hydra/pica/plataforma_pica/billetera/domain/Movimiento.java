@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 
 import com.hydra.pica.plataforma_pica.common.domain.AuditableEntity;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
+import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
 import jakarta.persistence.Column;
@@ -73,6 +74,11 @@ public class Movimiento extends AuditableEntity {
     private EstadoMovimiento estado = EstadoMovimiento.PENDIENTE;
 
     /** La custodia del evento al que entró este pago (HU-603); null en cargas, premios y retiros. */
+    /** La rifa de lo que acredita su liquidación (V41); las compras la encuentran por el ticket. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "rifa_id")
+    private Rifa rifa;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "custodia_id")
     private Custodia custodia;
