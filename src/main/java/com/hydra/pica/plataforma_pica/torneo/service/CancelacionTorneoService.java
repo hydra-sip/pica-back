@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,6 +17,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
+import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
@@ -49,6 +51,7 @@ public class CancelacionTorneoService {
     private static final int MOTIVO_MAXIMO = 500;
     private static final int CONCEPTO_MAXIMO = 255;
     private static final int GASTOS_MAXIMOS = 10;
+    private static final BigDecimal CIEN = BigDecimal.valueOf(100);
     static final String SIN_COMPROBANTE = "Debe adjuntar un comprobante válido por cada gasto declarado";
 
     private final TorneosPropios torneosPropios;
@@ -59,6 +62,7 @@ public class CancelacionTorneoService {
     private final Reintegrador reintegrador;
     private final GastoCancelacionRepository gastoCancelacionRepository;
     private final AlmacenArchivos almacen;
+    private final ParametrosPlataforma parametrosPlataforma;
     private final AuditoriaService auditoriaService;
 
     /**
@@ -77,6 +81,7 @@ public class CancelacionTorneoService {
         }
         BigDecimal pozo = custodiaService.recaudadoDelTorneo(id);
         BigDecimal totalGastos = gastos.stream().map(GastoDeclarado::monto).reduce(BigDecimal.ZERO, BigDecimal::add);
+        exigirDentroDelTope(pozo, totalGastos);
         String nombre = torneo.getNombre();
         boolean automatica = gastos.isEmpty();
         EstadoCancelacion estado = automatica ? EstadoCancelacion.AUTOMATICA : EstadoCancelacion.EN_REVISION;
@@ -145,6 +150,24 @@ public class CancelacionTorneoService {
             errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.LONGITUD, "Hasta 5 MB"));
         } else if (ComprobanteDeGasto.de(comprobante).isEmpty()) {
             errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.FORMATO_INVALIDO, "Tiene que ser un PDF, JPG o PNG"));
+        }
+    }
+
+    /** Sin gastos no hay tope que mirar; con gastos y sin pagos, el tope es 0. */
+    private void exigirDentroDelTope(BigDecimal pozo, BigDecimal totalGastos) {
+        if (totalGastos.signum() == 0) {
+            return;
+        }
+        BigDecimal pct = parametrosPlataforma.topeGastosCancelacion();
+        BigDecimal maximo = pozo.multiply(pct).divide(CIEN, 2, RoundingMode.DOWN);
+        if (totalGastos.compareTo(maximo) > 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.GASTOS_SOBRE_TOPE,
+                    "Los gastos a retener no pueden superar el " + pct.stripTrailingZeros().toPlainString()
+                            + "% del pozo. El monto excedente debe ser devuelto a los participantes")
+                    .con("pctMaximo", pct)
+                    .con("pozo", pozo)
+                    .con("maximo", maximo)
+                    .con("declarado", totalGastos);
         }
     }
 

@@ -55,3 +55,14 @@ CREATE TABLE gasto_cancelacion (
 );
 
 CREATE INDEX idx_gasto_cancelacion_cancelacion_id ON gasto_cancelacion (cancelacion_id);
+
+-- El tope de lo que el organizador puede retener en gastos al cancelar: un % del pozo (lo recaudado en
+-- inscripciones). Lo edita el admin (HU-702).
+INSERT INTO parametro_plataforma (clave, valor, descripcion, modificado_por)
+VALUES ('CANCELACION_GASTOS_TOPE', 20,
+        'Tope del % del pozo que el organizador puede retener en gastos al cancelar un torneo',
+        'SISTEMA');
+
+ALTER TABLE parametro_plataforma
+    ADD CONSTRAINT ck_parametro_plataforma_cancelacion
+        CHECK (clave <> 'CANCELACION_GASTOS_TOPE' OR valor BETWEEN 0 AND 100);

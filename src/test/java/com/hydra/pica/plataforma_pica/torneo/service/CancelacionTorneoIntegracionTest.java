@@ -278,6 +278,59 @@ class CancelacionTorneoIntegracionTest {
         assertBilletera(jugador[0], "3900.00", "1100.00");
     }
 
+    // --- tope de gastos -----------------------------------------------------------------------------
+
+    @Test
+    void losGastosNoPuedenPasarElTopeDelPozo() {
+        assertThatThrownBy(() -> cancelacionTorneoService.cancelar(organizador, torneo, new SolicitudCancelacion(
+                "Lluvia", List.of(gasto("400.00", "Cancha", PDF), gasto("200.01", "Árbitro", PNG)))))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(e.getCodigo()).isEqualTo(CodigoError.GASTOS_SOBRE_TOPE);
+                    assertThat(e.getMessage()).isEqualTo("Los gastos a retener no pueden superar el 20% del pozo. "
+                            + "El monto excedente debe ser devuelto a los participantes");
+                    assertThat(e.getPropiedades()).containsEntry("pctMaximo", new BigDecimal("20.00"))
+                            .containsEntry("pozo", new BigDecimal("3000.00"))
+                            .containsEntry("maximo", new BigDecimal("600.00"))
+                            .containsEntry("declarado", new BigDecimal("600.01"));
+                });
+        assertThat(jdbc.queryForObject("SELECT estado FROM torneo WHERE id = ?", String.class, torneo))
+                .isEqualTo("INSCRIPCION_ABIERTA");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM cancelacion WHERE torneo_id = ?", Long.class, torneo))
+                .isZero();
+    }
+
+    @Test
+    void justoEnElTopeSeAcepta() {
+        CancelacionRealizada cancelacion = cancelacionTorneoService.cancelar(organizador, torneo,
+                new SolicitudCancelacion("Lluvia", List.of(gasto("600.00", "Cancha", PDF))));
+
+        assertThat(cancelacion.estado()).isEqualTo("EN_REVISION");
+    }
+
+    @Test
+    void elTopeSaleDelParametroDeLaPlataforma() {
+        jdbc.update("UPDATE parametro_plataforma SET valor = 10 WHERE clave = 'CANCELACION_GASTOS_TOPE'");
+        entityManager.clear();
+
+        assertThatThrownBy(() -> cancelacionTorneoService.cancelar(organizador, torneo,
+                new SolicitudCancelacion("Lluvia", List.of(gasto("300.01", "Cancha", PDF)))))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getCodigo()).isEqualTo(CodigoError.GASTOS_SOBRE_TOPE);
+                    assertThat(e.getMessage()).startsWith("Los gastos a retener no pueden superar el 10% del pozo.");
+                    assertThat(e.getPropiedades()).containsEntry("maximo", new BigDecimal("300.00"));
+                });
+    }
+
+    @Test
+    void sinPagosNoSePuedeRetenerNada() {
+        long gratis = torneo();
+
+        assertError(() -> cancelacionTorneoService.cancelar(organizador, gratis,
+                        new SolicitudCancelacion("Lluvia", List.of(gasto("1.00", "Cancha", PDF)))),
+                HttpStatus.BAD_REQUEST, CodigoError.GASTOS_SOBRE_TOPE);
+    }
+
     // --- quién y cuándo ------------------------------------------------------------------------------
 
     @Test

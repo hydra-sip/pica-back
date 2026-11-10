@@ -1452,8 +1452,11 @@ paths:
         `gastos` (`LONGITUD` si son más de 10), `gastos[i].monto` (`VALOR_INVALIDO` si no es mayor a 0 con hasta dos
         decimales), `gastos[i].concepto` (`REQUERIDO`, `LONGITUD` si pasa los 255) y `gastos[i].comprobante`
         (`REQUERIDO` con "Debe adjuntar un comprobante válido por cada gasto declarado", `FORMATO_INVALIDO` si no es
-        un PDF, JPG o PNG, mirando el contenido, `LONGITUD` si pasa los 5 MB). 409 `TORNEO_NO_CANCELABLE` en cualquier
-        otro estado, también si ya se canceló o está en revisión (el estado va en `estado`). 502
+        un PDF, JPG o PNG, mirando el contenido, `LONGITUD` si pasa los 5 MB). 400 `GASTOS_SOBRE_TOPE` si la suma de
+        los gastos pasa el % del pozo del parámetro CANCELACION_GASTOS_TOPE (20 por defecto), con "Los gastos a
+        retener no pueden superar el 20% del pozo. El monto excedente debe ser devuelto a los participantes" y
+        `pctMaximo`, `pozo`, `maximo` y `declarado`; sin pagos, el máximo es 0. 409 `TORNEO_NO_CANCELABLE` en
+        cualquier otro estado, también si ya se canceló o está en revisión (el estado va en `estado`). 502
         `ALMACENAMIENTO_NO_DISPONIBLE` si no se pudo guardar un comprobante.
       requestBody:
         required: true
@@ -2922,6 +2925,8 @@ components:
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
         DEMASIADOS_INTENTOS 429 (login).
+        Cancelación de torneo: GASTOS_SOBRE_TOPE 400 (los gastos declarados pasan el % del pozo de
+        CANCELACION_GASTOS_TOPE; trae `pctMaximo`, `pozo`, `maximo` y `declarado`, HU-605).
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
@@ -3387,11 +3392,12 @@ components:
     ClaveParametro:
       type: string
       enum: [GASTOS_ADMINISTRATIVOS, GASTOS_ADMINISTRATIVOS_TOPE, MARGEN_CIERRE_INICIO_MIN, CHECKIN_DURACION_MAX_MIN,
-             RETIRO_MINIMO, RETIRO_MAXIMO]
+             RETIRO_MINIMO, RETIRO_MAXIMO, CANCELACION_GASTOS_TOPE]
       description: >-
         HU-702. GASTOS_ADMINISTRATIVOS (% que paga aparte quien se inscribe o compra) y su tope;
         MARGEN_CIERRE_INICIO_MIN (CE4-5); CHECKIN_DURACION_MAX_MIN (máximo de la ventana de check-in);
-        RETIRO_MINIMO y RETIRO_MAXIMO (pesos, para HU-607).
+        RETIRO_MINIMO y RETIRO_MAXIMO (pesos, para HU-607); CANCELACION_GASTOS_TOPE (% máximo del pozo que el
+        organizador puede retener en gastos al cancelar un torneo, HU-605).
     ActualizarParametrosRequest:
       type: object
       required: [valores]
