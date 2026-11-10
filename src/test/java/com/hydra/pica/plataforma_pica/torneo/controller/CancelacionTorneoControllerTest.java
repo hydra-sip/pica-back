@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -19,6 +20,7 @@ import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionRealizada;
 import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.service.CancelacionTorneoService;
@@ -138,5 +140,21 @@ class CancelacionTorneoControllerTest {
         ArgumentCaptor<SolicitudCancelacion> solicitud = ArgumentCaptor.forClass(SolicitudCancelacion.class);
         verify(cancelacionTorneoService).cancelar(eq(ORGANIZADOR), eq(9L), solicitud.capture());
         return solicitud.getValue();
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("El GET responde el tope y, sin cancelación, el estado en null")
+    void detalle() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(cancelacionTorneoService.detalle(ORGANIZADOR, 9L)).thenReturn(new CancelacionDelTorneo(
+                new BigDecimal("3000.00"), new BigDecimal("20.00"), new BigDecimal("600.00"), null, null, null,
+                List.of(), BigDecimal.ZERO, null, null, BigDecimal.ZERO, BigDecimal.ZERO));
+
+        mockMvc.perform(get("/api/v1/torneos/9/cancelacion"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.maximoGastos").value(600.00))
+                .andExpect(jsonPath("$.pctMaximo").value(20.00))
+                .andExpect(jsonPath("$.estado").doesNotExist());
     }
 }
