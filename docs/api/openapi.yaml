@@ -1447,7 +1447,10 @@ paths:
         queda REINTEGRADA y cada billetera que pagó recupera todo lo que pagó (inscripción y gastos administrativos)
         con un movimiento REINTEGRO. Con gastos queda en revisión (`estado` EN_REVISION, `reintegrado` 0): el torneo
         pasa a CANCELACION_EN_REVISION con el motivo, la plata sigue en custodia y las inscripciones no cambian hasta
-        que soporte decida; no se puede editar ni volver a enviar. `pozo` es lo recaudado en inscripciones. 400
+        que soporte decida; no se puede editar ni volver a enviar. Mientras tanto se bloquea lo mismo que con
+        CANCELADO: pronósticos (409 `PRONOSTICO_FUERA_DE_VENTANA`), árbitros y designaciones (409
+        `TORNEO_NO_EDITABLE`), y la custodia no se libera ni se liquida. La ficha pública muestra el estado, sin el
+        motivo ni los gastos. `pozo` es lo recaudado en inscripciones. 400
         `VALIDACION`, con todos los errores juntos: `motivo` (`REQUERIDO`, o `LONGITUD` si pasa los 500 caracteres),
         `gastos` (`LONGITUD` si son más de 10), `gastos[i].monto` (`VALOR_INVALIDO` si no es mayor a 0 con hasta dos
         decimales), `gastos[i].concepto` (`REQUERIDO`, `LONGITUD` si pasa los 255) y `gastos[i].comprobante`

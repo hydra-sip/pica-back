@@ -7,16 +7,25 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.billetera.service.CustodiaService;
+import com.hydra.pica.plataforma_pica.billetera.service.LiquidacionService;
 import com.hydra.pica.plataforma_pica.common.almacenamiento.AlmacenArchivos;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.partido.dto.PronosticoRequest;
+import com.hydra.pica.plataforma_pica.partido.service.PronosticoService;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionRealizada;
+import com.hydra.pica.plataforma_pica.torneo.dto.DesignarArbitroRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeclarado;
 import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
+import com.hydra.pica.plataforma_pica.torneo.dto.TorneoDetalle;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -55,6 +64,12 @@ class CancelacionTorneoIntegracionTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
     @Autowired private AlmacenArchivos almacen;
+    @Autowired private PronosticoService pronosticoService;
+    @Autowired private ArbitrosTorneoService arbitrosTorneoService;
+    @Autowired private DesignacionesService designacionesService;
+    @Autowired private CustodiaService custodiaService;
+    @Autowired private LiquidacionService liquidacionService;
+    @Autowired private TorneoPublicoService torneoPublicoService;
 
     private static final byte[] PDF = "%PDF-1.7\nfactura".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] JPG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 1, 2, 3};
@@ -331,6 +346,58 @@ class CancelacionTorneoIntegracionTest {
                 HttpStatus.BAD_REQUEST, CodigoError.GASTOS_SOBRE_TOPE);
     }
 
+    // --- en revisión bloquea lo mismo que cancelado ---------------------------------------------------
+
+    @Test
+    void enRevisionNoSePronostica() {
+        Long arbitro = usuario("arb_pron_can");
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id, estado) VALUES (?, ?, 'ACEPTADO')",
+                torneo, arbitro);
+        long partido = jdbc.queryForObject("INSERT INTO partido (torneo_id, arbitro_id, ronda, posicion) "
+                + "VALUES (?, ?, 1, 1) RETURNING id", Long.class, torneo, arbitro);
+        enRevision();
+
+        assertThatThrownBy(() -> pronosticoService.pronosticar(jugador[0], partido, new PronosticoRequest("1")))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getCodigo()).isEqualTo(CodigoError.PRONOSTICO_FUERA_DE_VENTANA);
+                    assertThat(e.getMessage()).contains("torneo en estado CANCELACION_EN_REVISION");
+                });
+    }
+
+    @Test
+    void enRevisionNoSeCambianLosArbitrosNiSeRespondeLaDesignacion() {
+        Long arbitro = usuario("arb_can");
+        jdbc.update("INSERT INTO torneo_arbitro (torneo_id, usuario_id, estado) VALUES (?, ?, 'PENDIENTE')",
+                torneo, arbitro);
+        enRevision();
+
+        assertError(() -> arbitrosTorneoService.designar(organizador, torneo,
+                        new DesignarArbitroRequest(arbitro, Set.of(PermisoArbitro.CARGAR_RESULTADOS))),
+                HttpStatus.CONFLICT, CodigoError.TORNEO_NO_EDITABLE);
+        assertError(() -> designacionesService.aceptar(arbitro, torneo, true),
+                HttpStatus.CONFLICT, CodigoError.TORNEO_NO_EDITABLE);
+    }
+
+    @Test
+    void enRevisionLaPlataNoSaleDeLaCustodia() {
+        enRevision();
+
+        assertError(() -> custodiaService.liberarTorneo(torneo), HttpStatus.CONFLICT, CodigoError.FONDOS_EN_CUSTODIA);
+        assertError(() -> liquidacionService.liquidarTorneo(torneo), HttpStatus.CONFLICT,
+                CodigoError.FONDOS_EN_CUSTODIA);
+        assertBilletera(jugador[0], "3900.00", "1100.00");
+    }
+
+    @Test
+    void laFichaPublicaMuestraElEstadoSinElMotivo() {
+        enRevision();
+
+        TorneoDetalle ficha = torneoPublicoService.detallePublico("can-" + torneo);
+
+        assertThat(ficha.estado()).isEqualTo(EstadoTorneo.CANCELACION_EN_REVISION);
+        assertThat(ficha.toString()).doesNotContain("Se inundó la cancha");
+    }
+
     // --- quién y cuándo ------------------------------------------------------------------------------
 
     @Test
@@ -395,6 +462,13 @@ class CancelacionTorneoIntegracionTest {
         });
         assertThat(jdbc.queryForObject("SELECT estado FROM torneo WHERE id = ?", String.class, torneo))
                 .isEqualTo("INSCRIPCION_ABIERTA");
+    }
+
+    private void enRevision() {
+        cancelacionTorneoService.cancelar(organizador, torneo,
+                new SolicitudCancelacion("Se inundó la cancha", List.of(gasto("300.00", "Cancha", PDF))));
+        entityManager.flush();
+        entityManager.clear();
     }
 
     private CancelacionRealizada cancelar() {
