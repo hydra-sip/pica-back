@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.torneo.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -13,7 +14,10 @@ import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionEnRevision;
+import com.hydra.pica.plataforma_pica.torneo.dto.Comprobante;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeclarado;
+import com.hydra.pica.plataforma_pica.torneo.dto.GastoEnRevision;
 import com.hydra.pica.plataforma_pica.torneo.dto.ResolucionCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
@@ -30,6 +34,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -81,6 +87,57 @@ class RevisionCancelacionIntegracionTest {
                         new GastoDeclarado(new BigDecimal("150.50"), "Árbitro", PDF))));
         entityManager.flush();
         entityManager.clear();
+    }
+
+    // --- la cola y los comprobantes ------------------------------------------------------------------
+
+    @Test
+    void laColaTraeSoloLasEnRevisionDeLaMasViejaALaMasNuevaConSusGastos() {
+        long resuelto = enRevision("Otro en revisión");
+        revisionCancelacionService.rechazar(soporte, resuelto, "No corresponde");
+        long nuevo = enRevision("El más nuevo");
+        long automatico = torneo();
+        cancelacionTorneoService.cancelar(organizador, automatico, new SolicitudCancelacion("Lluvia", List.of()));
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<CancelacionEnRevision> cola = revisionCancelacionService.cola(PageRequest.of(0, 20));
+
+        assertThat(cola.getContent()).extracting(CancelacionEnRevision::torneoId)
+                .containsSubsequence(torneo, nuevo)
+                .doesNotContain(resuelto, automatico);
+        CancelacionEnRevision primera = cola.getContent().stream().filter(c -> c.torneoId().equals(torneo))
+                .findFirst().orElseThrow();
+        assertThat(primera.torneoNombre()).isEqualTo("Torneo a revisar");
+        assertThat(primera.torneoSlug()).isEqualTo("rev-" + torneo);
+        assertThat(primera.organizador().username()).isEqualTo("org_rev");
+        assertThat(primera.motivo()).isEqualTo("Se inundó la cancha");
+        assertThat(primera.pedidaEn()).isNotNull();
+        assertThat(primera.pozo()).isEqualByComparingTo("3000.00");
+        assertThat(primera.totalGastos()).isEqualByComparingTo("450.50");
+        assertThat(primera.gastos()).extracting(GastoEnRevision::concepto, GastoEnRevision::tipoContenido)
+                .containsExactly(tuple("Alquiler de la cancha", "application/pdf"), tuple("Árbitro", "application/pdf"));
+    }
+
+    @Test
+    void soporteBajaElComprobanteDeUnGasto() {
+        Long gastoId = gastos(torneo).get(0);
+
+        Comprobante comprobante = revisionCancelacionService.comprobante(torneo, gastoId);
+
+        assertThat(comprobante.contenido()).isEqualTo(PDF);
+        assertThat(comprobante.tipoContenido()).isEqualTo("application/pdf");
+    }
+
+    @Test
+    void elComprobanteDeUnGastoDeOtraCancelacionNoSeEncuentra() {
+        long otro = enRevision("Otro");
+        Long gastoDelOtro = gastos(otro).get(0);
+
+        assertError(() -> revisionCancelacionService.comprobante(torneo, gastoDelOtro), HttpStatus.NOT_FOUND,
+                CodigoError.COMPROBANTE_NO_ENCONTRADO);
+        assertError(() -> revisionCancelacionService.comprobante(torneo, 999_999L), HttpStatus.NOT_FOUND,
+                CodigoError.COMPROBANTE_NO_ENCONTRADO);
     }
 
     // --- aprobar -------------------------------------------------------------------------------------
@@ -267,6 +324,31 @@ class RevisionCancelacionIntegracionTest {
             assertThat(e.getStatus()).isEqualTo(status);
             assertThat(e.getCodigo()).isEqualTo(codigo);
         });
+    }
+
+    /** Otro torneo del mismo organizador, cancelado con un gasto y en revisión. */
+    private long enRevision(String nombre) {
+        long id = torneo();
+        jdbc.update("UPDATE torneo SET nombre = ? WHERE id = ?", nombre, id);
+        Long jugadorDelOtro = usuario("jug_" + id);
+        saldo(jugadorDelOtro, "5000.00");
+        long suInscripcion = jdbc.queryForObject("""
+                INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
+                VALUES (?, ?, 'PENDIENTE_PAGO', now()) RETURNING id
+                """, Long.class, id, jugadorDelOtro);
+        inscripcionService.pagar(jugadorDelOtro, suInscripcion);
+        cancelacionTorneoService.cancelar(organizador, id, new SolicitudCancelacion("Lluvia",
+                List.of(new GastoDeclarado(new BigDecimal("100.00"), "Cancha", PDF))));
+        entityManager.flush();
+        entityManager.clear();
+        return id;
+    }
+
+    private List<Long> gastos(long torneoId) {
+        return jdbc.queryForList("""
+                SELECT g.id FROM gasto_cancelacion g JOIN cancelacion c ON c.id = g.cancelacion_id
+                WHERE c.torneo_id = ? ORDER BY g.id
+                """, Long.class, torneoId);
     }
 
     private long torneo() {

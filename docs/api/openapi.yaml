@@ -691,6 +691,48 @@ paths:
       responses:
         '200': {description: Permisos agrupados, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ModuloPermisos'}}}}}
 
+  /api/v1/admin/cancelaciones:
+    get:
+      tags: [Admin]
+      summary: Cola de cancelaciones en revisión
+      x-jira: PICA-348
+      x-permiso: CANCELACION_REVISAR
+      x-owner: Mateo
+      description: >-
+        HU-605. Solo las EN_REVISION, de la más vieja a la más nueva por cuándo se pidieron; el orden no se elige.
+        Cada una trae el torneo, el organizador, el motivo, el pozo (lo recaudado en inscripciones), el total de gastos
+        y cada gasto; el archivo se baja con `GET …/gastos/{gastoId}/comprobante`.
+      parameters:
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200':
+          description: Una página de la cola
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PageCancelacionEnRevision'}
+  /api/v1/admin/cancelaciones/{torneoId}/gastos/{gastoId}/comprobante:
+    parameters:
+      - {name: torneoId, in: path, required: true, schema: {type: integer, format: int64}}
+      - {name: gastoId, in: path, required: true, schema: {type: integer, format: int64}}
+    get:
+      tags: [Admin]
+      summary: Comprobante de un gasto de una cancelación
+      x-jira: PICA-348
+      x-permiso: CANCELACION_REVISAR
+      x-owner: Mateo
+      description: >-
+        HU-605. El archivo (PDF, JPG o PNG) con su `Content-Type` y `Content-Disposition: inline`, para abrirlo en el
+        navegador. 404 `COMPROBANTE_NO_ENCONTRADO` si el gasto no existe o es de otra cancelación. Solo lo ven quienes
+        revisan, no el organizador.
+      responses:
+        '200':
+          description: El archivo
+          content:
+            application/pdf: {schema: {type: string, format: binary}}
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/png: {schema: {type: string, format: binary}}
+        '404': {$ref: '#/components/responses/Error'}
   /api/v1/admin/cancelaciones/{torneoId}/aprobar:
     parameters: [{name: torneoId, in: path, required: true, schema: {type: integer, format: int64}}]
     post:
@@ -3166,6 +3208,33 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/RifaResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageCancelacionEnRevision:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/CancelacionEnRevision'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    CancelacionEnRevision:
+      type: object
+      required: [torneoId, torneoNombre, torneoSlug, organizador, motivo, pedidaEn, pozo, totalGastos, gastos]
+      description: Una cancelación en la cola de soporte (PICA-348).
+      properties:
+        torneoId: {type: integer, format: int64}
+        torneoNombre: {type: string}
+        torneoSlug: {type: string}
+        organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
+        motivo: {type: string}
+        pedidaEn: {type: string, format: date-time}
+        pozo: {type: number, description: Lo recaudado en inscripciones}
+        totalGastos: {type: number}
+        gastos:
+          type: array
+          items:
+            type: object
+            required: [id, concepto, monto, tipoContenido]
+            properties:
+              id: {type: integer, format: int64}
+              concepto: {type: string}
+              monto: {type: number}
+              tipoContenido: {type: string, enum: [application/pdf, image/jpeg, image/png]}
     PageTorneoResumen:
       type: object
       required: [content, page]

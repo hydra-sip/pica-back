@@ -6,7 +6,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.hydra.pica.plataforma_pica.billetera.service.CustodiaService;
 import com.hydra.pica.plataforma_pica.billetera.service.Reintegrador;
+import com.hydra.pica.plataforma_pica.common.almacenamiento.AlmacenArchivos;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
@@ -17,13 +19,21 @@ import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancelacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.GastoCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionEnRevision;
+import com.hydra.pica.plataforma_pica.torneo.dto.Comprobante;
+import com.hydra.pica.plataforma_pica.torneo.dto.GastoEnRevision;
+import com.hydra.pica.plataforma_pica.torneo.dto.OrganizadorResumen;
 import com.hydra.pica.plataforma_pica.torneo.dto.ResolucionCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.repository.CancelacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.GastoCancelacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,7 +54,39 @@ public class RevisionCancelacionService {
     private final UsuarioRepository usuarioRepository;
     private final GastoCancelacionRepository gastoCancelacionRepository;
     private final CierreDeCancelacion cierreDeCancelacion;
+    private final CustodiaService custodiaService;
+    private final AlmacenArchivos almacen;
     private final AuditoriaService auditoriaService;
+
+    /** Las cancelaciones en revisión, de la más vieja a la más nueva; el orden no se elige desde afuera. */
+    @Transactional(readOnly = true)
+    public Page<CancelacionEnRevision> cola(Pageable pageable) {
+        Pageable enOrden = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
+        return cancelacionRepository.conEstado(EstadoCancelacion.EN_REVISION, enOrden).map(c -> {
+            Torneo torneo = c.getTorneo();
+            List<GastoEnRevision> gastos = gastoCancelacionRepository.findByCancelacionIdOrderByIdAsc(c.getId())
+                    .stream().map(GastoEnRevision::de).toList();
+            BigDecimal total = gastos.stream().map(GastoEnRevision::monto).reduce(BigDecimal.ZERO, BigDecimal::add);
+            return new CancelacionEnRevision(torneo.getId(), torneo.getNombre(), torneo.getSlug(),
+                    OrganizadorResumen.de(torneo.getOrganizador()), torneo.getMotivoCancelacion(), c.getCreadoEn(),
+                    custodiaService.recaudadoDelTorneo(torneo.getId()), total, gastos);
+        });
+    }
+
+    /** El archivo de un gasto de la cancelación de ese torneo; de otra, o sin archivo, 404 COMPROBANTE_NO_ENCONTRADO. */
+    @Transactional(readOnly = true)
+    public Comprobante comprobante(Long torneoId, Long gastoId) {
+        GastoCancelacion gasto = gastoCancelacionRepository.findById(gastoId)
+                .filter(g -> g.getCancelacion().getTorneo().getId().equals(torneoId))
+                .orElseThrow(() -> comprobanteNoEncontrado(gastoId));
+        byte[] contenido = almacen.leer(gasto.getComprobante()).orElseThrow(() -> comprobanteNoEncontrado(gastoId));
+        return new Comprobante(contenido, gasto.getTipoContenido());
+    }
+
+    private static NoEncontradoException comprobanteNoEncontrado(Long gastoId) {
+        return new NoEncontradoException(CodigoError.COMPROBANTE_NO_ENCONTRADO,
+                "No existe el comprobante del gasto " + gastoId);
+    }
 
     /**
      * Aprueba la retención: a cada uno que pagó se le descuenta su parte de los gastos y el organizador los cobra.
