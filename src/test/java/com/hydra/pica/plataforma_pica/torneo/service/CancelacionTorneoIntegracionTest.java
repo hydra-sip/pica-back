@@ -4,14 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.common.almacenamiento.AlmacenArchivos;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionRealizada;
+import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeclarado;
 import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
@@ -21,6 +25,7 @@ import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -49,6 +54,11 @@ class CancelacionTorneoIntegracionTest {
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
+    @Autowired private AlmacenArchivos almacen;
+
+    private static final byte[] PDF = "%PDF-1.7\nfactura".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] JPG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 1, 2, 3};
+    private static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n', 1, 2};
 
     private Long organizador;
     private long torneo;
@@ -176,6 +186,98 @@ class CancelacionTorneoIntegracionTest {
                 """, Long.class, String.valueOf(torneo))).isEqualTo(organizador);
     }
 
+    // --- con gastos: queda en revisión -------------------------------------------------------------
+
+    @Test
+    void conGastosQuedaEnRevisionYLaPlataSigueEnCustodia() {
+        CancelacionRealizada cancelacion = cancelacionTorneoService.cancelar(organizador, torneo,
+                new SolicitudCancelacion("Se inundó la cancha", List.of(
+                        gasto("300.00", "Alquiler de la cancha", PDF), gasto("150.50", "Árbitro", JPG))));
+
+        assertThat(cancelacion.estado()).isEqualTo("EN_REVISION");
+        assertThat(cancelacion.totalGastos()).isEqualByComparingTo("450.50");
+        assertThat(cancelacion.pozo()).isEqualByComparingTo("3000.00");
+        assertThat(cancelacion.reintegrado()).isEqualByComparingTo("0");
+        assertThat(jdbc.queryForMap("SELECT estado, motivo_cancelacion FROM torneo WHERE id = ?", torneo))
+                .containsEntry("estado", "CANCELACION_EN_REVISION")
+                .containsEntry("motivo_cancelacion", "Se inundó la cancha");
+        assertThat(jdbc.queryForObject("SELECT estado FROM custodia WHERE torneo_id = ?", String.class, torneo))
+                .isEqualTo("RETENIDA");
+        assertBilletera(jugador[0], "3900.00", "1100.00");
+        assertThat(jdbc.queryForList("SELECT estado FROM inscripcion WHERE torneo_id = ?", String.class, torneo))
+                .containsOnly("CONFIRMADA");
+        assertThat(jdbc.queryForObject("SELECT estado FROM cancelacion WHERE id = ?", String.class,
+                cancelacion.cancelacionId())).isEqualTo("EN_REVISION");
+    }
+
+    @Test
+    void losGastosQuedanGuardadosConSuComprobante() {
+        CancelacionRealizada cancelacion = cancelacionTorneoService.cancelar(organizador, torneo,
+                new SolicitudCancelacion("Lluvia", List.of(gasto("300.00", "Alquiler de la cancha", PDF),
+                        gasto("80.00", "Trofeos", PNG))));
+
+        List<Map<String, Object>> gastos = jdbc.queryForList("""
+                SELECT monto, concepto, comprobante, tipo_contenido FROM gasto_cancelacion
+                WHERE cancelacion_id = ? ORDER BY id
+                """, cancelacion.cancelacionId());
+        assertThat(gastos).hasSize(2);
+        assertThat(gastos.get(0)).containsEntry("concepto", "Alquiler de la cancha")
+                .containsEntry("tipo_contenido", "application/pdf");
+        assertThat((BigDecimal) gastos.get(0).get("monto")).isEqualByComparingTo("300.00");
+        assertThat(gastos.get(1)).containsEntry("tipo_contenido", "image/png");
+        assertThat(almacen.leer((String) gastos.get(0).get("comprobante"))).hasValue(PDF);
+        assertThat(almacen.leer((String) gastos.get(1).get("comprobante"))).hasValue(PNG);
+    }
+
+    @Test
+    void unGastoSinComprobanteNoSeAcepta() {
+        assertCampoInvalido(List.of(gasto("300.00", "Cancha", PDF), gasto("100.00", "Árbitro", null)),
+                "gastos[1].comprobante", ErrorCampo.Codigo.REQUERIDO,
+                "Debe adjuntar un comprobante válido por cada gasto declarado");
+    }
+
+    @Test
+    void unComprobanteQueNoEsPdfNiImagenNoSeAcepta() {
+        assertCampoInvalido(List.of(gasto("300.00", "Cancha", "hola".getBytes())), "gastos[0].comprobante",
+                ErrorCampo.Codigo.FORMATO_INVALIDO, "Tiene que ser un PDF, JPG o PNG");
+    }
+
+    @Test
+    void unComprobanteDeMasDe5MbNoSeAcepta() {
+        byte[] grande = new byte[5 * 1024 * 1024 + 1];
+        System.arraycopy(PDF, 0, grande, 0, PDF.length);
+        assertCampoInvalido(List.of(gasto("300.00", "Cancha", grande)), "gastos[0].comprobante",
+                ErrorCampo.Codigo.LONGITUD, "Hasta 5 MB");
+    }
+
+    @Test
+    void masDeDiezGastosNoSeAceptan() {
+        List<GastoDeclarado> once = java.util.stream.IntStream.range(0, 11)
+                .mapToObj(i -> gasto("10.00", "Gasto " + i, PDF)).toList();
+        assertCampoInvalido(once, "gastos", ErrorCampo.Codigo.LONGITUD, "Hasta 10 gastos");
+    }
+
+    @Test
+    void elMontoTieneQueSerPositivoConDosDecimalesYElConceptoObligatorio() {
+        assertCampoInvalido(List.of(gasto("0", "Cancha", PDF)), "gastos[0].monto",
+                ErrorCampo.Codigo.VALOR_INVALIDO, "Tiene que ser mayor a 0, con hasta dos decimales");
+        assertCampoInvalido(List.of(gasto("10.555", "Cancha", PDF)), "gastos[0].monto",
+                ErrorCampo.Codigo.VALOR_INVALIDO, "Tiene que ser mayor a 0, con hasta dos decimales");
+        assertCampoInvalido(List.of(gasto("10.00", " ", PDF)), "gastos[0].concepto",
+                ErrorCampo.Codigo.REQUERIDO, "Indicá el concepto del gasto");
+    }
+
+    @Test
+    void unaCancelacionEnRevisionNoSePuedeVolverAEnviar() {
+        cancelacionTorneoService.cancelar(organizador, torneo,
+                new SolicitudCancelacion("Lluvia", List.of(gasto("300.00", "Cancha", PDF))));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertError(this::cancelar, HttpStatus.CONFLICT, CodigoError.TORNEO_NO_CANCELABLE);
+        assertBilletera(jugador[0], "3900.00", "1100.00");
+    }
+
     // --- quién y cuándo ------------------------------------------------------------------------------
 
     @Test
@@ -223,6 +325,24 @@ class CancelacionTorneoIntegracionTest {
     }
 
     // --- escenario ----------------------------------------------------------------------------------
+
+    private static GastoDeclarado gasto(String monto, String concepto, byte[] comprobante) {
+        return new GastoDeclarado(new BigDecimal(monto), concepto, comprobante);
+    }
+
+    /** Nada cambia: el torneo sigue abierto y la plata, en custodia. */
+    private void assertCampoInvalido(List<GastoDeclarado> gastos, String campo, ErrorCampo.Codigo codigo,
+                                     String mensaje) {
+        assertThatThrownBy(() -> cancelacionTorneoService.cancelar(organizador, torneo,
+                new SolicitudCancelacion("Lluvia", gastos))).isInstanceOfSatisfying(ApiException.class, e -> {
+            assertThat(e.getCodigo()).isEqualTo(CodigoError.VALIDACION);
+            assertThat(e.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(e.getPropiedades().get("errores")).asInstanceOf(InstanceOfAssertFactories.LIST)
+                    .contains(new ErrorCampo(campo, codigo, mensaje));
+        });
+        assertThat(jdbc.queryForObject("SELECT estado FROM torneo WHERE id = ?", String.class, torneo))
+                .isEqualTo("INSCRIPCION_ABIERTA");
+    }
 
     private CancelacionRealizada cancelar() {
         return cancelacionTorneoService.cancelar(organizador, torneo,

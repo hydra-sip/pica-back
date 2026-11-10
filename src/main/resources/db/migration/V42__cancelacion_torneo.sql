@@ -25,3 +25,33 @@ ALTER TABLE auditoria
                                                          'BAJA', 'BLOQUEO', 'DESBLOQUEO', 'PAGO', 'LAUDO', 'SORTEO',
                                                          'CIERRE_INSCRIPCION', 'CIERRE_VENTA', 'LIQUIDACION',
                                                          'CANCELACION', 'REINTEGRO'));
+
+-- Con gastos, la cancelación espera a soporte (T605-2): el torneo queda en revisión, con su motivo, y la plata sigue en
+-- custodia. Cada gasto lleva la clave de su comprobante en el almacenamiento.
+ALTER TABLE torneo DROP CONSTRAINT ck_torneo_estado;
+ALTER TABLE torneo
+    ADD CONSTRAINT ck_torneo_estado CHECK (estado IN ('BORRADOR', 'INSCRIPCION_ABIERTA', 'INSCRIPCION_CERRADA',
+                                                      'EN_CURSO', 'FINALIZADO', 'CANCELACION_EN_REVISION',
+                                                      'CANCELADO'));
+ALTER TABLE torneo DROP CONSTRAINT ck_torneo_motivo_cancelacion;
+ALTER TABLE torneo
+    ADD CONSTRAINT ck_torneo_motivo_cancelacion
+        CHECK (estado NOT IN ('CANCELADO', 'CANCELACION_EN_REVISION') OR motivo_cancelacion IS NOT NULL);
+
+CREATE TABLE gasto_cancelacion (
+    id BIGINT GENERATED ALWAYS AS IDENTITY,
+    cancelacion_id BIGINT NOT NULL,
+    monto NUMERIC(14,2) NOT NULL,
+    concepto VARCHAR(255) NOT NULL,
+    comprobante VARCHAR(500) NOT NULL,
+    tipo_contenido VARCHAR(50) NOT NULL,
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT now(),
+    modificado_en TIMESTAMPTZ NOT NULL DEFAULT now(),
+    creado_por VARCHAR(100),
+    modificado_por VARCHAR(100),
+    CONSTRAINT pk_gasto_cancelacion PRIMARY KEY (id),
+    CONSTRAINT fk_gasto_cancelacion_cancelacion FOREIGN KEY (cancelacion_id) REFERENCES cancelacion (id),
+    CONSTRAINT ck_gasto_cancelacion_monto CHECK (monto > 0)
+);
+
+CREATE INDEX idx_gasto_cancelacion_cancelacion_id ON gasto_cancelacion (cancelacion_id);
