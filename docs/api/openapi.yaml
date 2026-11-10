@@ -691,6 +691,40 @@ paths:
       responses:
         '200': {description: Permisos agrupados, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ModuloPermisos'}}}}}
 
+  /api/v1/admin/cancelaciones/{torneoId}/rechazar:
+    parameters: [{name: torneoId, in: path, required: true, schema: {type: integer, format: int64}}]
+    post:
+      tags: [Admin]
+      summary: Rechazar los gastos de una cancelación en revisión
+      x-jira: PICA-348
+      x-permiso: CANCELACION_REVISAR
+      x-owner: Mateo
+      description: >-
+        HU-605. Soporte rechaza la retención que pidió el organizador: cada billetera que pagó recupera el 100 %
+        (inscripción y gastos administrativos) con un REINTEGRO, el torneo pasa a CANCELADO, las inscripciones
+        confirmadas a REINTEGRADA y las que no terminaron de pagar a CANCELADA, y la custodia queda REINTEGRADA. La
+        cancelación queda RECHAZADA con quién la revisó, cuándo y el motivo. 400 `VALIDACION` en `motivo`
+        (`REQUERIDO`, o `LONGITUD` si pasa los 500 caracteres). 404 `CANCELACION_NO_ENCONTRADA` si el torneo no tiene
+        cancelación. 409 `CANCELACION_PROPIA` si quien revisa es el organizador del torneo; 409
+        `CANCELACION_YA_RESUELTA` si ya se resolvió o fue automática (el estado va en `estado`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo: {type: string, maxLength: 500}
+      responses:
+        '200':
+          description: La resolución
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ResolucionCancelacion'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
   /api/v1/admin/parametros:
     get:
       tags: [Admin – Parámetros]
@@ -2911,11 +2945,12 @@ components:
     Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224) y PARAMETRO_ADMINISTRAR de V35 (PICA-282). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282) y CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
-             RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR]
+             RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR,
+             CANCELACION_REVISAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -2929,7 +2964,9 @@ components:
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
         DEMASIADOS_INTENTOS 429 (login).
         Cancelación de torneo: GASTOS_SOBRE_TOPE 400 (los gastos declarados pasan el % del pozo de
-        CANCELACION_GASTOS_TOPE; trae `pctMaximo`, `pozo`, `maximo` y `declarado`, HU-605).
+        CANCELACION_GASTOS_TOPE; trae `pctMaximo`, `pozo`, `maximo` y `declarado`, HU-605) ·
+        CANCELACION_NO_ENCONTRADA 404 · CANCELACION_PROPIA 409 (quien revisa organiza el torneo) ·
+        CANCELACION_YA_RESUELTA 409 (ya se aprobó, rechazó o fue automática; trae `estado`).
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
@@ -4325,6 +4362,16 @@ components:
         totalGastos: {type: number, description: La suma de los gastos declarados}
         pozo: {type: number, description: Lo recaudado en inscripciones, sin gastos administrativos}
         reintegrado: {type: number, description: Lo devuelto a las billeteras}
+    ResolucionCancelacion:
+      type: object
+      required: [torneoId, estado, reintegrado, retenido, alOrganizador]
+      description: La decisión de soporte sobre una cancelación con gastos (PICA-348).
+      properties:
+        torneoId: {type: integer, format: int64}
+        estado: {type: string, enum: [APROBADA, RECHAZADA]}
+        reintegrado: {type: number, description: Lo que volvió a las billeteras de quienes pagaron}
+        retenido: {type: number, description: Lo que se descontó de los gastos; 0 si se rechazó}
+        alOrganizador: {type: number, description: Lo que cobró el organizador; 0 si se rechazó}
     CustodiaResumen:
       type: object
       required: [estado, total, recaudado, gastosAdministrativos, pagos, moneda, eventoTerminado]
