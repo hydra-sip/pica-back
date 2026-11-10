@@ -691,6 +691,29 @@ paths:
       responses:
         '200': {description: Permisos agrupados, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ModuloPermisos'}}}}}
 
+  /api/v1/admin/cancelaciones/{torneoId}/aprobar:
+    parameters: [{name: torneoId, in: path, required: true, schema: {type: integer, format: int64}}]
+    post:
+      tags: [Admin]
+      summary: Aprobar los gastos de una cancelación en revisión
+      x-jira: PICA-348
+      x-permiso: CANCELACION_REVISAR
+      x-owner: Mateo
+      description: >-
+        HU-605. Soporte aprueba todos los gastos juntos. A cada billetera que pagó se le descuenta su parte:
+        gastos × lo que pagó de inscripción / pozo, hacia abajo al centavo, y los centavos que sobran van de a uno a
+        las primeras billeteras; los gastos administrativos vuelven enteros. Recibe un REINTEGRO por el resto, que dice
+        cuánto se retuvo. El organizador cobra el total de gastos como LIQUIDACION (referencia
+        `canc-t{torneoId}-organizador`). El torneo, las inscripciones y la custodia quedan como al rechazar, y la
+        cancelación APROBADA. Mismos 404 y 409 que al rechazar.
+      responses:
+        '200':
+          description: La resolución
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ResolucionCancelacion'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
   /api/v1/admin/cancelaciones/{torneoId}/rechazar:
     parameters: [{name: torneoId, in: path, required: true, schema: {type: integer, format: int64}}]
     post:

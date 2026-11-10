@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.hydra.pica.plataforma_pica.billetera.service.Reintegrador;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
@@ -19,6 +20,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.ResolucionCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.repository.CancelacionRepository;
+import com.hydra.pica.plataforma_pica.torneo.repository.GastoCancelacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +29,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Soporte revisa una cancelación con gastos (HU-605, T605-2). Rechazar devuelve el 100 % a cada uno que pagó. Quien
+ * Soporte revisa una cancelación con gastos (HU-605, T605-2). Aprobar descuenta a cada uno su parte de los gastos y se
+ * los paga al organizador; rechazar devuelve el 100 % a cada uno que pagó. Quien
  * revisa no puede ser el organizador del torneo, y cada cancelación se resuelve una sola vez.
  */
 @Service
@@ -39,8 +42,26 @@ public class RevisionCancelacionService {
     private final TorneoRepository torneoRepository;
     private final CancelacionRepository cancelacionRepository;
     private final UsuarioRepository usuarioRepository;
+    private final GastoCancelacionRepository gastoCancelacionRepository;
     private final CierreDeCancelacion cierreDeCancelacion;
     private final AuditoriaService auditoriaService;
+
+    /**
+     * Aprueba la retención: a cada uno que pagó se le descuenta su parte de los gastos y el organizador los cobra.
+     */
+    @Transactional
+    public ResolucionCancelacion aprobar(Long revisorId, Long torneoId) {
+        Torneo torneo = enRevision(revisorId, torneoId);
+        Cancelacion cancelacion = cancelacionRepository.findByTorneoId(torneoId).orElseThrow();
+        BigDecimal gastos = gastoCancelacionRepository.totalDeLaCancelacion(cancelacion.getId());
+        Long organizadorId = torneo.getOrganizador().getId();
+        cancelacion.setEstado(EstadoCancelacion.APROBADA);
+        resolver(cancelacion, revisorId);
+
+        BigDecimal reintegrado = cierreDeCancelacion.cerrar(torneo, new Reintegrador.Retencion(organizadorId, gastos));
+        auditar(revisorId, torneoId, EstadoCancelacion.APROBADA, null, reintegrado, gastos);
+        return new ResolucionCancelacion(torneoId, EstadoCancelacion.APROBADA.name(), reintegrado, gastos, gastos);
+    }
 
     @Transactional
     public ResolucionCancelacion rechazar(Long revisorId, Long torneoId, String motivoRecibido) {

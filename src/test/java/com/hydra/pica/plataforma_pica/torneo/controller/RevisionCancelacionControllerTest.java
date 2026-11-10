@@ -72,4 +72,18 @@ class RevisionCancelacionControllerTest {
 
         verify(revisionCancelacionService).rechazar(SOPORTE, 9L, "No son del torneo");
     }
+
+    @Test
+    @WithMockUser(authorities = "CANCELACION_REVISAR")
+    @DisplayName("Aprobar no lleva body y responde con lo que cobró el organizador")
+    void aprobar() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(SOPORTE));
+        when(revisionCancelacionService.aprobar(SOPORTE, 9L)).thenReturn(new ResolucionCancelacion(9L, "APROBADA",
+                new BigDecimal("2849.50"), new BigDecimal("450.50"), new BigDecimal("450.50")));
+
+        mockMvc.perform(post("/api/v1/admin/cancelaciones/9/aprobar"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("APROBADA"))
+                .andExpect(jsonPath("$.alOrganizador").value(450.50));
+    }
 }

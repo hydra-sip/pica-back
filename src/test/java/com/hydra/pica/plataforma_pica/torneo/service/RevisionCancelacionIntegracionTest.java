@@ -83,6 +83,83 @@ class RevisionCancelacionIntegracionTest {
         entityManager.clear();
     }
 
+    // --- aprobar -------------------------------------------------------------------------------------
+
+    @Test
+    void alAprobarCadaUnoPagaSuParteDeLosGastosYElOrganizadorLosCobra() {
+        ResolucionCancelacion resolucion = revisionCancelacionService.aprobar(soporte, torneo);
+
+        assertThat(resolucion.estado()).isEqualTo("APROBADA");
+        assertThat(resolucion.retenido()).isEqualByComparingTo("450.50");
+        assertThat(resolucion.alOrganizador()).isEqualByComparingTo("450.50");
+        assertThat(resolucion.reintegrado()).isEqualByComparingTo("2849.50");
+        // $450,50 × 1000 / 3000 = $150,1666…: $150,16 a cada uno y los 2 centavos que sobran, a los primeros
+        assertBilletera(jugador[0], "4849.83", "0.00");
+        assertBilletera(jugador[1], "4849.83", "0.00");
+        assertBilletera(jugador[2], "4849.84", "0.00");
+        assertBilletera(organizador, "450.50", "0.00");
+        assertThat(jdbc.queryForObject("SELECT ganancia_acumulada FROM billetera WHERE usuario_id = ?",
+                BigDecimal.class, organizador)).isEqualByComparingTo("450.50");
+        assertThat(jdbc.queryForObject("SELECT ganancia_acumulada FROM billetera WHERE usuario_id = ?",
+                BigDecimal.class, jugador[0])).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void loReintegradoMasLoQueCobraElOrganizadorEsLoRetenido() {
+        revisionCancelacionService.aprobar(soporte, torneo);
+
+        assertThat(jdbc.queryForObject("""
+                SELECT sum(m.monto) FROM movimiento m
+                WHERE m.torneo_id = ? AND (m.tipo = 'REINTEGRO' OR m.referencia_externa = ?)
+                """, BigDecimal.class, torneo, "canc-t" + torneo + "-organizador")).isEqualByComparingTo("3300.00");
+        assertThat(jdbc.queryForMap("""
+                SELECT m.tipo, m.monto, m.torneo_id FROM movimiento m WHERE m.referencia_externa = ?
+                """, "canc-t" + torneo + "-organizador")).containsEntry("tipo", "LIQUIDACION")
+                .containsEntry("torneo_id", torneo);
+        assertThat(jdbc.queryForObject("SELECT estado FROM custodia WHERE torneo_id = ?", String.class, torneo))
+                .isEqualTo("REINTEGRADA");
+    }
+
+    @Test
+    void elReintegroDiceCuantoSeRetuvo() {
+        revisionCancelacionService.aprobar(soporte, torneo);
+
+        assertThat(jdbc.queryForMap("""
+                SELECT m.monto, m.descripcion FROM movimiento m JOIN billetera b ON b.id = m.billetera_id
+                WHERE b.usuario_id = ? AND m.tipo = 'REINTEGRO'
+                """, jugador[0])).containsEntry("monto", new BigDecimal("949.83"))
+                .containsEntry("descripcion",
+                        "Reintegro por la cancelación del torneo Torneo a revisar: se retuvieron $150,17 de gastos");
+    }
+
+    @Test
+    void laCancelacionQuedaAprobadaYElTorneoCancelado() {
+        revisionCancelacionService.aprobar(soporte, torneo);
+
+        assertThat(jdbc.queryForMap("SELECT estado, revisor_id, motivo_rechazo FROM cancelacion WHERE torneo_id = ?",
+                torneo)).containsEntry("estado", "APROBADA").containsEntry("revisor_id", soporte)
+                .containsEntry("motivo_rechazo", null);
+        assertThat(jdbc.queryForObject("SELECT estado FROM torneo WHERE id = ?", String.class, torneo))
+                .isEqualTo("CANCELADO");
+        assertThat(jdbc.queryForList("SELECT estado FROM inscripcion WHERE torneo_id = ?", String.class, torneo))
+                .containsOnly("REINTEGRADA");
+    }
+
+    @Test
+    void aprobarTieneLosMismosControlesQueRechazar() {
+        assertError(() -> revisionCancelacionService.aprobar(organizador, torneo), HttpStatus.CONFLICT,
+                CodigoError.CANCELACION_PROPIA);
+        revisionCancelacionService.aprobar(soporte, torneo);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertError(() -> revisionCancelacionService.aprobar(soporte, torneo), HttpStatus.CONFLICT,
+                CodigoError.CANCELACION_YA_RESUELTA);
+        assertError(() -> revisionCancelacionService.rechazar(soporte, torneo, "Tarde"), HttpStatus.CONFLICT,
+                CodigoError.CANCELACION_YA_RESUELTA);
+        assertBilletera(organizador, "450.50", "0.00");
+    }
+
     // --- rechazar ------------------------------------------------------------------------------------
 
     @Test

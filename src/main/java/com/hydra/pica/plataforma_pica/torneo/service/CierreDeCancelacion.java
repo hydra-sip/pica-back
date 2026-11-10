@@ -28,6 +28,11 @@ class CierreDeCancelacion {
 
     /** @return lo que se devolvió a las billeteras */
     BigDecimal cerrar(Torneo torneo) {
+        return cerrar(torneo, null);
+    }
+
+    /** Con la retención que aprobó soporte, o null para devolver todo. @return lo devuelto a las billeteras */
+    BigDecimal cerrar(Torneo torneo, Reintegrador.Retencion retencion) {
         Long torneoId = torneo.getId();
         String nombre = torneo.getNombre();
         torneo.setEstado(EstadoTorneo.CANCELADO);
@@ -37,6 +42,6 @@ class CierreDeCancelacion {
                     ? EstadoInscripcion.REINTEGRADA : EstadoInscripcion.CANCELADA);
         }
         torneoRepository.saveAndFlush(torneo);
-        return reintegrador.reintegrarTorneo(torneoId, nombre);
+        return reintegrador.reintegrarTorneo(torneoId, nombre, retencion);
     }
 }

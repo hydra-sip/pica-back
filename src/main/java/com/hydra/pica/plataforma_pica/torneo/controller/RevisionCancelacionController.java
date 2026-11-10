@@ -26,6 +26,11 @@ public class RevisionCancelacionController {
     private final RevisionCancelacionService revisionCancelacionService;
     private final CurrentUserProvider currentUserProvider;
 
+    @PostMapping("/{torneoId}/aprobar")
+    public ResolucionCancelacion aprobar(@PathVariable Long torneoId) {
+        return revisionCancelacionService.aprobar(usuarioActual(), torneoId);
+    }
+
     @PostMapping("/{torneoId}/rechazar")
     public ResolucionCancelacion rechazar(@PathVariable Long torneoId, @RequestBody RechazoCancelacionRequest request) {
         return revisionCancelacionService.rechazar(usuarioActual(), torneoId, request.motivo());
