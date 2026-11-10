@@ -14,5 +14,7 @@ public enum AccionAuditoria {
     SORTEO,
     CIERRE_INSCRIPCION,
     CIERRE_VENTA,
-    LIQUIDACION
+    LIQUIDACION,
+    CANCELACION,
+    REINTEGRO
 }
