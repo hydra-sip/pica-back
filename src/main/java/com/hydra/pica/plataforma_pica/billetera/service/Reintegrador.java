@@ -163,9 +163,10 @@ public class Reintegrador {
         auditoriaService.registrar(null, AccionAuditoria.REINTEGRO, "TORNEO", torneoId.toString(), detalle);
     }
 
-    /** $150,17: como se lee en Mi billetera y en los mails. */
+    /** $150,17, o $1100 sin centavos: como se lee en Mi billetera y en los mails. */
     public static String pesos(BigDecimal monto) {
-        return "$" + monto.setScale(2, RoundingMode.UNNECESSARY).toPlainString().replace('.', ',');
+        String conCentavos = monto.setScale(2, RoundingMode.UNNECESSARY).toPlainString().replace('.', ',');
+        return "$" + (conCentavos.endsWith(",00") ? conCentavos.substring(0, conCentavos.length() - 3) : conCentavos);
     }
 
     private static final class Pago {

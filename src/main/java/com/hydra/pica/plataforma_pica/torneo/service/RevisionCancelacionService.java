@@ -30,7 +30,9 @@ import com.hydra.pica.plataforma_pica.torneo.repository.CancelacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.GastoCancelacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
+import com.hydra.pica.plataforma_pica.torneo.event.CancelacionResuelta;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -56,6 +58,7 @@ public class RevisionCancelacionService {
     private final CierreDeCancelacion cierreDeCancelacion;
     private final CustodiaService custodiaService;
     private final AlmacenArchivos almacen;
+    private final ApplicationEventPublisher eventos;
     private final AuditoriaService auditoriaService;
 
     /** Las cancelaciones en revisión, de la más vieja a la más nueva; el orden no se elige desde afuera. */
@@ -102,6 +105,7 @@ public class RevisionCancelacionService {
 
         BigDecimal reintegrado = cierreDeCancelacion.cerrar(torneo, new Reintegrador.Retencion(organizadorId, gastos));
         auditar(revisorId, torneoId, EstadoCancelacion.APROBADA, null, reintegrado, gastos);
+        eventos.publishEvent(new CancelacionResuelta(torneoId));
         return new ResolucionCancelacion(torneoId, EstadoCancelacion.APROBADA.name(), reintegrado, gastos, gastos);
     }
 
@@ -123,6 +127,7 @@ public class RevisionCancelacionService {
 
         BigDecimal reintegrado = cierreDeCancelacion.cerrar(torneo);
         auditar(revisorId, torneoId, EstadoCancelacion.RECHAZADA, motivo, reintegrado, BigDecimal.ZERO);
+        eventos.publishEvent(new CancelacionResuelta(torneoId));
         return new ResolucionCancelacion(torneoId, EstadoCancelacion.RECHAZADA.name(), reintegrado, BigDecimal.ZERO,
                 BigDecimal.ZERO);
     }

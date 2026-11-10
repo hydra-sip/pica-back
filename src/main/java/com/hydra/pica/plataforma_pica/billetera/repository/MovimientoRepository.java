@@ -56,4 +56,12 @@ public interface MovimientoRepository extends JpaRepository<Movimiento, Long> {
             GROUP BY m.billetera.id, m.tipo ORDER BY m.billetera.id
             """)
     List<Object[]> pagosConSaldoPorBilletera(@Param("custodiaId") Long custodiaId);
+
+    /** Los reintegros de un torneo cancelado, con la billetera y su usuario, para avisarle a cada uno (HU-605). */
+    @Query("""
+            SELECT m FROM Movimiento m JOIN FETCH m.billetera b JOIN FETCH b.usuario
+            WHERE m.torneo.id = :torneoId AND m.tipo = com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento.REINTEGRO
+            ORDER BY b.id
+            """)
+    List<Movimiento> reintegrosDelTorneo(@Param("torneoId") Long torneoId);
 }

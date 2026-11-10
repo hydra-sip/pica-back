@@ -28,7 +28,9 @@ import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.repository.CancelacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.GastoCancelacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
+import com.hydra.pica.plataforma_pica.torneo.event.CancelacionResuelta;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,6 +60,7 @@ public class CancelacionTorneoService {
     private final GastoCancelacionRepository gastoCancelacionRepository;
     private final AlmacenArchivos almacen;
     private final ParametrosPlataforma parametrosPlataforma;
+    private final ApplicationEventPublisher eventos;
     private final AuditoriaService auditoriaService;
 
     /**
@@ -95,6 +98,9 @@ public class CancelacionTorneoService {
 
         auditar(organizadorId, id, cancelacionId, estado, motivo, totalGastos);
         BigDecimal reintegrado = automatica ? cierreDeCancelacion.cerrar(torneo) : BigDecimal.ZERO;
+        if (automatica) {
+            eventos.publishEvent(new CancelacionResuelta(id));
+        }
         return new CancelacionRealizada(cancelacionId, id, estado.name(), totalGastos, pozo, reintegrado);
     }
 

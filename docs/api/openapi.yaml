@@ -747,7 +747,9 @@ paths:
         las primeras billeteras; los gastos administrativos vuelven enteros. Recibe un REINTEGRO por el resto, que dice
         cuánto se retuvo. El organizador cobra el total de gastos como LIQUIDACION (referencia
         `canc-t{torneoId}-organizador`). El torneo, las inscripciones y la custodia quedan como al rechazar, y la
-        cancelación APROBADA. Mismos 404 y 409 que al rechazar.
+        cancelación APROBADA. Mismos 404 y 409 que al rechazar. Después del commit, cada uno que pagó recibe un mail
+        con lo devuelto, el porcentaje sobre lo que pagó y el desglose de los gastos, y el organizador uno con lo que
+        cobró.
       responses:
         '200':
           description: La resolución
@@ -771,7 +773,8 @@ paths:
         cancelación queda RECHAZADA con quién la revisó, cuándo y el motivo. 400 `VALIDACION` en `motivo`
         (`REQUERIDO`, o `LONGITUD` si pasa los 500 caracteres). 404 `CANCELACION_NO_ENCONTRADA` si el torneo no tiene
         cancelación. 409 `CANCELACION_PROPIA` si quien revisa es el organizador del torneo; 409
-        `CANCELACION_YA_RESUELTA` si ya se resolvió o fue automática (el estado va en `estado`).
+        `CANCELACION_YA_RESUELTA` si ya se resolvió o fue automática (el estado va en `estado`). Después del commit,
+        cada uno que pagó recibe un mail con el 100 % devuelto y el motivo, y el organizador uno con el motivo.
       requestBody:
         required: true
         content:
@@ -1544,7 +1547,7 @@ paths:
         cerrada, o en curso. Sin gastos se aprueba sola (`estado` AUTOMATICA): el torneo pasa a CANCELADO con el
         motivo, las inscripciones confirmadas a REINTEGRADA y las que no terminaron de pagar a CANCELADA, la custodia
         queda REINTEGRADA y cada billetera que pagó recupera todo lo que pagó (inscripción y gastos administrativos)
-        con un movimiento REINTEGRO. Con gastos queda en revisión (`estado` EN_REVISION, `reintegrado` 0): el torneo
+        con un movimiento REINTEGRO, y un mail que lo dice. Con gastos queda en revisión (`estado` EN_REVISION, `reintegrado` 0): el torneo
         pasa a CANCELACION_EN_REVISION con el motivo, la plata sigue en custodia y las inscripciones no cambian hasta
         que soporte decida; no se puede editar ni volver a enviar. Mientras tanto se bloquea lo mismo que con
         CANCELADO: pronósticos (409 `PRONOSTICO_FUERA_DE_VENTANA`), árbitros y designaciones (409

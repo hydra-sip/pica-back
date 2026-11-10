@@ -3,6 +3,11 @@ package com.hydra.pica.plataforma_pica.torneo.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -10,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.common.email.EmailService;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
@@ -20,6 +26,7 @@ import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeclarado;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoEnRevision;
 import com.hydra.pica.plataforma_pica.torneo.dto.ResolucionCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
+import com.hydra.pica.plataforma_pica.torneo.event.CancelacionResuelta;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -39,6 +46,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -50,6 +60,7 @@ import org.springframework.transaction.annotation.Transactional;
 @ActiveProfiles("dev")
 @Import(TestcontainersConfiguration.class)
 @Transactional
+@RecordApplicationEvents
 class RevisionCancelacionIntegracionTest {
 
     private static final byte[] PDF = "%PDF-1.7\nfactura".getBytes(StandardCharsets.US_ASCII);
@@ -61,6 +72,9 @@ class RevisionCancelacionIntegracionTest {
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
+    @Autowired private AvisoCancelacion avisoCancelacion;
+    @Autowired private ApplicationEvents eventos;
+    @MockitoBean private EmailService emailService;
 
     private Long organizador;
     private Long soporte;
@@ -315,6 +329,102 @@ class RevisionCancelacionIntegracionTest {
                 SELECT r.nombre FROM rol r JOIN rol_permiso rp ON rp.rol_id = r.id JOIN permiso p ON p.id = rp.permiso_id
                 WHERE p.codigo = 'CANCELACION_REVISAR'
                 """, String.class)).containsExactlyInAnyOrder("SOPORTE", "ADMINISTRADOR", "SUPER_USUARIO");
+    }
+
+    // --- los mails ----------------------------------------------------------------------------------
+
+    @Test
+    void cadaResolucionPublicaElEventoDelAviso() {
+        revisionCancelacionService.aprobar(soporte, torneo);
+        long rechazado = enRevision("Rechazado");
+        revisionCancelacionService.rechazar(soporte, rechazado, "No");
+        long automatico = torneo();
+        cancelacionTorneoService.cancelar(organizador, automatico, new SolicitudCancelacion("Lluvia", List.of()));
+
+        assertThat(eventos.stream(CancelacionResuelta.class)).extracting(CancelacionResuelta::torneoId)
+                .containsExactly(torneo, rechazado, automatico);
+    }
+
+    @Test
+    void alAprobarCadaUnoRecibeLoQueLeDevolvieronConElDesgloseYElOrganizadorLoQueCobro() {
+        revisionCancelacionService.aprobar(soporte, torneo);
+        entityManager.flush();
+
+        avisoCancelacion.avisar(new CancelacionResuelta(torneo));
+
+        verify(emailService).enviarAviso("jug_rev_0@example.com", "Se canceló Torneo a revisar", """
+                Se canceló Torneo a revisar. Motivo: Se inundó la cancha
+
+                Soporte aprobó gastos por $450,50: Alquiler de la cancha $300, Árbitro $150,50. \
+                Te tocan $150,17 de esos gastos.
+
+                Te devolvimos $949,83 de los $1100 que pagaste (86,35 %) a tu billetera.
+                """);
+        verify(emailService).enviarAviso("jug_rev_2@example.com", "Se canceló Torneo a revisar", """
+                Se canceló Torneo a revisar. Motivo: Se inundó la cancha
+
+                Soporte aprobó gastos por $450,50: Alquiler de la cancha $300, Árbitro $150,50. \
+                Te tocan $150,16 de esos gastos.
+
+                Te devolvimos $949,84 de los $1100 que pagaste (86,35 %) a tu billetera.
+                """);
+        verify(emailService).enviarAviso("org_rev@example.com", "Soporte revisó la cancelación de Torneo a revisar",
+                "Soporte aprobó los gastos de la cancelación de Torneo a revisar: te acreditamos $450,50.\n");
+        verify(emailService, times(4)).enviarAviso(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void alRechazarCadaUnoRecibeElCienPorCientoConElMotivo() {
+        revisionCancelacionService.rechazar(soporte, torneo, "Los comprobantes no son del torneo");
+        entityManager.flush();
+
+        avisoCancelacion.avisar(new CancelacionResuelta(torneo));
+
+        verify(emailService).enviarAviso("jug_rev_1@example.com", "Se canceló Torneo a revisar", """
+                Se canceló Torneo a revisar. Motivo: Se inundó la cancha
+
+                Soporte rechazó los gastos que declaró el organizador: Los comprobantes no son del torneo.
+
+                Te devolvimos $1100 (100 %) a tu billetera.
+                """);
+        verify(emailService).enviarAviso("org_rev@example.com", "Soporte revisó la cancelación de Torneo a revisar",
+                "Soporte rechazó los gastos de la cancelación de Torneo a revisar: Los comprobantes no son del torneo. "
+                        + "Se devolvió todo a los participantes.\n");
+    }
+
+    @Test
+    void enLaCancelacionAutomaticaSoloLesLlegaAQuienesPagaron() {
+        long automatico = torneo();
+        Long pago = usuario("jug_auto");
+        saldo(pago, "5000.00");
+        long suInscripcion = jdbc.queryForObject("""
+                INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
+                VALUES (?, ?, 'PENDIENTE_PAGO', now()) RETURNING id
+                """, Long.class, automatico, pago);
+        inscripcionService.pagar(pago, suInscripcion);
+        cancelacionTorneoService.cancelar(organizador, automatico, new SolicitudCancelacion("Lluvia", List.of()));
+        entityManager.flush();
+
+        avisoCancelacion.avisar(new CancelacionResuelta(automatico));
+
+        verify(emailService).enviarAviso("jug_auto@example.com", "Se canceló Torneo a revisar", """
+                Se canceló Torneo a revisar. Motivo: Lluvia
+
+                Te devolvimos $1100 (100 % de lo que pagaste) a tu billetera.
+                """);
+        verify(emailService, times(1)).enviarAviso(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void siUnMailFallaLosDemasSalenIgual() {
+        revisionCancelacionService.rechazar(soporte, torneo, "No");
+        entityManager.flush();
+        doThrow(new IllegalStateException("SMTP caído")).when(emailService)
+                .enviarAviso(eq("jug_rev_0@example.com"), anyString(), anyString());
+
+        avisoCancelacion.avisar(new CancelacionResuelta(torneo));
+
+        verify(emailService, times(4)).enviarAviso(anyString(), anyString(), anyString());
     }
 
     // --- escenario ----------------------------------------------------------------------------------
