@@ -1353,6 +1353,92 @@ paths:
         '409':
           $ref: '#/components/responses/Conflicto'
 
+  /api/v1/billetera/cargas/cripto:
+    post:
+      tags: [Billetera]
+      summary: Iniciar una carga de saldo con la wallet
+      x-jira: PICA-333
+      x-owner: Mateo
+      description: >-
+        Inicia una carga pagada con la wallet en el contrato PasarelaCargas de Base Sepolia (HU-609). Devuelve la
+        referencia (el bytes32 que se pasa a `cargar` en el contrato), la dirección del contrato, la red y los wei
+        exactos que hay que mandar, calculados con la cotización fija de testnet. La carga queda pendiente hasta que
+        se confirma con el hash de la transacción. No vence: un pago confirmado en la cadena se acredita aunque haya
+        pasado tiempo. Los límites del monto son los de la carga de saldo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CargaRequest'
+      responses:
+        '201':
+          description: Carga iniciada, pendiente de pago
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CargaCripto'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+
+  /api/v1/billetera/cargas/cripto/{referencia}/confirmar:
+    post:
+      tags: [Billetera]
+      summary: Confirmar una carga con cripto con el hash de la transacción
+      x-jira: PICA-333
+      x-owner: Mateo
+      description: >-
+        Lee la transacción en Base Sepolia y, si pagó esta carga, la acredita en la billetera: el movimiento CARGA
+        queda con el hash como `referenciaExterna`, la descripción «Carga con cripto» y `enlaceExplorador`. Para
+        acreditarse, la transacción tiene que ser exitosa y tener un evento `CargaRegistrada` emitido por el
+        contrato con esta referencia y exactamente `montoWei`. No importa el `to` de la transacción (una smart
+        wallet paga a través de otra dirección), ni la wallet que pagó. 404 `CARGA_NO_ENCONTRADA` si la
+        referencia no existe o es de otro usuario. 400 `VALIDACION` si el hash no es 0x y 64 caracteres hex.
+        Si la transacción no paga la carga, 400 y el rechazo queda en auditoría; la carga sigue pendiente y se
+        puede confirmar con la transacción correcta: `TRANSACCION_FALLIDA` (revirtió; no se cobró nada) ·
+        `TRANSACCION_SIN_CARGA` (no tiene un `CargaRegistrada` del contrato con esta referencia) ·
+        `MONTO_NO_COINCIDE` (pagó otro monto que `montoWei`; si hace falta, se devuelve a mano desde el contrato) ·
+        `TRANSACCION_INEXISTENTE` (la red no conoce el hash; reintentar no sirve) · `TRANSACCION_YA_USADA` (la
+        transacción ya acreditó otra carga: una transacción acredita una sola, aunque pague varias). 409 `TRANSACCION_PENDIENTE` si
+        la transacción todavía no entró en un bloque o no tiene las confirmaciones mínimas (3 bloques, unos 6 s):
+        reintentar en unos segundos. 503 `RED_NO_DISPONIBLE` si el nodo de Base Sepolia no respondió: reintentar
+        más tarde; no dice nada de la transacción.
+        Es idempotente: confirmar otra vez una carga ya acreditada con el mismo hash devuelve 200 con el mismo
+        movimiento sin consultar la red, y con otro hash es 409 `CARGA_YA_ACREDITADA`. Dos confirmaciones al mismo
+        tiempo acreditan una sola vez.
+      parameters:
+        - name: referencia
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[0-9a-fA-F]{64}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmarCargaCripto'
+      responses:
+        '200':
+          description: Carga acreditada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovimientoBilletera'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+        '503':
+          $ref: '#/components/responses/Error'
+
   # --- Equipos -----------------------------------------------------------------
 
 
@@ -3047,6 +3133,10 @@ components:
         backend lo agrega acá.
         Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO / SESION_REVOCADA 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404 ·
         ALMACENAMIENTO_NO_DISPONIBLE 502 (el almacenamiento de archivos no respondió; se puede reintentar).
+        Carga con cripto (HU-609), 400: TRANSACCION_INEXISTENTE (la red no conoce el hash) · TRANSACCION_FALLIDA (la
+        transacción revirtió) · TRANSACCION_SIN_CARGA (no pagó esta carga en el contrato) · MONTO_NO_COINCIDE (pagó
+        otro monto) · TRANSACCION_YA_USADA (ya acreditó otra carga) · CARGA_NO_ENCONTRADA 404 · TRANSACCION_PENDIENTE 409 (sin las confirmaciones mínimas; reintentar
+        en unos segundos) · CARGA_YA_ACREDITADA 409 (se acreditó con otra transacción) · RED_NO_DISPONIBLE 503 (el nodo de Base Sepolia no respondió; reintentar más tarde).
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
         DEMASIADOS_INTENTOS 429 (login).
@@ -3113,10 +3203,12 @@ components:
 
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              ALMACENAMIENTO_NO_DISPONIBLE,
+             RED_NO_DISPONIBLE, TRANSACCION_INEXISTENTE, TRANSACCION_FALLIDA, TRANSACCION_SIN_CARGA, MONTO_NO_COINCIDE,
+             TRANSACCION_YA_USADA, TRANSACCION_PENDIENTE, CARGA_YA_ACREDITADA,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
-             OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO,
+             OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO, CARGA_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
@@ -4931,6 +5023,51 @@ components:
         creadoEn:
           type: string
           format: date-time
+        enlaceExplorador:
+          type: [string, 'null']
+          description: >-
+            La transacción en BaseScan, en las cargas con cripto (HU-609); null en el resto de los movimientos.
+          example: 'https://sepolia.basescan.org/tx/0x2f27d3c26ea9b5b2dd0a441a17a70ea3dc2830757e2f2cf564f0cf6d9479e9eb'
+
+    ConfirmarCargaCripto:
+      type: object
+      required: [hash]
+      properties:
+        hash:
+          type: string
+          pattern: '^0x[0-9a-fA-F]{64}$'
+          description: El hash de la transacción que pagó la carga en el contrato.
+          example: '0x2f27d3c26ea9b5b2dd0a441a17a70ea3dc2830757e2f2cf564f0cf6d9479e9eb'
+
+    CargaCripto:
+      type: object
+      required: [referencia, contrato, chainId, montoWei, montoPesos]
+      properties:
+        referencia:
+          type: string
+          pattern: '^0x[0-9a-f]{64}$'
+          description: El bytes32 que se paga con `cargar(referencia)` en el contrato. Al azar y único.
+          example: '0x5f2c0a9e3b7d41e6a8c2f0b19d4e7a3c6b8f1e2d9a0c4b7e5f3a1d8c6e2b9f40'
+        contrato:
+          type: string
+          description: La dirección de PasarelaCargas.
+          example: '0x36e633eDD1E79Ef2b9A3c6A099D873D52e44EDF0'
+        chainId:
+          type: integer
+          description: La red del contrato (84532 es Base Sepolia).
+          example: 84532
+        montoWei:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+          description: >-
+            Los wei exactos que hay que mandar como `value`. Va como texto porque pasa el rango de los números que
+            JavaScript representa con exactitud: usar `BigInt(montoWei)`.
+          example: '100000000000000'
+        montoPesos:
+          type: number
+          format: double
+          description: Los pesos que se acreditan al confirmar el pago.
+          example: 10000.00
 
     CargaRequest:
       type: object

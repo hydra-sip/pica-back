@@ -116,6 +116,15 @@ app:
   liquidacion:
     automatica: ${APP_LIQUIDACION_AUTOMATICA:true}   # repartir la custodia de los torneos que terminan (HU-606)
     revision: ${APP_LIQUIDACION_REVISION:60s}   # cada cuánto se buscan los que quedaron sin liquidar
+  # Carga de saldo pagada con la wallet en el contrato PasarelaCargas de Base Sepolia (HU-609, PICA-333)
+  cripto:
+    rpc-url: ${APP_CRIPTO_RPC_URL:https://sepolia.base.org}   # nodo JSON-RPC con el que se leen las transacciones
+    contrato: ${PASARELA_CARGAS_ADDRESS:0x36e633eDD1E79Ef2b9A3c6A099D873D52e44EDF0}   # el deploy de PICA-328
+    chain-id: ${APP_CRIPTO_CHAIN_ID:84532}
+    confirmaciones-minimas: ${APP_CRIPTO_CONFIRMACIONES_MINIMAS:3}   # bloques, contando el de la transacción
+    timeout: ${APP_CRIPTO_TIMEOUT:5s}   # lo que se espera al nodo antes de responder 503
+    wei-por-peso: ${APP_CRIPTO_WEI_POR_PESO:10000000000}   # cotización fija de testnet, múltiplo de 100: $10.000 = 0,0001 ETH
+    explorador-url: ${APP_CRIPTO_EXPLORADOR_URL:https://sepolia.basescan.org}
   rifas:
     duracion-reserva: ${APP_RIFAS_DURACION_RESERVA:10m}   # lo que dura un número reservado mientras se paga (HU-403)
     cierre-automatico: ${APP_RIFAS_CIERRE_AUTOMATICO:true}   # cerrar las ventas vencidas y sellar la lista (HU-407)
