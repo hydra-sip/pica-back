@@ -33,7 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class DesignacionesService {
 
-    private static final Set<EstadoTorneo> TERMINADOS = Set.of(EstadoTorneo.FINALIZADO, EstadoTorneo.CANCELADO);
+    private static final Set<EstadoTorneo> TERMINADOS = Set.of(EstadoTorneo.FINALIZADO, EstadoTorneo.CANCELADO,
+            // la cancelación ya está decidida: soporte solo revisa los gastos (HU-605)
+            EstadoTorneo.CANCELACION_EN_REVISION);
     /** Primero las que esperan respuesta. */
     private static final Comparator<MiDesignacion> PENDIENTES_PRIMERO =
             Comparator.comparing(d -> d.estado() != EstadoDesignacion.PENDIENTE);

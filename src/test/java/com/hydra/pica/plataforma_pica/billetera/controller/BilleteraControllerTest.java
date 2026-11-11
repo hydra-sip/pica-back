@@ -26,8 +26,10 @@ import com.hydra.pica.plataforma_pica.billetera.dto.MovimientoBilleteraResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.RifaMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.dto.TorneoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.service.BilleteraService;
+import com.hydra.pica.plataforma_pica.billetera.service.CargaCriptoService;
 import com.hydra.pica.plataforma_pica.billetera.service.CargaService;
 import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
+import com.hydra.pica.plataforma_pica.common.config.CriptoConfig;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
@@ -45,7 +47,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(BilleteraController.class)
 @ActiveProfiles("dev")
-@Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
+@Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class, CriptoConfig.class})
 class BilleteraControllerTest {
 
     private static final Long USUARIO_ID = 42L;
@@ -54,6 +56,7 @@ class BilleteraControllerTest {
 
     @MockitoBean private BilleteraService billeteraService;
     @MockitoBean private CargaService cargaService;
+    @MockitoBean private CargaCriptoService cargaCriptoService;
     @MockitoBean private CurrentUserProvider currentUserProvider;
 
     @Test
@@ -116,7 +119,8 @@ class BilleteraControllerTest {
                 "Carga de saldo",
                 null,
                 null,
-                ahora);
+                ahora,
+                null);
 
         MovimientoBilleteraResponse mov2 = new MovimientoBilleteraResponse(
                 102L,
@@ -129,7 +133,8 @@ class BilleteraControllerTest {
                 "Inscripción al torneo",
                 new TorneoMovimiento(5L, "Torneo de Verano", "Torneo de Verano", "torneo-de-verano"),
                 null,
-                ahora.plusSeconds(60));
+                ahora.plusSeconds(60),
+                null);
 
         MovimientoBilleteraResponse mov3 = new MovimientoBilleteraResponse(
                 103L,
@@ -142,7 +147,8 @@ class BilleteraControllerTest {
                 "Compra de 2 números",
                 null,
                 new RifaMovimiento(8L, "Rifa Anual"),
-                ahora.plusSeconds(120));
+                ahora.plusSeconds(120),
+                null);
 
         PageImpl<MovimientoBilleteraResponse> pagina = new PageImpl<>(
                 List.of(mov3, mov2, mov1), PageRequest.of(0, 20), 3);

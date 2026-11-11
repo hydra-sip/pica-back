@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.billetera.dto;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.regex.Pattern;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
@@ -23,9 +24,14 @@ public record MovimientoBilleteraResponse(
         String descripcion,
         TorneoMovimiento torneo,
         RifaMovimiento rifa,
-        Instant creadoEn) {
+        Instant creadoEn,
+        String enlaceExplorador) {
 
-    public static MovimientoBilleteraResponse de(Movimiento movimiento, Rifa rifa) {
+    // la referencia externa de una carga con cripto es el hash de la transacción que la pagó (HU-609)
+    private static final Pattern HASH = Pattern.compile("^0x[0-9a-f]{64}$");
+
+    /** @param exploradorUrl donde se ve una transacción de Base Sepolia, para las cargas con cripto */
+    public static MovimientoBilleteraResponse de(Movimiento movimiento, Rifa rifa, String exploradorUrl) {
         Torneo torneo = movimiento.getTorneo();
         if (torneo == null && movimiento.getInscripcion() != null) {
             torneo = movimiento.getInscripcion().getTorneo();
@@ -44,7 +50,15 @@ public record MovimientoBilleteraResponse(
                 movimiento.getDescripcion(),
                 TorneoMovimiento.de(torneo),
                 RifaMovimiento.de(rifa),
-                movimiento.getCreadoEn());
+                movimiento.getCreadoEn(),
+                enlaceExplorador(movimiento.getReferenciaExterna(), exploradorUrl));
+    }
+
+    private static String enlaceExplorador(String referenciaExterna, String exploradorUrl) {
+        if (referenciaExterna == null || !HASH.matcher(referenciaExterna).matches()) {
+            return null;
+        }
+        return exploradorUrl.replaceAll("/+$", "") + "/tx/" + referenciaExterna;
     }
 }
 
