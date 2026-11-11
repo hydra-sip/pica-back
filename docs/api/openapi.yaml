@@ -1281,6 +1281,46 @@ paths:
         '401':
           $ref: '#/components/responses/Error'
 
+  /api/v1/billetera/cargas/cripto/{referencia}/confirmar:
+    post:
+      tags: [Billetera]
+      summary: Confirmar una carga con cripto con el hash de la transacción
+      x-jira: PICA-333
+      x-owner: Mateo
+      description: >-
+        Lee la transacción en Base Sepolia y, si pagó esta carga, la acredita en la billetera: el movimiento CARGA
+        queda con el hash como `referenciaExterna`, la descripción «Carga con cripto» y `enlaceExplorador`. Para
+        acreditarse, la transacción tiene que ser exitosa y tener un evento `CargaRegistrada` emitido por el
+        contrato con esta referencia y exactamente `montoWei`. No importa el `to` de la transacción (una smart
+        wallet paga a través de otra dirección), ni la wallet que pagó. 404 `CARGA_NO_ENCONTRADA` si la
+        referencia no existe o es de otro usuario. 400 `VALIDACION` si el hash no es 0x y 64 caracteres hex.
+      parameters:
+        - name: referencia
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[0-9a-fA-F]{64}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmarCargaCripto'
+      responses:
+        '200':
+          description: Carga acreditada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovimientoBilletera'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+
   # --- Equipos -----------------------------------------------------------------
 
 
@@ -2933,7 +2973,7 @@ components:
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
-             OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO,
+             OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO, CARGA_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
@@ -4642,6 +4682,21 @@ components:
         creadoEn:
           type: string
           format: date-time
+        enlaceExplorador:
+          type: [string, 'null']
+          description: >-
+            La transacción en BaseScan, en las cargas con cripto (HU-609); null en el resto de los movimientos.
+          example: 'https://sepolia.basescan.org/tx/0x2f27d3c26ea9b5b2dd0a441a17a70ea3dc2830757e2f2cf564f0cf6d9479e9eb'
+
+    ConfirmarCargaCripto:
+      type: object
+      required: [hash]
+      properties:
+        hash:
+          type: string
+          pattern: '^0x[0-9a-fA-F]{64}$'
+          description: El hash de la transacción que pagó la carga en el contrato.
+          example: '0x2f27d3c26ea9b5b2dd0a441a17a70ea3dc2830757e2f2cf564f0cf6d9479e9eb'
 
     CargaCripto:
       type: object

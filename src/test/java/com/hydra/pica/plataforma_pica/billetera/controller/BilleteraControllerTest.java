@@ -119,7 +119,8 @@ class BilleteraControllerTest {
                 "Carga de saldo",
                 null,
                 null,
-                ahora);
+                ahora,
+                null);
 
         MovimientoBilleteraResponse mov2 = new MovimientoBilleteraResponse(
                 102L,
@@ -132,7 +133,8 @@ class BilleteraControllerTest {
                 "Inscripción al torneo",
                 new TorneoMovimiento(5L, "Torneo de Verano", "Torneo de Verano", "torneo-de-verano"),
                 null,
-                ahora.plusSeconds(60));
+                ahora.plusSeconds(60),
+                null);
 
         MovimientoBilleteraResponse mov3 = new MovimientoBilleteraResponse(
                 103L,
@@ -145,7 +147,8 @@ class BilleteraControllerTest {
                 "Compra de 2 números",
                 null,
                 new RifaMovimiento(8L, "Rifa Anual"),
-                ahora.plusSeconds(120));
+                ahora.plusSeconds(120),
+                null);
 
         PageImpl<MovimientoBilleteraResponse> pagina = new PageImpl<>(
                 List.of(mov3, mov2, mov1), PageRequest.of(0, 20), 3);

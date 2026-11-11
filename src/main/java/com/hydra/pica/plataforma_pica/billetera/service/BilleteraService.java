@@ -13,6 +13,7 @@ import com.hydra.pica.plataforma_pica.billetera.dto.BilleteraResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.MovimientoBilleteraResponse;
 import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
+import com.hydra.pica.plataforma_pica.common.config.CriptoConfig.CriptoProperties;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Ticket;
 import com.hydra.pica.plataforma_pica.rifa.repository.TicketRepository;
@@ -36,6 +37,7 @@ public class BilleteraService {
     private final MovimientoRepository movimientoRepository;
     private final TicketRepository ticketRepository;
     private final UsuarioRepository usuarioRepository;
+    private final CriptoProperties cripto;
 
     @Transactional
     public BilleteraResponse obtenerBilletera(Long usuarioId) {
@@ -67,7 +69,8 @@ public class BilleteraService {
                                 Ticket::getRifa,
                                 (r1, r2) -> r1));
 
-        return pagina.map(m -> MovimientoBilleteraResponse.de(m, rifasPorMovimiento.get(m.getId())));
+        return pagina.map(m -> MovimientoBilleteraResponse.de(m, rifasPorMovimiento.get(m.getId()),
+                cripto.exploradorUrl()));
     }
 
     private Billetera obtenerOCrearBilletera(Long usuarioId) {

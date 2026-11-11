@@ -2,20 +2,25 @@ package com.hydra.pica.plataforma_pica.billetera;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.UUID;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
-import com.jayway.jsonpath.JsonPath;
 import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
 import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
+import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena;
+import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena.CargaRegistrada;
+import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena.Transaccion;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
@@ -23,12 +28,14 @@ import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -40,12 +47,17 @@ import org.springframework.test.web.servlet.ResultActions;
 class CargaCriptoIntegracionTest {
 
     private static final String CONTRATO = "0x36e633eDD1E79Ef2b9A3c6A099D873D52e44EDF0";
+    private static final String PAGADOR = "0x262dfbfa37436e5b99a53377e633509d1a9b301a";
+    private static final long BLOQUE = 57254703;
 
     @Autowired private MockMvc mockMvc;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
     @Autowired private BilleteraRepository billeteraRepository;
     @Autowired private JwtService jwtService;
+
+    // los tests no salen a Base Sepolia: cada uno dice qué ve el nodo
+    @MockitoBean private LectorDeCadena cadena;
 
     @Test
     void alIniciarLaCargaDevuelveLaReferenciaElContratoYLosWeiAPagar() throws Exception {
@@ -104,6 +116,100 @@ class CargaCriptoIntegracionTest {
                         .contentType(APPLICATION_JSON)
                         .content("{\"monto\": 100}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void alConfirmarUnPagoConfirmadoSeAcreditaConElHashYElEnlaceAlExplorador() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        cadenaVe(hash, pagoDe(referencia, "100000000000000"), BLOQUE + 10);
+
+        confirmar(usuario, referencia, hash)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tipo").value("CARGA"))
+                .andExpect(jsonPath("$.estado").value("CONFIRMADO"))
+                .andExpect(jsonPath("$.monto").value(10000))
+                .andExpect(jsonPath("$.saldoResultante").value(10000))
+                .andExpect(jsonPath("$.referenciaExterna").value(hash))
+                .andExpect(jsonPath("$.descripcion").value("Carga con cripto"))
+                .andExpect(jsonPath("$.enlaceExplorador").value("https://sepolia.basescan.org/tx/" + hash));
+
+        mockMvc.perform(get("/api/v1/billetera").header("Authorization", "Bearer " + token(usuario)))
+                .andExpect(jsonPath("$.saldoDisponible").value(10000));
+    }
+
+    @Test
+    void elEnlaceAlExploradorApareceEnLosMovimientosSoloEnLasCargasConCripto() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        mockMvc.perform(post("/api/v1/billetera/cargas").header("Authorization", "Bearer " + token(usuario))
+                .contentType(APPLICATION_JSON).content("{\"monto\": 50}")).andExpect(status().isCreated());
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        cadenaVe(hash, pagoDe(referencia, "100000000000000"), BLOQUE + 10);
+        confirmar(usuario, referencia, hash).andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/billetera/movimientos").header("Authorization", "Bearer " + token(usuario)))
+                .andExpect(jsonPath("$.content[0].descripcion").value("Carga con cripto"))
+                .andExpect(jsonPath("$.content[0].enlaceExplorador").value("https://sepolia.basescan.org/tx/" + hash))
+                .andExpect(jsonPath("$.content[1].enlaceExplorador").doesNotExist());
+    }
+
+    @Test
+    void unaCargaDeOtroUsuarioOQueNoExisteNoSeEncuentra() throws Exception {
+        Usuario duenio = crearUsuario("cripto");
+        Usuario otro = crearUsuario("cripto");
+        String referencia = referencia(iniciar(duenio, "10000"));
+        String hash = hashAlAzar();
+        cadenaVe(hash, pagoDe(referencia, "100000000000000"), BLOQUE + 10);
+
+        confirmar(otro, referencia, hash)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("CARGA_NO_ENCONTRADA"));
+        confirmar(duenio, hashAlAzar(), hash)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("CARGA_NO_ENCONTRADA"));
+        mockMvc.perform(get("/api/v1/billetera").header("Authorization", "Bearer " + token(otro)))
+                .andExpect(jsonPath("$.saldoDisponible").value(0));
+    }
+
+    @Test
+    void unHashQueNoTieneElFormatoDeUnaTransaccionEsInvalido() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+
+        for (String hash : List.of("", "0x123", "2f27d3c26ea9b5b2dd0a441a17a70ea3dc2830757e2f2cf564f0cf6d9479e9eb0x",
+                "0x" + "g".repeat(64))) {
+            confirmar(usuario, referencia, hash)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+        }
+    }
+
+    private void cadenaVe(String hash, Transaccion transaccion, long bloqueActual) {
+        when(cadena.transaccion(hash)).thenReturn(transaccion);
+        when(cadena.bloqueActual()).thenReturn(bloqueActual);
+    }
+
+    // una carga exitosa como la emite el contrato desplegado
+    private static Transaccion pagoDe(String referencia, String wei) {
+        return new Transaccion.Minada(true, BLOQUE,
+                List.of(new CargaRegistrada(CONTRATO.toLowerCase(), referencia, PAGADOR, new BigInteger(wei))));
+    }
+
+    private static String hashAlAzar() {
+        return "0x" + (UUID.randomUUID().toString() + UUID.randomUUID()).replace("-", "");
+    }
+
+    private static String referencia(ResultActions inicio) throws Exception {
+        return JsonPath.read(inicio.andReturn().getResponse().getContentAsString(), "$.referencia");
+    }
+
+    private ResultActions confirmar(Usuario usuario, String referencia, String hash) throws Exception {
+        return mockMvc.perform(post("/api/v1/billetera/cargas/cripto/{referencia}/confirmar", referencia)
+                .header("Authorization", "Bearer " + token(usuario))
+                .contentType(APPLICATION_JSON)
+                .content("{\"hash\": \"" + hash + "\"}"));
     }
 
     private ResultActions iniciar(Usuario usuario, String monto) throws Exception {
