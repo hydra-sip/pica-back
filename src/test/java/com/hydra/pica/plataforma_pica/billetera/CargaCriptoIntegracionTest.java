@@ -3,6 +3,8 @@ package com.hydra.pica.plataforma_pica.billetera;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -13,7 +15,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
@@ -331,6 +339,77 @@ class CargaCriptoIntegracionTest {
                 .andExpect(jsonPath("$.codigo").value("RED_NO_DISPONIBLE"));
         assertThat(rechazos(usuario)).isEmpty();
         sinSaldo(usuario);
+    }
+
+    @Test
+    void reconfirmarConElMismoHashDevuelveElMismoMovimientoSinConsultarLaRed() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        cadenaVe(hash, pagoDe(referencia, "100000000000000"), BLOQUE + 10);
+        Integer movimiento = JsonPath.read(confirmar(usuario, referencia, hash).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(), "$.id");
+
+        // un reintento del front, aunque mande el hash en mayúsculas
+        for (String mismo : List.of(hash, "0x" + hash.substring(2).toUpperCase(Locale.ROOT))) {
+            confirmar(usuario, referencia, mismo)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(movimiento))
+                    .andExpect(jsonPath("$.referenciaExterna").value(hash));
+        }
+        verify(cadena, times(1)).transaccion(anyString());
+        mockMvc.perform(get("/api/v1/billetera").header("Authorization", "Bearer " + token(usuario)))
+                .andExpect(jsonPath("$.saldoDisponible").value(10000));
+    }
+
+    @Test
+    void unaCargaAcreditadaNoSeVuelveAAcreditarConOtraTransaccion() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        String otro = hashAlAzar();
+        cadenaVe(hash, pagoDe(referencia, "100000000000000"), BLOQUE + 10);
+        cadenaVe(otro, pagoDe(referencia, "100000000000000"), BLOQUE + 10);
+        confirmar(usuario, referencia, hash).andExpect(status().isOk());
+
+        confirmar(usuario, referencia, otro)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("CARGA_YA_ACREDITADA"));
+        mockMvc.perform(get("/api/v1/billetera").header("Authorization", "Bearer " + token(usuario)))
+                .andExpect(jsonPath("$.saldoDisponible").value(10000));
+    }
+
+    @Test
+    void dosConfirmacionesAlMismoTiempoAcreditanUnaSolaVez() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        cadenaVe(hash, pagoDe(referencia, "100000000000000"), BLOQUE + 10);
+
+        int hilos = 4;
+        ExecutorService executor = Executors.newFixedThreadPool(hilos);
+        CountDownLatch largada = new CountDownLatch(1);
+        List<Future<String>> respuestas = new java.util.ArrayList<>();
+        for (int i = 0; i < hilos; i++) {
+            respuestas.add(executor.submit(() -> {
+                largada.await();
+                return confirmar(usuario, referencia, hash).andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString();
+            }));
+        }
+        largada.countDown();
+        executor.shutdown();
+        assertThat(executor.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
+
+        List<Object> ids = new java.util.ArrayList<>();
+        for (Future<String> respuesta : respuestas) {
+            ids.add(JsonPath.read(respuesta.get(), "$.id"));
+        }
+        assertThat(ids).hasSize(hilos).containsOnly(ids.getFirst());
+        mockMvc.perform(get("/api/v1/billetera").header("Authorization", "Bearer " + token(usuario)))
+                .andExpect(jsonPath("$.saldoDisponible").value(10000));
+        mockMvc.perform(get("/api/v1/billetera/movimientos").header("Authorization", "Bearer " + token(usuario)))
+                .andExpect(jsonPath("$.content.length()").value(1));
     }
 
     private List<Auditoria> rechazos(Usuario usuario) {

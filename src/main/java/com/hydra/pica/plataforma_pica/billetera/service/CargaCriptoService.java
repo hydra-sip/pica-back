@@ -22,6 +22,7 @@ import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.Hibernate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,6 +65,11 @@ public class CargaCriptoService {
                 .findByReferenciaAndUsuarioId(referencia.toLowerCase(Locale.ROOT), usuarioId)
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.CARGA_NO_ENCONTRADA,
                         "No hay una carga con esa referencia"));
+        // un reintento del front con la carga ya acreditada no vuelve a consultar la red
+        if (carga.getEstado() == EstadoCargaCripto.ACREDITADA) {
+            return transaccion.execute(estado ->
+                    yaAcreditada(cargaCriptoRepository.findById(carga.getId()).orElseThrow(), hashNormalizado));
+        }
 
         Transaccion.Minada minada = switch (cadena.transaccion(hashNormalizado)) {
             case Transaccion.Inexistente inexistente -> throw rechazo(carga, hashNormalizado,
@@ -95,6 +101,15 @@ public class CargaCriptoService {
         return transaccion.execute(estado -> acreditar(carga.getId(), usuarioId, hashNormalizado, pago));
     }
 
+    // el contrato no deja pagar dos veces una referencia: otro hash no puede ser otro pago de esta carga
+    private static Movimiento yaAcreditada(CargaCripto carga, String hash) {
+        if (!hash.equals(carga.getHash())) {
+            throw new ConflictoException(CodigoError.CARGA_YA_ACREDITADA,
+                    "La carga ya se acreditó con otra transacción");
+        }
+        return (Movimiento) Hibernate.unproxy(carga.getMovimiento());
+    }
+
     private static ConflictoException pendiente() {
         return new ConflictoException(CodigoError.TRANSACCION_PENDIENTE,
                 "La transacción todavía no tiene las confirmaciones necesarias. Probá de nuevo en unos segundos");
@@ -118,6 +133,10 @@ public class CargaCriptoService {
 
     private Movimiento acreditar(Long cargaId, Long usuarioId, String hash, CargaRegistrada pago) {
         CargaCripto carga = cargaCriptoRepository.findConBloqueoPorId(cargaId).orElseThrow();
+        // otra confirmación la pudo acreditar mientras se consultaba la red
+        if (carga.getEstado() == EstadoCargaCripto.ACREDITADA) {
+            return yaAcreditada(carga, hash);
+        }
         Movimiento movimiento = cargaService.acreditar(usuarioId, carga.getMontoPesos(), hash, "Carga con cripto");
         carga.setEstado(EstadoCargaCripto.ACREDITADA);
         carga.setHash(hash);

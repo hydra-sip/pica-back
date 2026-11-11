@@ -1302,6 +1302,9 @@ paths:
         la transacción todavía no entró en un bloque o no tiene las confirmaciones mínimas (3 bloques, unos 6 s):
         reintentar en unos segundos. 503 `RED_NO_DISPONIBLE` si el nodo de Base Sepolia no respondió: reintentar
         más tarde; no dice nada de la transacción.
+        Es idempotente: confirmar otra vez una carga ya acreditada con el mismo hash devuelve 200 con el mismo
+        movimiento sin consultar la red, y con otro hash es 409 `CARGA_YA_ACREDITADA`. Dos confirmaciones al mismo
+        tiempo acreditan una sola vez.
       parameters:
         - name: referencia
           in: path
@@ -2926,7 +2929,7 @@ components:
         Carga con cripto (HU-609), 400: TRANSACCION_INEXISTENTE (la red no conoce el hash) · TRANSACCION_FALLIDA (la
         transacción revirtió) · TRANSACCION_SIN_CARGA (no pagó esta carga en el contrato) · MONTO_NO_COINCIDE (pagó
         otro monto) · CARGA_NO_ENCONTRADA 404 · TRANSACCION_PENDIENTE 409 (sin las confirmaciones mínimas; reintentar
-        en unos segundos) · RED_NO_DISPONIBLE 503 (el nodo de Base Sepolia no respondió; reintentar más tarde).
+        en unos segundos) · CARGA_YA_ACREDITADA 409 (se acreditó con otra transacción) · RED_NO_DISPONIBLE 503 (el nodo de Base Sepolia no respondió; reintentar más tarde).
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
         DEMASIADOS_INTENTOS 429 (login).
@@ -2987,7 +2990,7 @@ components:
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              ALMACENAMIENTO_NO_DISPONIBLE,
              RED_NO_DISPONIBLE, TRANSACCION_INEXISTENTE, TRANSACCION_FALLIDA, TRANSACCION_SIN_CARGA, MONTO_NO_COINCIDE,
-             TRANSACCION_PENDIENTE,
+             TRANSACCION_PENDIENTE, CARGA_YA_ACREDITADA,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
