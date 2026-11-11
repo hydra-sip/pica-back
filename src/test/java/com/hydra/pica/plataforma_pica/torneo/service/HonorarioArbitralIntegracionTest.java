@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,6 +27,7 @@ import com.hydra.pica.plataforma_pica.torneo.dto.GastoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.HonorarioDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.dto.MiDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.dto.PagoGastoRequest;
+import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -68,6 +70,7 @@ class HonorarioArbitralIntegracionTest {
     @Autowired private DesignacionesService designacionesService;
     @Autowired private EconomiaTorneoService economiaService;
     @Autowired private LiquidacionService liquidacionService;
+    @Autowired private CancelacionTorneoService cancelacionService;
     @Autowired private RepartoLiquidacionService repartoLiquidacionService;
     @Autowired private InscripcionService inscripcionService;
     @Autowired private UsuarioRepository usuarioRepository;
@@ -313,6 +316,29 @@ class HonorarioArbitralIntegracionTest {
 
         assertThat(depositar().estadoPago()).isEqualTo(EstadoPagoGasto.EN_CUSTODIA);
         assertBilletera(organizador, "47000.00", "3000.00");
+    }
+
+    @Test
+    void siElTorneoSeCancelaLaCancelacionLeDevuelveElDepositoAlOrganizador() {
+        depositar();
+
+        cancelacionService.cancelar(organizador, torneo, new SolicitudCancelacion("Lluvia", List.of()));
+
+        assertBilletera(organizador, "50000.00", "0.00");
+        assertBilletera(jugador[0], "5000.00", "0.00");
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(economiaService.gastos(organizador, torneo).get(1).estadoPago())
+                .isEqualTo(EstadoPagoGasto.REINTEGRADO);
+        assertThat(miDesignacion().honorario().estado()).isEqualTo(EstadoPagoGasto.REINTEGRADO);
+    }
+
+    @Test
+    void conLaCancelacionEnRevisionYaNoSePaga() {
+        jdbc.update("UPDATE torneo SET motivo_cancelacion = 'Lluvia' WHERE id = ?", torneo);
+        estado("CANCELACION_EN_REVISION");
+
+        assertError(this::depositar, HttpStatus.CONFLICT, CodigoError.TORNEO_NO_EDITABLE);
     }
 
     // --- la liquidación -----------------------------------------------------------------------------

@@ -63,7 +63,9 @@ public class HonorariosService {
     static final String NO_DEDUCIBLE =
             "Los honorarios arbitrales solo son deducibles si se abonan mediante transferencia interna de la plataforma";
 
-    private static final Set<EstadoTorneo> TERMINADOS = Set.of(EstadoTorneo.FINALIZADO, EstadoTorneo.CANCELADO);
+    /** En revisión de una cancelación (HU-605) la plata queda como está hasta que soporte la resuelva. */
+    private static final Set<EstadoTorneo> TERMINADOS = Set.of(EstadoTorneo.FINALIZADO, EstadoTorneo.CANCELADO,
+            EstadoTorneo.CANCELACION_EN_REVISION);
     private static final Set<EstadoDesignacion> VIGENTES = Set.of(EstadoDesignacion.PENDIENTE,
             EstadoDesignacion.ACEPTADO);
     private static final String ENTIDAD = "CUSTODIA";

@@ -2504,7 +2504,7 @@ paths:
         interna de la plataforma"). 409 `GASTO_YA_PAGADO` si ya está pagado.
 
         Comunes a los dos: 404 `TORNEO_NO_ENCONTRADO` (o de otro organizador) y `GASTO_NO_ENCONTRADO`; 409
-        `TORNEO_NO_EDITABLE` con el torneo FINALIZADO o CANCELADO.
+        `TORNEO_NO_EDITABLE` con el torneo FINALIZADO, CANCELADO o con la cancelación en revisión (HU-605).
       requestBody:
         required: true
         content:
