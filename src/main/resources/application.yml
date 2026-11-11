@@ -112,6 +112,9 @@ app:
     revision-plazos: ${APP_PARTIDOS_REVISION_PLAZOS:30s}   # cada cuánto se buscan
   cobro:
     modo: ${APP_COBRO_MODO:saldo}   # saldo: con el disponible de la billetera (HU-603); simulado: aprueba sin tocarlo
+  liquidacion:
+    automatica: ${APP_LIQUIDACION_AUTOMATICA:true}   # repartir la custodia de los torneos que terminan (HU-606)
+    revision: ${APP_LIQUIDACION_REVISION:60s}   # cada cuánto se buscan los que quedaron sin liquidar
   rifas:
     duracion-reserva: ${APP_RIFAS_DURACION_RESERVA:10m}   # lo que dura un número reservado mientras se paga (HU-403)
     cierre-automatico: ${APP_RIFAS_CIERRE_AUTOMATICO:true}   # cerrar las ventas vencidas y sellar la lista (HU-407)

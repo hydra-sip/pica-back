@@ -8,5 +8,6 @@ public enum TipoMovimiento {
     REINTEGRO,
     COMISION,
     RETIRO,
-    PAGO_SERVICIO
+    PAGO_SERVICIO,
+    LIQUIDACION
 }

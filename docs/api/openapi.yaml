@@ -2854,8 +2854,9 @@ components:
         CAMPOS_BLOQUEADOS (el torneo publicado ya no admite cambios en esos campos; la lista va en `campos`) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) · SALDO_INSUFICIENTE (el disponible de la
         billetera no alcanza para el total; lo que falta va en `faltante`, HU-603) · FONDOS_EN_CUSTODIA (los
-        fondos de un torneo o una rifa no se mueven antes de que termine; tampoco los saca el organizador, HU-603) ·
-        CUSTODIA_LIBERADA (la custodia ya se liquidó o reintegró; trae `estado`) ·
+        fondos de un torneo o una rifa no se mueven antes de que termine; tampoco los saca el organizador, HU-603;
+        en un torneo: "El evento debe estar cerrado y validado oficialmente para liberar la custodia", HU-606) ·
+        CUSTODIA_LIBERADA (la custodia ya se liquidó o reintegró, también si se liquida dos veces; trae `estado`) ·
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
@@ -4418,6 +4419,7 @@ components:
         reglamentoHash: {type: [string, 'null'], description: 'SHA-256 del reglamento (el PDF o, sin PDF, el texto), sellado al publicar'}
         organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
         publicadoEn: {type: [string, 'null'], format: date-time}
+        liquidadoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se repartió la custodia del torneo terminado (HU-606, PICA-329); null mientras no se liquidó'}
 
     PronosticoDetalle:
       type: object
@@ -4576,7 +4578,11 @@ components:
           $ref: '#/components/schemas/Id'
         tipo:
           type: string
-          enum: [CARGA, INSCRIPCION, COMPRA_NUMERO, PREMIO, REINTEGRO, COMISION, RETIRO, PAGO_SERVICIO]
+          enum: [CARGA, INSCRIPCION, COMPRA_NUMERO, PREMIO, REINTEGRO, COMISION, RETIRO, PAGO_SERVICIO, LIQUIDACION]
+          description: >-
+            PREMIO lo acredita la liquidación a cada ganador (HU-606, con el torneo y la inscripción); LIQUIDACION, lo
+            que la liquidación le acredita al organizador (los gastos del torneo) y a la plataforma (los gastos
+            administrativos).
           example: CARGA
         monto:
           type: number

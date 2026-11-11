@@ -22,6 +22,8 @@ app:
   # Los tests que no prueban el cobro pagan sin cargar saldo; los del cobro con saldo (HU-603) lo cambian a saldo.
   cobro:
     modo: simulado
+  liquidacion:
+    automatica: false
   rifas:
     cierre-automatico: false
     sorteo-automatico: false

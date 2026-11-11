@@ -23,7 +23,10 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** Una por usuario. Hasta que llegue PICA-6 la usa solo el cobro simulado. */
+/**
+ * Una por usuario, más la de la plataforma (V40, HU-606), que no tiene usuario: ahí la liquidación acredita los gastos
+ * administrativos.
+ */
 @Entity
 @Table(name = "billetera")
 @Getter
@@ -38,8 +41,9 @@ public class Billetera extends AuditableEntity {
     @Setter(AccessLevel.NONE)
     private Long id;
 
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "usuario_id", nullable = false, unique = true)
+    /** Null solo en la de la plataforma. */
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "usuario_id", unique = true)
     private Usuario usuario;
 
     @Column(name = "saldo_disponible", precision = 14, scale = 2, nullable = false)

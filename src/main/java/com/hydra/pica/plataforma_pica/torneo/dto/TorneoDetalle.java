@@ -18,6 +18,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * sellados al publicar (PICA-283).
  * En los torneos por equipos, {@code tamanioEquipo} es el mínimo de la nómina y {@code nominaMaxima} el máximo, con
  * suplentes; en los individuales, los dos son null. El reglamento puede venir escrito, en PDF o los dos.
+ * {@code liquidadoEn} es cuándo se repartió la custodia del torneo terminado (HU-606); null mientras no se liquidó.
  */
 public record TorneoDetalle(
         Long id,
@@ -49,13 +50,15 @@ public record TorneoDetalle(
         String reglamentoUrl,
         String reglamentoHash,
         OrganizadorResumen organizador,
-        Instant publicadoEn) {
+        Instant publicadoEn,
+        Instant liquidadoEn) {
 
     public static TorneoDetalle de(
             Torneo torneo,
             int cupoDisponible,
             BigDecimal pozoEstimado,
-            List<PremioDetalle> premios) {
+            List<PremioDetalle> premios,
+            Instant liquidadoEn) {
         return new TorneoDetalle(
                 torneo.getId(),
                 torneo.getSlug(),
@@ -86,6 +89,7 @@ public record TorneoDetalle(
                 torneo.getReglamentoUrl(),
                 torneo.getReglamentoHash(),
                 OrganizadorResumen.de(torneo.getOrganizador()),
-                torneo.getPublicadoEn());
+                torneo.getPublicadoEn(),
+                liquidadoEn);
     }
 }
