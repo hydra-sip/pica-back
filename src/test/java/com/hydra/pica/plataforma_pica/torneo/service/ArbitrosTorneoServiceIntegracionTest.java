@@ -15,6 +15,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionReposito
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
+import com.hydra.pica.plataforma_pica.torneo.dto.ArbitroBuscado;
 import com.hydra.pica.plataforma_pica.torneo.dto.ArbitroDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.DesignarArbitroRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
@@ -24,7 +25,6 @@ import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.domain.UsuarioRol;
-import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.RolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
@@ -174,7 +174,7 @@ class ArbitrosTorneoServiceIntegracionTest {
         usuario("juez_perez", "ARBITRO");
         usuario("juez_jugador", "PARTICIPANTE");
 
-        List<String> encontrados = arbitrosService.buscar("juez", 0, 20).map(UsuarioPublico::username).getContent();
+        List<String> encontrados = arbitrosService.buscar("juez", 0, 20).map(ArbitroBuscado::username).getContent();
 
         assertThat(encontrados).contains("juez_gomez", "juez_perez").doesNotContain("juez_jugador");
     }

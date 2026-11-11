@@ -3,11 +3,14 @@ package com.hydra.pica.plataforma_pica.torneo.domain;
 import java.math.BigDecimal;
 import java.time.Instant;
 
+import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -37,7 +40,7 @@ public class Gasto {
     @Setter(AccessLevel.NONE)
     private Torneo torneo;
 
-    /** Previsto (V19): quién lo cobra se sabe al pagarlo. */
+    /** Previsto (V19): quién lo cobra se sabe al pagarlo; en un honorario, el árbitro (HU-604). */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "beneficiario_id")
     private Usuario beneficiario;
@@ -56,6 +59,19 @@ public class Gasto {
 
     @Column(name = "comprobante", length = 500)
     private String comprobante;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo", length = 20, nullable = false)
+    private TipoGasto tipo = TipoGasto.OTRO;
+
+    /** Un honorario depositado (HU-604): el pago del organizador que está en la custodia del torneo. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "movimiento_id")
+    private Movimiento movimiento;
+
+    public boolean esHonorario() {
+        return tipo == TipoGasto.HONORARIO_ARBITRAL;
+    }
 
     protected Gasto() {
     }

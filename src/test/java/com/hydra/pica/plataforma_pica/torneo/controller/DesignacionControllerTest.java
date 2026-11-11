@@ -50,7 +50,7 @@ class DesignacionControllerTest {
     private static MiDesignacion designacion(EstadoDesignacion estado) {
         return new MiDesignacion(9L, "Apertura F5", "apertura-f5", "Fútbol 5", EstadoTorneo.INSCRIPCION_ABIERTA,
                 Instant.parse("2026-11-20T18:00:00Z"), null, "Olga Organizadora", estado,
-                Set.of(PermisoArbitro.RESOLVER_OBJECIONES), Instant.parse("2026-11-04T12:00:00Z"), null, null);
+                Set.of(PermisoArbitro.RESOLVER_OBJECIONES), Instant.parse("2026-11-04T12:00:00Z"), null, null, null);
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -12,6 +13,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignadoId;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.dto.HonorarioDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.dto.MiDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.event.DesignacionRespondida;
 import com.hydra.pica.plataforma_pica.torneo.repository.ArbitroDesignadoRepository;
@@ -24,7 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Lo que hace el árbitro con sus designaciones (HU-807, PICA-313): las ve y acepta o rechaza las pendientes. Hasta
- * que acepta no arbitra nada ({@link Arbitraje}); si rechaza, el organizador lo ve en el paso 2 y le llega un mail.
+ * que acepta no arbitra nada ({@link Arbitraje}); si rechaza, el organizador lo ve en el paso 2 y le llega un mail, y
+ * vuelve al organizador el honorario que le había depositado (HU-604). Cada designación trae ese honorario.
  */
 @Service
 @RequiredArgsConstructor
@@ -38,12 +41,14 @@ public class DesignacionesService {
     private final ArbitroDesignadoRepository arbitroRepository;
     private final TorneoRepository torneoRepository;
     private final UsuarioRolRepository usuarioRolRepository;
+    private final HonorariosService honorariosService;
     private final ApplicationEventPublisher eventos;
 
     @Transactional(readOnly = true)
     public List<MiDesignacion> mias(Long usuarioId) {
+        Map<Long, HonorarioDesignacion> honorarios = honorariosService.delArbitro(usuarioId);
         return arbitroRepository.delArbitro(usuarioId).stream()
-                .map(MiDesignacion::de)
+                .map(d -> MiDesignacion.de(d, honorarios.get(d.getId().getTorneoId())))
                 .sorted(PENDIENTES_PRIMERO)
                 .toList();
     }
@@ -69,6 +74,7 @@ public class DesignacionesService {
     public MiDesignacion rechazar(Long usuarioId, Long torneoId, String motivo) {
         ArbitroDesignado designacion = pendiente(usuarioId, torneoId);
         designacion.rechazar(motivo == null || motivo.isBlank() ? null : motivo.strip());
+        honorariosService.devolverDelArbitro(designacion.getTorneo(), usuarioId, "el árbitro rechazó la designación");
         return responder(designacion);
     }
 
@@ -99,7 +105,8 @@ public class DesignacionesService {
         arbitroRepository.saveAndFlush(designacion);
         eventos.publishEvent(new DesignacionRespondida(designacion.getId().getTorneoId(),
                 designacion.getId().getUsuarioId(), designacion.getEstado()));
-        return MiDesignacion.de(designacion);
+        return MiDesignacion.de(designacion, honorariosService.delArbitro(designacion.getId().getUsuarioId())
+                .get(designacion.getId().getTorneoId()));
     }
 
     private static NoEncontradoException noDesignado(Long usuarioId, Long torneoId) {

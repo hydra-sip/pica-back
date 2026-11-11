@@ -15,17 +15,23 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoPagoGasto;
+import com.hydra.pica.plataforma_pica.torneo.domain.TipoGasto;
 import com.hydra.pica.plataforma_pica.torneo.dto.EconomiaTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoRequest;
+import com.hydra.pica.plataforma_pica.torneo.dto.PagoGastoRequest;
 import com.hydra.pica.plataforma_pica.torneo.service.EconomiaTorneoService;
+import com.hydra.pica.plataforma_pica.torneo.service.HonorariosService;
 import com.hydra.pica.plataforma_pica.torneo.service.PublicacionTorneoService;
+import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -57,6 +63,9 @@ class EconomiaTorneoControllerTest {
 
     @MockitoBean
     private PublicacionTorneoService publicacionService;
+
+    @MockitoBean
+    private HonorariosService honorariosService;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
@@ -119,7 +128,8 @@ class EconomiaTorneoControllerTest {
     void gastos() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
         when(economiaService.agregarGasto(eq(ORGANIZADOR), eq(9L), any(GastoRequest.class)))
-                .thenReturn(new GastoDetalle(3, "Alquiler", new BigDecimal("30000")));
+                .thenReturn(new GastoDetalle(3, "Alquiler", new BigDecimal("30000"), TipoGasto.OTRO,
+                        EstadoPagoGasto.PENDIENTE, null, null, null));
 
         mockMvc.perform(post("/api/v1/torneos/9/gastos")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -133,6 +143,52 @@ class EconomiaTorneoControllerTest {
         mockMvc.perform(delete("/api/v1/torneos/9/gastos/3"))
                 .andExpect(status().isNoContent());
         verify(economiaService).eliminarGasto(ORGANIZADOR, 9L, 3);
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("HU-604: POST /gastos/{gastoId}/pago deposita el honorario y DELETE lo retira")
+    void pagoDeUnHonorario() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(honorariosService.pagar(eq(ORGANIZADOR), eq(9L), eq(2), any(PagoGastoRequest.class)))
+                .thenReturn(new GastoDetalle(2, "Árbitro", new BigDecimal("30000"), TipoGasto.HONORARIO_ARBITRAL,
+                        EstadoPagoGasto.EN_CUSTODIA, new UsuarioPublico(7L, "juez", "Mario", "Gómez"),
+                        Instant.parse("2026-11-11T12:00:00Z"), null));
+        when(honorariosService.retirar(ORGANIZADOR, 9L, 2))
+                .thenReturn(new GastoDetalle(2, "Árbitro", new BigDecimal("30000"), TipoGasto.HONORARIO_ARBITRAL,
+                        EstadoPagoGasto.PENDIENTE, null, null, null));
+
+        mockMvc.perform(post("/api/v1/torneos/9/gastos/2/pago")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"arbitroId": 7}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tipo").value("HONORARIO_ARBITRAL"))
+                .andExpect(jsonPath("$.estadoPago").value("EN_CUSTODIA"))
+                .andExpect(jsonPath("$.beneficiario.username").value("juez"));
+        ArgumentCaptor<PagoGastoRequest> pago = ArgumentCaptor.forClass(PagoGastoRequest.class);
+        verify(honorariosService).pagar(eq(ORGANIZADOR), eq(9L), eq(2), pago.capture());
+        assertThat(pago.getValue().arbitroId()).isEqualTo(7L);
+
+        mockMvc.perform(delete("/api/v1/torneos/9/gastos/2/pago"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estadoPago").value("PENDIENTE"))
+                .andExpect(jsonPath("$.beneficiario").doesNotExist());
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("HU-604: un comprobante de más de 500 caracteres responde 400 sin llegar al servicio")
+    void comprobanteLargo() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+
+        mockMvc.perform(post("/api/v1/torneos/9/gastos/2/pago")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"comprobante\": \"" + "x".repeat(501) + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+        verifyNoInteractions(honorariosService);
     }
 
     @Test

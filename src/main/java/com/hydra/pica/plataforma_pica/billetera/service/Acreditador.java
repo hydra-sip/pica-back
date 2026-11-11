@@ -103,7 +103,11 @@ public class Acreditador {
         if (acreditacion.inscripcionId() != null) {
             movimiento.setInscripcion(inscripcionRepository.getReferenceById(acreditacion.inscripcionId()));
         }
-        movimiento.setTipo(acreditacion.rol() == Rol.PREMIO ? TipoMovimiento.PREMIO : TipoMovimiento.LIQUIDACION);
+        movimiento.setTipo(switch (acreditacion.rol()) {
+            case PREMIO -> TipoMovimiento.PREMIO;
+            case HONORARIO -> TipoMovimiento.HONORARIO;
+            default -> TipoMovimiento.LIQUIDACION;
+        });
         movimiento.setMonto(acreditacion.monto());
         movimiento.setMoneda(billetera.getMoneda());
         movimiento.setSaldoResultante(billetera.getSaldoDisponible());
@@ -114,7 +118,11 @@ public class Acreditador {
         Movimiento guardado = movimientoRepository.save(movimiento);
 
         Map<String, Object> detalle = new LinkedHashMap<>();
-        detalle.put("tipo", acreditacion.rol() == Rol.PREMIO ? "LIQUIDACION_PREMIO" : "LIQUIDACION_" + evento.entidad());
+        detalle.put("tipo", switch (acreditacion.rol()) {
+            case PREMIO -> "LIQUIDACION_PREMIO";
+            case HONORARIO -> "LIQUIDACION_HONORARIO";
+            default -> "LIQUIDACION_" + evento.entidad();
+        });
         detalle.put("rol", acreditacion.rol());
         detalle.put("movimientoId", guardado.getId());
         detalle.put("usuarioId", acreditacion.usuarioId());

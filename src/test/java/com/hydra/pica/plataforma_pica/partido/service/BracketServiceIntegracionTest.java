@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -326,6 +327,12 @@ class BracketServiceIntegracionTest {
         persona.setNombres(nombre);
         persona.setApellidos("Test");
         persona.setEstado(EstadoGeneral.ACTIVO);
+        if (rol.equals("ARBITRO")) {
+            // el torneo cobra inscripción: para arbitrarlo hace falta la identidad verificada (HU-604)
+            persona.setTipoDoc("DNI");
+            persona.setNroDoc(String.valueOf(31_000_000 + Math.abs(nombre.hashCode() % 1_000_000)));
+            persona.setFechaNacimiento(LocalDate.of(1990, 1, 1));
+        }
         persona = personaRepository.save(persona);
 
         Usuario usuario = new Usuario();
