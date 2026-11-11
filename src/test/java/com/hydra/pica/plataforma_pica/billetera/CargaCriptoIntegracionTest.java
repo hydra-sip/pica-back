@@ -12,8 +12,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -23,10 +23,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import com.hydra.pica.plataforma_pica.EscenarioTorneo;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
-import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
-import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
-import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena;
 import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena.CargaRegistrada;
 import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena.Transaccion;
@@ -35,12 +33,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
-import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
-import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
-import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
-import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
-import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,7 +50,7 @@ import org.springframework.test.web.servlet.ResultActions;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, EscenarioTorneo.class})
 class CargaCriptoIntegracionTest {
 
     private static final String CONTRATO = "0x36e633eDD1E79Ef2b9A3c6A099D873D52e44EDF0";
@@ -65,9 +58,7 @@ class CargaCriptoIntegracionTest {
     private static final long BLOQUE = 57254703;
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private UsuarioRepository usuarioRepository;
-    @Autowired private PersonaRepository personaRepository;
-    @Autowired private BilleteraRepository billeteraRepository;
+    @Autowired private EscenarioTorneo escenario;
     @Autowired private JwtService jwtService;
     @Autowired private AuditoriaRepository auditoriaRepository;
 
@@ -389,7 +380,7 @@ class CargaCriptoIntegracionTest {
         int hilos = 4;
         ExecutorService executor = Executors.newFixedThreadPool(hilos);
         CountDownLatch largada = new CountDownLatch(1);
-        List<Future<String>> respuestas = new java.util.ArrayList<>();
+        List<Future<String>> respuestas = new ArrayList<>();
         for (int i = 0; i < hilos; i++) {
             respuestas.add(executor.submit(() -> {
                 largada.await();
@@ -401,7 +392,7 @@ class CargaCriptoIntegracionTest {
         executor.shutdown();
         assertThat(executor.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
 
-        List<Object> ids = new java.util.ArrayList<>();
+        List<Object> ids = new ArrayList<>();
         for (Future<String> respuesta : respuestas) {
             ids.add(JsonPath.read(respuesta.get(), "$.id"));
         }
@@ -410,6 +401,39 @@ class CargaCriptoIntegracionTest {
                 .andExpect(jsonPath("$.saldoDisponible").value(10000));
         mockMvc.perform(get("/api/v1/billetera/movimientos").header("Authorization", "Bearer " + token(usuario)))
                 .andExpect(jsonPath("$.content.length()").value(1));
+    }
+
+    @Test
+    void unaTransaccionQueRevirtioSeRechazaSinEsperarLasConfirmaciones() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        cadenaVe(hash, new Transaccion.Minada(false, BLOQUE, List.of()), BLOQUE);
+
+        confirmar(usuario, referencia, hash)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("TRANSACCION_FALLIDA"));
+    }
+
+    @Test
+    void unaTransaccionQueYaAcreditoUnaCargaNoAcreditaOtra() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String primera = referencia(iniciar(usuario, "10000"));
+        String segunda = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        // una smart wallet que paga las dos cargas en una sola transacción
+        cadenaVe(hash, new Transaccion.Minada(true, BLOQUE, List.of(
+                new CargaRegistrada(CONTRATO.toLowerCase(), primera, PAGADOR, new BigInteger("100000000000000")),
+                new CargaRegistrada(CONTRATO.toLowerCase(), segunda, PAGADOR, new BigInteger("100000000000000")))),
+                BLOQUE + 10);
+        confirmar(usuario, primera, hash).andExpect(status().isOk());
+
+        confirmar(usuario, segunda, hash)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("TRANSACCION_YA_USADA"));
+        assertThat(rechazos(usuario)).hasSize(1);
+        mockMvc.perform(get("/api/v1/billetera").header("Authorization", "Bearer " + token(usuario)))
+                .andExpect(jsonPath("$.saldoDisponible").value(10000));
     }
 
     private List<Auditoria> rechazos(Usuario usuario) {
@@ -459,33 +483,9 @@ class CargaCriptoIntegracionTest {
                 .content("{\"monto\": " + monto + "}"));
     }
 
+    // un participante con un nombre que no se repite entre tests
     private Usuario crearUsuario(String prefijo) {
-        String username = prefijo + UUID.randomUUID().toString().substring(0, 5);
-
-        Persona persona = new Persona();
-        persona.setNombres("Nombre");
-        persona.setApellidos("Apellido");
-        persona.setEstado(EstadoGeneral.ACTIVO);
-        persona = personaRepository.save(persona);
-
-        Usuario usuario = new Usuario();
-        usuario.setUsername(username);
-        usuario.setEmail(username + "@example.com");
-        usuario.setEstado(EstadoUsuario.ACTIVO);
-        usuario.setEmailVerificado(true);
-        usuario.setPersona(persona);
-        usuario = usuarioRepository.save(usuario);
-
-        Billetera billetera = new Billetera();
-        billetera.setUsuario(usuario);
-        billetera.setSaldoDisponible(BigDecimal.ZERO);
-        billetera.setSaldoRetenido(BigDecimal.ZERO);
-        billetera.setGananciaAcumulada(BigDecimal.ZERO);
-        billetera.setMoneda("ARS");
-        billetera.setEstado(EstadoBilletera.ACTIVA);
-        billeteraRepository.save(billetera);
-
-        return usuario;
+        return escenario.usuario(prefijo + UUID.randomUUID().toString().substring(0, 8), "PARTICIPANTE");
     }
 
     private String token(Usuario usuario) {
