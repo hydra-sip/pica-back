@@ -1251,6 +1251,36 @@ paths:
         '409':
           $ref: '#/components/responses/Conflicto'
 
+  /api/v1/billetera/cargas/cripto:
+    post:
+      tags: [Billetera]
+      summary: Iniciar una carga de saldo con la wallet
+      x-jira: PICA-333
+      x-owner: Mateo
+      description: >-
+        Inicia una carga pagada con la wallet en el contrato PasarelaCargas de Base Sepolia (HU-609). Devuelve la
+        referencia (el bytes32 que se pasa a `cargar` en el contrato), la dirección del contrato, la red y los wei
+        exactos que hay que mandar, calculados con la cotización fija de testnet. La carga queda pendiente hasta que
+        se confirma con el hash de la transacción. No vence: un pago confirmado en la cadena se acredita aunque haya
+        pasado tiempo. Los límites del monto son los de la carga de saldo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CargaRequest'
+      responses:
+        '201':
+          description: Carga iniciada, pendiente de pago
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CargaCripto'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+
   # --- Equipos -----------------------------------------------------------------
 
 
@@ -4612,6 +4642,36 @@ components:
         creadoEn:
           type: string
           format: date-time
+
+    CargaCripto:
+      type: object
+      required: [referencia, contrato, chainId, montoWei, montoPesos]
+      properties:
+        referencia:
+          type: string
+          pattern: '^0x[0-9a-f]{64}$'
+          description: El bytes32 que se paga con `cargar(referencia)` en el contrato. Al azar y único.
+          example: '0x5f2c0a9e3b7d41e6a8c2f0b19d4e7a3c6b8f1e2d9a0c4b7e5f3a1d8c6e2b9f40'
+        contrato:
+          type: string
+          description: La dirección de PasarelaCargas.
+          example: '0x36e633eDD1E79Ef2b9A3c6A099D873D52e44EDF0'
+        chainId:
+          type: integer
+          description: La red del contrato (84532 es Base Sepolia).
+          example: 84532
+        montoWei:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+          description: >-
+            Los wei exactos que hay que mandar como `value`. Va como texto porque pasa el rango de los números que
+            JavaScript representa con exactitud: usar `BigInt(montoWei)`.
+          example: '100000000000000'
+        montoPesos:
+          type: number
+          format: double
+          description: Los pesos que se acreditan al confirmar el pago.
+          example: 10000.00
 
     CargaRequest:
       type: object

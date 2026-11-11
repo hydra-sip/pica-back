@@ -26,8 +26,10 @@ import com.hydra.pica.plataforma_pica.billetera.dto.MovimientoBilleteraResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.RifaMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.dto.TorneoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.service.BilleteraService;
+import com.hydra.pica.plataforma_pica.billetera.service.CargaCriptoService;
 import com.hydra.pica.plataforma_pica.billetera.service.CargaService;
 import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
+import com.hydra.pica.plataforma_pica.common.config.CriptoConfig;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
@@ -45,7 +47,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(BilleteraController.class)
 @ActiveProfiles("dev")
-@Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class})
+@Import({SecurityConfig.class, WebConfig.class, JwtTestSupportConfiguration.class, CriptoConfig.class})
 class BilleteraControllerTest {
 
     private static final Long USUARIO_ID = 42L;
@@ -54,6 +56,7 @@ class BilleteraControllerTest {
 
     @MockitoBean private BilleteraService billeteraService;
     @MockitoBean private CargaService cargaService;
+    @MockitoBean private CargaCriptoService cargaCriptoService;
     @MockitoBean private CurrentUserProvider currentUserProvider;
 
     @Test

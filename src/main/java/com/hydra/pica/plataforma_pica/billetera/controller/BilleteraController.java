@@ -4,10 +4,13 @@ import java.util.UUID;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
 import com.hydra.pica.plataforma_pica.billetera.dto.BilleteraResponse;
+import com.hydra.pica.plataforma_pica.billetera.dto.CargaCriptoResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.CargaRequest;
 import com.hydra.pica.plataforma_pica.billetera.dto.MovimientoBilleteraResponse;
 import com.hydra.pica.plataforma_pica.billetera.service.BilleteraService;
+import com.hydra.pica.plataforma_pica.billetera.service.CargaCriptoService;
 import com.hydra.pica.plataforma_pica.billetera.service.CargaService;
+import com.hydra.pica.plataforma_pica.common.config.CriptoConfig.CriptoProperties;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +28,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Billetera virtual del usuario (HU-602, T602-1, T602-2).
+ * Billetera virtual del usuario (HU-602, T602-1, T602-2), con la carga pagada con la wallet (HU-609, PICA-333).
  * Accesible únicamente para el usuario autenticado sobre sus propios fondos.
  */
 @RestController
@@ -36,6 +39,8 @@ public class BilleteraController {
 
     private final BilleteraService billeteraService;
     private final CargaService cargaService;
+    private final CargaCriptoService cargaCriptoService;
+    private final CriptoProperties cripto;
     private final CurrentUserProvider currentUserProvider;
 
     @GetMapping
@@ -58,6 +63,13 @@ public class BilleteraController {
                 referencia,
                 "Carga de saldo simulada");
         return MovimientoBilleteraResponse.de(movimiento, null);
+    }
+
+    @PostMapping("/cargas/cripto")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CargaCriptoResponse iniciarCargaCripto(@Valid @RequestBody CargaRequest request) {
+        return CargaCriptoResponse.de(cargaCriptoService.iniciar(usuarioActual(), request.monto()),
+                cripto.contrato(), cripto.chainId());
     }
 
     private Long usuarioActual() {
