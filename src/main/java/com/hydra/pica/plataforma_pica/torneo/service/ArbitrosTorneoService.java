@@ -47,7 +47,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class ArbitrosTorneoService {
 
     static final String ROL_ARBITRO = "ARBITRO";
-    private static final Set<EstadoTorneo> TERMINADOS = Set.of(EstadoTorneo.FINALIZADO, EstadoTorneo.CANCELADO);
+    private static final Set<EstadoTorneo> TERMINADOS = Set.of(EstadoTorneo.FINALIZADO, EstadoTorneo.CANCELADO,
+            // la cancelación ya está decidida: soporte solo revisa los gastos (HU-605)
+            EstadoTorneo.CANCELACION_EN_REVISION);
     private static final List<EstadoInscripcion> ACTIVAS =
             List.of(EstadoInscripcion.PENDIENTE_PAGO, EstadoInscripcion.CONFIRMADA);
     private static final Sort ORDEN = Sort.by("persona.apellidos", "persona.nombres", "id");

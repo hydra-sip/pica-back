@@ -133,6 +133,14 @@ public class CustodiaService {
         return new LiberacionCustodia(custodiaId, destino, totales.total(), totales.gastos());
     }
 
+    /** El pozo de un torneo: lo recaudado en inscripciones, sin gastos administrativos (HU-605). Sin pagos, 0. */
+    @Transactional(readOnly = true)
+    public BigDecimal recaudadoDelTorneo(Long torneoId) {
+        return custodiaRepository.findByTorneoId(torneoId)
+                .map(c -> LiquidacionService.retenido(movimientoRepository, c.getId()).recaudado())
+                .orElse(BigDecimal.ZERO);
+    }
+
     // --- el organizador -----------------------------------------------------------------------------
 
     @Transactional(readOnly = true)

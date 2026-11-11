@@ -44,4 +44,16 @@ public interface MovimientoRepository extends JpaRepository<Movimiento, Long> {
             WHERE m.referenciaExterna LIKE :prefijo ORDER BY m.id
             """)
     List<Movimiento> deLaLiquidacion(@Param("prefijo") String prefijo);
+
+    /**
+     * Lo que pagó con saldo cada billetera en una custodia, para reintegrárselo (HU-605): [billeteraId, suma]. Los mismos
+     * pagos que {@code CustodiaRepository.descontarDelRetenido} saca del retenido.
+     */
+    @Query("""
+            SELECT m.billetera.id, sum(m.monto) FROM Movimiento m
+            WHERE m.custodia.id = :custodiaId AND m.estado = com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento.CONFIRMADO
+            AND m.referenciaExterna LIKE 'pago-%'
+            GROUP BY m.billetera.id ORDER BY m.billetera.id
+            """)
+    List<Object[]> pagosConSaldoPorBilletera(@Param("custodiaId") Long custodiaId);
 }
