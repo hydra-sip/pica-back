@@ -17,6 +17,11 @@ public enum CodigoError {
     ERROR_INTERNO,
     ALMACENAMIENTO_NO_DISPONIBLE,
 
+    // Carga con cripto (400): la transacción no paga la carga (HU-609)
+    TRANSACCION_FALLIDA,
+    TRANSACCION_SIN_CARGA,
+    MONTO_NO_COINCIDE,
+
     // 404
     USUARIO_NO_ENCONTRADO,
     PERSONA_NO_ENCONTRADA,

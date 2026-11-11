@@ -22,6 +22,8 @@ import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena;
 import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena.CargaRegistrada;
 import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena.Transaccion;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
+import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -55,6 +57,7 @@ class CargaCriptoIntegracionTest {
     @Autowired private PersonaRepository personaRepository;
     @Autowired private BilleteraRepository billeteraRepository;
     @Autowired private JwtService jwtService;
+    @Autowired private AuditoriaRepository auditoriaRepository;
 
     // los tests no salen a Base Sepolia: cada uno dice qué ve el nodo
     @MockitoBean private LectorDeCadena cadena;
@@ -184,6 +187,102 @@ class CargaCriptoIntegracionTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.codigo").value("VALIDACION"));
         }
+    }
+
+    @Test
+    void unaTransaccionQueRevirtioNoAcreditaYQuedaEnAuditoria() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        cadenaVe(hash, new Transaccion.Minada(false, BLOQUE, List.of()), BLOQUE + 10);
+
+        confirmar(usuario, referencia, hash)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("TRANSACCION_FALLIDA"));
+
+        assertThat(rechazos(usuario)).singleElement().satisfies(rechazo -> {
+            assertThat(rechazo.getDetalle()).containsEntry("referencia", referencia);
+            assertThat(rechazo.getDetalle()).containsEntry("hash", hash);
+            assertThat(rechazo.getDetalle().get("motivo")).asString().contains("revirtió");
+        });
+        sinSaldo(usuario);
+    }
+
+    @Test
+    void unEventoIgualEmitidoPorOtroContratoNoPagaLaCarga() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        cadenaVe(hash, new Transaccion.Minada(true, BLOQUE, List.of(new CargaRegistrada(
+                "0x000000000000000000000000000000000000dead", referencia, PAGADOR,
+                new BigInteger("100000000000000")))), BLOQUE + 10);
+
+        confirmar(usuario, referencia, hash)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("TRANSACCION_SIN_CARGA"));
+        assertThat(rechazos(usuario)).hasSize(1);
+        sinSaldo(usuario);
+    }
+
+    @Test
+    void elPagoDeOtraReferenciaNoPagaEstaCarga() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String otra = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        cadenaVe(hash, pagoDe(otra, "100000000000000"), BLOQUE + 10);
+
+        confirmar(usuario, referencia, hash)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("TRANSACCION_SIN_CARGA"));
+        sinSaldo(usuario);
+    }
+
+    @Test
+    void unPagoDeMasODeMenosNoAcredita() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+
+        for (String wei : List.of("100000000000001", "99999999999999")) {
+            String hash = hashAlAzar();
+            cadenaVe(hash, pagoDe(referencia, wei), BLOQUE + 10);
+            confirmar(usuario, referencia, hash)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.codigo").value("MONTO_NO_COINCIDE"));
+        }
+        assertThat(rechazos(usuario)).hasSize(2);
+        sinSaldo(usuario);
+    }
+
+    @Test
+    void despuesDeUnRechazoLaCargaSeConfirmaConLaTransaccionCorrecta() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String fallida = hashAlAzar();
+        String buena = hashAlAzar();
+        cadenaVe(fallida, new Transaccion.Minada(false, BLOQUE, List.of()), BLOQUE + 10);
+        cadenaVe(buena, pagoDe(referencia, "100000000000000"), BLOQUE + 10);
+
+        confirmar(usuario, referencia, fallida).andExpect(status().isBadRequest());
+        confirmar(usuario, referencia, buena)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.referenciaExterna").value(buena));
+        mockMvc.perform(get("/api/v1/billetera").header("Authorization", "Bearer " + token(usuario)))
+                .andExpect(jsonPath("$.saldoDisponible").value(10000));
+    }
+
+    private List<Auditoria> rechazos(Usuario usuario) {
+        return auditoriaRepository.findAll().stream()
+                .filter(a -> a.getUsuario() != null && usuario.getId().equals(a.getUsuario().getId()))
+                .filter(a -> a.getDetalle() != null && "RECHAZADA".equals(a.getDetalle().get("estado")))
+                .toList();
+    }
+
+    private void sinSaldo(Usuario usuario) throws Exception {
+        mockMvc.perform(get("/api/v1/billetera").header("Authorization", "Bearer " + token(usuario)))
+                .andExpect(jsonPath("$.saldoDisponible").value(0));
+        mockMvc.perform(get("/api/v1/billetera/movimientos").header("Authorization", "Bearer " + token(usuario)))
+                .andExpect(jsonPath("$.content").isEmpty());
     }
 
     private void cadenaVe(String hash, Transaccion transaccion, long bloqueActual) {

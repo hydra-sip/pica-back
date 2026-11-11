@@ -62,6 +62,16 @@ class LectorDeCadenaTest {
     }
 
     @Test
+    void unaTransaccionQueRevirtioEsUnaMinadaFallidaYSinEventos() {
+        nodo.expect(requestTo(RPC))
+                .andExpect(jsonPath("$.method").value("eth_getTransactionReceipt"))
+                .andRespond(withSuccess(fixture("recibo-revertido.json"), MediaType.APPLICATION_JSON));
+
+        assertThat(lector.transaccion("0x0ed937d5d4fa02945051caacb80218b40b77548c711a0c9e65259c4159f38944"))
+                .isEqualTo(new Transaccion.Minada(false, 57254740, java.util.List.of()));
+    }
+
+    @Test
     void elBloqueActualEsElQueDiceElNodo() {
         nodo.expect(requestTo(RPC))
                 .andExpect(jsonPath("$.method").value("eth_blockNumber"))
