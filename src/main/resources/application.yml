@@ -112,6 +112,9 @@ app:
     revision-plazos: ${APP_PARTIDOS_REVISION_PLAZOS:30s}   # cada cuánto se buscan
   cobro:
     modo: ${APP_COBRO_MODO:saldo}   # saldo: con el disponible de la billetera (HU-603); simulado: aprueba sin tocarlo
+  liquidacion:
+    automatica: ${APP_LIQUIDACION_AUTOMATICA:true}   # repartir la custodia de los torneos que terminan (HU-606)
+    revision: ${APP_LIQUIDACION_REVISION:60s}   # cada cuánto se buscan los que quedaron sin liquidar
   # Carga de saldo pagada con la wallet en el contrato PasarelaCargas de Base Sepolia (HU-609, PICA-333)
   cripto:
     rpc-url: ${APP_CRIPTO_RPC_URL:https://sepolia.base.org}   # nodo JSON-RPC con el que se leen las transacciones

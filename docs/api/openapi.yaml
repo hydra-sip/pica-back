@@ -2745,6 +2745,39 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/liquidacion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Reparto de la liquidación de mi torneo
+      x-jira: PICA-331
+      x-owner: Tomás
+      description: >-
+        Solo el organizador del torneo: a quién le acreditó qué la liquidación (HU-606, wireframe 64). Los premios por
+        puesto, lo suyo (los gastos del torneo), los gastos administrativos de la plataforma y lo que le aportó su
+        rifa. Sin liquidar, `liquidado` en false y sin líneas. 404 `TORNEO_NO_ENCONTRADO` si no existe o es de otro
+        organizador.
+      responses:
+        '200': {description: El reparto, content: {application/json: {schema: {$ref: '#/components/schemas/RepartoLiquidacion'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/rifas/{id}/liquidacion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Reparto de la liquidación de mi rifa
+      x-jira: PICA-331
+      x-owner: Tomás
+      description: >-
+        Como el del torneo: los premios a quien compró cada número ganador, los gastos administrativos y lo que la rifa
+        aportó a los ganadores de su torneo (`APORTE_RIFA`, puede llegar después, cuando se liquida el torneo). 404
+        `RIFA_NO_ENCONTRADA` si no existe o es de otro organizador.
+      responses:
+        '200': {description: El reparto, content: {application/json: {schema: {$ref: '#/components/schemas/RepartoLiquidacion'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/inscripciones/{id}/comprobante:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -2944,8 +2977,10 @@ components:
         CAMPOS_BLOQUEADOS (el torneo publicado ya no admite cambios en esos campos; la lista va en `campos`) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) · SALDO_INSUFICIENTE (el disponible de la
         billetera no alcanza para el total; lo que falta va en `faltante`, HU-603) · FONDOS_EN_CUSTODIA (los
-        fondos de un torneo o una rifa no se mueven antes de que termine; tampoco los saca el organizador, HU-603) ·
-        CUSTODIA_LIBERADA (la custodia ya se liquidó o reintegró; trae `estado`) ·
+        fondos de un torneo o una rifa no se mueven antes de que termine; tampoco los saca el organizador, HU-603;
+        en un torneo: "El evento debe estar cerrado y validado oficialmente para liberar la custodia"; en una rifa,
+        sorteada, con el plazo de reclamo vencido y sin reclamos pendientes, HU-606) ·
+        CUSTODIA_LIBERADA (la custodia ya se liquidó o reintegró, también si se liquida dos veces; trae `estado`) ·
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
@@ -4327,6 +4362,29 @@ components:
         moneda: {type: string, examples: [ARS]}
         eventoTerminado: {type: boolean, description: 'Si el evento terminó; hasta entonces nadie mueve los fondos'}
         liberadaEn: {type: [string, 'null'], format: date-time}
+    RepartoLiquidacion:
+      type: object
+      required: [liquidado, total, moneda, lineas]
+      description: Cómo se repartió la custodia de un torneo o una rifa (PICA-331). `total` es la suma de las líneas.
+      properties:
+        liquidado: {type: boolean}
+        liquidadoEn: {type: [string, 'null'], format: date-time}
+        total: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        lineas: {type: array, items: {$ref: '#/components/schemas/LineaReparto'}}
+    LineaReparto:
+      type: object
+      required: [rol, origen, monto, acreditadoEn]
+      description: Una acreditación de la liquidación.
+      properties:
+        rol: {type: string, enum: [PREMIO, ORGANIZADOR, PLATAFORMA]}
+        origen: {type: string, enum: [TORNEO, RIFA, APORTE_RIFA], description: 'APORTE_RIFA: lo que la rifa aporta al pozo del torneo, pagado a sus ganadores'}
+        puesto: {type: [integer, 'null'], description: El de un premio}
+        beneficiarioNombre: {type: [string, 'null'], description: 'Nombres y apellidos; null en la plataforma'}
+        beneficiarioUsername: {type: [string, 'null']}
+        equipoNombre: {type: [string, 'null'], description: 'El equipo del capitán que cobra, en un torneo por equipos'}
+        monto: {type: number}
+        acreditadoEn: {type: string, format: date-time}
     ComprobantePago:
       type: object
       required: [numero, pagadoEn, pagadorNombre, pagadorUsername, concepto, torneoId, torneoNombre, monto,
@@ -4373,6 +4431,7 @@ components:
         esComprador: {type: boolean, description: 'False si lo mira un administrador'}
         ventanaReclamoAbierta: {type: boolean, description: 'Si ahora se puede reclamar el resultado (HU-506): la rifa SORTEADA o EN_REVISION y dentro de las 48 h del sorteo'}
         premiosGanados: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}, description: 'Los premios que ganó alguno de sus números (HU-504); vacío antes del sorteo o si no ganó'}
+        premioAcreditado: {type: [number, 'null'], description: 'Lo que la liquidación le acreditó por esos premios (HU-606, PICA-330); null mientras la rifa no se liquidó o si no ganó'}
     NumeroOcupado:
       type: object
       required: [numero, estado]
@@ -4510,6 +4569,7 @@ components:
         reglamentoHash: {type: [string, 'null'], description: 'SHA-256 del reglamento (el PDF o, sin PDF, el texto), sellado al publicar'}
         organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
         publicadoEn: {type: [string, 'null'], format: date-time}
+        liquidadoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se repartió la custodia del torneo terminado (HU-606, PICA-329); null mientras no se liquidó'}
 
     PronosticoDetalle:
       type: object
@@ -4668,7 +4728,12 @@ components:
           $ref: '#/components/schemas/Id'
         tipo:
           type: string
-          enum: [CARGA, INSCRIPCION, COMPRA_NUMERO, PREMIO, REINTEGRO, COMISION, RETIRO, PAGO_SERVICIO]
+          enum: [CARGA, INSCRIPCION, COMPRA_NUMERO, PREMIO, REINTEGRO, COMISION, RETIRO, PAGO_SERVICIO, LIQUIDACION]
+          description: >-
+            PREMIO lo acredita la liquidación a cada ganador (HU-606): del torneo, con el torneo y la inscripción; de
+            la rifa, con la rifa; lo que la rifa aporta al pozo del torneo, con los dos. LIQUIDACION, lo que la
+            liquidación le acredita al organizador (los gastos del torneo) y a la plataforma (los gastos
+            administrativos).
           example: CARGA
         monto:
           type: number
@@ -4698,6 +4763,7 @@ components:
             - $ref: '#/components/schemas/TorneoMovimiento'
             - type: 'null'
         rifa:
+          description: 'La de la compra (por su ticket) o la de lo que acredita su liquidación (HU-606)'
           oneOf:
             - $ref: '#/components/schemas/RifaMovimiento'
             - type: 'null'

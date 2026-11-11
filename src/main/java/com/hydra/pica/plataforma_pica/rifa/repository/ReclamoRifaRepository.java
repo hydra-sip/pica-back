@@ -12,6 +12,8 @@ public interface ReclamoRifaRepository extends JpaRepository<ReclamoRifa, Long> 
 
     boolean existsByRifaIdAndUsuarioIdAndEstado(Long rifaId, Long usuarioId, EstadoReclamo estado);
 
+    boolean existsByRifaIdAndEstado(Long rifaId, EstadoReclamo estado);
+
     long countByRifaIdAndEstado(Long rifaId, EstadoReclamo estado);
 }
 
