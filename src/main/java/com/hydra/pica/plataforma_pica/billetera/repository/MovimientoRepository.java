@@ -32,4 +32,8 @@ public interface MovimientoRepository extends JpaRepository<Movimiento, Long> {
             ORDER BY m.id
             """)
     List<Movimiento> pagosDeLaInscripcion(@Param("inscripcionId") Long inscripcionId);
+
+    /** Lo acreditado con esas referencias; null si no hay ninguna (todavía no se liquidó). */
+    @Query("SELECT sum(m.monto) FROM Movimiento m WHERE m.referenciaExterna IN :referencias")
+    BigDecimal sumaDeReferencias(@Param("referencias") List<String> referencias);
 }

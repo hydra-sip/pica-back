@@ -13,9 +13,13 @@ public record RepartoRifa(BigDecimal recaudado, BigDecimal alPozoTorneo, BigDeci
     private static final BigDecimal CIEN = BigDecimal.valueOf(100);
 
     public static RepartoRifa de(Rifa rifa, long vendidos) {
-        BigDecimal recaudado = rifa.getPrecioNumero().multiply(BigDecimal.valueOf(vendidos))
-                .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal alPozoTorneo = recaudado.multiply(BigDecimal.valueOf(rifa.getPctDestinadoTorneo()))
+        return deLoRecaudado(rifa.getPrecioNumero().multiply(BigDecimal.valueOf(vendidos))
+                .setScale(2, RoundingMode.HALF_UP), rifa.getPctDestinadoTorneo());
+    }
+
+    /** Con lo que entró de verdad, como lo cuenta la liquidación (HU-606) con la custodia. */
+    public static RepartoRifa deLoRecaudado(BigDecimal recaudado, int pctDestinadoTorneo) {
+        BigDecimal alPozoTorneo = recaudado.multiply(BigDecimal.valueOf(pctDestinadoTorneo))
                 .divide(CIEN, 2, RoundingMode.HALF_UP);
         return new RepartoRifa(recaudado, alPozoTorneo, recaudado.subtract(alPozoTorneo));
     }

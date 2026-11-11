@@ -9,6 +9,7 @@ import java.util.UUID;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.billetera.repository.CustodiaRepository;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
+import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +30,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 class LiquidacionAutomaticaIntegracionTest {
 
     @Autowired private LiquidacionService liquidacionService;
+    @Autowired private LiquidacionRifaService liquidacionRifaService;
+    @Autowired private RifaRepository rifaRepository;
     @Autowired private LiquidacionAutomatica liquidacionAutomatica;
     @Autowired private CustodiaRepository custodiaRepository;
     @Autowired private PlatformTransactionManager transacciones;
@@ -50,8 +53,8 @@ class LiquidacionAutomaticaIntegracionTest {
     @Test
     void alConfirmarseLaFinalSeLiquida() {
         long torneo = torneoFinalizado();
-        LiquidacionAutomatica encendida = new LiquidacionAutomatica(liquidacionService, custodiaRepository,
-                transacciones, true);
+        LiquidacionAutomatica encendida = new LiquidacionAutomatica(liquidacionService, liquidacionRifaService,
+                custodiaRepository, rifaRepository, transacciones, true);
 
         encendida.alConfirmarResultado(new ResultadoConfirmado(torneo, null, null, true));
 
@@ -61,8 +64,8 @@ class LiquidacionAutomaticaIntegracionTest {
     @Test
     void unResultadoQueNoEsLaFinalNoLiquida() {
         long torneo = torneoFinalizado();
-        LiquidacionAutomatica encendida = new LiquidacionAutomatica(liquidacionService, custodiaRepository,
-                transacciones, true);
+        LiquidacionAutomatica encendida = new LiquidacionAutomatica(liquidacionService, liquidacionRifaService,
+                custodiaRepository, rifaRepository, transacciones, true);
 
         encendida.alConfirmarResultado(new ResultadoConfirmado(torneo, null, null, false));
 
