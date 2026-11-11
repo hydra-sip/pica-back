@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
+import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.billetera.service.CustodiaService;
 import com.hydra.pica.plataforma_pica.common.almacenamiento.AlmacenArchivos;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
@@ -22,7 +24,9 @@ import com.hydra.pica.plataforma_pica.torneo.domain.EstadoCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.GastoCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionRealizada;
+import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeLaCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeclarado;
 import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.repository.CancelacionRepository;
@@ -61,6 +65,7 @@ public class CancelacionTorneoService {
     private final AlmacenArchivos almacen;
     private final ParametrosPlataforma parametrosPlataforma;
     private final ApplicationEventPublisher eventos;
+    private final MovimientoRepository movimientoRepository;
     private final AuditoriaService auditoriaService;
 
     /**
@@ -102,6 +107,33 @@ public class CancelacionTorneoService {
             eventos.publishEvent(new CancelacionResuelta(id));
         }
         return new CancelacionRealizada(cancelacionId, id, estado.name(), totalGastos, pozo, reintegrado);
+    }
+
+    /**
+     * Lo que el organizador ve de la cancelación de su torneo: antes de cancelar, el pozo y el tope de gastos; después,
+     * además, la decisión y cuánto se devolvió y se retuvo. El torneo de otro, 404.
+     */
+    @Transactional(readOnly = true)
+    public CancelacionDelTorneo detalle(Long organizadorId, Long id) {
+        Torneo torneo = torneosPropios.buscarPropio(organizadorId, id);
+        BigDecimal pozo = custodiaService.recaudadoDelTorneo(id);
+        BigDecimal pct = parametrosPlataforma.topeGastosCancelacion();
+        Cancelacion cancelacion = cancelacionRepository.findByTorneoId(id).orElse(null);
+        if (cancelacion == null) {
+            return new CancelacionDelTorneo(pozo, pct, maximo(pozo, pct), null, null, null, List.of(), BigDecimal.ZERO,
+                    null, null, BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+        List<GastoDeLaCancelacion> gastos = gastoCancelacionRepository
+                .findByCancelacionIdOrderByIdAsc(cancelacion.getId()).stream()
+                .map(g -> new GastoDeLaCancelacion(g.getConcepto(), g.getMonto())).toList();
+        BigDecimal totalGastos = gastos.stream().map(GastoDeLaCancelacion::monto)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal reintegrado = movimientoRepository.reintegrosDelTorneo(id).stream().map(Movimiento::getMonto)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal retenido = cancelacion.getEstado() == EstadoCancelacion.APROBADA ? totalGastos : BigDecimal.ZERO;
+        return new CancelacionDelTorneo(pozo, pct, maximo(pozo, pct), cancelacion.getEstado().name(),
+                torneo.getMotivoCancelacion(), cancelacion.getCreadoEn(), gastos, totalGastos,
+                cancelacion.getRevisadaEn(), cancelacion.getMotivoRechazo(), reintegrado, retenido);
     }
 
     // --- validación ---------------------------------------------------------------------------------
@@ -152,13 +184,17 @@ public class CancelacionTorneoService {
         }
     }
 
+    private static BigDecimal maximo(BigDecimal pozo, BigDecimal pct) {
+        return pozo.multiply(pct).divide(CIEN, 2, RoundingMode.DOWN);
+    }
+
     /** Sin gastos no hay tope que mirar; con gastos y sin pagos, el tope es 0. */
     private void exigirDentroDelTope(BigDecimal pozo, BigDecimal totalGastos) {
         if (totalGastos.signum() == 0) {
             return;
         }
         BigDecimal pct = parametrosPlataforma.topeGastosCancelacion();
-        BigDecimal maximo = pozo.multiply(pct).divide(CIEN, 2, RoundingMode.DOWN);
+        BigDecimal maximo = maximo(pozo, pct);
         if (totalGastos.compareTo(maximo) > 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.GASTOS_SOBRE_TOPE,
                     "Los gastos a retener no pueden superar el " + pct.stripTrailingZeros().toPlainString()

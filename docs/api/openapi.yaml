@@ -1536,6 +1536,25 @@ paths:
 
   /api/v1/torneos/{id}/cancelacion:
     parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: La cancelación del torneo, para su organizador
+      x-jira: PICA-349
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        HU-605. Solo el organizador (para otro, 404 `TORNEO_NO_ENCONTRADO`). Siempre trae `pozo` (lo recaudado en
+        inscripciones), `pctMaximo` (el parámetro CANCELACION_GASTOS_TOPE) y `maximoGastos` (ese % del pozo, hacia
+        abajo al centavo), para que la consola no deje declarar más antes de enviar. Si el torneo no se canceló,
+        `estado` es null y lo demás va vacío; si se canceló, trae la decisión, los gastos (sin los archivos), lo
+        reintegrado a las billeteras y lo que retuvo el organizador.
+      responses:
+        '200':
+          description: El tope y, si hay, la cancelación
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CancelacionDelTorneo'}
+        '404': {$ref: '#/components/responses/Error'}
     post:
       tags: [Torneos]
       summary: Cancelar el torneo
@@ -4444,6 +4463,30 @@ components:
       type: string
       enum: [RETENIDA, LIBERADA, REINTEGRADA]
       description: RETENIDA hasta que termina el evento; LIBERADA por la liquidación (HU-606); REINTEGRADA si se canceló.
+    CancelacionDelTorneo:
+      type: object
+      required: [pozo, pctMaximo, maximoGastos, gastos, totalGastos, reintegrado, retenido]
+      description: La cancelación de un torneo como la ve su organizador (PICA-349).
+      properties:
+        pozo: {type: number, description: Lo recaudado en inscripciones}
+        pctMaximo: {type: number, description: El % del pozo que se puede retener en gastos}
+        maximoGastos: {type: number}
+        estado: {type: [string, 'null'], enum: [AUTOMATICA, EN_REVISION, APROBADA, RECHAZADA, null]}
+        motivo: {type: [string, 'null']}
+        pedidaEn: {type: [string, 'null'], format: date-time}
+        gastos:
+          type: array
+          items:
+            type: object
+            required: [concepto, monto]
+            properties:
+              concepto: {type: string}
+              monto: {type: number}
+        totalGastos: {type: number}
+        revisadaEn: {type: [string, 'null'], format: date-time}
+        motivoRechazo: {type: [string, 'null']}
+        reintegrado: {type: number, description: Lo devuelto a las billeteras de quienes pagaron}
+        retenido: {type: number, description: Lo que cobró el organizador; 0 salvo APROBADA}
     CancelacionRealizada:
       type: object
       required: [cancelacionId, torneoId, estado, totalGastos, pozo, reintegrado]

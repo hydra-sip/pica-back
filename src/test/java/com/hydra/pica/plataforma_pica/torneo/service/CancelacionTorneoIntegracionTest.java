@@ -21,8 +21,10 @@ import com.hydra.pica.plataforma_pica.partido.dto.PronosticoRequest;
 import com.hydra.pica.plataforma_pica.partido.service.PronosticoService;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
+import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionRealizada;
 import com.hydra.pica.plataforma_pica.torneo.dto.DesignarArbitroRequest;
+import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeLaCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeclarado;
 import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoDetalle;
@@ -396,6 +398,55 @@ class CancelacionTorneoIntegracionTest {
 
         assertThat(ficha.estado()).isEqualTo(EstadoTorneo.CANCELACION_EN_REVISION);
         assertThat(ficha.toString()).doesNotContain("Se inundó la cancha");
+    }
+
+    // --- lo que lee el organizador -------------------------------------------------------------------
+
+    @Test
+    void antesDeCancelarElOrganizadorVeElPozoYElTope() {
+        CancelacionDelTorneo detalle = cancelacionTorneoService.detalle(organizador, torneo);
+
+        assertThat(detalle.pozo()).isEqualByComparingTo("3000.00");
+        assertThat(detalle.pctMaximo()).isEqualByComparingTo("20");
+        assertThat(detalle.maximoGastos()).isEqualByComparingTo("600.00");
+        assertThat(detalle.estado()).isNull();
+        assertThat(detalle.gastos()).isEmpty();
+    }
+
+    @Test
+    void despuesDeUnaCancelacionAutomaticaVeLoReintegrado() {
+        cancelar();
+        entityManager.flush();
+        entityManager.clear();
+
+        CancelacionDelTorneo detalle = cancelacionTorneoService.detalle(organizador, torneo);
+
+        assertThat(detalle.estado()).isEqualTo("AUTOMATICA");
+        assertThat(detalle.motivo()).isEqualTo("Se inundó la cancha");
+        assertThat(detalle.pedidaEn()).isNotNull();
+        assertThat(detalle.pozo()).isEqualByComparingTo("3000.00");
+        assertThat(detalle.reintegrado()).isEqualByComparingTo("3300.00");
+        assertThat(detalle.retenido()).isEqualByComparingTo("0");
+        assertThat(detalle.gastos()).isEmpty();
+    }
+
+    @Test
+    void conLaCancelacionEnRevisionVeLosGastosQueDeclaro() {
+        enRevision();
+
+        CancelacionDelTorneo detalle = cancelacionTorneoService.detalle(organizador, torneo);
+
+        assertThat(detalle.estado()).isEqualTo("EN_REVISION");
+        assertThat(detalle.gastos()).extracting(GastoDeLaCancelacion::concepto).containsExactly("Cancha");
+        assertThat(detalle.totalGastos()).isEqualByComparingTo("300.00");
+        assertThat(detalle.reintegrado()).isEqualByComparingTo("0");
+        assertThat(detalle.revisadaEn()).isNull();
+    }
+
+    @Test
+    void otroUsuarioNoVeLaCancelacion() {
+        assertError(() -> cancelacionTorneoService.detalle(jugador[0], torneo), HttpStatus.NOT_FOUND,
+                CodigoError.TORNEO_NO_ENCONTRADO);
     }
 
     // --- quién y cuándo ------------------------------------------------------------------------------

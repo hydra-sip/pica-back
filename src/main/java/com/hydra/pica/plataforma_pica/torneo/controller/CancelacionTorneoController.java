@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionRealizada;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeclarado;
 import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,6 +49,12 @@ public class CancelacionTorneoController {
     @ResponseStatus(HttpStatus.CREATED)
     public CancelacionRealizada cancelar(@PathVariable Long id, @ModelAttribute FormularioCancelacion formulario) {
         return cancelacionTorneoService.cancelar(usuarioActual(), id, formulario.solicitud());
+    }
+
+    /** El pozo y el tope de gastos; si ya se canceló, también la decisión y lo devuelto. */
+    @GetMapping
+    public CancelacionDelTorneo detalle(@PathVariable Long id) {
+        return cancelacionTorneoService.detalle(usuarioActual(), id);
     }
 
     private Long usuarioActual() {

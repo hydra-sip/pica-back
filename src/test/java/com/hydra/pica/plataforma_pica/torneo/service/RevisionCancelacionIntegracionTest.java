@@ -20,6 +20,7 @@ import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionEnRevision;
 import com.hydra.pica.plataforma_pica.torneo.dto.Comprobante;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeclarado;
@@ -101,6 +102,38 @@ class RevisionCancelacionIntegracionTest {
                         new GastoDeclarado(new BigDecimal("150.50"), "Árbitro", PDF))));
         entityManager.flush();
         entityManager.clear();
+    }
+
+    // --- lo que lee el organizador después --------------------------------------------------------
+
+    @Test
+    void elOrganizadorVeLaAprobacionConLoRetenidoYLoReintegrado() {
+        revisionCancelacionService.aprobar(soporte, torneo);
+        entityManager.flush();
+        entityManager.clear();
+
+        CancelacionDelTorneo detalle = cancelacionTorneoService.detalle(organizador, torneo);
+
+        assertThat(detalle.estado()).isEqualTo("APROBADA");
+        assertThat(detalle.revisadaEn()).isNotNull();
+        assertThat(detalle.retenido()).isEqualByComparingTo("450.50");
+        assertThat(detalle.reintegrado()).isEqualByComparingTo("2849.50");
+        assertThat(detalle.gastos()).hasSize(2);
+        assertThat(detalle.motivoRechazo()).isNull();
+    }
+
+    @Test
+    void elOrganizadorVeElRechazoConSuMotivo() {
+        revisionCancelacionService.rechazar(soporte, torneo, "Los comprobantes no son del torneo");
+        entityManager.flush();
+        entityManager.clear();
+
+        CancelacionDelTorneo detalle = cancelacionTorneoService.detalle(organizador, torneo);
+
+        assertThat(detalle.estado()).isEqualTo("RECHAZADA");
+        assertThat(detalle.motivoRechazo()).isEqualTo("Los comprobantes no son del torneo");
+        assertThat(detalle.retenido()).isEqualByComparingTo("0");
+        assertThat(detalle.reintegrado()).isEqualByComparingTo("3300.00");
     }
 
     // --- la cola y los comprobantes ------------------------------------------------------------------
