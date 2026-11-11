@@ -17,6 +17,8 @@ CREATE TABLE carga_cripto (
     modificado_por VARCHAR(100),
     CONSTRAINT pk_carga_cripto PRIMARY KEY (id),
     CONSTRAINT uq_carga_cripto_referencia UNIQUE (referencia),
+    -- una transacción acredita una sola carga, aunque pague varias
+    CONSTRAINT uq_carga_cripto_hash UNIQUE (hash),
     CONSTRAINT fk_carga_cripto_usuario FOREIGN KEY (usuario_id) REFERENCES usuario (id),
     CONSTRAINT fk_carga_cripto_movimiento FOREIGN KEY (movimiento_id) REFERENCES movimiento (id),
     CONSTRAINT ck_carga_cripto_estado CHECK (estado IN ('PENDIENTE', 'ACREDITADA')),

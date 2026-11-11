@@ -23,6 +23,7 @@ import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,7 +47,7 @@ public class CargaCriptoService {
     private final CriptoProperties cripto;
     private final LectorDeCadena cadena;
     private final CargaService cargaService;
-    private final TransactionTemplate transaccion;
+    private final TransactionTemplate enTransaccion;
     private final AuditoriaService auditoriaService;
 
     @Transactional
@@ -67,8 +68,11 @@ public class CargaCriptoService {
                         "No hay una carga con esa referencia"));
         // un reintento del front con la carga ya acreditada no vuelve a consultar la red
         if (carga.getEstado() == EstadoCargaCripto.ACREDITADA) {
-            return transaccion.execute(estado ->
+            return enTransaccion.execute(estado ->
                     yaAcreditada(cargaCriptoRepository.findById(carga.getId()).orElseThrow(), hashNormalizado));
+        }
+        if (cargaCriptoRepository.existsByHash(hashNormalizado)) {
+            throw yaUsada(carga, hashNormalizado);
         }
 
         Transaccion.Minada minada = switch (cadena.transaccion(hashNormalizado)) {
@@ -77,13 +81,13 @@ public class CargaCriptoService {
             case Transaccion.Pendiente pendiente -> throw pendiente();
             case Transaccion.Minada m -> m;
         };
-        // contando el bloque de la transacción
-        if (cadena.bloqueActual() - minada.bloque() + 1 < cripto.confirmacionesMinimas()) {
-            throw pendiente();
-        }
         if (!minada.exitosa()) {
             throw rechazo(carga, hashNormalizado, CodigoError.TRANSACCION_FALLIDA,
                     "La transacción revirtió en la cadena: no se cobró la carga");
+        }
+        // contando el bloque de la transacción
+        if (cadena.bloqueActual() - minada.bloque() + 1 < cripto.confirmacionesMinimas()) {
+            throw pendiente();
         }
         // el to de la transacción no importa (una smart wallet paga a través de otra dirección): un log con la
         // dirección del contrato solo lo puede emitir el contrato
@@ -98,7 +102,21 @@ public class CargaCriptoService {
                     "La transacción pagó " + pago.monto() + " wei y la carga es de " + carga.getMontoWei());
         }
 
-        return transaccion.execute(estado -> acreditar(carga.getId(), usuarioId, hashNormalizado, pago));
+        try {
+            return enTransaccion.execute(estado -> acreditar(carga.getId(), usuarioId, hashNormalizado, pago));
+        } catch (DataIntegrityViolationException e) {
+            // otra carga se acreditó con el mismo hash al mismo tiempo: la constraint única de hash la frena
+            throw yaUsada(carga, hashNormalizado);
+        }
+    }
+
+    /**
+     * Una transacción acredita una sola carga: el movimiento lleva el hash como referencia externa. Si pagó más de
+     * una (una smart wallet que agrupa llamadas), lo demás se devuelve a mano desde el contrato.
+     */
+    private ApiException yaUsada(CargaCripto carga, String hash) {
+        return rechazo(carga, hash, CodigoError.TRANSACCION_YA_USADA,
+                "Esa transacción ya acreditó otra carga");
     }
 
     // el contrato no deja pagar dos veces una referencia: otro hash no puede ser otro pago de esta carga
