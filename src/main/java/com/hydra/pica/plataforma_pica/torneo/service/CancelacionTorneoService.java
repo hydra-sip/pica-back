@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.billetera.service.CustodiaService;
-import com.hydra.pica.plataforma_pica.billetera.service.Reintegrador;
 import com.hydra.pica.plataforma_pica.common.almacenamiento.AlmacenArchivos;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -18,9 +17,6 @@ import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
-import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
-import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
-import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancelacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
@@ -32,7 +28,9 @@ import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.repository.CancelacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.GastoCancelacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
+import com.hydra.pica.plataforma_pica.torneo.event.CancelacionResuelta;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,13 +54,13 @@ public class CancelacionTorneoService {
 
     private final TorneosPropios torneosPropios;
     private final TorneoRepository torneoRepository;
-    private final InscripcionRepository inscripcionRepository;
     private final CancelacionRepository cancelacionRepository;
     private final CustodiaService custodiaService;
-    private final Reintegrador reintegrador;
+    private final CierreDeCancelacion cierreDeCancelacion;
     private final GastoCancelacionRepository gastoCancelacionRepository;
     private final AlmacenArchivos almacen;
     private final ParametrosPlataforma parametrosPlataforma;
+    private final ApplicationEventPublisher eventos;
     private final AuditoriaService auditoriaService;
 
     /**
@@ -82,16 +80,14 @@ public class CancelacionTorneoService {
         BigDecimal pozo = custodiaService.recaudadoDelTorneo(id);
         BigDecimal totalGastos = gastos.stream().map(GastoDeclarado::monto).reduce(BigDecimal.ZERO, BigDecimal::add);
         exigirDentroDelTope(pozo, totalGastos);
-        String nombre = torneo.getNombre();
         boolean automatica = gastos.isEmpty();
         EstadoCancelacion estado = automatica ? EstadoCancelacion.AUTOMATICA : EstadoCancelacion.EN_REVISION;
 
-        torneo.setEstado(automatica ? EstadoTorneo.CANCELADO : EstadoTorneo.CANCELACION_EN_REVISION);
         torneo.setMotivoCancelacion(motivo);
-        if (automatica) {
-            resolverInscripciones(id);
+        if (!automatica) {
+            torneo.setEstado(EstadoTorneo.CANCELACION_EN_REVISION);
+            torneoRepository.saveAndFlush(torneo);
         }
-        torneoRepository.saveAndFlush(torneo);
 
         Cancelacion cancelacion = new Cancelacion();
         cancelacion.setTorneo(torneo);
@@ -101,7 +97,10 @@ public class CancelacionTorneoService {
         Long cancelacionId = cancelacion.getId();
 
         auditar(organizadorId, id, cancelacionId, estado, motivo, totalGastos);
-        BigDecimal reintegrado = automatica ? reintegrador.reintegrarTorneo(id, nombre) : BigDecimal.ZERO;
+        BigDecimal reintegrado = automatica ? cierreDeCancelacion.cerrar(torneo) : BigDecimal.ZERO;
+        if (automatica) {
+            eventos.publishEvent(new CancelacionResuelta(id));
+        }
         return new CancelacionRealizada(cancelacionId, id, estado.name(), totalGastos, pozo, reintegrado);
     }
 
@@ -199,13 +198,5 @@ public class CancelacionTorneoService {
         detalle.put("motivo", motivo);
         detalle.put("totalGastos", totalGastos);
         auditoriaService.registrar(organizadorId, AccionAuditoria.CANCELACION, "TORNEO", torneoId.toString(), detalle);
-    }
-
-    private void resolverInscripciones(Long torneoId) {
-        for (Inscripcion inscripcion : inscripcionRepository.findByTorneoIdAndEstadoInOrderByIdAsc(torneoId,
-                Set.of(EstadoInscripcion.BORRADOR, EstadoInscripcion.PENDIENTE_PAGO, EstadoInscripcion.CONFIRMADA))) {
-            inscripcion.setEstado(inscripcion.getEstado() == EstadoInscripcion.CONFIRMADA
-                    ? EstadoInscripcion.REINTEGRADA : EstadoInscripcion.CANCELADA);
-        }
     }
 }
