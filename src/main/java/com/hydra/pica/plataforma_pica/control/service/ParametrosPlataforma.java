@@ -49,6 +49,12 @@ public class ParametrosPlataforma {
         return valor(ClaveParametro.RETIRO_MAXIMO);
     }
 
+    /** % máximo del pozo que el organizador puede retener en gastos al cancelar un torneo (V42, HU-605). */
+    @Transactional(readOnly = true)
+    public BigDecimal topeGastosCancelacion() {
+        return valor(ClaveParametro.CANCELACION_GASTOS_TOPE);
+    }
+
     private BigDecimal valor(ClaveParametro clave) {
         return parametroPlataformaRepository.findById(clave.name())
                 .orElseThrow(() -> new IllegalStateException("Falta el parámetro " + clave + " en la base"))

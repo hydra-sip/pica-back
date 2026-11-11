@@ -75,7 +75,8 @@ class ParametrosAdminServiceIntegracionTest {
                         tuple(ClaveParametro.MARGEN_CIERRE_INICIO_MIN, "60"),
                         tuple(ClaveParametro.CHECKIN_DURACION_MAX_MIN, "60"),
                         tuple(ClaveParametro.RETIRO_MINIMO, "1000"),
-                        tuple(ClaveParametro.RETIRO_MAXIMO, "500000"));
+                        tuple(ClaveParametro.RETIRO_MAXIMO, "500000"),
+                        tuple(ClaveParametro.CANCELACION_GASTOS_TOPE, "20"));
         assertThat(parametrosAdminService.listar())
                 .allSatisfy(p -> {
                     assertThat(p.descripcion()).isNotBlank();

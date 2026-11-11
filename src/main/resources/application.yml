@@ -19,7 +19,8 @@ spring:
   servlet:
     multipart:
       max-file-size: 20MB
-      max-request-size: 21MB
+      # hasta 10 comprobantes de 5 MB al cancelar un torneo (HU-605)
+      max-request-size: 51MB
 
   jpa:
     hibernate:
