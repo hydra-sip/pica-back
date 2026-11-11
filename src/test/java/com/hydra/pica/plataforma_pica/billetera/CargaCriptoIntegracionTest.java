@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.billetera;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -21,6 +22,8 @@ import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena;
 import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena.CargaRegistrada;
 import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena.Transaccion;
+import com.hydra.pica.plataforma_pica.common.error.ApiException;
+import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.security.JwtService;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
@@ -36,6 +39,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -269,6 +273,64 @@ class CargaCriptoIntegracionTest {
                 .andExpect(jsonPath("$.referenciaExterna").value(buena));
         mockMvc.perform(get("/api/v1/billetera").header("Authorization", "Bearer " + token(usuario)))
                 .andExpect(jsonPath("$.saldoDisponible").value(10000));
+    }
+
+    @Test
+    void unaTransaccionQueTodaviaNoEntroEnUnBloqueEstaPendiente() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        cadenaVe(hash, new Transaccion.Pendiente(), BLOQUE);
+
+        confirmar(usuario, referencia, hash)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("TRANSACCION_PENDIENTE"));
+        sinSaldo(usuario);
+    }
+
+    @Test
+    void conMenosConfirmacionesQueLasMinimasEstaPendienteYConLasSuficientesAcredita() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+
+        // 3 confirmaciones por defecto, contando el bloque de la transacción: con 2 todavía no
+        cadenaVe(hash, pagoDe(referencia, "100000000000000"), BLOQUE + 1);
+        confirmar(usuario, referencia, hash)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("TRANSACCION_PENDIENTE"));
+        sinSaldo(usuario);
+
+        cadenaVe(hash, pagoDe(referencia, "100000000000000"), BLOQUE + 2);
+        confirmar(usuario, referencia, hash).andExpect(status().isOk());
+    }
+
+    @Test
+    void unHashQueElNodoNoConoceNoExisteYQuedaEnAuditoria() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        cadenaVe(hash, new Transaccion.Inexistente(), BLOQUE);
+
+        confirmar(usuario, referencia, hash)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("TRANSACCION_INEXISTENTE"));
+        assertThat(rechazos(usuario)).hasSize(1);
+        sinSaldo(usuario);
+    }
+
+    @Test
+    void siLaRedNoEstaDisponibleNoCambiaNada() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        when(cadena.transaccion(anyString())).thenThrow(new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                CodigoError.RED_NO_DISPONIBLE, "No se pudo consultar la red"));
+
+        confirmar(usuario, referencia, hashAlAzar())
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.codigo").value("RED_NO_DISPONIBLE"));
+        assertThat(rechazos(usuario)).isEmpty();
+        sinSaldo(usuario);
     }
 
     private List<Auditoria> rechazos(Usuario usuario) {

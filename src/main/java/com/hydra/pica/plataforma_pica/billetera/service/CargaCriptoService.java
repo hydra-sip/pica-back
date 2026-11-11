@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena.Transacci
 import com.hydra.pica.plataforma_pica.common.config.CriptoConfig.CriptoProperties;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
@@ -64,7 +65,16 @@ public class CargaCriptoService {
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.CARGA_NO_ENCONTRADA,
                         "No hay una carga con esa referencia"));
 
-        Transaccion.Minada minada = (Transaccion.Minada) cadena.transaccion(hashNormalizado);
+        Transaccion.Minada minada = switch (cadena.transaccion(hashNormalizado)) {
+            case Transaccion.Inexistente inexistente -> throw rechazo(carga, hashNormalizado,
+                    CodigoError.TRANSACCION_INEXISTENTE, "La red no tiene una transacción con ese hash");
+            case Transaccion.Pendiente pendiente -> throw pendiente();
+            case Transaccion.Minada m -> m;
+        };
+        // contando el bloque de la transacción
+        if (cadena.bloqueActual() - minada.bloque() + 1 < cripto.confirmacionesMinimas()) {
+            throw pendiente();
+        }
         if (!minada.exitosa()) {
             throw rechazo(carga, hashNormalizado, CodigoError.TRANSACCION_FALLIDA,
                     "La transacción revirtió en la cadena: no se cobró la carga");
@@ -83,6 +93,11 @@ public class CargaCriptoService {
         }
 
         return transaccion.execute(estado -> acreditar(carga.getId(), usuarioId, hashNormalizado, pago));
+    }
+
+    private static ConflictoException pendiente() {
+        return new ConflictoException(CodigoError.TRANSACCION_PENDIENTE,
+                "La transacción todavía no tiene las confirmaciones necesarias. Probá de nuevo en unos segundos");
     }
 
     /**

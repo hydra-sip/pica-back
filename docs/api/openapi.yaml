@@ -1297,7 +1297,11 @@ paths:
         Si la transacción no paga la carga, 400 y el rechazo queda en auditoría; la carga sigue pendiente y se
         puede confirmar con la transacción correcta: `TRANSACCION_FALLIDA` (revirtió; no se cobró nada) ·
         `TRANSACCION_SIN_CARGA` (no tiene un `CargaRegistrada` del contrato con esta referencia) ·
-        `MONTO_NO_COINCIDE` (pagó otro monto que `montoWei`; si hace falta, se devuelve a mano desde el contrato).
+        `MONTO_NO_COINCIDE` (pagó otro monto que `montoWei`; si hace falta, se devuelve a mano desde el contrato) ·
+        `TRANSACCION_INEXISTENTE` (la red no conoce el hash; reintentar no sirve). 409 `TRANSACCION_PENDIENTE` si
+        la transacción todavía no entró en un bloque o no tiene las confirmaciones mínimas (3 bloques, unos 6 s):
+        reintentar en unos segundos. 503 `RED_NO_DISPONIBLE` si el nodo de Base Sepolia no respondió: reintentar
+        más tarde; no dice nada de la transacción.
       parameters:
         - name: referencia
           in: path
@@ -1323,6 +1327,10 @@ paths:
         '401':
           $ref: '#/components/responses/Error'
         '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+        '503':
           $ref: '#/components/responses/Error'
 
   # --- Equipos -----------------------------------------------------------------
@@ -2915,8 +2923,10 @@ components:
         backend lo agrega acá.
         Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO / SESION_REVOCADA 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404 ·
         ALMACENAMIENTO_NO_DISPONIBLE 502 (el almacenamiento de archivos no respondió; se puede reintentar).
-        Carga con cripto (HU-609), 400: TRANSACCION_FALLIDA (la transacción revirtió) · TRANSACCION_SIN_CARGA (no
-        pagó esta carga en el contrato) · MONTO_NO_COINCIDE (pagó otro monto) · CARGA_NO_ENCONTRADA 404.
+        Carga con cripto (HU-609), 400: TRANSACCION_INEXISTENTE (la red no conoce el hash) · TRANSACCION_FALLIDA (la
+        transacción revirtió) · TRANSACCION_SIN_CARGA (no pagó esta carga en el contrato) · MONTO_NO_COINCIDE (pagó
+        otro monto) · CARGA_NO_ENCONTRADA 404 · TRANSACCION_PENDIENTE 409 (sin las confirmaciones mínimas; reintentar
+        en unos segundos) · RED_NO_DISPONIBLE 503 (el nodo de Base Sepolia no respondió; reintentar más tarde).
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
         DEMASIADOS_INTENTOS 429 (login).
@@ -2976,7 +2986,8 @@ components:
 
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              ALMACENAMIENTO_NO_DISPONIBLE,
-             TRANSACCION_FALLIDA, TRANSACCION_SIN_CARGA, MONTO_NO_COINCIDE,
+             RED_NO_DISPONIBLE, TRANSACCION_INEXISTENTE, TRANSACCION_FALLIDA, TRANSACCION_SIN_CARGA, MONTO_NO_COINCIDE,
+             TRANSACCION_PENDIENTE,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
