@@ -2,8 +2,10 @@ package com.hydra.pica.plataforma_pica.billetera.controller;
 
 import com.hydra.pica.plataforma_pica.billetera.dto.ComprobantePago;
 import com.hydra.pica.plataforma_pica.billetera.dto.CustodiaResumen;
+import com.hydra.pica.plataforma_pica.billetera.dto.RepartoLiquidacion;
 import com.hydra.pica.plataforma_pica.billetera.service.ComprobanteService;
 import com.hydra.pica.plataforma_pica.billetera.service.CustodiaService;
+import com.hydra.pica.plataforma_pica.billetera.service.RepartoLiquidacionService;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,7 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * La custodia de los fondos (HU-603): el organizador ve la de su torneo o su rifa y no la puede retirar antes de la
- * liquidación; quien pagó una inscripción ve su comprobante.
+ * liquidación; quien pagó una inscripción ve su comprobante. Después de la liquidación, el organizador ve cómo se
+ * repartió (HU-606).
  */
 @RestController
 @RequiredArgsConstructor
@@ -26,6 +29,7 @@ public class CustodiaController {
 
     private final CustodiaService custodiaService;
     private final ComprobanteService comprobanteService;
+    private final RepartoLiquidacionService repartoLiquidacionService;
     private final CurrentUserProvider currentUserProvider;
 
     @GetMapping("/torneos/{id}/custodia")
@@ -47,6 +51,16 @@ public class CustodiaController {
     @PostMapping("/rifas/{id}/custodia/retiro")
     public void retirarDeLaRifa(@PathVariable Long id) {
         custodiaService.retirarDeLaRifa(usuarioActual(), id);
+    }
+
+    @GetMapping("/torneos/{id}/liquidacion")
+    public RepartoLiquidacion liquidacionDelTorneo(@PathVariable Long id) {
+        return repartoLiquidacionService.delTorneo(usuarioActual(), id);
+    }
+
+    @GetMapping("/rifas/{id}/liquidacion")
+    public RepartoLiquidacion liquidacionDeLaRifa(@PathVariable Long id) {
+        return repartoLiquidacionService.deLaRifa(usuarioActual(), id);
     }
 
     @GetMapping("/inscripciones/{id}/comprobante")

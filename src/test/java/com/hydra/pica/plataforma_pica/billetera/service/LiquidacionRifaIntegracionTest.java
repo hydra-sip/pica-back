@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.billetera.dto.RepartoLiquidacion;
 import com.hydra.pica.plataforma_pica.billetera.service.LiquidacionRifaService.LiquidacionRifa;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -55,6 +56,7 @@ class LiquidacionRifaIntegracionTest {
 
     @Autowired private LiquidacionRifaService liquidacionRifaService;
     @Autowired private LiquidacionService liquidacionService;
+    @Autowired private RepartoLiquidacionService repartoLiquidacionService;
     @Autowired private RifaService rifaService;
     @Autowired private VentaRifaService ventaRifaService;
     @Autowired private TicketService ticketService;
@@ -190,6 +192,19 @@ class LiquidacionRifaIntegracionTest {
         assertBilletera(jugador1, "11200.00", "0.00");
         assertThat(jdbc.queryForObject("SELECT estado FROM custodia WHERE rifa_id = ?", String.class, rifa))
                 .isEqualTo("LIBERADA");
+        // los dos repartos muestran el aporte: la rifa, a dónde fue; el torneo, de dónde vino
+        entityManager.flush();
+        entityManager.clear();
+        RepartoLiquidacion deLaRifa = repartoLiquidacionService.deLaRifa(organizador, rifa);
+        assertThat(deLaRifa.liquidado()).isTrue();
+        assertThat(deLaRifa.total()).isEqualByComparingTo("1650.00");
+        assertThat(deLaRifa.lineas()).extracting(l -> l.rol() + ":" + l.origen() + ":" + l.puesto() + ":"
+                        + l.monto().toPlainString())
+                .containsExactlyInAnyOrder("PREMIO:RIFA:1:720.00", "PREMIO:RIFA:2:480.00",
+                        "PLATAFORMA:RIFA:null:150.00", "PREMIO:APORTE_RIFA:1:300.00");
+        assertThat(repartoLiquidacionService.delTorneo(organizador, torneo).lineas())
+                .extracting(l -> l.origen() + ":" + l.monto().toPlainString())
+                .contains("TORNEO:2000.00", "APORTE_RIFA:300.00");
         // lo repartido entre la rifa y el torneo da lo que retenía la rifa
         assertThat(jdbc.queryForObject("SELECT sum(monto) FROM movimiento WHERE referencia_externa LIKE ?",
                 BigDecimal.class, "liq-r" + rifa + "-%")).isEqualByComparingTo("1650.00");
