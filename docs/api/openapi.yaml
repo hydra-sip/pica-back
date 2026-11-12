@@ -50,6 +50,7 @@ tags:
   - {name: Admin – Personas, description: 'ABM de personas. HU-104, Laura.'}
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
   - {name: Admin – Parámetros, description: 'Parámetros de la plataforma (gastos administrativos, plazos y retiros). HU-702, Tomás.'}
+  - {name: Admin – Reclamos, description: 'Reclamos sobre el resultado de rifas y su resolución definitiva. HU-706, Salvador.'}
   - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
   - {name: Torneos, description: 'Asistente de crear torneo del organizador logueado (HU-201, PICA-38; HU-601, PICA-55), Tomás. Catálogo y ficha públicos (HU-208), Salvador.'}
   - {name: Equipos, description: 'Equipos del capitán para elegir al inscribirse. HU-204 (PICA-234), Mateo.'}
@@ -829,6 +830,74 @@ paths:
       responses:
         '200': {description: Los parámetros después del cambio, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ParametroDetalle'}}}}}
         '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/reclamos:
+    get:
+      tags: [Admin – Reclamos]
+      summary: Listar reclamos de rifas
+      x-jira: PICA-339
+      x-owner: Salvador
+      x-permiso: RECLAMO_RESOLVER
+      description: >-
+        HU-706 (T706-1). Lista paginada de reclamos con los datos de su rifa y del reclamante.
+        Se puede filtrar por estado; los pendientes aparecen primero.
+      parameters:
+        - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoReclamo'}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página de reclamos, content: {application/json: {schema: {$ref: '#/components/schemas/PageReclamoAdminDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/reclamos/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Admin – Reclamos]
+      summary: Ver detalle administrativo de un reclamo
+      x-jira: PICA-339
+      x-owner: Salvador
+      x-permiso: RECLAMO_RESOLVER
+      description: >-
+        HU-706 (T706-1). Devuelve el reclamo con los datos de su rifa y del reclamante.
+        404 `RECLAMO_NO_ENCONTRADO` si no existe.
+      responses:
+        '200': {description: Detalle del reclamo, content: {application/json: {schema: {$ref: '#/components/schemas/ReclamoAdminDetalle'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/reclamos/{id}/resolucion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Admin – Reclamos]
+      summary: Resolver definitivamente un reclamo
+      x-jira: PICA-339
+      x-owner: Salvador
+      x-permiso: RECLAMO_RESOLVER
+      description: >-
+        HU-706 (T706-1). Registra la decisión definitiva (`SIN_FRAUDE` → `RECHAZADO`; `FRAUDE_CONFIRMADO` → `ACEPTADO`)
+        y la resolución escrita, guardando `resueltoEn` y `resueltoPor`. Si no quedan otros reclamos `PENDIENTE` en la
+        rifa, esta sale de `EN_REVISION` y vuelve a `SORTEADA`. Registra auditoría (`LAUDO` sobre `RECLAMO_RIFA`) y envía
+        mail al reclamante con la decisión. No admite reapertura ni apelaciones.
+        400 `VALIDACION` si falta `decision` o `resolucion`.
+        401 `NO_AUTENTICADO` si no hay sesión.
+        403 `SIN_PERMISO` sin `RECLAMO_RESOLVER`.
+        404 `RECLAMO_NO_ENCONTRADO` si no existe.
+        409 `RECLAMO_YA_RESUELTO` si ya fue resuelto previamente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResolverReclamoRequest'}
+      responses:
+        '200': {description: Reclamo resuelto, content: {application/json: {schema: {$ref: '#/components/schemas/ReclamoAdminDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
 
   # --- Rifas -------------------------------------------------------------------
   # Todas exigen RIFA_GESTIONAR (ORGANIZADOR, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO. La rifa de otro
@@ -3317,12 +3386,12 @@ components:
     Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282) y CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO) y RECLAMO_RESOLVER de V45 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
              RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR,
-             CANCELACION_REVISAR]
+             CANCELACION_REVISAR, RECLAMO_RESOLVER]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -3394,7 +3463,8 @@ components:
         (la rifa tiene números vendidos: no vuelve a borrador ni se elimina; trae `numerosVendidos`) ·
         RIFA_CON_RESERVAS (alguien está pagando números de la rifa). Reclamo de una rifa (PICA-268):
         RIFA_NO_SORTEADA (todavía no se sorteó) · PLAZO_RECLAMO_VENCIDO (pasaron las 48 h o ya se liquidó o
-        canceló) · RECLAMO_DUPLICADO (el usuario ya tiene un reclamo pendiente en la rifa). Sorteo de una rifa
+        canceló) · RECLAMO_DUPLICADO (el usuario ya tiene un reclamo pendiente en la rifa) · RECLAMO_YA_RESUELTO (el
+        reclamo ya fue resuelto y no se reabre ni admite apelación). Sorteo de una rifa
         (PICA-265): SORTEO_ANTICIPADO (todavía no llegó la fecha de sorteo comprometida). Cuentas bancarias (HU-607,
         PICA-336): CUENTA_BANCARIA_NO_ENCONTRADA 404 · CUENTA_BANCARIA_DUPLICADA 409 · CUENTA_TITULAR_NO_COINCIDE 409
         ("La cuenta destino debe estar a nombre del titular verificado en la plataforma"). Retiro de fondos (HU-607,
@@ -3416,7 +3486,7 @@ components:
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
              OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO, CARGA_NO_ENCONTRADA,
-              CUENTA_BANCARIA_NO_ENCONTRADA,
+              CUENTA_BANCARIA_NO_ENCONTRADA, RECLAMO_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
@@ -3437,7 +3507,7 @@ components:
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, SORTEO_ANTICIPADO, RECLAMO_DUPLICADO,
-             CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA,
+             RECLAMO_YA_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR, BILLETERA_BLOQUEADA]
 
@@ -3584,6 +3654,10 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/MovimientoBilletera'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageReclamoAdminDetalle:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/ReclamoAdminDetalle'}}, page: {$ref: '#/components/schemas/PageInfo'}}
 
     # --- auth ----------------------------------------------------------------
     RegistroRequest:
@@ -5177,11 +5251,63 @@ components:
         rifaId: {type: integer, format: int64}
         usuarioId: {type: integer, format: int64}
         motivo: {type: string}
-        estado: {type: string, enum: [PENDIENTE, ACEPTADO, RECHAZADO]}
+        estado: {$ref: '#/components/schemas/EstadoReclamo'}
         resolucion: {type: [string, 'null']}
         resueltoEn: {type: [string, 'null'], format: date-time}
         resueltoPor: {type: [string, 'null']}
         creadoEn: {type: string, format: date-time}
+
+    EstadoReclamo:
+      type: string
+      enum: [PENDIENTE, ACEPTADO, RECHAZADO]
+
+    DecisionReclamo:
+      type: string
+      enum: [SIN_FRAUDE, FRAUDE_CONFIRMADO]
+      description: 'SIN_FRAUDE pasa el reclamo a RECHAZADO; FRAUDE_CONFIRMADO pasa el reclamo a ACEPTADO.'
+
+    ResolverReclamoRequest:
+      type: object
+      required: [decision, resolucion]
+      properties:
+        decision: {$ref: '#/components/schemas/DecisionReclamo'}
+        resolucion:
+          type: string
+          minLength: 1
+          description: Resolución escrita definitiva dictada por soporte o administración
+
+    RifaReclamoResumen:
+      type: object
+      required: [id, titulo, estado]
+      properties:
+        id: {type: integer, format: int64}
+        titulo: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoRifa'}
+        torneoNombre: {type: [string, 'null']}
+        fechaSorteo: {type: [string, 'null'], format: date-time}
+        semillaObtenidaEn: {type: [string, 'null'], format: date-time}
+
+    ReclamanteResumen:
+      type: object
+      required: [id, username, email]
+      properties:
+        id: {type: integer, format: int64}
+        username: {type: string}
+        email: {type: string}
+
+    ReclamoAdminDetalle:
+      type: object
+      required: [id, motivo, estado, creadoEn, rifa, reclamante]
+      properties:
+        id: {type: integer, format: int64}
+        motivo: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoReclamo'}
+        resolucion: {type: [string, 'null']}
+        resueltoEn: {type: [string, 'null'], format: date-time}
+        resueltoPor: {type: [string, 'null']}
+        creadoEn: {type: string, format: date-time}
+        rifa: {$ref: '#/components/schemas/RifaReclamoResumen'}
+        reclamante: {$ref: '#/components/schemas/ReclamanteResumen'}
 
     # --- Billetera (HU-602) ----------------------------------------------------
     Billetera:
