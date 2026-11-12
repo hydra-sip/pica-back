@@ -1513,6 +1513,25 @@ paths:
         '404':
           $ref: '#/components/responses/Error'
 
+  /api/v1/billetera/retiros/limites:
+    get:
+      tags: [Billetera]
+      summary: Límites de retiro de la plataforma
+      x-jira: PICA-337
+      x-owner: Salvador
+      description: >-
+        Devuelve los montos mínimo y máximo permitidos para solicitar un retiro de la billetera, leídos de los
+        parámetros vigentes de la plataforma.
+      responses:
+        '200':
+          description: Límites vigentes de retiro
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LimitesRetiro'
+        '401':
+          $ref: '#/components/responses/Error'
+
   /api/v1/billetera/retiros:
     post:
       tags: [Billetera]
@@ -5407,3 +5426,18 @@ components:
             Monto a retirar en ARS. Debe respetar los topes mínimo y máximo parametrizados en la plataforma
             (400 RETIRO_FUERA_DE_TOPES si no los cumple).
           example: 5000.00
+
+    LimitesRetiro:
+      type: object
+      required: [minimo, maximo]
+      properties:
+        minimo:
+          type: number
+          format: double
+          description: Monto mínimo permitido para un retiro en ARS.
+          example: 1000.00
+        maximo:
+          type: number
+          format: double
+          description: Monto máximo permitido para un retiro en ARS.
+          example: 500000.00

@@ -249,6 +249,20 @@ class BilleteraControllerTest {
     }
 
     @Test
+    @WithMockUser
+    @DisplayName("GET /api/v1/billetera/retiros/limites responde 200 con mínimo y máximo")
+    void obtenerLimitesRetiroResponde200() throws Exception {
+        when(retiroService.obtenerLimites()).thenReturn(
+                new com.hydra.pica.plataforma_pica.billetera.dto.LimitesRetiroResponse(
+                        new BigDecimal("1000.00"), new BigDecimal("500000.00")));
+
+        mockMvc.perform(get("/api/v1/billetera/retiros/limites"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.minimo").value(1000.00))
+                .andExpect(jsonPath("$.maximo").value(500000.00));
+    }
+
+    @Test
     @DisplayName("POST /api/v1/billetera/retiros sin sesión responde 401 UNAUTHORIZED")
     void solicitarRetiroSinSesionDa401() throws Exception {
         mockMvc.perform(post("/api/v1/billetera/retiros")

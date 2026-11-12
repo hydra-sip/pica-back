@@ -13,6 +13,7 @@ import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoValidacion;
 import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
+import com.hydra.pica.plataforma_pica.billetera.dto.LimitesRetiroResponse;
 import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.CuentaBancariaRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
@@ -51,6 +52,12 @@ public class RetiroService {
     private final UsuarioRepository usuarioRepository;
     private final ParametrosPlataforma parametrosPlataforma;
     private final AuditoriaService auditoriaService;
+
+    public LimitesRetiroResponse obtenerLimites() {
+        return new LimitesRetiroResponse(
+                parametrosPlataforma.retiroMinimo(),
+                parametrosPlataforma.retiroMaximo());
+    }
 
     @Transactional
     public Movimiento solicitar(Long usuarioId, Long cuentaId, BigDecimal monto) {

@@ -7,6 +7,7 @@ import com.hydra.pica.plataforma_pica.billetera.dto.BilleteraResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.CargaCriptoResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.CargaRequest;
 import com.hydra.pica.plataforma_pica.billetera.dto.ConfirmarCargaCriptoRequest;
+import com.hydra.pica.plataforma_pica.billetera.dto.LimitesRetiroResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.MovimientoBilleteraResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.SolicitarRetiroRequest;
 import com.hydra.pica.plataforma_pica.billetera.service.BilleteraService;
@@ -82,6 +83,11 @@ public class BilleteraController {
                                                             @Valid @RequestBody ConfirmarCargaCriptoRequest request) {
         Movimiento movimiento = cargaCriptoService.confirmar(usuarioActual(), referencia, request.hash());
         return MovimientoBilleteraResponse.de(movimiento, null, cripto.exploradorUrl());
+    }
+
+    @GetMapping("/retiros/limites")
+    public LimitesRetiroResponse obtenerLimitesRetiro() {
+        return retiroService.obtenerLimites();
     }
 
     @PostMapping("/retiros")
