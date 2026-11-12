@@ -391,6 +391,11 @@ pedir 404:RIFA_NO_ENCONTRADA GET /api/v1/rifas/publicas/{id}/sorteo "/api/v1/rif
 pedir 404:RIFA_NO_ENCONTRADA POST /api/v1/rifas/{id}/sorteo "/api/v1/rifas/0/sorteo" "$ADMIN"
 # reclamos de rifa (HU-506, PICA-268)
 pedir 404:RIFA_NO_ENCONTRADA POST /api/v1/rifas/{id}/reclamos "/api/v1/rifas/0/reclamos" "$USUARIO" '{"motivo":"Irregularidad en sorteo"}'
+# reclamos de rifa en el admin (HU-706, PICA-339)
+pedir 403:SIN_PERMISO GET /api/v1/admin/reclamos "/api/v1/admin/reclamos" "$USUARIO"
+pedir 200 GET /api/v1/admin/reclamos "/api/v1/admin/reclamos?page=0&size=20" "$ADMIN"
+pedir 404:RECLAMO_NO_ENCONTRADO GET /api/v1/admin/reclamos/{id} "/api/v1/admin/reclamos/0" "$ADMIN"
+pedir 404:RECLAMO_NO_ENCONTRADO POST /api/v1/admin/reclamos/{id}/resolucion "/api/v1/admin/reclamos/0/resolucion" "$ADMIN" '{"decision":"SIN_FRAUDE","resolucion":"Prueba de humo"}'
 pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
 
 
