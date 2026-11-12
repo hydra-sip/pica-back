@@ -13,5 +13,5 @@ import java.math.BigDecimal;
 public record Acreditacion(Rol rol, Long usuarioId, BigDecimal monto, Long inscripcionId, Integer puesto,
                            String referencia, String descripcion) {
 
-    public enum Rol { PREMIO, ORGANIZADOR, PLATAFORMA }
+    public enum Rol { PREMIO, ORGANIZADOR, PLATAFORMA, HONORARIO }
 }

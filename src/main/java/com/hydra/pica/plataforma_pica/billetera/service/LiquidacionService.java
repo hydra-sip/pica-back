@@ -26,6 +26,7 @@ import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.Gasto;
 import com.hydra.pica.plataforma_pica.torneo.domain.Premio;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.GastoRepository;
@@ -41,7 +42,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <ul>
  * <li>Los gastos administrativos que pagó cada inscripto van a la billetera de la plataforma (la que no tiene usuario,
  * V40).</li>
- * <li>El organizador recibe los gastos del torneo, hasta lo que se recaudó.</li>
+ * <li>El organizador recibe los gastos del torneo, hasta lo que se recaudó. Un honorario arbitral cuenta solo si lo
+ * depositó en la custodia (HU-604): si no, queda en el pozo.</li>
+ * <li>Lo que depositó para cada árbitro se le acredita al árbitro.</li>
  * <li>Lo que queda es el pozo y va a los ganadores con los porcentajes sellados al publicar ({@link RepartoPorPuesto});
  * en equipos cobra el capitán. Si nadie terminó en un puesto con premio, va al organizador.</li>
  * <li>Lo que aporta su rifa al pozo se reparte igual, cuando terminaron los dos: si la rifa se liquidó antes, acá; si
@@ -108,7 +111,11 @@ public class LiquidacionService {
         Retenido retenido = retenido(movimientoRepository, custodia.getId());
         String nombre = torneo.getNombre();
         String ref = "liq-t" + torneoId;
-        BigDecimal gastos = gastoRepository.totalDelTorneo(torneoId);
+        // un honorario solo es deducible si se depositó en la custodia (HU-604); los gastos comunes, siempre
+        List<Gasto> honorarios = gastoRepository.honorariosEnCustodia(custodia.getId());
+        BigDecimal depositado = honorarios.stream().map(g -> g.getMovimiento().getMonto())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal gastos = gastoRepository.totalComunes(torneoId).add(depositado);
         BigDecimal alOrganizador = gastos.min(retenido.recaudado());
 
         List<Acreditacion> acreditaciones = new ArrayList<>(entreLosGanadores(torneo,
@@ -122,6 +129,12 @@ public class LiquidacionService {
         if (retenido.gastosAdministrativos().signum() > 0) {
             acreditaciones.add(new Acreditacion(Rol.PLATAFORMA, null, retenido.gastosAdministrativos(), null, null,
                     ref + "-plataforma", "Liquidación del torneo " + nombre + ": gastos administrativos"));
+        }
+        // lo que el organizador depositó para cada árbitro sale de la custodia hacia él
+        for (Gasto honorario : honorarios) {
+            acreditaciones.add(new Acreditacion(Rol.HONORARIO, honorario.getBeneficiario().getId(),
+                    honorario.getMovimiento().getMonto(), null, null,
+                    ref + "-honorario-" + honorario.getId().getGastoId(), "Honorario arbitral en " + nombre));
         }
         BigDecimal repartido = Acreditador.suma(acreditaciones);
         if (repartido.compareTo(retenido.total()) != 0) {
@@ -214,7 +227,8 @@ public class LiquidacionService {
     }
 
     /**
-     * Lo que entró a una custodia: las inscripciones, los números vendidos, los gastos administrativos y el total, con
+     * Lo que entró a una custodia: las inscripciones, los números vendidos, los gastos administrativos, los honorarios
+     * depositados y el total, con
      * cualquier otro movimiento que la liquidación no sepa repartir.
      */
     static Retenido retenido(MovimientoRepository movimientoRepository, Long custodiaId) {
@@ -222,6 +236,7 @@ public class LiquidacionService {
         BigDecimal recaudado = BigDecimal.ZERO;
         BigDecimal vendido = BigDecimal.ZERO;
         BigDecimal gastos = BigDecimal.ZERO;
+        BigDecimal honorarios = BigDecimal.ZERO;
         for (Object[] fila : movimientoRepository.totalesDeLaCustodia(custodiaId)) {
             TipoMovimiento tipo = (TipoMovimiento) fila[0];
             BigDecimal suma = (BigDecimal) fila[1];
@@ -230,14 +245,17 @@ public class LiquidacionService {
                 case INSCRIPCION -> recaudado = recaudado.add(suma);
                 case COMPRA_NUMERO -> vendido = vendido.add(suma);
                 case COMISION -> gastos = gastos.add(suma);
+                case PAGO_SERVICIO -> honorarios = honorarios.add(suma);
                 default -> {
                     // queda en el total y no en las partes: la liquidación no cuadra y no paga
                 }
             }
         }
-        return new Retenido(total, recaudado, vendido, gastos);
+        return new Retenido(total, recaudado, vendido, gastos, honorarios);
     }
 
-    record Retenido(BigDecimal total, BigDecimal recaudado, BigDecimal vendido, BigDecimal gastosAdministrativos) {
+    /** @param honorarios lo que el organizador depositó para los árbitros (HU-604) */
+    record Retenido(BigDecimal total, BigDecimal recaudado, BigDecimal vendido, BigDecimal gastosAdministrativos,
+                    BigDecimal honorarios) {
     }
 }

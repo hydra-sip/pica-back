@@ -84,11 +84,12 @@ public class RepartoLiquidacionService {
         return new RepartoLiquidacion(liquidado, liquidadoEn, total, MONEDA, lineas);
     }
 
-    /** Lo que dice su referencia: liq-t{id}-…, liq-r{id}-premio-{puesto} o liq-r{id}-aporte-…. */
+    /** Lo que dice su referencia: liq-t{id}-… (con -honorario-{gastoId} para un árbitro, HU-604), liq-r{id}-premio-{puesto} o liq-r{id}-aporte-…. */
     private static Linea linea(Movimiento movimiento) {
         String referencia = movimiento.getReferenciaExterna();
         Usuario usuario = movimiento.getBilletera().getUsuario();
         Rol rol = movimiento.getTipo() == TipoMovimiento.PREMIO ? Rol.PREMIO
+                : movimiento.getTipo() == TipoMovimiento.HONORARIO ? Rol.HONORARIO
                 : usuario == null ? Rol.PLATAFORMA : Rol.ORGANIZADOR;
         Origen origen = referencia.contains("-aporte-") ? Origen.APORTE_RIFA
                 : referencia.startsWith("liq-t") ? Origen.TORNEO : Origen.RIFA;

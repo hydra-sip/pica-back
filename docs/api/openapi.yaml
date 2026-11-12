@@ -1700,13 +1700,14 @@ paths:
       description: >-
         El buscador del paso 2. Usuarios activos con el rol ÁRBITRO (activo), ordenados por apellidos y nombres;
         `q` busca igual que en `GET /usuarios` (cada palabra en el username, los nombres o los apellidos). Sin
-        `q`, los primeros de la lista.
+        `q`, los primeros de la lista. Cada uno trae `identidadVerificada` (HU-604, PICA-350): en un torneo con
+        dinero solo se designa a quien la tiene.
       parameters:
         - {name: q, in: query, required: false, schema: {type: string, maxLength: 100}}
         - {$ref: '#/components/parameters/page'}
         - {$ref: '#/components/parameters/size'}
       responses:
-        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageUsuarioPublico'}}}}
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageArbitroBuscado'}}}}
         '400': {$ref: '#/components/responses/Error'}
 
   /api/v1/torneos/{id}/arbitros:
@@ -1739,7 +1740,9 @@ paths:
         400 `VALIDACION` con `REQUERIDO` en `permisos` si viene vacío. 404 `USUARIO_NO_ENCONTRADO` si el usuario no
         existe. 409 `USUARIO_NO_ES_ARBITRO` si no está activo o no tiene el rol ÁRBITRO, `ARBITRO_DUPLICADO` si ya
         está designado en el torneo (PENDIENTE o ACEPTADO) y `ARBITRO_NO_PERMITIDO` si es el organizador o juega el torneo (inscripción
-        pendiente de pago o confirmada, propia o en una nómina).
+        pendiente de pago o confirmada, propia o en una nómina). En un torneo con dinero (cobra inscripción), 409
+        `IDENTIDAD_NO_VERIFICADA` ("El usuario propuesto debe verificar su identidad antes de arbitrar torneos con
+        dinero") si no tiene el email verificado y el documento y la fecha de nacimiento cargados (HU-604, PICA-350).
       requestBody:
         required: true
         content:
@@ -1770,7 +1773,8 @@ paths:
       description: >-
         Deja de figurar en el torneo y pierde sus permisos en el momento. 404 `ARBITRO_NO_ENCONTRADO` si no está
         designado. 409 `TORNEO_NO_EDITABLE` si el torneo ya terminó y `ARBITRO_CON_PARTIDOS` si tiene partidos
-        asignados (PICA-237): primero se reasignan.
+        asignados (PICA-237): primero se reasignan. Si tenía un honorario depositado, vuelve a la billetera del
+        organizador (HU-604).
       responses:
         '204': {description: Quitado}
         '404': {$ref: '#/components/responses/Error'}
@@ -1833,6 +1837,7 @@ paths:
         hay; en el paso 2 figura RECHAZADO con el motivo y lo puede volver a designar. 400 `VALIDACION` con
         `LONGITUD` en `motivo` si pasa los 500 caracteres. 404 `DESIGNACION_NO_ENCONTRADA` si no está designado en el
         torneo. 409 `DESIGNACION_YA_RESPONDIDA` si ya aceptó o rechazó y `TORNEO_NO_EDITABLE` si el torneo terminó.
+        Si el organizador le había depositado un honorario, vuelve a su billetera (HU-604).
       requestBody:
         content:
           application/json:
@@ -2453,7 +2458,9 @@ paths:
       x-jira: PICA-203
       x-permiso: TORNEO_GESTIONAR
       x-owner: Tomás
-      description: 404 `GASTO_NO_ENCONTRADO` si el torneo no tiene ese gasto. 409 `TORNEO_NO_EDITABLE`.
+      description: >-
+        404 `GASTO_NO_ENCONTRADO` si el torneo no tiene ese gasto. 409 `TORNEO_NO_EDITABLE` y
+        `HONORARIO_YA_DEPOSITADO` si es un honorario depositado: primero se retira el depósito.
       requestBody: {$ref: '#/components/requestBodies/Gasto'}
       responses:
         '200': {description: Gasto, content: {application/json: {schema: {$ref: '#/components/schemas/GastoDetalle'}}}}
@@ -2465,9 +2472,70 @@ paths:
       x-jira: PICA-203
       x-permiso: TORNEO_GESTIONAR
       x-owner: Tomás
-      description: 404 `GASTO_NO_ENCONTRADO`. 409 `TORNEO_NO_EDITABLE`.
+      description: 404 `GASTO_NO_ENCONTRADO`. 409 `TORNEO_NO_EDITABLE` y `HONORARIO_YA_DEPOSITADO`.
       responses:
         '204': {description: Borrado}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/torneos/{id}/gastos/{gastoId}/pago:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {name: gastoId, in: path, required: true, schema: {type: integer, minimum: 1}}
+    post:
+      tags: [Torneos]
+      summary: Pagar un gasto previsto (depositar un honorario o registrar el comprobante)
+      x-jira: PICA-350
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        HU-604 (wireframe 49). Solo el organizador, con el torneo sin terminar (de BORRADOR a EN_CURSO). Va
+        `arbitroId` o `comprobante`, no los dos: 400 `VALIDACION` si no viene ninguno o vienen los dos.
+
+        Con `arbitroId`, un honorario arbitral se paga por la plataforma: el monto del gasto sale del disponible del
+        organizador (movimiento PAGO_SERVICIO) y queda en la custodia del torneo hasta la liquidación, que se lo
+        acredita al árbitro (HONORARIO) y le devuelve el gasto al organizador. El árbitro tiene que estar designado
+        (PENDIENTE o ACEPTADO) y con la identidad verificada. Errores: 404 `ARBITRO_NO_ENCONTRADO` si no está
+        designado o rechazó; 409 `GASTO_NO_ES_HONORARIO`, `HONORARIO_YA_DEPOSITADO`, `IDENTIDAD_NO_VERIFICADA`,
+        `SALDO_INSUFICIENTE` (con `faltante`) y `BILLETERA_BLOQUEADA`/`COBRO_RECHAZADO`.
+
+        Con `comprobante`, se registra un gasto común pagado por fuera. Un honorario así no es deducible: 409
+        `HONORARIO_NO_DEDUCIBLE` ("Los honorarios arbitrales solo son deducibles si se abonan mediante transferencia
+        interna de la plataforma"). 409 `GASTO_YA_PAGADO` si ya está pagado.
+
+        Comunes a los dos: 404 `TORNEO_NO_ENCONTRADO` (o de otro organizador) y `GASTO_NO_ENCONTRADO`; 409
+        `TORNEO_NO_EDITABLE` con el torneo FINALIZADO, CANCELADO o con la cancelación en revisión (HU-605).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PagoGastoRequest'}
+      responses:
+        '200':
+          description: Pagado
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GastoDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Torneos]
+      summary: Retirar el honorario depositado
+      x-jira: PICA-350
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        HU-604. El depósito queda REVERTIDO y vuelve al disponible del organizador con un REINTEGRO; el gasto queda
+        PENDIENTE y se puede volver a depositar, para el mismo u otro árbitro. Pasa solo si el árbitro rechaza la
+        designación o lo quitan. 409 `HONORARIO_SIN_DEPOSITAR` si no hay depósito y `TORNEO_NO_EDITABLE` si el
+        torneo terminó.
+      responses:
+        '200':
+          description: Retirado
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GastoDetalle'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
@@ -3170,7 +3238,11 @@ components:
         torneo) · ARBITRO_NO_PERMITIDO (es el organizador o juega el torneo) · ARBITRO_CON_PARTIDOS (quitar a un
         árbitro con partidos asignados) · ARBITRO_NO_HABILITADO (asignarle un partido a quien no aceptó la
         designación) · DESIGNACION_YA_RESPONDIDA (el árbitro ya aceptó o rechazó) · COMPROMISO_NO_ACEPTADO (aceptar
-        la designación sin el código de imparcialidad) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
+        la designación sin el código de imparcialidad) · IDENTIDAD_NO_VERIFICADA (arbitrar o cobrar honorarios en un
+        torneo con dinero sin la identidad verificada, HU-604) · GASTO_NO_ES_HONORARIO (depositar un gasto común) ·
+        HONORARIO_NO_DEDUCIBLE (un honorario con un comprobante externo) · HONORARIO_YA_DEPOSITADO (ya hay un
+        depósito; también al modificar o borrar ese gasto) · HONORARIO_SIN_DEPOSITAR (retirar sin depósito) ·
+        GASTO_YA_PAGADO (el gasto común ya tiene comprobante) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
         PARTICIPANTES_INSUFICIENTES (menos de 2 inscripciones confirmadas) · BRACKET_YA_GENERADO (se puede regenerar) ·
         SIN_ARBITROS (cada partido necesita un árbitro que haya aceptado la designación) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
         regenera) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
@@ -3220,7 +3292,9 @@ components:
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
-             ARBITRO_NO_HABILITADO, DESIGNACION_YA_RESPONDIDA, COMPROMISO_NO_ACEPTADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
+             ARBITRO_NO_HABILITADO, DESIGNACION_YA_RESPONDIDA, COMPROMISO_NO_ACEPTADO, IDENTIDAD_NO_VERIFICADA,
+             GASTO_NO_ES_HONORARIO, HONORARIO_NO_DEDUCIBLE, HONORARIO_YA_DEPOSITADO, HONORARIO_SIN_DEPOSITAR,
+             GASTO_YA_PAGADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
@@ -3310,6 +3384,10 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/UsuarioPublico'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageArbitroBuscado:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/ArbitroBuscado'}}, page: {$ref: '#/components/schemas/PageInfo'}}
     PagePersonaResumen:
       type: object
       required: [content, page]
@@ -3791,6 +3869,23 @@ components:
         designadoEn: {type: string, format: date-time}
         respondidoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo aceptó o rechazó (HU-807)'}
         motivoRechazo: {type: [string, 'null'], description: 'El que dio al rechazar, si dio uno'}
+        identidadVerificada: {type: boolean, description: 'Si puede arbitrar torneos con dinero y cobrar honorarios (HU-604)'}
+    ArbitroBuscado:
+      description: Un resultado del buscador de árbitros (HU-604).
+      allOf:
+        - {$ref: '#/components/schemas/UsuarioPublico'}
+        - type: object
+          required: [identidadVerificada]
+          properties:
+            identidadVerificada: {type: boolean, description: 'Email verificado, y documento y fecha de nacimiento cargados'}
+    HonorarioDesignacion:
+      type: object
+      required: [monto, moneda, estado]
+      description: Lo que el organizador depositó para el árbitro en el torneo (HU-604, wireframe 49).
+      properties:
+        monto: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        estado: {type: string, enum: [EN_CUSTODIA, ACREDITADO, REINTEGRADO], description: 'EN_CUSTODIA hasta la liquidación; REINTEGRADO si el torneo se canceló'}
     MiDesignacion:
       type: object
       required: [torneoId, torneo, disciplina, estadoTorneo, organizador, estado, permisos, designadoEn]
@@ -3809,6 +3904,11 @@ components:
         designadoEn: {type: string, format: date-time}
         respondidoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo aceptó o rechazó; null si está PENDIENTE'}
         motivoRechazo: {type: [string, 'null'], description: 'Solo si RECHAZADO, y opcional'}
+        honorario:
+          description: 'El honorario depositado en la custodia del torneo (HU-604); null si no hay ninguno'
+          oneOf:
+            - {$ref: '#/components/schemas/HonorarioDesignacion'}
+            - {type: 'null'}
     AceptarDesignacionRequest:
       type: object
       description: 'El código de imparcialidad del wireframe 49: sin el campo o en false, 409 COMPROMISO_NO_ACEPTADO.'
@@ -4099,13 +4199,43 @@ components:
       properties:
         descripcion: {type: string, maxLength: 255, examples: [Honorarios de árbitros]}
         monto: {type: number, exclusiveMinimum: 0, description: En ARS}
+        tipo: {$ref: '#/components/schemas/TipoGasto'}
+    TipoGasto:
+      type: string
+      enum: [HONORARIO_ARBITRAL, OTRO]
+      default: OTRO
+      description: >-
+        HU-604. Un honorario arbitral solo se deduce del pozo si se deposita por la plataforma
+        (`POST /torneos/{id}/gastos/{gastoId}/pago`); si no, queda en el pozo. Un gasto común (OTRO) se deduce
+        siempre. No entra en el sello del esquema económico.
+    PagoGastoRequest:
+      type: object
+      description: 'Va uno de los dos (HU-604).'
+      properties:
+        arbitroId: {$ref: '#/components/schemas/Id', description: 'Un honorario: el árbitro designado para el que se deposita'}
+        comprobante: {type: string, maxLength: 500, description: 'Un gasto común pagado por fuera: número de factura, enlace, etc.'}
     GastoDetalle:
       type: object
-      required: [gastoId, descripcion, monto]
+      required: [gastoId, descripcion, monto, tipo, estadoPago]
       properties:
         gastoId: {type: integer, minimum: 1, description: Numera los gastos dentro del torneo}
         descripcion: {type: string}
         monto: {type: number}
+        tipo: {$ref: '#/components/schemas/TipoGasto'}
+        estadoPago:
+          type: string
+          enum: [PENDIENTE, EN_CUSTODIA, ACREDITADO, REINTEGRADO, PAGADO]
+          description: >-
+            PENDIENTE sin pagar; EN_CUSTODIA un honorario depositado; ACREDITADO cuando la liquidación se lo pagó al
+            árbitro; REINTEGRADO si el torneo se canceló y volvió al organizador; PAGADO un gasto común con su
+            comprobante.
+        beneficiario:
+          description: 'El árbitro de un honorario depositado; null si no hay depósito'
+          oneOf:
+            - {$ref: '#/components/schemas/UsuarioPublico'}
+            - {type: 'null'}
+        abonadoEn: {type: [string, 'null'], format: date-time}
+        comprobante: {type: [string, 'null'], description: 'El de afuera, o "Transferencia interna <referencia>" en un honorario'}
     ResumenEconomico:
       type: object
       required: [pctGastosAdministrativos, gastos, premios]
@@ -4630,7 +4760,7 @@ components:
       required: [rol, origen, monto, acreditadoEn]
       description: Una acreditación de la liquidación.
       properties:
-        rol: {type: string, enum: [PREMIO, ORGANIZADOR, PLATAFORMA]}
+        rol: {type: string, enum: [PREMIO, ORGANIZADOR, PLATAFORMA, HONORARIO], description: 'HONORARIO: lo depositado para un árbitro (HU-604)'}
         origen: {type: string, enum: [TORNEO, RIFA, APORTE_RIFA], description: 'APORTE_RIFA: lo que la rifa aporta al pozo del torneo, pagado a sus ganadores'}
         puesto: {type: [integer, 'null'], description: El de un premio}
         beneficiarioNombre: {type: [string, 'null'], description: 'Nombres y apellidos; null en la plataforma'}
@@ -4981,12 +5111,15 @@ components:
           $ref: '#/components/schemas/Id'
         tipo:
           type: string
-          enum: [CARGA, INSCRIPCION, COMPRA_NUMERO, PREMIO, REINTEGRO, COMISION, RETIRO, PAGO_SERVICIO, LIQUIDACION]
+          enum: [CARGA, INSCRIPCION, COMPRA_NUMERO, PREMIO, REINTEGRO, COMISION, RETIRO, PAGO_SERVICIO, LIQUIDACION,
+                 HONORARIO]
           description: >-
             PREMIO lo acredita la liquidación a cada ganador (HU-606): del torneo, con el torneo y la inscripción; de
             la rifa, con la rifa; lo que la rifa aporta al pozo del torneo, con los dos. LIQUIDACION, lo que la
             liquidación le acredita al organizador (los gastos del torneo) y a la plataforma (los gastos
-            administrativos).
+            administrativos). PAGO_SERVICIO, el honorario que el organizador deposita en la custodia del torneo
+            (egreso; si lo retira queda REVERTIDO y vuelve con un REINTEGRO), y HONORARIO, lo que la liquidación le
+            acredita al árbitro (HU-604).
           example: CARGA
         monto:
           type: number

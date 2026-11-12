@@ -8,7 +8,11 @@ import com.hydra.pica.plataforma_pica.torneo.domain.EstadoDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 
-/** Un árbitro del torneo como lo ve su organizador en el paso 2 (HU-203). */
+/**
+ * Un árbitro del torneo como lo ve su organizador en el paso 2 (HU-203).
+ *
+ * @param identidadVerificada si puede arbitrar torneos con dinero y cobrar honorarios (HU-604)
+ */
 public record ArbitroDetalle(
         Long usuarioId,
         String username,
@@ -18,12 +22,14 @@ public record ArbitroDetalle(
         Set<PermisoArbitro> permisos,
         Instant designadoEn,
         Instant respondidoEn,
-        String motivoRechazo) {
+        String motivoRechazo,
+        boolean identidadVerificada) {
 
     public static ArbitroDetalle de(ArbitroDesignado arbitro) {
         Usuario usuario = arbitro.getUsuario();
         return new ArbitroDetalle(usuario.getId(), usuario.getUsername(), usuario.getPersona().getNombres(),
                 usuario.getPersona().getApellidos(), arbitro.getEstado(), arbitro.getPermisos(),
-                arbitro.getDesignadoEn(), arbitro.getRespondidoEn(), arbitro.getMotivoRechazo());
+                arbitro.getDesignadoEn(), arbitro.getRespondidoEn(), arbitro.getMotivoRechazo(),
+                usuario.identidadVerificada());
     }
 }

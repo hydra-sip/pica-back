@@ -15,6 +15,8 @@ public interface MovimientoRepository extends JpaRepository<Movimiento, Long> {
 
     Optional<Movimiento> findByReferenciaExterna(String referenciaExterna);
 
+    long countByReferenciaExternaStartingWith(String prefijo);
+
     Page<Movimiento> findByBilleteraId(Long billeteraId, Pageable pageable);
 
     /** Lo retenido en una custodia, por tipo de pago (HU-603): [tipo, suma, cantidad]. */

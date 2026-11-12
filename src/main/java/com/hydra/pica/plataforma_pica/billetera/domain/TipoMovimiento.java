@@ -9,5 +9,6 @@ public enum TipoMovimiento {
     COMISION,
     RETIRO,
     PAGO_SERVICIO,
-    LIQUIDACION
+    LIQUIDACION,
+    HONORARIO
 }

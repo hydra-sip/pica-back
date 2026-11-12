@@ -7,10 +7,12 @@ import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.torneo.dto.EconomiaTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoRequest;
+import com.hydra.pica.plataforma_pica.torneo.dto.PagoGastoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.PublicarTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.ResumenEconomico;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
 import com.hydra.pica.plataforma_pica.torneo.service.EconomiaTorneoService;
+import com.hydra.pica.plataforma_pica.torneo.service.HonorariosService;
 import com.hydra.pica.plataforma_pica.torneo.service.PublicacionTorneoService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -37,12 +39,15 @@ public class EconomiaTorneoController {
 
     private final EconomiaTorneoService economiaTorneoService;
     private final PublicacionTorneoService publicacionTorneoService;
+    private final HonorariosService honorariosService;
     private final CurrentUserProvider currentUserProvider;
 
     public EconomiaTorneoController(EconomiaTorneoService economiaTorneoService,
-            PublicacionTorneoService publicacionTorneoService, CurrentUserProvider currentUserProvider) {
+            PublicacionTorneoService publicacionTorneoService, HonorariosService honorariosService,
+            CurrentUserProvider currentUserProvider) {
         this.economiaTorneoService = economiaTorneoService;
         this.publicacionTorneoService = publicacionTorneoService;
+        this.honorariosService = honorariosService;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -82,6 +87,19 @@ public class EconomiaTorneoController {
     public ResponseEntity<Void> eliminarGasto(@PathVariable Long id, @PathVariable int gastoId) {
         economiaTorneoService.eliminarGasto(usuarioActual(), id, gastoId);
         return ResponseEntity.noContent().build();
+    }
+
+    /** HU-604: deposita un honorario para un árbitro designado o registra un gasto común pagado por fuera. */
+    @PostMapping("/gastos/{gastoId}/pago")
+    public GastoDetalle pagarGasto(@PathVariable Long id, @PathVariable int gastoId,
+            @Valid @RequestBody PagoGastoRequest request) {
+        return honorariosService.pagar(usuarioActual(), id, gastoId, request);
+    }
+
+    /** HU-604: el honorario depositado vuelve a la billetera del organizador. */
+    @DeleteMapping("/gastos/{gastoId}/pago")
+    public GastoDetalle retirarHonorario(@PathVariable Long id, @PathVariable int gastoId) {
+        return honorariosService.retirar(usuarioActual(), id, gastoId);
     }
 
     /** El body solo trae la aceptación de los términos; sin ella responde 400 antes de llegar al servicio. */
