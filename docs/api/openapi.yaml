@@ -1439,6 +1439,80 @@ paths:
         '503':
           $ref: '#/components/responses/Error'
 
+  /api/v1/billetera/cuentas:
+    get:
+      tags: [Billetera]
+      summary: Mis cuentas bancarias
+      x-jira: PICA-336
+      x-owner: Salvador
+      description: >-
+        Lista las cuentas bancarias y virtuales (CBU, CVU, Alias) del usuario autenticado que no han sido dadas de
+        baja, ordenadas de la más reciente a la más antigua.
+      responses:
+        '200':
+          description: Lista de cuentas bancarias
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CuentaBancaria'
+        '401':
+          $ref: '#/components/responses/Error'
+
+    post:
+      tags: [Billetera]
+      summary: Agregar cuenta bancaria o virtual
+      x-jira: PICA-336
+      x-owner: Salvador
+      description: >-
+        Registra una cuenta bancaria o virtual del usuario autenticado. Valida el formato (CBU y CVU de 22 dígitos con
+        dígito verificador; alias de 6 a 20 caracteres) y ejecuta la validación simulada contra el documento de la persona
+        del usuario: si el CUIT/CUIL del titular contiene el documento queda VALIDADA; si no, queda RECHAZADA y responde
+        409 CUENTA_TITULAR_NO_COINCIDE ("La cuenta destino debe estar a nombre del titular verificado en la plataforma").
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearCuentaBancariaRequest'
+      responses:
+        '201':
+          description: Cuenta bancaria agregada y validada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CuentaBancaria'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+
+  /api/v1/billetera/cuentas/{id}:
+    delete:
+      tags: [Billetera]
+      summary: Eliminar cuenta bancaria
+      x-jira: PICA-336
+      x-owner: Salvador
+      description: >-
+        Da de baja lógica (`eliminadoEn`) una cuenta bancaria del usuario autenticado. Responde 404
+        CUENTA_BANCARIA_NO_ENCONTRADA si no existe, ya fue eliminada o pertenece a otro usuario.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '204':
+          description: Cuenta eliminada con éxito
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+
   # --- Equipos -----------------------------------------------------------------
 
 
@@ -3264,7 +3338,9 @@ components:
         RIFA_CON_RESERVAS (alguien está pagando números de la rifa). Reclamo de una rifa (PICA-268):
         RIFA_NO_SORTEADA (todavía no se sorteó) · PLAZO_RECLAMO_VENCIDO (pasaron las 48 h o ya se liquidó o
         canceló) · RECLAMO_DUPLICADO (el usuario ya tiene un reclamo pendiente en la rifa). Sorteo de una rifa
-        (PICA-265): SORTEO_ANTICIPADO (todavía no llegó la fecha de sorteo comprometida).
+        (PICA-265): SORTEO_ANTICIPADO (todavía no llegó la fecha de sorteo comprometida). Cuentas bancarias (HU-607,
+        PICA-336): CUENTA_BANCARIA_NO_ENCONTRADA 404 · CUENTA_BANCARIA_DUPLICADA 409 · CUENTA_TITULAR_NO_COINCIDE 409
+        ("La cuenta destino debe estar a nombre del titular verificado en la plataforma").
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
@@ -3281,6 +3357,7 @@ components:
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
              OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO, CARGA_NO_ENCONTRADA,
+              CUENTA_BANCARIA_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
@@ -3301,6 +3378,7 @@ components:
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, SORTEO_ANTICIPADO, RECLAMO_DUPLICADO,
+              CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR, BILLETERA_BLOQUEADA]
 
@@ -5215,3 +5293,61 @@ components:
           example: 5000.00
 
 
+
+    TipoCuenta:
+      type: string
+      enum: [CBU, CVU, ALIAS]
+      example: CBU
+
+    EstadoValidacionCuenta:
+      type: string
+      enum: [PENDIENTE, VALIDADA, RECHAZADA]
+      example: VALIDADA
+
+    CuentaBancaria:
+      type: object
+      required: [id, tipo, valor, titular, cuitCuil, estadoValidacion, creadoEn]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        tipo:
+          $ref: '#/components/schemas/TipoCuenta'
+        valor:
+          type: string
+          description: CBU o CVU de 22 dígitos, o alias de 6 a 20 caracteres.
+          example: '2850590940090418135201'
+        titular:
+          type: string
+          description: Nombre y apellido del titular.
+          example: Marcos Paz
+        cuitCuil:
+          type: string
+          description: CUIT o CUIL del titular (11 dígitos, con o sin guiones).
+          example: '20-12345678-9'
+        estadoValidacion:
+          $ref: '#/components/schemas/EstadoValidacionCuenta'
+        validadaEn:
+          type: [string, 'null']
+          format: date-time
+        creadoEn:
+          type: string
+          format: date-time
+
+    CrearCuentaBancariaRequest:
+      type: object
+      required: [tipo, valor, titular, cuitCuil]
+      properties:
+        tipo:
+          $ref: '#/components/schemas/TipoCuenta'
+        valor:
+          type: string
+          description: CBU/CVU de 22 dígitos con dígito verificador, o alias de 6 a 20 caracteres.
+          example: '2850590940090418135201'
+        titular:
+          type: string
+          description: Nombre y apellido del titular.
+          example: Marcos Paz
+        cuitCuil:
+          type: string
+          description: CUIT o CUIL del titular (11 dígitos).
+          example: '20-12345678-9'
