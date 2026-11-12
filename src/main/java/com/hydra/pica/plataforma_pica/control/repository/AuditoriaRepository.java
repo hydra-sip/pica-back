@@ -37,6 +37,15 @@ public interface AuditoriaRepository extends JpaRepository<Auditoria, Long>, Jpa
               and a.usuario.id = :usuarioId""")
     Instant ultimoLogin(@Param("usuarioId") Long usuarioId);
 
+    /** Para el filtro del libro (HU-704): los ids de una entidad con registros, primero el del último más reciente. */
+    @Query(value = """
+            SELECT entidad_id FROM auditoria
+            WHERE entidad = :entidad AND entidad_id IS NOT NULL
+            GROUP BY entidad_id
+            ORDER BY max(creado_en) DESC
+            LIMIT 200""", nativeQuery = true)
+    List<String> idsConRegistros(@Param("entidad") String entidad);
+
     /** Los registros de unas entidades (por ejemplo, de los partidos de un torneo), del más viejo al más nuevo. */
     List<Auditoria> findByEntidadAndEntidadIdInOrderByCreadoEnAscIdAsc(String entidad, Collection<String> entidadIds);
 }

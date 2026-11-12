@@ -16,7 +16,7 @@ import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.dto.RegistroAuditoria;
-import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
+import com.hydra.pica.plataforma_pica.control.service.LibroAuditoriaService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,13 +39,13 @@ class AuditoriaAdminControllerTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockitoBean private AuditoriaService auditoriaService;
+    @MockitoBean private LibroAuditoriaService libroAuditoriaService;
 
     @Test
     @DisplayName("Sin sesión responde 401")
     void sinSesion() throws Exception {
         mockMvc.perform(get("/api/v1/admin/auditoria")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(auditoriaService);
+        verifyNoInteractions(libroAuditoriaService);
     }
 
     @Test
@@ -55,7 +55,7 @@ class AuditoriaAdminControllerTest {
         mockMvc.perform(get("/api/v1/admin/auditoria"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
-        verifyNoInteractions(auditoriaService);
+        verifyNoInteractions(libroAuditoriaService);
     }
 
     @Test
@@ -63,12 +63,12 @@ class AuditoriaAdminControllerTest {
     @DisplayName("Pasa los filtros y la página al servicio, y responde la página con cada fila")
     void listar() throws Exception {
         RegistroAuditoria fila = new RegistroAuditoria(7L, DESDE, 3L, "arbitro", AccionAuditoria.LAUDO, "PARTIDO",
-                "15", null, Map.of("resultado", "2-1"));
-        when(auditoriaService.listar(4L, 3L, AccionAuditoria.LAUDO, DESDE, HASTA, 1, 10))
+                "15", "Ronda 1 – Copa Otoño", null, Map.of("resultado", "2-1"));
+        when(libroAuditoriaService.listar("TORNEO", "4", 3L, AccionAuditoria.LAUDO, DESDE, HASTA, 1, 10))
                 .thenReturn(new PageImpl<>(List.of(fila), PageRequest.of(1, 10), 11));
 
         mockMvc.perform(get("/api/v1/admin/auditoria")
-                        .param("torneo", "4").param("usuario", "3").param("accion", "LAUDO")
+                        .param("entidad", "TORNEO").param("entidadId", "4").param("usuario", "3").param("accion", "LAUDO")
                         .param("desde", "2026-11-01T03:00:00Z").param("hasta", "2026-11-02T03:00:00Z")
                         .param("page", "1").param("size", "10"))
                 .andExpect(status().isOk())
@@ -78,10 +78,11 @@ class AuditoriaAdminControllerTest {
                 .andExpect(jsonPath("$.content[0].accion").value("LAUDO"))
                 .andExpect(jsonPath("$.content[0].entidad").value("PARTIDO"))
                 .andExpect(jsonPath("$.content[0].entidadId").value("15"))
+                .andExpect(jsonPath("$.content[0].descripcion").value("Ronda 1 – Copa Otoño"))
                 .andExpect(jsonPath("$.content[0].detalle.resultado").value("2-1"))
                 .andExpect(jsonPath("$.page.totalElements").value(11))
                 .andExpect(jsonPath("$.page.number").value(1));
-        verify(auditoriaService).listar(4L, 3L, AccionAuditoria.LAUDO, DESDE, HASTA, 1, 10);
+        verify(libroAuditoriaService).listar("TORNEO", "4", 3L, AccionAuditoria.LAUDO, DESDE, HASTA, 1, 10);
     }
 
     @Test
@@ -94,6 +95,30 @@ class AuditoriaAdminControllerTest {
         mockMvc.perform(get("/api/v1/admin/auditoria").param("desde", "ayer"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("VALIDACION"));
-        verifyNoInteractions(auditoriaService);
+        verifyNoInteractions(libroAuditoriaService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "AUDITORIA_VER")
+    @DisplayName("GET /admin/auditoria/ids devuelve los ids de la entidad, y sin entidad es 400")
+    void ids() throws Exception {
+        when(libroAuditoriaService.idsConRegistros("PARTIDO")).thenReturn(List.of("22", "15"));
+
+        mockMvc.perform(get("/api/v1/admin/auditoria/ids").param("entidad", "PARTIDO"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0]").value("22"))
+                .andExpect(jsonPath("$[1]").value("15"));
+        mockMvc.perform(get("/api/v1/admin/auditoria/ids"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "USUARIO_VER")
+    @DisplayName("Los ids también piden AUDITORIA_VER")
+    void idsSinPermiso() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/auditoria/ids").param("entidad", "PARTIDO"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(libroAuditoriaService);
     }
 }

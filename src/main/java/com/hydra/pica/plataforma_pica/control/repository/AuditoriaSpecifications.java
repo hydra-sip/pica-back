@@ -20,17 +20,38 @@ import org.springframework.data.jpa.domain.Specification;
 /** Los filtros del libro de auditoría (HU-704). Cada uno es null sin valor, y Spring lo ignora. */
 public final class AuditoriaSpecifications {
 
+    private static final String TORNEO = "TORNEO";
+
     private AuditoriaSpecifications() {
     }
 
     /**
-     * Lo del torneo y lo suyo: el torneo, sus partidos, su rifa y la custodia del torneo o de su rifa. Las inscripciones
-     * no tienen registros propios: lo que pagan queda en la custodia.
+     * Los registros de una entidad: sin id, todos los de ese tipo; con id, los de esa. Un torneo trae además lo suyo
+     * (ver {@link #delTorneo}); el resto es la coincidencia exacta.
      */
-    public static Specification<Auditoria> delTorneo(Long torneoId) {
-        if (torneoId == null) {
+    public static Specification<Auditoria> deLaEntidad(String entidad, String entidadId) {
+        if (entidad == null || entidad.isBlank()) {
             return null;
         }
+        if (entidadId == null || entidadId.isBlank()) {
+            return (root, query, cb) -> cb.equal(root.get("entidad"), entidad);
+        }
+        if (TORNEO.equals(entidad)) {
+            return delTorneo(entidadId.trim());
+        }
+        return (root, query, cb) -> cb.and(cb.equal(root.get("entidad"), entidad),
+                cb.equal(root.get("entidadId"), entidadId.trim()));
+    }
+
+    /**
+     * Lo del torneo y lo suyo: el torneo, sus partidos, su rifa y la custodia del torneo o de su rifa. Las inscripciones
+     * no tienen registros propios: lo que pagan queda en la custodia. Un id que no es un número no trae nada.
+     */
+    private static Specification<Auditoria> delTorneo(String id) {
+        if (!id.matches("\\d{1,18}")) {
+            return (root, query, cb) -> cb.disjunction();
+        }
+        long torneoId = Long.parseLong(id);
         return (root, query, cb) -> {
             Subquery<String> partidos = query.subquery(String.class);
             Root<Partido> partido = partidos.from(Partido.class);
@@ -50,7 +71,7 @@ public final class AuditoriaSpecifications {
                             cb.equal(rifaDeLaCustodia.get("torneo").get("id"), torneoId)));
 
             return cb.or(
-                    entidad(root, cb, "TORNEO", cb.equal(root.get("entidadId"), String.valueOf(torneoId))),
+                    entidad(root, cb, TORNEO, cb.equal(root.get("entidadId"), String.valueOf(torneoId))),
                     entidad(root, cb, "PARTIDO", root.get("entidadId").in(partidos)),
                     entidad(root, cb, "RIFA", root.get("entidadId").in(rifas)),
                     entidad(root, cb, "CUSTODIA", root.get("entidadId").in(custodias)));

@@ -838,13 +838,15 @@ paths:
       x-permiso: AUDITORIA_VER
       description: >-
         HU-704. Los filtros son opcionales y se combinan; sin ninguno, todo. Del más nuevo al más viejo; el orden no se
-        elige. `torneo` trae lo del torneo y lo suyo: los registros del torneo, de sus partidos, de su rifa y de la
-        custodia del torneo o de su rifa (ahí quedan los pagos de las inscripciones). `desde` incluye ese instante y
-        `hasta` no: para un día, `desde` a las 00:00 y `hasta` a las 00:00 del día siguiente. Un torneo, usuario o
-        acción sin registros responde la página vacía. 400 `VALIDACION` si `accion` no es una de la lista o una fecha
-        no es ISO-8601.
+        elige. `entidad` sin `entidadId` trae todos los registros de ese tipo; con `entidadId`, los de esa entidad. Con
+        `entidad=TORNEO` trae además lo suyo: los registros de sus partidos, de su rifa y de la custodia del torneo o de
+        su rifa (ahí quedan los pagos de las inscripciones); el resto es la coincidencia exacta. `desde` incluye ese
+        instante y `hasta` no: para un día, `desde` a las 00:00 y `hasta` a las 00:00 del día siguiente. Una entidad,
+        usuario o acción sin registros responde la página vacía. 400 `VALIDACION` si `accion` no es una de la lista,
+        una fecha no es ISO-8601 o `entidad`/`entidadId` pasan los 50 caracteres.
       parameters:
-        - {name: torneo, in: query, description: Id del torneo, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: entidad, in: query, schema: {type: string, maxLength: 50, enum: [TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO]}}
+        - {name: entidadId, in: query, description: 'El id, o la clave si es un PARAMETRO. Sin `entidad` no filtra', schema: {type: string, maxLength: 50}}
         - {name: usuario, in: query, description: Id del usuario que hizo la acción, schema: {$ref: '#/components/schemas/Id'}}
         - {name: accion, in: query, schema: {$ref: '#/components/schemas/AccionAuditoria'}}
         - {name: desde, in: query, schema: {type: string, format: date-time}}
@@ -857,6 +859,21 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/PageRegistroAuditoria'}
+        '400': {$ref: '#/components/responses/Error'}
+  /api/v1/admin/auditoria/ids:
+    get:
+      tags: [Admin]
+      summary: Ids de una entidad con registros en la auditoría
+      x-jira: PICA-345
+      x-owner: Laura
+      x-permiso: AUDITORIA_VER
+      description: >-
+        HU-704. Para elegir el id en el filtro por entidad: los que tienen al menos un registro, primero el que tuvo
+        el último más reciente; hasta 200. Una entidad sin registros responde la lista vacía.
+      parameters:
+        - {name: entidad, in: query, required: true, schema: {type: string, maxLength: 50, enum: [TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO]}}
+      responses:
+        '200': {description: Los ids (o las claves si es PARAMETRO), content: {application/json: {schema: {type: array, items: {type: string}, examples: [['15', '22']]}}}}
         '400': {$ref: '#/components/responses/Error'}
 
   # --- Rifas -------------------------------------------------------------------
@@ -3757,7 +3774,7 @@ components:
       properties: {content: {type: array, items: {$ref: '#/components/schemas/RegistroAuditoria'}}, page: {$ref: '#/components/schemas/PageInfo'}}
     RegistroAuditoria:
       type: object
-      required: [id, fecha, usuarioId, username, accion, entidad, entidadId, ip, detalle]
+      required: [id, fecha, usuarioId, username, accion, entidad, entidadId, descripcion, ip, detalle]
       description: Una fila del libro de auditoría (PICA-345).
       properties:
         id: {$ref: '#/components/schemas/Id'}
@@ -3767,6 +3784,13 @@ components:
         accion: {$ref: '#/components/schemas/AccionAuditoria'}
         entidad: {type: [string, 'null'], description: 'Sobre qué fue: TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO', examples: [TORNEO]}
         entidadId: {type: [string, 'null'], description: 'El id de la entidad, o la clave si es un PARAMETRO', examples: ['42']}
+        descripcion:
+          type: [string, 'null']
+          description: >-
+            El nombre de la entidad, buscado al leer: TORNEO su nombre; PARTIDO `Ronda N – torneo`; RIFA su título;
+            CUSTODIA `Torneo: …` o `Rifa: …`; USUARIO, BILLETERA y CARGA_CRIPTO el `@username` (la billetera sin
+            usuario, `Plataforma`); PARAMETRO su descripción. Null si no se encuentra. Lo dado de baja también se ve.
+          examples: [Liga Abierta de Ajedrez Rápido]
         ip: {type: [string, 'null'], description: Solo la guardan el login y el login fallido}
         detalle: {type: [object, 'null'], additionalProperties: true, description: 'Lo propio de cada acción; cambia según quién la registró'}
     AccionAuditoria:
