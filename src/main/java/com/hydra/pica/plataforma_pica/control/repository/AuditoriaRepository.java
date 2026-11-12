@@ -5,11 +5,21 @@ import java.util.Collection;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface AuditoriaRepository extends JpaRepository<Auditoria, Long> {
+public interface AuditoriaRepository extends JpaRepository<Auditoria, Long>, JpaSpecificationExecutor<Auditoria> {
+
+    /** El libro de auditoría (HU-704), con el usuario de cada registro en la misma consulta. */
+    @Override
+    @EntityGraph(attributePaths = "usuario")
+    Page<Auditoria> findAll(Specification<Auditoria> filtros, Pageable pageable);
 
     /** Los LOGIN_FALLIDO de un identificador (ya normalizado) desde {@code desde}, del más viejo al más nuevo. */
     @Query("""
