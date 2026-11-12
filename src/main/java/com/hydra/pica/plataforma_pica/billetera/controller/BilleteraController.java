@@ -8,9 +8,11 @@ import com.hydra.pica.plataforma_pica.billetera.dto.CargaCriptoResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.CargaRequest;
 import com.hydra.pica.plataforma_pica.billetera.dto.ConfirmarCargaCriptoRequest;
 import com.hydra.pica.plataforma_pica.billetera.dto.MovimientoBilleteraResponse;
+import com.hydra.pica.plataforma_pica.billetera.dto.SolicitarRetiroRequest;
 import com.hydra.pica.plataforma_pica.billetera.service.BilleteraService;
 import com.hydra.pica.plataforma_pica.billetera.service.CargaCriptoService;
 import com.hydra.pica.plataforma_pica.billetera.service.CargaService;
+import com.hydra.pica.plataforma_pica.billetera.service.RetiroService;
 import com.hydra.pica.plataforma_pica.common.config.CriptoConfig.CriptoProperties;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import jakarta.validation.Valid;
@@ -42,6 +44,7 @@ public class BilleteraController {
     private final BilleteraService billeteraService;
     private final CargaService cargaService;
     private final CargaCriptoService cargaCriptoService;
+    private final RetiroService retiroService;
     private final CriptoProperties cripto;
     private final CurrentUserProvider currentUserProvider;
 
@@ -78,6 +81,13 @@ public class BilleteraController {
     public MovimientoBilleteraResponse confirmarCargaCripto(@PathVariable String referencia,
                                                             @Valid @RequestBody ConfirmarCargaCriptoRequest request) {
         Movimiento movimiento = cargaCriptoService.confirmar(usuarioActual(), referencia, request.hash());
+        return MovimientoBilleteraResponse.de(movimiento, null, cripto.exploradorUrl());
+    }
+
+    @PostMapping("/retiros")
+    @ResponseStatus(HttpStatus.CREATED)
+    public MovimientoBilleteraResponse solicitarRetiro(@Valid @RequestBody SolicitarRetiroRequest request) {
+        Movimiento movimiento = retiroService.solicitar(usuarioActual(), request.cuentaId(), request.monto());
         return MovimientoBilleteraResponse.de(movimiento, null, cripto.exploradorUrl());
     }
 

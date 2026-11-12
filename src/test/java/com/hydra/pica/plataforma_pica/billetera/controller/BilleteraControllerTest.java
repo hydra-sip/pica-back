@@ -28,6 +28,7 @@ import com.hydra.pica.plataforma_pica.billetera.dto.TorneoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.service.BilleteraService;
 import com.hydra.pica.plataforma_pica.billetera.service.CargaCriptoService;
 import com.hydra.pica.plataforma_pica.billetera.service.CargaService;
+import com.hydra.pica.plataforma_pica.billetera.service.RetiroService;
 import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.CriptoConfig;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
@@ -57,6 +58,7 @@ class BilleteraControllerTest {
     @MockitoBean private BilleteraService billeteraService;
     @MockitoBean private CargaService cargaService;
     @MockitoBean private CargaCriptoService cargaCriptoService;
+    @MockitoBean private RetiroService retiroService;
     @MockitoBean private CurrentUserProvider currentUserProvider;
 
     @Test
@@ -244,6 +246,109 @@ class BilleteraControllerTest {
                 .andExpect(jsonPath("$.codigo").value("VALIDACION"));
 
         verifyNoInteractions(cargaService);
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/billetera/retiros sin sesión responde 401 UNAUTHORIZED")
+    void solicitarRetiroSinSesionDa401() throws Exception {
+        mockMvc.perform(post("/api/v1/billetera/retiros")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "cuentaId": 10,
+                                  "monto": 5000.00
+                                }
+                                """))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(retiroService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("POST /api/v1/billetera/retiros con datos válidos responde 201 y movimiento PENDIENTE")
+    void solicitarRetiroConDatosValidosResponde201() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(USUARIO_ID));
+
+        Billetera b = new Billetera();
+        Movimiento mov = new Movimiento();
+        mov.setBilletera(b);
+        mov.setTipo(TipoMovimiento.RETIRO);
+        mov.setMonto(new BigDecimal("5000.00"));
+        mov.setMoneda("ARS");
+        mov.setSaldoResultante(new BigDecimal("15000.00"));
+        mov.setEstado(EstadoMovimiento.PENDIENTE);
+        mov.setReferenciaExterna("sim-retiro-123");
+        mov.setDescripcion("Retiro a CBU 2850590940090418135201");
+
+        when(retiroService.solicitar(USUARIO_ID, 10L, new BigDecimal("5000.00"))).thenReturn(mov);
+
+        mockMvc.perform(post("/api/v1/billetera/retiros")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "cuentaId": 10,
+                                  "monto": 5000.00
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tipo").value("RETIRO"))
+                .andExpect(jsonPath("$.monto").value(5000.00))
+                .andExpect(jsonPath("$.estado").value("PENDIENTE"))
+                .andExpect(jsonPath("$.saldoResultante").value(15000.00))
+                .andExpect(jsonPath("$.referenciaExterna").value("sim-retiro-123"));
+
+        verify(retiroService).solicitar(USUARIO_ID, 10L, new BigDecimal("5000.00"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("POST /api/v1/billetera/retiros con monto menor o igual a cero responde 400")
+    void solicitarRetiroMontoInvalidoResponde400() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(USUARIO_ID));
+
+        mockMvc.perform(post("/api/v1/billetera/retiros")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "cuentaId": 10,
+                                  "monto": 0.00
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+
+        mockMvc.perform(post("/api/v1/billetera/retiros")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "cuentaId": 10,
+                                  "monto": -500.00
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+
+        verifyNoInteractions(retiroService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("POST /api/v1/billetera/retiros sin cuentaId responde 400")
+    void solicitarRetiroSinCuentaResponde400() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(USUARIO_ID));
+
+        mockMvc.perform(post("/api/v1/billetera/retiros")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "monto": 5000.00
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"));
+
+        verifyNoInteractions(retiroService);
     }
 }
 

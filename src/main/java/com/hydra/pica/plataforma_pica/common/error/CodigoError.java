@@ -25,6 +25,9 @@ public enum CodigoError {
     MONTO_NO_COINCIDE,
     TRANSACCION_YA_USADA,
 
+    // Retiros de fondos (400)
+    RETIRO_FUERA_DE_TOPES,
+
     // 404
     USUARIO_NO_ENCONTRADO,
     PERSONA_NO_ENCONTRADA,
@@ -138,6 +141,7 @@ public enum CodigoError {
     RECLAMO_DUPLICADO,
     CUENTA_BANCARIA_DUPLICADA,
     CUENTA_TITULAR_NO_COINCIDE,
+    CUENTA_NO_VALIDADA,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,
