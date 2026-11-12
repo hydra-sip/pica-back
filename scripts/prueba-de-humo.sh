@@ -187,6 +187,7 @@ DELETE FROM movimiento
         WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u));
 DELETE FROM movimiento
     WHERE billetera_id IN (SELECT id FROM billetera WHERE usuario_id IN (SELECT id FROM humo_u));
+DELETE FROM cuenta_bancaria WHERE usuario_id IN (SELECT id FROM humo_u);
 DELETE FROM billetera WHERE usuario_id IN (SELECT id FROM humo_u);
 DELETE FROM nomina
     WHERE inscripcion_id IN (SELECT id FROM inscripcion
@@ -342,6 +343,12 @@ pedir 200 GET /api/v1/billetera/movimientos "/api/v1/billetera/movimientos?page=
 # y esa tabla no admite DELETE, lo que impediría la limpieza final del usuario de prueba.
 pedir 401 POST /api/v1/billetera/cargas "" "" '{"monto":100.00}'
 pedir 400:VALIDACION POST /api/v1/billetera/cargas "" "$USUARIO" '{"monto":0.00}'
+pedir 401 GET /api/v1/billetera/cuentas
+pedir 200 GET /api/v1/billetera/cuentas "" "$USUARIO"
+pedir 401 POST /api/v1/billetera/cuentas "" "" '{"tipo":"CBU","valor":"2850590940090418135201","titular":"Prueba","cuitCuil":"20123456789"}'
+pedir 400:VALIDACION POST /api/v1/billetera/cuentas "" "$USUARIO" '{"tipo":"CBU","valor":"invalido","titular":"","cuitCuil":""}'
+pedir 401 DELETE /api/v1/billetera/cuentas/{id} "/api/v1/billetera/cuentas/0"
+pedir 404:CUENTA_BANCARIA_NO_ENCONTRADA DELETE /api/v1/billetera/cuentas/{id} "/api/v1/billetera/cuentas/0" "$USUARIO"
 
 echo
 echo "Inscripciones (en torneos y equipos cargados por SQL: todavía no hay API para crearlos)"
