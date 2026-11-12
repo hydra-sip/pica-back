@@ -349,6 +349,9 @@ pedir 401 POST /api/v1/billetera/cuentas "" "" '{"tipo":"CBU","valor":"285059094
 pedir 400:VALIDACION POST /api/v1/billetera/cuentas "" "$USUARIO" '{"tipo":"CBU","valor":"invalido","titular":"","cuitCuil":""}'
 pedir 401 DELETE /api/v1/billetera/cuentas/{id} "/api/v1/billetera/cuentas/0"
 pedir 404:CUENTA_BANCARIA_NO_ENCONTRADA DELETE /api/v1/billetera/cuentas/{id} "/api/v1/billetera/cuentas/0" "$USUARIO"
+pedir 401 POST /api/v1/billetera/retiros "" "" '{"cuentaId":1,"monto":1000.00}'
+pedir 400:VALIDACION POST /api/v1/billetera/retiros "" "$USUARIO" '{"cuentaId":1,"monto":0.00}'
+pedir 400:VALIDACION POST /api/v1/billetera/retiros "" "$USUARIO" '{"monto":1000.00}'
 
 echo
 echo "Inscripciones (en torneos y equipos cargados por SQL: todavía no hay API para crearlos)"
