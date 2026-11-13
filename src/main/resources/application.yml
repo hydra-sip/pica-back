@@ -128,6 +128,7 @@ app:
   # Avisos del torneo al canal de Discord del organizador (PICA-369)
   discord:
     espera-base: ${APP_DISCORD_ESPERA_BASE:2s}   # la primera espera ante un 5xx o un error de red; se duplica en cada intento
+    aviso-checkin: ${APP_DISCORD_AVISO_CHECKIN:true}   # avisar al canal cuando abre cada ventana de check-in (se busca cada app.partidos.revision-plazos)
   rifas:
     duracion-reserva: ${APP_RIFAS_DURACION_RESERVA:10m}   # lo que dura un número reservado mientras se paga (HU-403)
     cierre-automatico: ${APP_RIFAS_CIERRE_AUTOMATICO:true}   # cerrar las ventas vencidas y sellar la lista (HU-407)

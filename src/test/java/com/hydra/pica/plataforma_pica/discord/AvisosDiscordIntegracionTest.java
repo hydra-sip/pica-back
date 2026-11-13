@@ -10,6 +10,9 @@ import static org.springframework.test.web.client.ExpectedCount.times;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -68,6 +71,7 @@ class AvisosDiscordIntegracionTest {
     @Autowired private AvisosDiscord avisos;
     @Autowired private BracketService bracketService;
     @Autowired private ResultadoService resultadoService;
+    @Autowired private AvisoCheckinDiscord avisoCheckin;
     @Autowired private EscenarioTorneo escenario;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
@@ -241,6 +245,87 @@ class AvisosDiscordIntegracionTest {
         confirmar(escenario.partido(torneo, 1, 1), new ResultadoRequest(3, 1, null, null));
 
         avisarResultados();   // DISCORD no espera nada
+    }
+
+    // --- el check-in --------------------------------------------------------------
+
+    /** Ahora, sin fracciones: Postgres guarda microsegundos. */
+    private final Instant ahora = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+    @Test
+    void avisaLaVentanaQueAcabaDeAbrir() {
+        Long semi = conVentana(ahora.plus(29, ChronoUnit.MINUTES));   // abrió hace 1 minuto y cierra en 19
+        long cierre = ahora.plus(19, ChronoUnit.MINUTES).getEpochSecond();
+
+        esperar("⏰ Se abrió el check-in de **Semifinal**: " + nombreDe(semi, "LOCAL") + " vs "
+                + nombreDe(semi, "VISITANTE"), "Cierra a las <t:" + cierre + ":t> (<t:" + cierre + ":R>).",
+                "**Copa Avisos**");
+        assertThat(avisoCheckin.avisarAbiertas(ahora)).isEqualTo(1);
+
+        refrescar();
+        assertThat(jdbc.queryForObject("SELECT checkin_avisado_para FROM partido WHERE id = ?", Timestamp.class, semi)
+                .toInstant()).isEqualTo(ahora.minus(1, ChronoUnit.MINUTES));
+    }
+
+    @Test
+    void noLaAvisaDosVeces() {
+        conVentana(ahora.plus(29, ChronoUnit.MINUTES));
+        esperar("⏰ Se abrió el check-in");
+        avisoCheckin.avisarAbiertas(ahora);
+        refrescar();
+
+        assertThat(avisoCheckin.avisarAbiertas(ahora.plus(30, ChronoUnit.SECONDS))).isZero();
+    }
+
+    @Test
+    void siSeReprogramaAvisaLaVentanaNueva() {
+        Long semi = conVentana(ahora.plus(29, ChronoUnit.MINUTES));
+        DISCORD.expect(times(2), requestTo(WEBHOOK)).andRespond(withSuccess());
+        avisoCheckin.avisarAbiertas(ahora);
+        refrescar();
+
+        jdbc.update("UPDATE partido SET fecha_programada = ? WHERE id = ?",
+                Timestamp.from(ahora.plus(1, ChronoUnit.HOURS)), semi);
+        Instant despues = ahora.plus(31, ChronoUnit.MINUTES);   // la ventana nueva abrió hace 1 minuto
+        refrescar();
+
+        assertThat(avisoCheckin.avisarAbiertas(despues)).isEqualTo(1);
+    }
+
+    @Test
+    void noAvisaUnaVentanaQueAbrioHaceRato() {
+        conVentana(ahora.plus(15, ChronoUnit.MINUTES));   // abrió hace 15 minutos
+
+        assertThat(avisoCheckin.avisarAbiertas(ahora)).isZero();
+    }
+
+    @Test
+    void noAvisaUnaVentanaQueTodaviaNoAbrio() {
+        conVentana(ahora.plus(45, ChronoUnit.MINUTES));
+
+        assertThat(avisoCheckin.avisarAbiertas(ahora)).isZero();
+    }
+
+    @Test
+    void sinWebhookOSinCheckinConfiguradoNoAvisa() {
+        conVentana(ahora.plus(29, ChronoUnit.MINUTES));
+        jdbc.update("UPDATE torneo SET discord_webhook = NULL WHERE id = ?", torneo);
+        refrescar();
+        assertThat(avisoCheckin.avisarAbiertas(ahora)).isZero();
+
+        conWebhook(torneo);
+        jdbc.update("UPDATE torneo SET checkin_min_antes = NULL, checkin_duracion_min = NULL WHERE id = ?", torneo);
+        refrescar();
+        assertThat(avisoCheckin.avisarAbiertas(ahora)).isZero();
+    }
+
+    /** La ventana del torneo abre 30 minutos antes y dura 20; la primera semifinal se juega en {@code fecha}. */
+    private Long conVentana(Instant fecha) {
+        jdbc.update("UPDATE torneo SET checkin_min_antes = 30, checkin_duracion_min = 20 WHERE id = ?", torneo);
+        Long semi = escenario.partido(torneo, 1, 1);
+        jdbc.update("UPDATE partido SET fecha_programada = ? WHERE id = ?", Timestamp.from(fecha), semi);
+        refrescar();
+        return semi;
     }
 
     // --- ayudas -------------------------------------------------------------------

@@ -31,6 +31,7 @@ app:
   discord:
     sincronico: true
     espera-base: 0s
+    aviso-checkin: false   # los tests llaman a AvisoCheckinDiscord a mano
   cors:
     allowed-origins:
       - http://localhost:3000

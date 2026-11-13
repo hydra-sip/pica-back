@@ -204,7 +204,7 @@ public class AvisosDiscord {
     }
 
     /** El texto con el nombre del torneo y, si ya está publicado, el enlace a su ficha. */
-    private String firmado(Torneo torneo, String texto) {
+    String firmado(Torneo torneo, String texto) {
         return texto + "\n" + firma(torneo);
     }
 
