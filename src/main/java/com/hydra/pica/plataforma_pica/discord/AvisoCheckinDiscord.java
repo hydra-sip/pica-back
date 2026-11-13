@@ -23,8 +23,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Avisa al canal de Discord del torneo cuando se abre la ventana de check-in de un partido (PICA-371). No hay un
  * evento de apertura: la ventana sale de la fecha del partido y de la configuración del torneo, así que se buscan cada
- * {@code app.partidos.revision-plazos} las que abrieron hace menos de {@link #RECIENTE}. Así, al hacer el deploy o al
- * cargar el webhook con el torneo en curso, no sale una tanda de avisos viejos.
+ * {@code app.partidos.revision-plazos} las que abrieron hace poco: {@link #RECIENTE}, o el intervalo de revisión si es
+ * más largo (con la API que duerme, 15 minutos), para no perder una ventana que abrió entre dos revisiones. Así, al
+ * hacer el deploy o al cargar el webhook con el torneo en curso, no sale una tanda de avisos viejos.
  *
  * Cada partido guarda la apertura que avisó: no se avisa dos veces, y si se reprograma, la ventana nueva sí. El mensaje
  * sale después de guardar la marca: si el commit falla, no se avisó.
@@ -40,16 +41,19 @@ public class AvisoCheckinDiscord {
     private final CanalDiscord canal;
     private final AvisosDiscord avisos;
     private final TransactionTemplate transaccion;
+    private final Duration reciente;
     private final boolean activo;
 
     AvisoCheckinDiscord(PartidoRepository partidoRepository, JuegaRepository juegaRepository, CanalDiscord canal,
                         AvisosDiscord avisos, TransactionTemplate transaccion,
+                        @Value("${app.partidos.revision-plazos:30s}") Duration revision,
                         @Value("${app.discord.aviso-checkin:true}") boolean activo) {
         this.partidoRepository = partidoRepository;
         this.juegaRepository = juegaRepository;
         this.canal = canal;
         this.avisos = avisos;
         this.transaccion = transaccion;
+        this.reciente = revision.compareTo(RECIENTE) > 0 ? revision : RECIENTE;
         this.activo = activo;
     }
 
@@ -63,7 +67,7 @@ public class AvisoCheckinDiscord {
     /** @return cuántas ventanas avisó */
     public int avisarAbiertas(Instant ahora) {
         int avisadas = 0;
-        for (Long id : partidoRepository.conCheckinPorAvisar(ahora, ahora.minus(RECIENTE))) {
+        for (Long id : partidoRepository.conCheckinPorAvisar(ahora, ahora.minus(reciente))) {
             try {
                 Aviso aviso = transaccion.execute(estado -> marcar(id));
                 if (aviso != null) {

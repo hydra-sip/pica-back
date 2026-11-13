@@ -11,6 +11,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
@@ -22,6 +23,8 @@ import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.email.EmailService;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.event.LlaveSorteada;
+import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
+import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.partido.event.PaseDirecto;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.partido.service.BracketService;
@@ -42,6 +45,7 @@ import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -72,6 +76,10 @@ class AvisosDiscordIntegracionTest {
     @Autowired private BracketService bracketService;
     @Autowired private ResultadoService resultadoService;
     @Autowired private AvisoCheckinDiscord avisoCheckin;
+    @Autowired private PartidoRepository partidoRepository;
+    @Autowired private JuegaRepository juegaRepository;
+    @Autowired private CanalDiscord canal;
+    @Autowired private TransactionTemplate transaccion;
     @Autowired private EscenarioTorneo escenario;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
@@ -290,6 +298,16 @@ class AvisosDiscordIntegracionTest {
         refrescar();
 
         assertThat(avisoCheckin.avisarAbiertas(despues)).isEqualTo(1);
+    }
+
+    @Test
+    void conLaRevisionCadaQuinceMinutosNoSePierdeUnaVentana() {
+        conVentana(ahora.plus(18, ChronoUnit.MINUTES));   // abrió hace 12 minutos: entre dos revisiones
+        AvisoCheckinDiscord cadaQuince = new AvisoCheckinDiscord(partidoRepository, juegaRepository, canal, avisos,
+                transaccion, Duration.ofMinutes(15), true);
+
+        esperar("⏰ Se abrió el check-in");
+        assertThat(cadaQuince.avisarAbiertas(ahora)).isEqualTo(1);
     }
 
     @Test
