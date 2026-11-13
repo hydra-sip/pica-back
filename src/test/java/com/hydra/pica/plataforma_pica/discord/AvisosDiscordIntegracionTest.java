@@ -3,8 +3,11 @@ package com.hydra.pica.plataforma_pica.discord;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.ExpectedCount.times;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import java.util.Arrays;
@@ -14,8 +17,12 @@ import java.util.stream.IntStream;
 import com.hydra.pica.plataforma_pica.EscenarioTorneo;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.email.EmailService;
+import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.event.LlaveSorteada;
+import com.hydra.pica.plataforma_pica.partido.event.PaseDirecto;
+import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.partido.service.BracketService;
+import com.hydra.pica.plataforma_pica.partido.service.ResultadoService;
 import jakarta.persistence.EntityManager;
 import org.hamcrest.Matcher;
 import org.junit.jupiter.api.AfterEach;
@@ -60,6 +67,7 @@ class AvisosDiscordIntegracionTest {
 
     @Autowired private AvisosDiscord avisos;
     @Autowired private BracketService bracketService;
+    @Autowired private ResultadoService resultadoService;
     @Autowired private EscenarioTorneo escenario;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
@@ -132,7 +140,134 @@ class AvisosDiscordIntegracionTest {
         assertThat(AvisosDiscord.entrando(lineas.subList(0, 2), 300)).doesNotContain("cruces más");
     }
 
+    // --- los resultados ----------------------------------------------------------
+
+    @Test
+    void unResultadoPublicaElMarcadorYADondePasaElGanador() {
+        Long semi = escenario.partido(torneo, 1, 1);
+        String local = nombreDe(semi, "LOCAL");
+        String visitante = nombreDe(semi, "VISITANTE");
+        confirmar(semi, new ResultadoRequest(3, 1, null, null));
+
+        DISCORD.expect(requestTo(WEBHOOK))
+                .andExpect(jsonPath("$.content").value(allOf(containsString("✅ **Semifinal**: **" + local
+                        + "** le ganó 3–1 a " + visitante), containsString(local + " pasa a **Final**."),
+                        not(containsString("⚔️")), containsString("**Copa Avisos**"))))
+                .andRespond(withSuccess());
+        avisarResultados();
+    }
+
+    @Test
+    void conElPartidoSiguienteCompletoSumaElCruceNuevo() {
+        Long primera = escenario.partido(torneo, 1, 1);
+        Long segunda = escenario.partido(torneo, 1, 2);
+        String finalistaUno = nombreDe(primera, "VISITANTE");
+        String finalistaDos = nombreDe(segunda, "LOCAL");
+        confirmar(primera, new ResultadoRequest(0, 2, null, null));
+        eventosDeAntes = eventos.stream(ResultadoConfirmado.class).count();
+        confirmar(segunda, new ResultadoRequest(1, 1, 5, 4));
+
+        esperar("le ganó 1–1 (penales 5–4)", "⚔️ **Final**: " + finalistaUno + " vs " + finalistaDos);
+        avisarResultados();
+    }
+
+    @Test
+    void unWalkoverNoTieneMarcador() {
+        Long semi = escenario.partido(torneo, 1, 1);
+        jdbc.update("UPDATE partido SET estado = 'WALKOVER' WHERE id = ?", semi);
+        jdbc.update("UPDATE juega SET es_ganador = (lado = 'LOCAL') WHERE partido_id = ?", semi);
+        jdbc.update("""
+                INSERT INTO juega (partido_id, inscripcion_id, lado)
+                SELECT ?, inscripcion_id, 'LOCAL' FROM juega WHERE partido_id = ? AND lado = 'LOCAL'""",
+                escenario.partido(torneo, 2, 1), semi);
+        refrescar();
+
+        esperar("**" + nombreDe(semi, "LOCAL") + "** gana por walkover a " + nombreDe(semi, "VISITANTE"));
+        avisos.avisar(new ResultadoConfirmado(torneo, semi, null, false));
+    }
+
+    @Test
+    void laFinalPublicaAlCampeon() {
+        Long laFinal = llegarALaFinal();
+        String campeon = nombreDe(laFinal, "LOCAL");
+        eventosDeAntes = eventos.stream(ResultadoConfirmado.class).count();
+        confirmar(laFinal, new ResultadoRequest(4, 2, null, null));
+
+        assertThat(eventos.stream(ResultadoConfirmado.class).skip(eventosDeAntes))
+                .singleElement().extracting(ResultadoConfirmado::torneoFinalizado).isEqualTo(true);
+        DISCORD.expect(requestTo(WEBHOOK))
+                .andExpect(jsonPath("$.content").value(allOf(containsString("✅ **Final**"),
+                        containsString("🏆 **" + campeon + "** es campeón del torneo."), not(containsString("pasa a")))))
+                .andRespond(withSuccess());
+        avisarResultados();
+    }
+
+    @Test
+    void unPaseDirectoTieneSuAvisoYDespuesElCampeon() {
+        Long vacante = escenario.partido(torneo, 1, 1);
+        jdbc.update("UPDATE partido SET estado = 'WALKOVER' WHERE id = ?", vacante);
+        jdbc.update("UPDATE juega SET es_ganador = false WHERE partido_id = ?", vacante);
+        refrescar();
+        Long semi = escenario.partido(torneo, 1, 2);
+        String finalista = nombreDe(semi, "LOCAL");
+        confirmar(semi, new ResultadoRequest(2, 0, null, null));
+
+        assertThat(eventos.stream(PaseDirecto.class)).hasSize(1);
+        esperar("✅ **Semifinal**", finalista + " pasa a **Final**.");
+        esperar("⏭️ **" + finalista + "** gana **Final** sin jugar: el otro cruce quedó sin ganador.");
+        esperar("🏆 **" + finalista + "** es campeón del torneo.");
+        List<ResultadoConfirmado> resultados = eventos.stream(ResultadoConfirmado.class).toList();
+        avisos.avisar(resultados.get(0));
+        avisos.avisar(eventos.stream(PaseDirecto.class).findFirst().orElseThrow());
+        avisos.avisar(resultados.get(1));
+    }
+
+    @Test
+    void siDiscordFallaElResultadoQuedaConfirmado() {
+        Long semi = escenario.partido(torneo, 1, 1);
+        confirmar(semi, new ResultadoRequest(3, 1, null, null));
+        DISCORD.expect(times(CanalDiscord.INTENTOS), requestTo(WEBHOOK)).andRespond(withServerError());
+
+        avisarResultados();
+
+        assertThat(jdbc.queryForObject("SELECT estado FROM partido WHERE id = ?", String.class, semi))
+                .isEqualTo("CONFIRMADO");
+    }
+
+    @Test
+    void sinWebhookNoPublicaResultados() {
+        jdbc.update("UPDATE torneo SET discord_webhook = NULL WHERE id = ?", torneo);
+        refrescar();
+        confirmar(escenario.partido(torneo, 1, 1), new ResultadoRequest(3, 1, null, null));
+
+        avisarResultados();   // DISCORD no espera nada
+    }
+
     // --- ayudas -------------------------------------------------------------------
+
+    /** Los ResultadoConfirmado de antes de lo que prueba el test: no se avisan. */
+    private long eventosDeAntes;
+
+    /** Carga el resultado el local y lo acepta el visitante: queda CONFIRMADO y avanza. */
+    private void confirmar(Long partido, ResultadoRequest resultado) {
+        resultadoService.cargar(escenario.jugador(partido, "LOCAL"), partido, resultado);
+        resultadoService.aceptar(escenario.jugador(partido, "VISITANTE"), partido);
+        refrescar();
+    }
+
+    private void avisarResultados() {
+        eventos.stream(ResultadoConfirmado.class).skip(eventosDeAntes).forEach(avisos::avisar);
+    }
+
+    private Long llegarALaFinal() {
+        confirmar(escenario.partido(torneo, 1, 1), new ResultadoRequest(2, 0, null, null));
+        confirmar(escenario.partido(torneo, 1, 2), new ResultadoRequest(2, 0, null, null));
+        return escenario.partido(torneo, 2, 1);
+    }
+
+    private String nombreDe(Long partido, String lado) {
+        return nombre(escenario.jugador(partido, lado));
+    }
 
     /** «A vs B» del partido de la primera ronda en esa posición. */
     private String cruce(int posicion) {

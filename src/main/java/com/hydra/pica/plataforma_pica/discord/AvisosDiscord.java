@@ -6,9 +6,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
+import com.hydra.pica.plataforma_pica.partido.domain.Lado;
+import com.hydra.pica.plataforma_pica.partido.domain.Partido;
+import com.hydra.pica.plataforma_pica.partido.domain.SorteoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.event.LlaveSorteada;
+import com.hydra.pica.plataforma_pica.partido.event.PaseDirecto;
+import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.partido.service.Partidos;
@@ -60,6 +66,18 @@ public class AvisosDiscord {
         avisar(evento);
     }
 
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void alConfirmar(ResultadoConfirmado evento) {
+        avisar(evento);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void alPasarDirecto(PaseDirecto evento) {
+        avisar(evento);
+    }
+
     /** El mensaje de prueba: sale cada vez que se guarda, aunque sea el mismo webhook. */
     void avisar(WebhookDiscordGuardado evento) {
         Torneo torneo = torneoRepository.findById(evento.torneoId()).orElseThrow();
@@ -92,10 +110,74 @@ public class AvisosDiscord {
                 CanalDiscord.LARGO_MAXIMO - encabezado.length() - firma(torneo).length() - 2)));
     }
 
+    /**
+     * Un mensaje por resultado: cómo terminó (si se jugó: un pase directo tiene su propio aviso) y, si era la final, el
+     * campeón; si no, a qué ronda pasa el ganador y, si ese partido ya tiene sus dos lados, el cruce nuevo.
+     */
+    void avisar(ResultadoConfirmado evento) {
+        Partido partido = partidoRepository.findById(evento.partidoId()).orElseThrow();
+        Torneo torneo = partido.getTorneo();
+        if (torneo.getDiscordWebhook() == null) {
+            return;
+        }
+        int rondas = partidoRepository.rondasDelTorneo(torneo.getId());
+        List<Juega> lados = juegaRepository.delPartido(partido.getId());
+        Juega ganador = lados.stream().filter(j -> Boolean.TRUE.equals(j.getEsGanador())).findFirst().orElseThrow();
+        String nombreGanador = Partidos.nombre(ganador.getInscripcion());
+        List<String> lineas = new ArrayList<>();
+        if (lados.size() == 2) {
+            Juega perdedor = lados.stream().filter(j -> j != ganador).findFirst().orElseThrow();
+            lineas.add("✅ **" + RondaBracket.nombre(partido.getRonda(), rondas) + "**: "
+                    + resultado(partido, ganador, perdedor));
+        }
+        if (evento.torneoFinalizado()) {
+            lineas.add("🏆 **" + nombreGanador + "** es campeón del torneo.");
+        } else {
+            Partido siguiente = partidoRepository.findByTorneoIdAndRondaAndPosicion(torneo.getId(),
+                    partido.getRonda() + 1, SorteoBracket.posicionSiguiente(partido.getPosicion())).orElseThrow();
+            String ronda = RondaBracket.nombre(siguiente.getRonda(), rondas);
+            lineas.add(nombreGanador + " pasa a **" + ronda + "**.");
+            List<Juega> cruce = juegaRepository.delPartido(siguiente.getId());
+            if (cruce.size() == 2) {
+                lineas.add("⚔️ **" + ronda + "**: " + cruce(cruce).substring(2));
+            }
+        }
+        canal.publicar(torneo.getDiscordWebhook(), firmado(torneo, String.join("\n", lineas)));
+    }
+
+    /** El que pasa sin jugar porque el partido hermano terminó sin ganador (HU-309). */
+    void avisar(PaseDirecto evento) {
+        Partido partido = partidoRepository.findById(evento.partidoId()).orElseThrow();
+        Torneo torneo = partido.getTorneo();
+        if (torneo.getDiscordWebhook() == null) {
+            return;
+        }
+        Juega lado = juegaRepository.delPartido(partido.getId()).stream()
+                .filter(j -> j.getInscripcion().getId().equals(evento.inscripcionId()))
+                .findFirst().orElseThrow();
+        String ronda = RondaBracket.nombre(partido.getRonda(), partidoRepository.rondasDelTorneo(torneo.getId()));
+        canal.publicar(torneo.getDiscordWebhook(), firmado(torneo, "⏭️ **" + Partidos.nombre(lado.getInscripcion())
+                + "** gana **" + ronda + "** sin jugar: el otro cruce quedó sin ganador."));
+    }
+
+    /** «**A** le ganó 3–1 a B», con los penales si los hubo, o el walkover. */
+    private static String resultado(Partido partido, Juega ganador, Juega perdedor) {
+        String gano = "**" + Partidos.nombre(ganador.getInscripcion()) + "**";
+        String perdio = Partidos.nombre(perdedor.getInscripcion());
+        if (partido.getEstado() == EstadoPartido.WALKOVER || ganador.getPuntaje() == null) {
+            return gano + " gana por walkover a " + perdio + ".";
+        }
+        String marcador = ganador.getPuntaje() + "–" + perdedor.getPuntaje();
+        if (ganador.getPenales() != null) {
+            marcador += " (penales " + ganador.getPenales() + "–" + perdedor.getPenales() + ")";
+        }
+        return gano + " le ganó " + marcador + " a " + perdio + ".";
+    }
+
     /** «A vs B», o «A pasa directo» si es un BYE. */
     private static String cruce(List<Juega> lados) {
         List<Juega> ordenados = new ArrayList<>(lados);
-        ordenados.sort(Comparator.comparing(Juega::getLado));
+        ordenados.sort(Comparator.comparing(Juega::getLado, Comparator.comparing(Lado::ordinal)));
         String local = Partidos.nombre(ordenados.get(0).getInscripcion());
         if (ordenados.size() == 1) {
             return "• " + local + " pasa directo";
