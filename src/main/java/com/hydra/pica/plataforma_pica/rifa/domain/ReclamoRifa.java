@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.domain;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
@@ -59,6 +60,15 @@ public class ReclamoRifa {
 
     @Column(name = "resuelto_por", length = 100)
     private String resueltoPor;
+
+    @Column(name = "fondos_liberados_en")
+    private Instant fondosLiberadosEn;
+
+    @Column(name = "fondos_liberados_por", length = 100)
+    private String fondosLiberadosPor;
+
+    @Column(name = "fondos_liberados_monto", precision = 14, scale = 2)
+    private BigDecimal fondosLiberadosMonto;
 
     @Column(name = "creado_en", nullable = false, updatable = false)
     private Instant creadoEn;

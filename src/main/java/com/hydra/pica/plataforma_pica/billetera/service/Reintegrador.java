@@ -8,8 +8,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import java.util.function.Consumer;
+
 import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
 import com.hydra.pica.plataforma_pica.billetera.domain.Custodia;
+import com.hydra.pica.plataforma_pica.billetera.domain.EstadoCustodia;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
@@ -17,8 +20,11 @@ import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.CustodiaRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.billetera.service.Acreditador.Evento;
+import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
+import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -45,6 +51,7 @@ public class Reintegrador {
     private final MovimientoRepository movimientoRepository;
     private final BilleteraRepository billeteraRepository;
     private final TorneoRepository torneoRepository;
+    private final RifaRepository rifaRepository;
     private final AuditoriaService auditoriaService;
     private final Acreditador acreditador;
 
@@ -52,10 +59,60 @@ public class Reintegrador {
     public record Retencion(Long organizadorId, BigDecimal gastos) {
     }
 
+    /** Un destinatario del reintegro de una rifa cancelada por fraude (HU-707). */
+    public record DestinatarioReintegro(Long usuarioId, Long billeteraId, BigDecimal monto) {
+    }
+
+    /** Resultado del reintegro completo de una rifa (HU-707). */
+    public record ReintegroRifa(BigDecimal totalDevuelto, List<DestinatarioReintegro> destinatarios) {
+    }
+
     /** Reintegra todo lo retenido de un torneo ya CANCELADO. @return lo que devolvió */
     @Transactional(propagation = Propagation.MANDATORY)
     public BigDecimal reintegrarTorneo(Long torneoId, String nombre) {
         return reintegrarTorneo(torneoId, nombre, null);
+    }
+
+    /**
+     * Reintegra lo retenido de una rifa ya CANCELADA (HU-707): devuelve el 100 % pagado (números + comisión) del
+     * retenido al disponible en cada billetera que pagó con saldo y libera la custodia como {@code REINTEGRADA}.
+     *
+     * @return monto total devuelto y destinatarios acreditados
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public ReintegroRifa reintegrarRifa(Long rifaId, String titulo) {
+        Optional<Custodia> custodia = custodiaRepository.findParaLiberarPorRifaId(rifaId);
+        if (custodia.isEmpty()) {
+            return new ReintegroRifa(BigDecimal.ZERO, List.of());
+        }
+        if (custodia.get().getEstado() != EstadoCustodia.RETENIDA) {
+            throw new ConflictoException(CodigoError.CUSTODIA_LIBERADA,
+                    "La custodia de la rifa " + rifaId + " ya está " + custodia.get().getEstado())
+                    .con("estado", custodia.get().getEstado());
+        }
+        Long custodiaId = custodia.get().getId();
+        BigDecimal retenido = LiquidacionService.retenido(movimientoRepository, custodiaId).total();
+        List<Pago> pagos = pagos(custodiaId);
+        BigDecimal devuelto = pagos.stream().map(Pago::devuelto).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (devuelto.compareTo(retenido) != 0) {
+            throw new IllegalStateException("El reintegro de la rifa " + rifaId + " devuelve " + devuelto
+                    + ", pero la custodia retiene " + retenido + ": no se pagó nada");
+        }
+
+        custodiaService.liberarRifa(rifaId); // saca lo pagado del retenido y deja la sesión vacía
+        String descripcion = "Reintegro por fraude confirmado en la rifa " + titulo;
+        List<DestinatarioReintegro> destinatarios = new ArrayList<>(pagos.size());
+        for (Pago pago : pagos) {
+            destinatarios.add(acreditarReintegro(
+                    pago,
+                    m -> m.setRifa(rifaRepository.getReferenceById(rifaId)),
+                    "reint-r" + rifaId + "-b" + pago.billeteraId,
+                    descripcion,
+                    "RIFA",
+                    rifaId.toString(),
+                    null));
+        }
+        return new ReintegroRifa(devuelto, destinatarios);
     }
 
     /**
@@ -85,7 +142,18 @@ public class Reintegrador {
 
         custodiaService.liberarTorneo(torneoId); // saca lo pagado del retenido y deja la sesión vacía
         for (Pago pago : pagos) {
-            devolver(torneoId, nombre, pago);
+            String descripcion = "Reintegro por la cancelación del torneo " + nombre;
+            if (pago.descuento.signum() > 0) {
+                descripcion += ": se retuvieron " + pesos(pago.descuento) + " de gastos";
+            }
+            acreditarReintegro(
+                    pago,
+                    m -> m.setTorneo(torneoRepository.getReferenceById(torneoId)),
+                    "reint-t" + torneoId + "-b" + pago.billeteraId,
+                    descripcion,
+                    "TORNEO",
+                    torneoId.toString(),
+                    pago.descuento);
         }
         if (gastos.signum() > 0) {
             acreditador.acreditar(Evento.torneo(torneoId), List.of(new Acreditacion(Acreditacion.Rol.ORGANIZADOR,
@@ -133,7 +201,14 @@ public class Reintegrador {
         }
     }
 
-    private void devolver(Long torneoId, String nombre, Pago pago) {
+    private DestinatarioReintegro acreditarReintegro(
+            Pago pago,
+            Consumer<Movimiento> vincularEvento,
+            String referencia,
+            String descripcion,
+            String entidadAuditoria,
+            String entidadIdAuditoria,
+            BigDecimal retenidoOpcional) {
         Billetera billetera = billeteraRepository.findConBloqueoPorId(pago.billeteraId).orElseThrow();
         BigDecimal monto = pago.devuelto();
         billetera.setSaldoDisponible(billetera.getSaldoDisponible().add(monto));
@@ -141,17 +216,13 @@ public class Reintegrador {
 
         Movimiento movimiento = new Movimiento();
         movimiento.setBilletera(billetera);
-        movimiento.setTorneo(torneoRepository.getReferenceById(torneoId));
+        vincularEvento.accept(movimiento);
         movimiento.setTipo(TipoMovimiento.REINTEGRO);
         movimiento.setMonto(monto);
         movimiento.setMoneda(billetera.getMoneda());
         movimiento.setSaldoResultante(billetera.getSaldoDisponible());
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
-        movimiento.setReferenciaExterna("reint-t" + torneoId + "-b" + pago.billeteraId);
-        String descripcion = "Reintegro por la cancelación del torneo " + nombre;
-        if (pago.descuento.signum() > 0) {
-            descripcion += ": se retuvieron " + pesos(pago.descuento) + " de gastos";
-        }
+        movimiento.setReferenciaExterna(referencia);
         movimiento.setDescripcion(descripcion.length() > 255 ? descripcion.substring(0, 255) : descripcion);
         Movimiento guardado = movimientoRepository.save(movimiento);
 
@@ -159,8 +230,15 @@ public class Reintegrador {
         detalle.put("movimientoId", guardado.getId());
         detalle.put("billeteraId", pago.billeteraId);
         detalle.put("monto", monto);
-        detalle.put("retenido", pago.descuento);
-        auditoriaService.registrar(null, AccionAuditoria.REINTEGRO, "TORNEO", torneoId.toString(), detalle);
+        if (retenidoOpcional != null) {
+            detalle.put("retenido", retenidoOpcional);
+        }
+        Long usuarioId = billetera.getUsuario() != null ? billetera.getUsuario().getId() : null;
+        if (usuarioId != null) {
+            detalle.put("usuarioId", usuarioId);
+        }
+        auditoriaService.registrar(null, AccionAuditoria.REINTEGRO, entidadAuditoria, entidadIdAuditoria, detalle);
+        return new DestinatarioReintegro(usuarioId, pago.billeteraId, monto);
     }
 
     /** $150,17, o $1100 sin centavos: como se lee en Mi billetera y en los mails. */

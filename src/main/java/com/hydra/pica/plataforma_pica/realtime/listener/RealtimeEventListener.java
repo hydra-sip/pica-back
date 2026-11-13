@@ -15,6 +15,7 @@ import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.event.NumerosVendidos;
+import com.hydra.pica.plataforma_pica.rifa.event.FondosReclamoLiberados;
 import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaRegistrado;
 import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaResuelto;
 import com.hydra.pica.plataforma_pica.rifa.event.RifaSorteada;
@@ -214,6 +215,14 @@ public class RealtimeEventListener {
         }
         log.info("Todos los reclamos de la rifa {} fueron resueltos. Estado vuelve a SORTEADA", evento.rifaId());
         avisarEstado(evento.rifaId(), evento.torneoId(), EstadoRifa.SORTEADA);
+    }
+
+    /** HU-707: tras liberar los fondos del reclamo, la rifa pasa a su estado definitivo (LIQUIDADA o CANCELADA). */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onFondosReclamoLiberados(FondosReclamoLiberados evento) {
+        log.info("Fondos liberados para el reclamo {} de la rifa {}. Estado final: {}",
+                evento.reclamoId(), evento.rifaId(), evento.rifaEstadoFinal());
+        avisarEstado(evento.rifaId(), evento.torneoId(), evento.rifaEstadoFinal());
     }
 
     /** HU-407: la venta se cerró y la lista quedó sellada; quien mira la rifa la ve pasar a CERRADA. */
