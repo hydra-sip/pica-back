@@ -24,6 +24,11 @@ public class CriptoConfig {
      * @param weiPorPeso            la cotización fija de testnet; múltiplo de 100 para que un monto en centavos
      *                              dé una cantidad entera de wei
      * @param exploradorUrl         donde cualquiera ve la transacción de una carga
+     * @param bloqueDeploy          el bloque donde se desplegó el contrato: la conciliación lee los eventos desde ahí
+     *                              (HU-608)
+     * @param exploradorApiUrl      la API de Etherscan (v2, multi-red) con la que la conciliación trae los eventos
+     *                              del contrato: el nodo público solo los da de a 200 bloques
+     * @param exploradorApiKey      la API key de BaseScan/Etherscan; sin ella no se puede conciliar
      */
     @ConfigurationProperties(prefix = "app.cripto")
     public record CriptoProperties(
@@ -33,7 +38,10 @@ public class CriptoConfig {
             @DefaultValue("3") int confirmacionesMinimas,
             @DefaultValue("5s") Duration timeout,
             @DefaultValue("10000000000") BigInteger weiPorPeso,
-            @DefaultValue("https://sepolia.basescan.org") String exploradorUrl) {
+            @DefaultValue("https://sepolia.basescan.org") String exploradorUrl,
+            @DefaultValue("55324950") long bloqueDeploy,
+            @DefaultValue("https://api.etherscan.io/v2/api") String exploradorApiUrl,
+            @DefaultValue("") String exploradorApiKey) {
 
         private static final BigInteger CIEN = BigInteger.valueOf(100);
 

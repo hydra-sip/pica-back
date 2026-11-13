@@ -692,6 +692,23 @@ paths:
       responses:
         '200': {description: Permisos agrupados, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ModuloPermisos'}}}}}
 
+  /api/v1/admin/conciliacion:
+    get:
+      tags: [Admin]
+      summary: Conciliar las cargas con cripto contra los eventos del contrato
+      x-jira: PICA-343
+      x-permiso: TORNEO_ADMINISTRAR
+      x-owner: Laura
+      description: >-
+        HU-608. Lee todos los `CargaRegistrada` del contrato PasarelaCargas desde el bloque de su deploy
+        (`app.cripto.bloque-deploy`) y los cruza por la referencia con las cargas con cripto. Los eventos se traen por
+        la API de Etherscan v2 (BaseScan) y no por el nodo, que los da de a 200 bloques. Cada registro es CONCILIADA
+        (acreditada y en la cadena por el mismo monto), HUERFANA (acreditada, con su movimiento CARGA, sin evento),
+        NO_ACREDITADA (un pago en la cadena sin carga acreditada: pendiente o de una referencia ajena) o
+        MONTO_DISTINTO. Primero las diferencias. 503 `RED_NO_DISPONIBLE` si la API no responde o falta la API key.
+      responses:
+        '200': {description: La conciliación, content: {application/json: {schema: {$ref: '#/components/schemas/ConciliacionCargas'}}}}
+        '503': {$ref: '#/components/responses/Error'}
   /api/v1/admin/cancelaciones:
     get:
       tags: [Admin]
@@ -5112,6 +5129,40 @@ components:
         moneda: {type: string, examples: [ARS]}
         eventoTerminado: {type: boolean, description: 'Si el evento terminó; hasta entonces nadie mueve los fondos'}
         liberadaEn: {type: [string, 'null'], format: date-time}
+    ConciliacionCargas:
+      type: object
+      required: [revisadaEn, desdeBloque, eventos, cargasAcreditadas, conciliadas, huerfanas, noAcreditadas,
+                 montosDistintos, registros]
+      description: Las cargas con cripto contra la cadena (PICA-343).
+      properties:
+        revisadaEn: {type: string, format: date-time}
+        desdeBloque: {type: integer, format: int64, description: El bloque del deploy del contrato}
+        eventos: {type: integer, description: Cuántos CargaRegistrada emitió el contrato}
+        cargasAcreditadas: {type: integer}
+        conciliadas: {type: integer}
+        huerfanas: {type: integer}
+        noAcreditadas: {type: integer}
+        montosDistintos: {type: integer}
+        registros:
+          type: array
+          items:
+            type: object
+            required: [estado, referencia, cargaId, username, movimientoId, montoPesos, montoWei, montoWeiEnCadena,
+                       hash, hashEnCadena, bloque, pagador]
+            description: Los montos en wei van como texto porque no entran en un número de JavaScript.
+            properties:
+              estado: {type: string, enum: [CONCILIADA, HUERFANA, NO_ACREDITADA, MONTO_DISTINTO]}
+              referencia: {type: string, description: 'El bytes32 que se pagó en el contrato'}
+              cargaId: {type: [integer, 'null'], format: int64, description: Null si la referencia no es de ninguna carga}
+              username: {type: [string, 'null'], description: Quien inició la carga}
+              movimientoId: {type: [integer, 'null'], format: int64, description: El movimiento CARGA de una carga acreditada}
+              montoPesos: {type: [number, 'null']}
+              montoWei: {type: [string, 'null'], description: Lo que la carga tenía que pagar}
+              montoWeiEnCadena: {type: [string, 'null'], description: Lo que registró el contrato; null sin evento}
+              hash: {type: [string, 'null'], description: La transacción con la que se acreditó la carga}
+              hashEnCadena: {type: [string, 'null'], description: La transacción del evento}
+              bloque: {type: [integer, 'null'], format: int64}
+              pagador: {type: [string, 'null']}
     IngresoInscripcion:
       type: object
       required: [movimientoId, comprobante, pagadoEn, inscripcionId, equipoNombre, pagadorNombre, pagadorUsername,
