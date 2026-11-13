@@ -35,6 +35,20 @@ public interface MovimientoRepository extends JpaRepository<Movimiento, Long> {
             """)
     List<Movimiento> pagosDeLaInscripcion(@Param("inscripcionId") Long inscripcionId);
 
+    /**
+     * El libro de ingresos de un torneo (HU-608): los pagos de inscripción que entraron a su custodia y sus gastos
+     * administrativos, con quién pagó y su equipo; el más nuevo primero.
+     */
+    @Query("""
+            SELECT m FROM Movimiento m JOIN FETCH m.billetera b JOIN FETCH b.usuario u JOIN FETCH u.persona
+            LEFT JOIN FETCH m.inscripcion i LEFT JOIN FETCH i.equipo
+            WHERE m.custodia.id = :custodiaId
+              AND m.tipo IN (com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento.INSCRIPCION,
+                             com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento.COMISION)
+            ORDER BY m.id DESC
+            """)
+    List<Movimiento> ingresosDeLaCustodia(@Param("custodiaId") Long custodiaId);
+
     /** Lo acreditado con esas referencias; null si no hay ninguna (todavía no se liquidó). */
     @Query("SELECT sum(m.monto) FROM Movimiento m WHERE m.referenciaExterna IN :referencias")
     BigDecimal sumaDeReferencias(@Param("referencias") List<String> referencias);

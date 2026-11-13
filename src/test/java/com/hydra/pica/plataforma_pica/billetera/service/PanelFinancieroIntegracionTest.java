@@ -6,9 +6,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.dto.CustodiaResumen;
+import com.hydra.pica.plataforma_pica.billetera.dto.IngresoInscripcion;
 import com.hydra.pica.plataforma_pica.billetera.dto.PanelFinanciero;
 import com.hydra.pica.plataforma_pica.billetera.dto.RepartoLiquidacion;
 import com.hydra.pica.plataforma_pica.billetera.service.Acreditacion.Rol;
@@ -90,6 +93,46 @@ class PanelFinancieroIntegracionTest {
     }
 
     @Test
+    @DisplayName("El libro de ingresos tiene cada pago con quién pagó, sus gastos y el total, el más nuevo primero")
+    void libroDeIngresos() {
+        List<IngresoInscripcion> ingresos = panelFinancieroService.ingresos(organizador, torneo);
+
+        assertThat(ingresos).hasSize(4);
+        assertThat(ingresos).extracting(IngresoInscripcion::inscripcionId)
+                .containsExactly(inscripcion[3], inscripcion[2], inscripcion[1], inscripcion[0]);
+        IngresoInscripcion primero = ingresos.get(3);
+        assertThat(primero.pagadorUsername()).isEqualTo("jug_panel_0");
+        assertThat(primero.pagadorNombre()).isEqualTo("jug_panel_0 Test");
+        assertThat(primero.equipoNombre()).isNull();
+        assertThat(primero.monto()).isEqualByComparingTo("1000.00");
+        assertThat(primero.gastosAdministrativos()).isEqualByComparingTo("100.00");
+        assertThat(primero.total()).isEqualByComparingTo("1100.00");
+        assertThat(primero.estado()).isEqualTo(EstadoMovimiento.CONFIRMADO);
+        assertThat(primero.comprobante()).isEqualTo("I" + torneo + "-" + primero.movimientoId());
+        // lo mismo que el panel: la suma de los montos es lo recaudado
+        assertThat(ingresos.stream().map(IngresoInscripcion::monto).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .isEqualByComparingTo(panelFinancieroService.delTorneo(organizador, torneo).recaudado());
+    }
+
+    @Test
+    @DisplayName("El libro de ingresos de otro organizador es 404, y sin pagos es la lista vacía")
+    void libroDeIngresosAjenoOVacio() {
+        Long otro = usuario("otro_libro");
+        assertError(() -> panelFinancieroService.ingresos(otro, torneo),
+                HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
+
+        long vacio = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion,
+                                    pct_gastos_administrativos, cierre_inscripcion_en, fecha_inicio, estado, publicado_en)
+                VALUES (?, 'Sin pagos', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL', 8, 2,
+                        1000, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA', now())
+                RETURNING id
+                """, Long.class, organizador);
+        assertThat(panelFinancieroService.ingresos(organizador, vacio)).isEmpty();
+    }
+
+    @Test
     @DisplayName("En curso: lo recaudado, lo comprometido en premios y el reintegro, y coincide con la custodia")
     void enCurso() {
         PanelFinanciero panel = panelFinancieroService.delTorneo(organizador, torneo);
@@ -134,6 +177,52 @@ class PanelFinancieroIntegracionTest {
         assertThat(panel.reintegroOrganizador()).isEqualByComparingTo(suma(reparto, Rol.ORGANIZADOR));
         assertThat(panel.comprometidoEnPremios()).isEqualByComparingTo(suma(reparto, Rol.PREMIO));
         assertThat(panel.gastosAdministrativos()).isEqualByComparingTo(suma(reparto, Rol.PLATAFORMA));
+        assertThat(panel.pozoAlOrganizador()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    @DisplayName("Liquidado sin nadie en un puesto con premio: no hay premios y el pozo que fue al organizador va aparte "
+            + "de su reintegro, también en el archivo")
+    void sinGanadores() {
+        jdbc.update("UPDATE torneo SET estado = 'FINALIZADO' WHERE id = ?", torneo);
+        entityManager.clear();
+        liquidacionService.liquidarTorneo(torneo);
+        entityManager.clear();
+
+        PanelFinanciero panel = panelFinancieroService.delTorneo(organizador, torneo);
+        LiquidacionFinal liquidacion = panelFinancieroService.liquidacionFinal(organizador, torneo);
+        String csv = new String(ArchivoLiquidacion.csv(liquidacion), StandardCharsets.UTF_8);
+
+        assertThat(panel.reintegroOrganizador()).isEqualByComparingTo("500.00");
+        assertThat(panel.comprometidoEnPremios()).isEqualByComparingTo("0");
+        assertThat(panel.pozoAlOrganizador()).isEqualByComparingTo("3500.00");
+        // la liquidación le acredita las dos cosas en un movimiento; el archivo las separa
+        assertThat(liquidacion.reparto().lineas()).filteredOn(l -> l.rol() == Rol.ORGANIZADOR).hasSize(1);
+        assertThat(csv).contains("Reintegro de gastos al organizador;org_panel Test (@org_panel);")
+                .contains(";500,00\r\n")
+                .contains("Pozo sin ganadores, al organizador;org_panel Test (@org_panel);")
+                .contains(";3500,00\r\n")
+                .contains("Total repartido;;;4400,00")
+                .doesNotContain("Premio del");
+    }
+
+    @Test
+    @DisplayName("Sin gastos ni ganadores, el archivo no muestra un reintegro en cero: todo es pozo sin ganadores")
+    void sinGastosNiGanadores() {
+        jdbc.update("DELETE FROM gasto WHERE torneo_id = ?", torneo);
+        jdbc.update("UPDATE torneo SET estado = 'FINALIZADO' WHERE id = ?", torneo);
+        entityManager.clear();
+        liquidacionService.liquidarTorneo(torneo);
+        entityManager.clear();
+
+        PanelFinanciero panel = panelFinancieroService.delTorneo(organizador, torneo);
+        String csv = new String(ArchivoLiquidacion.csv(panelFinancieroService.liquidacionFinal(organizador, torneo)),
+                StandardCharsets.UTF_8);
+
+        assertThat(panel.reintegroOrganizador()).isEqualByComparingTo("0");
+        assertThat(panel.pozoAlOrganizador()).isEqualByComparingTo("4000.00");
+        assertThat(csv).doesNotContain("Reintegro de gastos")
+                .contains("Pozo sin ganadores, al organizador;org_panel Test (@org_panel);");
     }
 
     @Test

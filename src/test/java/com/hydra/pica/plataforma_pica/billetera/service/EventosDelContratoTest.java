@@ -124,6 +124,16 @@ class EventosDelContratoTest {
         api.verify();
     }
 
+    @Test
+    @DisplayName("Lo que se escribe en el log no lleva la API key, aunque el error traiga la URL")
+    void sinClaveEnElLog() {
+        EventosDelContrato lector = eventos("clave-secreta");
+
+        assertThat(lector.sinClave("I/O error on GET request for \"" + API + "?chainid=84532&apikey=clave-secreta\""))
+                .doesNotContain("clave-secreta")
+                .contains("apikey=***");
+    }
+
     private static void assertRedNoDisponible(EventosDelContrato lector) {
         assertThatThrownBy(lector::cargasRegistradas).isInstanceOfSatisfying(ApiException.class, e -> {
             assertThat(e.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);

@@ -92,7 +92,8 @@ public class EventosDelContrato {
                     .retrieve()
                     .body(JsonNode.class);
         } catch (RestClientException e) {
-            log.warn("La API del explorador no respondió: {}", e.getMessage());
+            // el mensaje trae la URL, y la API key va en ella: no puede quedar en el log
+            log.warn("La API del explorador no respondió: {}", sinClave(e.getMessage()));
             throw noDisponible();
         }
         if (respuesta == null) {
@@ -115,6 +116,11 @@ public class EventosDelContrato {
                 cantidad(fila.path("data").asText()),
                 minuscula(fila.path("transactionHash").asText()),
                 cantidad(fila.path("blockNumber").asText()).longValueExact());
+    }
+
+    String sinClave(String mensaje) {
+        String clave = cripto.exploradorApiKey();
+        return mensaje == null || clave == null || clave.isBlank() ? mensaje : mensaje.replace(clave, "***");
     }
 
     private static ApiException noDisponible() {

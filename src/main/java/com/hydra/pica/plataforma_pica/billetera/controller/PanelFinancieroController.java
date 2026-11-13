@@ -1,7 +1,9 @@
 package com.hydra.pica.plataforma_pica.billetera.controller;
 
+import java.util.List;
 import java.util.Locale;
 
+import com.hydra.pica.plataforma_pica.billetera.dto.IngresoInscripcion;
 import com.hydra.pica.plataforma_pica.billetera.dto.PanelFinanciero;
 import com.hydra.pica.plataforma_pica.billetera.service.ArchivoLiquidacion;
 import com.hydra.pica.plataforma_pica.billetera.service.PanelFinancieroService;
@@ -41,6 +43,12 @@ public class PanelFinancieroController {
     @GetMapping("/panel-financiero")
     public PanelFinanciero panel(@PathVariable Long id) {
         return panelFinancieroService.delTorneo(usuarioActual(), id);
+    }
+
+    /** El libro de ingresos: cada pago de inscripción, el más nuevo primero. */
+    @GetMapping("/ingresos")
+    public List<IngresoInscripcion> ingresos(@PathVariable Long id) {
+        return panelFinancieroService.ingresos(usuarioActual(), id);
     }
 
     @GetMapping(value = "/liquidacion", params = "formato")
