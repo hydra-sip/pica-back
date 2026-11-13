@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.discord;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.ExpectedCount.times;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -123,7 +124,7 @@ class DiscordTorneoIntegracionTest {
     @Test
     void siLaPruebaFallaElWebhookQuedaGuardado() {
         discordTorneoService.guardar(organizador, torneo, WEBHOOK);
-        DISCORD.expect(requestTo(WEBHOOK)).andRespond(withServerError());
+        DISCORD.expect(times(CanalDiscord.INTENTOS), requestTo(WEBHOOK)).andRespond(withServerError());
 
         avisarPrueba();
 
