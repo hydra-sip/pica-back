@@ -20,10 +20,12 @@ import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 /** Solo se retira a una cuenta VALIDADA. */
 @Entity
 @Table(name = "cuenta_bancaria")
+@SQLRestriction("eliminado_en IS NULL")
 @Getter
 @Setter
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)

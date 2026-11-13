@@ -92,7 +92,8 @@ public class LiquidacionRifaService {
         }
         Instant plazo = ReclamoRifaService.plazoReclamo(rifa);
         if (rifa.getEstado() != EstadoRifa.SORTEADA || plazo == null || !ahora.isAfter(plazo)
-                || reclamoRifaRepository.existsByRifaIdAndEstado(rifaId, EstadoReclamo.PENDIENTE)) {
+                || reclamoRifaRepository.existsByRifaIdAndEstado(rifaId, EstadoReclamo.PENDIENTE)
+                || reclamoRifaRepository.existsByRifaIdAndEstado(rifaId, EstadoReclamo.ACEPTADO)) {
             throw new FondosEnCustodiaException(SIN_TERMINAR);
         }
         custodiaRepository.crearDeLaRifa(rifaId);

@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.event.NumerosVendidos;
 import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaRegistrado;
+import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaResuelto;
 import com.hydra.pica.plataforma_pica.rifa.event.RifaSorteada;
 import com.hydra.pica.plataforma_pica.rifa.event.VentaRifaCerrada;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
@@ -203,6 +204,16 @@ public class RealtimeEventListener {
                 aporteTorneo
         );
         realtimeNotifier.publicarRifa(evento.rifaId(), mensajeRifa);
+    }
+
+    /** HU-706: si con esta resolución no quedan reclamos pendientes, la rifa vuelve a SORTEADA. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onReclamoRifaResuelto(ReclamoRifaResuelto evento) {
+        if (!evento.rifaSalioDeRevision()) {
+            return;
+        }
+        log.info("Todos los reclamos de la rifa {} fueron resueltos. Estado vuelve a SORTEADA", evento.rifaId());
+        avisarEstado(evento.rifaId(), evento.torneoId(), EstadoRifa.SORTEADA);
     }
 
     /** HU-407: la venta se cerró y la lista quedó sellada; quien mira la rifa la ve pasar a CERRADA. */
