@@ -17,6 +17,7 @@ import com.hydra.pica.plataforma_pica.billetera.service.RetiroService;
 import com.hydra.pica.plataforma_pica.common.config.CriptoConfig.CriptoProperties;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -79,7 +80,9 @@ public class BilleteraController {
     }
 
     @PostMapping("/cargas/cripto/{referencia}/confirmar")
-    public MovimientoBilleteraResponse confirmarCargaCripto(@PathVariable String referencia,
+    public MovimientoBilleteraResponse confirmarCargaCripto(@PathVariable @Pattern(regexp = "^0x[0-9a-fA-F]{64}$",
+                                                                    message = "La referencia tiene que ser 0x y 64 caracteres hexadecimales")
+                                                            String referencia,
                                                             @Valid @RequestBody ConfirmarCargaCriptoRequest request) {
         Movimiento movimiento = cargaCriptoService.confirmar(usuarioActual(), referencia, request.hash());
         return MovimientoBilleteraResponse.de(movimiento, null, cripto.exploradorUrl());

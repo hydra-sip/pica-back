@@ -16,6 +16,9 @@ import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena.CargaRegistrada;
 import com.hydra.pica.plataforma_pica.billetera.service.LectorDeCadena.Transaccion;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
@@ -35,6 +38,7 @@ import org.springframework.web.client.RestClient;
 class LectorDeCadenaTest {
 
     private static final String RPC = "https://rpc.example";
+    private static final ObjectMapper JSON = new ObjectMapper();
     static final String HASH_CARGA = "0x2f27d3c26ea9b5b2dd0a441a17a70ea3dc2830757e2f2cf564f0cf6d9479e9eb";
     static final String REFERENCIA = "0x6d6f26c23203ae638686312ea1c8b3d6c83c0e4c13c347dff06c98548aefa16c";
     static final String PAGADOR = "0x262dfbfa37436e5b99a53377e633509d1a9b301a";
@@ -64,6 +68,28 @@ class LectorDeCadenaTest {
                 List.of(new CargaRegistrada(CONTRATO, REFERENCIA, PAGADOR,
                         new BigInteger("100000000000000")))));
         nodo.verify();
+    }
+
+    @Test
+    void unLogConLaFirmaDeCargaRegistradaPeroSinSuFormaSeIgnoraYSeLeeElVerdadero() throws IOException {
+        // otro contrato de la misma transacción emite logs con el mismo topic0: sin datos y con un topic corto
+        ObjectNode recibo = (ObjectNode) JSON.readTree(fixture("recibo-carga.json"));
+        ArrayNode logs = (ArrayNode) recibo.path("result").path("logs");
+        ObjectNode verdadero = (ObjectNode) logs.get(0);
+        ObjectNode sinDatos = verdadero.deepCopy();
+        sinDatos.put("address", "0x000000000000000000000000000000000000dead");
+        sinDatos.put("data", "0x");
+        ObjectNode topicCorto = verdadero.deepCopy();
+        topicCorto.put("address", "0x000000000000000000000000000000000000beef");
+        ((ArrayNode) topicCorto.path("topics")).set(2, JSON.getNodeFactory().textNode("0x1234"));
+        logs.insert(0, sinDatos);
+        logs.insert(1, topicCorto);
+        nodo.expect(requestTo(RPC))
+                .andExpect(jsonPath("$.method").value("eth_getTransactionReceipt"))
+                .andRespond(withSuccess(JSON.writeValueAsString(recibo), MediaType.APPLICATION_JSON));
+
+        assertThat(lector.transaccion(HASH_CARGA)).isEqualTo(new Transaccion.Minada(true, 57254703,
+                List.of(new CargaRegistrada(CONTRATO, REFERENCIA, PAGADOR, new BigInteger("100000000000000")))));
     }
 
     @Test

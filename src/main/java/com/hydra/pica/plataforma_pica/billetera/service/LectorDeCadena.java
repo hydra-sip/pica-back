@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.hydra.pica.plataforma_pica.common.config.CriptoConfig.CriptoProperties;
@@ -31,6 +33,9 @@ public class LectorDeCadena {
 
     /** keccak256("CargaRegistrada(bytes32,address,uint256)"), el topic0 del evento de PasarelaCargas. */
     static final String TOPIC_CARGA_REGISTRADA = "0x3197a34ed765fdfa490419a8d5ed536a04869055bd7773ec777f2b99834e2534";
+
+    /** Una palabra de la EVM en hex: 0x y 32 bytes. Así vienen los topics y el uint256 del evento. */
+    private static final Pattern PALABRA = Pattern.compile("^0x[0-9a-fA-F]{64}$");
 
     private static final Logger log = LoggerFactory.getLogger(LectorDeCadena.class);
 
@@ -83,17 +88,36 @@ public class LectorDeCadena {
         }
         List<CargaRegistrada> cargas = new ArrayList<>();
         for (JsonNode evento : recibo.path("logs")) {
-            JsonNode topics = evento.path("topics");
-            if (topics.size() == 3 && TOPIC_CARGA_REGISTRADA.equalsIgnoreCase(topics.get(0).asText())) {
-                cargas.add(new CargaRegistrada(
-                        minuscula(evento.path("address").asText()),
-                        minuscula(topics.get(1).asText()),
-                        "0x" + minuscula(topics.get(2).asText()).substring(26),
-                        cantidad(evento.path("data").asText())));
-            }
+            cargaRegistrada(evento).ifPresent(cargas::add);
         }
         return new Transaccion.Minada("0x1".equals(recibo.path("status").asText()),
                 cantidad(recibo.path("blockNumber").asText()).longValueExact(), List.copyOf(cargas));
+    }
+
+    /**
+     * Un log con la firma de {@code CargaRegistrada}. Cualquier contrato puede emitir un log con ese topic0 (una smart
+     * wallet que agrupa llamadas lo mete en la misma transacción), así que uno que no tenga la forma del evento de la
+     * pasarela (dos topics y un uint256 de datos, todos de 32 bytes) se ignora: no puede impedir leer el verdadero.
+     */
+    private static Optional<CargaRegistrada> cargaRegistrada(JsonNode evento) {
+        JsonNode topics = evento.path("topics");
+        if (topics.size() != 3 || !TOPIC_CARGA_REGISTRADA.equalsIgnoreCase(topics.get(0).asText())) {
+            return Optional.empty();
+        }
+        String referencia = topics.get(1).asText();
+        String pagador = topics.get(2).asText();
+        String monto = evento.path("data").asText();
+        if (!PALABRA.matcher(referencia).matches() || !PALABRA.matcher(pagador).matches()
+                || !PALABRA.matcher(monto).matches()) {
+            log.warn("Se ignora un log con la firma de CargaRegistrada que no tiene su forma, de {}",
+                    evento.path("address").asText());
+            return Optional.empty();
+        }
+        return Optional.of(new CargaRegistrada(
+                minuscula(evento.path("address").asText()),
+                minuscula(referencia),
+                "0x" + minuscula(pagador).substring(26),
+                cantidad(monto)));
     }
 
     public long bloqueActual() {

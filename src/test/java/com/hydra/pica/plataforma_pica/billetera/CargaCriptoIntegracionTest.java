@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.matchesPattern;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -316,6 +317,39 @@ class CargaCriptoIntegracionTest {
                 .andExpect(jsonPath("$.codigo").value("TRANSACCION_INEXISTENTE"));
         assertThat(rechazos(usuario)).hasSize(1);
         sinSaldo(usuario);
+    }
+
+    @Test
+    void reintentarUnHashQueElNodoTodaviaNoVeDejaUnSoloRechazoYDespuesAcredita() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        String referencia = referencia(iniciar(usuario, "10000"));
+        String hash = hashAlAzar();
+        // el nodo del back va atrás del que leyó el recibo: el front reintenta cada 3 s
+        cadenaVe(hash, new Transaccion.Inexistente(), BLOQUE);
+        for (int intento = 0; intento < 3; intento++) {
+            confirmar(usuario, referencia, hash)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.codigo").value("TRANSACCION_INEXISTENTE"));
+        }
+        assertThat(rechazos(usuario)).hasSize(1);
+
+        cadenaVe(hash, pagoDe(referencia, "100000000000000"), BLOQUE + 10);
+        confirmar(usuario, referencia, hash).andExpect(status().isOk());
+        assertThat(rechazos(usuario)).hasSize(1);
+    }
+
+    @Test
+    void unaReferenciaQueNoTieneElFormatoDeLaDelContratoEsInvalida() throws Exception {
+        Usuario usuario = crearUsuario("cripto");
+        iniciar(usuario, "10000");
+
+        for (String referencia : List.of("0x123", "0x" + "g".repeat(64), "6d6f26c23203ae638686312ea1c8b3d6c83c0e4c")) {
+            confirmar(usuario, referencia, hashAlAzar())
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.codigo").value("VALIDACION"))
+                    .andExpect(jsonPath("$.errores[0].codigo").value("FORMATO_INVALIDO"));
+        }
+        verifyNoInteractions(cadena);
     }
 
     @Test

@@ -54,6 +54,9 @@ services:
       APP_AUTH_ACCESS_TTL: ${APP_AUTH_ACCESS_TTL:-15m}
       APP_AUTH_REFRESH_TTL: ${APP_AUTH_REFRESH_TTL:-24h}
       APP_AUTH_SESION_MAXIMA: ${APP_AUTH_SESION_MAXIMA:-7d}
+      # Carga con cripto (HU-609): opcionales, sin ellas valen los defaults (el deploy de pica-contracts)
+      PASARELA_CARGAS_ADDRESS: ${PASARELA_CARGAS_ADDRESS:-0x36e633eDD1E79Ef2b9A3c6A099D873D52e44EDF0}
+      APP_CRIPTO_RPC_URL: ${APP_CRIPTO_RPC_URL:-https://sepolia.base.org}
     <<: *logs
 
   web:

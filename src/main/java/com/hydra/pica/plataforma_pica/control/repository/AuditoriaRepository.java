@@ -20,6 +20,17 @@ public interface AuditoriaRepository extends JpaRepository<Auditoria, Long> {
             order by a.creadoEn""")
     List<Instant> loginsFallidosDesde(@Param("identificador") String identificador, @Param("desde") Instant desde);
 
+    /** Si ya quedó en la auditoría ese rechazo de una carga con cripto: el mismo hash por el mismo motivo. */
+    @Query("""
+            select count(a) > 0 from Auditoria a
+            where a.accion = com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria.PAGO
+              and a.entidad = 'CARGA_CRIPTO' and a.entidadId = :cargaId
+              and function('jsonb_extract_path_text', a.detalle, 'estado') = 'RECHAZADA'
+              and function('jsonb_extract_path_text', a.detalle, 'hash') = :hash
+              and function('jsonb_extract_path_text', a.detalle, 'motivo') = :motivo""")
+    boolean existeRechazoDeCargaCripto(@Param("cargaId") String cargaId, @Param("hash") String hash,
+                                       @Param("motivo") String motivo);
+
     /** Null si nunca inició sesión. */
     @Query("""
             select max(a.creadoEn) from Auditoria a

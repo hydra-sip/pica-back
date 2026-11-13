@@ -1491,13 +1491,18 @@ paths:
         queda con el hash como `referenciaExterna`, la descripción «Carga con cripto» y `enlaceExplorador`. Para
         acreditarse, la transacción tiene que ser exitosa y tener un evento `CargaRegistrada` emitido por el
         contrato con esta referencia y exactamente `montoWei`. No importa el `to` de la transacción (una smart
-        wallet paga a través de otra dirección), ni la wallet que pagó. 404 `CARGA_NO_ENCONTRADA` si la
-        referencia no existe o es de otro usuario. 400 `VALIDACION` si el hash no es 0x y 64 caracteres hex.
-        Si la transacción no paga la carga, 400 y el rechazo queda en auditoría; la carga sigue pendiente y se
+        wallet paga a través de otra dirección), ni la wallet que pagó. Un log de otro contrato con la misma
+        firma, o uno con esa firma que no tiene la forma del evento, no cuenta y no impide leer el de la pasarela.
+        404 `CARGA_NO_ENCONTRADA` si la referencia no existe o es de otro usuario. 400 `VALIDACION`
+        (`FORMATO_INVALIDO`) si la referencia o el hash no son 0x y 64 caracteres hex.
+        Si la transacción no paga la carga, 400 y el rechazo queda en auditoría, una sola vez por carga, hash y
+        motivo aunque se reintente; la carga sigue pendiente y se
         puede confirmar con la transacción correcta: `TRANSACCION_FALLIDA` (revirtió; no se cobró nada) ·
         `TRANSACCION_SIN_CARGA` (no tiene un `CargaRegistrada` del contrato con esta referencia) ·
         `MONTO_NO_COINCIDE` (pagó otro monto que `montoWei`; si hace falta, se devuelve a mano desde el contrato) ·
-        `TRANSACCION_INEXISTENTE` (la red no conoce el hash; reintentar no sirve) · `TRANSACCION_YA_USADA` (la
+        `TRANSACCION_INEXISTENTE` (el nodo del back no conoce el hash: recién minada, puede ser que vaya atrás del
+        nodo que leyó el recibo, y el front reintenta como con `TRANSACCION_PENDIENTE` hasta su espera máxima;
+        si sigue, el hash está mal) · `TRANSACCION_YA_USADA` (la
         transacción ya acreditó otra carga: una transacción acredita una sola, aunque pague varias). 409 `TRANSACCION_PENDIENTE` si
         la transacción todavía no entró en un bloque o no tiene las confirmaciones mínimas (3 bloques, unos 6 s):
         reintentar en unos segundos. 503 `RED_NO_DISPONIBLE` si el nodo de Base Sepolia no respondió: reintentar

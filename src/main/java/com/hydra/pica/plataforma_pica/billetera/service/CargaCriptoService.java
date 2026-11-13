@@ -19,6 +19,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,7 @@ public class CargaCriptoService {
     private final CargaService cargaService;
     private final TransactionTemplate enTransaccion;
     private final AuditoriaService auditoriaService;
+    private final AuditoriaRepository auditoriaRepository;
 
     @Transactional
     public CargaCripto iniciar(Long usuarioId, BigDecimal monto) {
@@ -135,17 +137,21 @@ public class CargaCriptoService {
 
     /**
      * Un 400 que deja rastro en la auditoría, en su propia transacción. La carga sigue pendiente: todavía la puede
-     * pagar otra transacción.
+     * pagar otra transacción. El mismo rechazo (carga, hash y motivo) queda una sola vez: el front reintenta cada 3 s
+     * un hash que el nodo todavía no ve (va atrás del que leyó el recibo), y cada intento no es un rechazo nuevo.
      */
     private ApiException rechazo(CargaCripto carga, String hash, CodigoError codigo, String motivo) {
-        Map<String, Object> detalle = new LinkedHashMap<>();
-        detalle.put("monto", carga.getMontoPesos());
-        detalle.put("referencia", carga.getReferencia());
-        detalle.put("hash", hash);
-        detalle.put("motivo", motivo);
-        detalle.put("estado", "RECHAZADA");
-        auditoriaService.registrarEnTransaccionNueva(carga.getUsuario().getId(), AccionAuditoria.PAGO,
-                "CARGA_CRIPTO", carga.getId().toString(), detalle);
+        String cargaId = carga.getId().toString();
+        if (!auditoriaRepository.existeRechazoDeCargaCripto(cargaId, hash, motivo)) {
+            Map<String, Object> detalle = new LinkedHashMap<>();
+            detalle.put("monto", carga.getMontoPesos());
+            detalle.put("referencia", carga.getReferencia());
+            detalle.put("hash", hash);
+            detalle.put("motivo", motivo);
+            detalle.put("estado", "RECHAZADA");
+            auditoriaService.registrarEnTransaccionNueva(carga.getUsuario().getId(), AccionAuditoria.PAGO,
+                    "CARGA_CRIPTO", cargaId, detalle);
+        }
         return new ApiException(HttpStatus.BAD_REQUEST, codigo, motivo);
     }
 
