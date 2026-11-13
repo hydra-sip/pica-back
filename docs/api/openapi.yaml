@@ -3197,8 +3197,42 @@ paths:
         puesto, lo suyo (los gastos del torneo), los gastos administrativos de la plataforma y lo que le aportó su
         rifa. Sin liquidar, `liquidado` en false y sin líneas. 404 `TORNEO_NO_ENCONTRADO` si no existe o es de otro
         organizador.
+
+        Con `formato` (HU-608, PICA-342) es la liquidación final para descargar, y también la puede bajar quien tiene
+        `TORNEO_ADMINISTRAR`: el mismo detalle, una fila por concepto (premio de cada puesto, reintegro de gastos al
+        organizador, gastos administrativos de la plataforma, honorarios y lo que aportó la rifa) con el beneficiario,
+        cuándo se acreditó y el monto, y el total repartido. El CSV va con `;`, coma decimal y BOM UTF-8. Sin liquidar,
+        409 `FONDOS_EN_CUSTODIA`: el reporte final solo se emite después de la liquidación. 400 `VALIDACION` si el
+        formato no es csv ni pdf.
+      parameters:
+        - {name: formato, in: query, required: false, description: 'Sin él, el reparto en JSON', schema: {type: string, enum: [csv, pdf]}}
       responses:
-        '200': {description: El reparto, content: {application/json: {schema: {$ref: '#/components/schemas/RepartoLiquidacion'}}}}
+        '200':
+          description: El reparto en JSON o, con `formato`, el archivo (`Content-Disposition` attachment, `liquidacion-torneo-{id}.csv|pdf`)
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/RepartoLiquidacion'}}
+            text/csv: {schema: {type: string}}
+            application/pdf: {schema: {type: string, format: binary}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/panel-financiero:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Panel financiero de mi torneo
+      x-jira: PICA-342
+      x-owner: Laura
+      description: >-
+        HU-608. El organizador del torneo o quien tiene `TORNEO_ADMINISTRAR`: cómo viene la plata, en vivo, con la
+        cuenta de la liquidación sobre lo que hay en custodia. De lo recaudado se le reintegran al organizador sus
+        gastos (los comunes y los honorarios que depositó), hasta lo recaudado; el resto, más lo que aporta la rifa por
+        lo vendido, es lo comprometido en premios. Liquidado, los números ya no cambian. 404 `TORNEO_NO_ENCONTRADO` si
+        no existe o no lo puede ver.
+      responses:
+        '200': {description: El panel, content: {application/json: {schema: {$ref: '#/components/schemas/PanelFinanciero'}}}}
         '401': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
 
@@ -3386,12 +3420,12 @@ components:
     Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO) y RECLAMO_RESOLVER de V45 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO) y TORNEO_ADMINISTRAR de V49 (PICA-342). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
              RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR,
-             CANCELACION_REVISAR, RECLAMO_RESOLVER]
+             CANCELACION_REVISAR, RECLAMO_RESOLVER, TORNEO_ADMINISTRAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -4956,6 +4990,27 @@ components:
         moneda: {type: string, examples: [ARS]}
         eventoTerminado: {type: boolean, description: 'Si el evento terminó; hasta entonces nadie mueve los fondos'}
         liberadaEn: {type: [string, 'null'], format: date-time}
+    PanelFinanciero:
+      type: object
+      required: [torneoId, torneoNombre, estado, liquidado, liquidadoEn, moneda, recaudado, gastosAdministrativos,
+                 aporteRifa, gastos, reintegroOrganizador, comprometidoEnPremios, pagos]
+      description: >-
+        El panel financiero de un torneo (PICA-342). `comprometidoEnPremios` = `recaudado` - `reintegroOrganizador` +
+        `aporteRifa`, y `reintegroOrganizador` = el menor entre `gastos` y `recaudado`: la cuenta de la liquidación.
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneoNombre: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoTorneo'}
+        liquidado: {type: boolean, description: 'Si ya se liquidó: recién entonces se descarga la liquidación final'}
+        liquidadoEn: {type: [string, 'null'], format: date-time}
+        moneda: {type: string, examples: [ARS]}
+        recaudado: {type: number, description: Lo que pagaron los inscriptos y está en custodia, sin gastos administrativos}
+        gastosAdministrativos: {type: number, description: Lo que pagaron aparte los inscriptos; va a la plataforma}
+        aporteRifa: {type: number, description: Lo que su rifa destina al pozo por lo vendido hasta ahora; 0 sin rifa}
+        gastos: {type: number, description: Los gastos que se reintegran al organizador; los comunes y los honorarios depositados}
+        reintegroOrganizador: {type: number, description: Lo que cobra el organizador al liquidar; sus gastos, hasta lo recaudado}
+        comprometidoEnPremios: {type: number}
+        pagos: {type: integer, description: Cuántas inscripciones pagaron}
     RepartoLiquidacion:
       type: object
       required: [liquidado, total, moneda, lineas]
