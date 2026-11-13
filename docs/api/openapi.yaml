@@ -2180,6 +2180,50 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/discord:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      tags: [Torneos]
+      summary: Guardar el webhook de Discord del torneo
+      x-jira: PICA-370
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        PICA-369. El webhook del canal de Discord al que van los avisos del torneo: la llave, los resultados, los pases
+        directos, el campeón y la apertura de cada ventana de check-in. Lo copia el organizador desde Discord (Editar
+        canal → Integraciones → Webhooks → Copiar URL). Reemplaza al que había. Cada vez que se guarda, aunque sea el
+        mismo, va un mensaje de prueba al canal; si Discord falla, el webhook queda guardado igual y la respuesta no
+        cambia. La URL es un secreto: la respuesta (y `GET /torneos/{id}`) la trae enmascarada en `discordWebhook`, y la
+        ficha pública no la trae. Solo el organizador (si no, 404 `TORNEO_NO_ENCONTRADO`), desde BORRADOR hasta
+        EN_CURSO (si no, 409 `TORNEO_NO_EDITABLE`). 400 `VALIDACION`: `REQUERIDO` o `FORMATO_INVALIDO` en `url` si
+        falta o no es `https://discord.com/api/webhooks/{id}/{token}` (el dominio viejo, discordapp.com, no se acepta).
+        Queda en la auditoría sin la URL (MODIFICACION, entidad TORNEO).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DiscordTorneoRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Torneos]
+      summary: Quitar el webhook de Discord del torneo
+      x-jira: PICA-370
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        PICA-369. Deja de publicar en el canal; sin webhook no hace nada. Mismas reglas que el PUT: solo el
+        organizador (404) y desde BORRADOR hasta EN_CURSO (409). Queda en la auditoría.
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/torneos/{id}/objeciones:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -4048,6 +4092,10 @@ components:
         checkinMinAntes: {type: [integer, 'null'], description: 'Ventana de check-in: cuántos minutos antes del cruce abre (HU-308); null sin configurar'}
         checkinDuracion: {type: [integer, 'null'], description: Cuántos minutos dura la ventana de check-in}
         checkinSinPresentes: {$ref: '#/components/schemas/CriterioSinPresentes'}
+        discordWebhook:
+          type: [string, 'null']
+          description: 'El webhook de Discord del torneo (PICA-370), enmascarado: solo los últimos 4 caracteres del token. Null sin webhook'
+          examples: ['https://discord.com/api/webhooks/…/••••ghij']
         economia: {$ref: '#/components/schemas/EconomiaTorneo'}
         slug: {type: [string, 'null'], description: 'El enlace público (`GET /torneos/slug/{slug}`); se genera al publicar', examples: [apertura-f5-2026]}
         esquemaHash:
@@ -4301,6 +4349,15 @@ components:
         minAntes: {type: integer, minimum: 1, description: Cuántos minutos antes del cruce abre la ventana}
         duracion: {type: integer, minimum: 1, description: 'Cuántos minutos dura; no más que `minAntes` ni que el máximo de la plataforma'}
         sinPresentes: {$ref: '#/components/schemas/CriterioSinPresentes'}
+    DiscordTorneoRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          pattern: '^https://discord\.com/api/webhooks/\d+/[\w-]+$'
+          description: El webhook del canal de Discord, como lo copia el organizador
+          examples: ['https://discord.com/api/webhooks/1234567890/aBc-DeF_ghij']
     CriterioSinPresentes:
       type: string
       enum: [REPROGRAMAR, DESCALIFICAR_AMBOS]
