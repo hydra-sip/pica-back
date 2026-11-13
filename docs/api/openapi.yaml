@@ -899,6 +899,34 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/admin/reclamos/{id}/liberar:
+    post:
+      tags: [Admin, Rifas]
+      summary: Liberar los fondos congelados de un reclamo resuelto
+      x-jira: PICA-341
+      x-permiso: RECLAMO_RESOLVER
+      x-owner: Salvador
+      description: >-
+        HU-707 (PICA-22, T707-1). Ejecuta la liberación de fondos congelados según la resolución definitiva del
+        reclamo. Con `RECHAZADO` (`SIN_FRAUDE`), dispara la liquidación normal de la rifa (T606-2). Con `ACEPTADO`
+        (`FRAUDE_CONFIRMADO`), cancela la rifa, marca los números vendidos como `REINTEGRADO` y acredita el 100 % pagado
+        (números + comisión) como `REINTEGRO` en las billeteras de los compradores, liberando la custodia como
+        `REINTEGRADA`. Registra la ejecución en auditoría con la rifa, el monto, el destino y el usuario de soporte.
+        401 `NO_AUTENTICADO` si no hay sesión.
+        403 `SIN_PERMISO` sin `RECLAMO_RESOLVER`.
+        404 `RECLAMO_NO_ENCONTRADO` si no existe.
+        409 `RECLAMO_NO_RESUELTO` si sigue `PENDIENTE`.
+        409 `FONDOS_EN_CUSTODIA` si quedan otros reclamos pendientes o no venció el plazo de 48 h para liquidar.
+        409 `CUSTODIA_LIBERADA` si los fondos del reclamo o la custodia de la rifa ya fueron liberados.
+      parameters:
+        - {name: id, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+      responses:
+        '200': {description: Fondos liberados, content: {application/json: {schema: {$ref: '#/components/schemas/ReclamoAdminDetalle'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   # --- Rifas -------------------------------------------------------------------
   # Todas exigen RIFA_GESTIONAR (ORGANIZADOR, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO. La rifa de otro
   # organizador da 404 RIFA_NO_ENCONTRADA, como si no existiera.
@@ -3541,7 +3569,7 @@ components:
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, SORTEO_ANTICIPADO, RECLAMO_DUPLICADO,
-             RECLAMO_YA_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA,
+             RECLAMO_YA_RESUELTO, RECLAMO_NO_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR, BILLETERA_BLOQUEADA]
 
@@ -5363,6 +5391,9 @@ components:
         creadoEn: {type: string, format: date-time}
         rifa: {$ref: '#/components/schemas/RifaReclamoResumen'}
         reclamante: {$ref: '#/components/schemas/ReclamanteResumen'}
+        fondosLiberadosEn: {type: [string, 'null'], format: date-time}
+        fondosLiberadosPor: {type: [string, 'null']}
+        fondosLiberadosMonto: {type: [number, 'null'], format: double}
 
     # --- Billetera (HU-602) ----------------------------------------------------
     Billetera:

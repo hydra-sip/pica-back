@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +29,7 @@ import com.hydra.pica.plataforma_pica.rifa.dto.ReclamoAdminDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.ReclamoAdminDetalle.ReclamanteResumen;
 import com.hydra.pica.plataforma_pica.rifa.dto.ReclamoAdminDetalle.RifaReclamoResumen;
 import com.hydra.pica.plataforma_pica.rifa.dto.ResolverReclamoRequest;
+import com.hydra.pica.plataforma_pica.rifa.service.LiberacionReclamoService;
 import com.hydra.pica.plataforma_pica.rifa.service.ReclamoAdminService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,6 +58,9 @@ class AdminReclamoControllerTest {
     private ReclamoAdminService reclamoAdminService;
 
     @MockitoBean
+    private LiberacionReclamoService liberacionReclamoService;
+
+    @MockitoBean
     private CurrentUserProvider currentUserProvider;
 
     @Test
@@ -67,8 +72,10 @@ class AdminReclamoControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"decision\":\"SIN_FRAUDE\",\"resolucion\":\"Todo ok\"}"))
                 .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/admin/reclamos/1/liberar"))
+                .andExpect(status().isUnauthorized());
 
-        verifyNoInteractions(reclamoAdminService);
+        verifyNoInteractions(reclamoAdminService, liberacionReclamoService);
     }
 
     @Test
@@ -89,7 +96,11 @@ class AdminReclamoControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
 
-        verifyNoInteractions(reclamoAdminService);
+        mockMvc.perform(post("/api/v1/admin/reclamos/1/liberar"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
+
+        verifyNoInteractions(reclamoAdminService, liberacionReclamoService);
     }
 
     @Test
@@ -196,6 +207,62 @@ class AdminReclamoControllerTest {
                 .andExpect(jsonPath("$.codigo").value("RECLAMO_YA_RESUELTO"));
     }
 
+    @Test
+    @WithMockUser(authorities = "RECLAMO_RESOLVER")
+    @DisplayName("POST /api/v1/admin/reclamos/{id}/liberar exitoso responde 200 con datos de liberación")
+    void liberarFondosExitoso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(SOPORTE_ID));
+        ReclamoAdminDetalle liberado = new ReclamoAdminDetalle(
+                1L,
+                "Inconsistencia en el resultado",
+                EstadoReclamo.RECHAZADO,
+                "Semilla validada",
+                Instant.parse("2026-11-11T15:00:00Z"),
+                "soporte",
+                Instant.parse("2026-11-10T15:00:00Z"),
+                new RifaReclamoResumen(10L, "Rifa Apertura", EstadoRifa.LIQUIDADA, "Copa UNLu",
+                        Instant.parse("2026-11-10T12:00:00Z"), Instant.parse("2026-11-10T12:00:05Z")),
+                new ReclamanteResumen(42L, "jperez", "juan@example.com"),
+                Instant.parse("2026-11-12T18:00:00Z"),
+                "soporte",
+                new BigDecimal("1100.00"));
+        when(liberacionReclamoService.liberarFondos(SOPORTE_ID, 1L)).thenReturn(liberado);
+
+        mockMvc.perform(post("/api/v1/admin/reclamos/1/liberar"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rifa.estado").value("LIQUIDADA"))
+                .andExpect(jsonPath("$.fondosLiberadosPor").value("soporte"))
+                .andExpect(jsonPath("$.fondosLiberadosMonto").value(1100.00))
+                .andExpect(jsonPath("$.fondosLiberadosEn").value("2026-11-12T18:00:00Z"));
+
+        verify(liberacionReclamoService).liberarFondos(SOPORTE_ID, 1L);
+    }
+
+    @Test
+    @WithMockUser(authorities = "RECLAMO_RESOLVER")
+    @DisplayName("POST /api/v1/admin/reclamos/{id}/liberar mapea 404 y conflictos 409")
+    void liberarFondosErroresDeNegocio() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(SOPORTE_ID));
+        when(liberacionReclamoService.liberarFondos(SOPORTE_ID, 999L))
+                .thenThrow(new NoEncontradoException(CodigoError.RECLAMO_NO_ENCONTRADO, "No existe"));
+        when(liberacionReclamoService.liberarFondos(SOPORTE_ID, 2L))
+                .thenThrow(new ConflictoException(CodigoError.RECLAMO_NO_RESUELTO, "Pendiente"));
+        when(liberacionReclamoService.liberarFondos(SOPORTE_ID, 3L))
+                .thenThrow(new ConflictoException(CodigoError.CUSTODIA_LIBERADA, "Ya liberado"));
+
+        mockMvc.perform(post("/api/v1/admin/reclamos/999/liberar"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("RECLAMO_NO_ENCONTRADO"));
+
+        mockMvc.perform(post("/api/v1/admin/reclamos/2/liberar"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("RECLAMO_NO_RESUELTO"));
+
+        mockMvc.perform(post("/api/v1/admin/reclamos/3/liberar"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("CUSTODIA_LIBERADA"));
+    }
+
     private static ReclamoAdminDetalle detalle(Long id, EstadoReclamo estado, EstadoRifa estadoRifa,
                                                String resolucion, Instant resueltoEn, String resueltoPor) {
         return new ReclamoAdminDetalle(
@@ -208,7 +275,10 @@ class AdminReclamoControllerTest {
                 Instant.parse("2026-11-10T15:00:00Z"),
                 new RifaReclamoResumen(10L, "Rifa Apertura", estadoRifa, "Copa UNLu",
                         Instant.parse("2026-11-10T12:00:00Z"), Instant.parse("2026-11-10T12:00:05Z")),
-                new ReclamanteResumen(42L, "jperez", "juan@example.com"));
+                new ReclamanteResumen(42L, "jperez", "juan@example.com"),
+                null,
+                null,
+                null);
     }
 }
 

@@ -396,6 +396,9 @@ pedir 403:SIN_PERMISO GET /api/v1/admin/reclamos "/api/v1/admin/reclamos" "$USUA
 pedir 200 GET /api/v1/admin/reclamos "/api/v1/admin/reclamos?page=0&size=20" "$ADMIN"
 pedir 404:RECLAMO_NO_ENCONTRADO GET /api/v1/admin/reclamos/{id} "/api/v1/admin/reclamos/0" "$ADMIN"
 pedir 404:RECLAMO_NO_ENCONTRADO POST /api/v1/admin/reclamos/{id}/resolucion "/api/v1/admin/reclamos/0/resolucion" "$ADMIN" '{"decision":"SIN_FRAUDE","resolucion":"Prueba de humo"}'
+# liberación de fondos congelados de un reclamo (HU-707, PICA-341)
+pedir 403:SIN_PERMISO POST /api/v1/admin/reclamos/{id}/liberar "/api/v1/admin/reclamos/0/liberar" "$USUARIO"
+pedir 404:RECLAMO_NO_ENCONTRADO POST /api/v1/admin/reclamos/{id}/liberar "/api/v1/admin/reclamos/0/liberar" "$ADMIN"
 pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
 
 
