@@ -830,6 +830,52 @@ paths:
       responses:
         '200': {description: Los parámetros después del cambio, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ParametroDetalle'}}}}}
         '400': {$ref: '#/components/responses/Error'}
+  /api/v1/admin/auditoria:
+    get:
+      tags: [Admin]
+      summary: Consultar el libro de auditoría
+      x-jira: PICA-345
+      x-owner: Laura
+      x-permiso: AUDITORIA_VER
+      description: >-
+        HU-704. Los filtros son opcionales y se combinan; sin ninguno, todo. Del más nuevo al más viejo; el orden no se
+        elige. `entidad` sin `entidadId` trae todos los registros de ese tipo; con `entidadId`, los de esa entidad. Con
+        `entidad=TORNEO` trae además lo suyo: los registros de sus partidos, de su rifa y de la custodia del torneo o de
+        su rifa (ahí quedan los pagos de las inscripciones); el resto es la coincidencia exacta. `desde` incluye ese
+        instante y `hasta` no: para un día, `desde` a las 00:00 y `hasta` a las 00:00 del día siguiente. Una entidad,
+        usuario o acción sin registros responde la página vacía. 400 `VALIDACION` si `accion` no es una de la lista,
+        una fecha no es ISO-8601 o `entidad`/`entidadId` pasan los 50 caracteres.
+      parameters:
+        - {name: entidad, in: query, schema: {type: string, maxLength: 50, enum: [TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO]}}
+        - {name: entidadId, in: query, description: 'El id, o la clave si es un PARAMETRO. Sin `entidad` no filtra', schema: {type: string, maxLength: 50}}
+        - {name: usuario, in: query, description: Id del usuario que hizo la acción, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: accion, in: query, schema: {$ref: '#/components/schemas/AccionAuditoria'}}
+        - {name: desde, in: query, schema: {type: string, format: date-time}}
+        - {name: hasta, in: query, schema: {type: string, format: date-time}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200':
+          description: Una página del libro
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PageRegistroAuditoria'}
+        '400': {$ref: '#/components/responses/Error'}
+  /api/v1/admin/auditoria/ids:
+    get:
+      tags: [Admin]
+      summary: Ids de una entidad con registros en la auditoría
+      x-jira: PICA-345
+      x-owner: Laura
+      x-permiso: AUDITORIA_VER
+      description: >-
+        HU-704. Para elegir el id en el filtro por entidad: los que tienen al menos un registro, primero el que tuvo
+        el último más reciente; hasta 200. Una entidad sin registros responde la lista vacía.
+      parameters:
+        - {name: entidad, in: query, required: true, schema: {type: string, maxLength: 50, enum: [TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO]}}
+      responses:
+        '200': {description: Los ids (o las claves si es PARAMETRO), content: {application/json: {schema: {type: array, items: {type: string}, examples: [['15', '22']]}}}}
+        '400': {$ref: '#/components/responses/Error'}
 
   /api/v1/admin/reclamos:
     get:
@@ -3445,15 +3491,15 @@ components:
       type: string
       enum: [PENDIENTE_VERIFICACION, ACTIVO, BLOQUEADO]
       description: PENDIENTE hasta el clic en el mail; BLOQUEADO lo pone un admin. La baja lógica no es un estado.
-    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS]}
+    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS, AUDITORIA]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO) y TORNEO_ADMINISTRAR de V50 (PICA-342). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), AUDITORIA_VER de V49 (PICA-345) y TORNEO_ADMINISTRAR de V50 (PICA-342). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
              RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR,
-             CANCELACION_REVISAR, RECLAMO_RESOLVER, TORNEO_ADMINISTRAR]
+             CANCELACION_REVISAR, RECLAMO_RESOLVER, AUDITORIA_VER, TORNEO_ADMINISTRAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -3995,6 +4041,35 @@ components:
         MARGEN_CIERRE_INICIO_MIN (CE4-5); CHECKIN_DURACION_MAX_MIN (máximo de la ventana de check-in);
         RETIRO_MINIMO y RETIRO_MAXIMO (pesos, para HU-607); CANCELACION_GASTOS_TOPE (% máximo del pozo que el
         organizador puede retener en gastos al cancelar un torneo, HU-605).
+    PageRegistroAuditoria:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/RegistroAuditoria'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    RegistroAuditoria:
+      type: object
+      required: [id, fecha, usuarioId, username, accion, entidad, entidadId, descripcion, ip, detalle]
+      description: Una fila del libro de auditoría (PICA-345).
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        fecha: {type: string, format: date-time}
+        usuarioId: {type: [integer, 'null'], format: int64, description: 'Null en lo que hace el sistema (liquidaciones, cierres por fecha) y en el login fallido de un usuario que no existe'}
+        username: {type: [string, 'null']}
+        accion: {$ref: '#/components/schemas/AccionAuditoria'}
+        entidad: {type: [string, 'null'], description: 'Sobre qué fue: TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO', examples: [TORNEO]}
+        entidadId: {type: [string, 'null'], description: 'El id de la entidad, o la clave si es un PARAMETRO', examples: ['42']}
+        descripcion:
+          type: [string, 'null']
+          description: >-
+            El nombre de la entidad, buscado al leer: TORNEO su nombre; PARTIDO `Ronda N – torneo`; RIFA su título;
+            CUSTODIA `Torneo: …` o `Rifa: …`; USUARIO, BILLETERA y CARGA_CRIPTO el `@username` (la billetera sin
+            usuario, `Plataforma`); PARAMETRO su descripción. Null si no se encuentra. Lo dado de baja también se ve.
+          examples: [Liga Abierta de Ajedrez Rápido]
+        ip: {type: [string, 'null'], description: Solo la guardan el login y el login fallido}
+        detalle: {type: [object, 'null'], additionalProperties: true, description: 'Lo propio de cada acción; cambia según quién la registró'}
+    AccionAuditoria:
+      type: string
+      enum: [LOGIN, LOGIN_FALLIDO, LOGOUT, ALTA, MODIFICACION, BAJA, BLOQUEO, DESBLOQUEO, PAGO, LAUDO, SORTEO,
+             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO]
     ActualizarParametrosRequest:
       type: object
       required: [valores]

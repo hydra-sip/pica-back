@@ -8,5 +8,6 @@ public enum Modulo {
     RIFAS,
     INSCRIPCIONES,
     TORNEOS,
-    PARAMETROS
+    PARAMETROS,
+    AUDITORIA
 }
