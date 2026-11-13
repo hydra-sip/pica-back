@@ -13,6 +13,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
+import com.hydra.pica.plataforma_pica.billetera.dto.IngresoInscripcion;
 import com.hydra.pica.plataforma_pica.billetera.dto.PanelFinanciero;
 import com.hydra.pica.plataforma_pica.billetera.dto.RepartoLiquidacion;
 import com.hydra.pica.plataforma_pica.billetera.service.FondosEnCustodiaException;
@@ -67,7 +69,7 @@ class PanelFinancieroControllerTest {
     void panel() throws Exception {
         when(panelFinancieroService.delTorneo(USUARIO_ID, 7L)).thenReturn(new PanelFinanciero(7L, "Copa",
                 EstadoTorneo.EN_CURSO, false, null, "ARS", new BigDecimal("4000.00"), new BigDecimal("400.00"),
-                BigDecimal.ZERO, new BigDecimal("500.00"), new BigDecimal("500.00"), new BigDecimal("3500.00"), 4));
+                BigDecimal.ZERO, new BigDecimal("500.00"), new BigDecimal("500.00"), new BigDecimal("3500.00"), BigDecimal.ZERO, 4));
 
         mockMvc.perform(get("/api/v1/torneos/7/panel-financiero"))
                 .andExpect(status().isOk())
@@ -82,7 +84,7 @@ class PanelFinancieroControllerTest {
     @DisplayName("Con formato=csv o pdf baja el archivo como adjunto")
     void descargar() throws Exception {
         when(panelFinancieroService.liquidacionFinal(USUARIO_ID, 7L)).thenReturn(new LiquidacionFinal(7L, "Copa",
-                new RepartoLiquidacion(true, LIQUIDADO, new BigDecimal("100.00"), "ARS", List.of())));
+                new RepartoLiquidacion(true, LIQUIDADO, new BigDecimal("100.00"), "ARS", List.of()), BigDecimal.ZERO));
 
         mockMvc.perform(get("/api/v1/torneos/7/liquidacion").param("formato", "csv"))
                 .andExpect(status().isOk())
@@ -92,6 +94,23 @@ class PanelFinancieroControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", "application/pdf"))
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"liquidacion-torneo-7.pdf\""));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("GET /torneos/{id}/ingresos responde cada pago")
+    void ingresos() throws Exception {
+        when(panelFinancieroService.ingresos(USUARIO_ID, 7L)).thenReturn(List.of(new IngresoInscripcion(15L, "I7-15",
+                LIQUIDADO, 3L, "Los Halcones", "Juan Uno", "dev_jugador1", new BigDecimal("1000.00"),
+                new BigDecimal("100.00"), new BigDecimal("1100.00"), EstadoMovimiento.CONFIRMADO)));
+
+        mockMvc.perform(get("/api/v1/torneos/7/ingresos"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].comprobante").value("I7-15"))
+                .andExpect(jsonPath("$[0].equipoNombre").value("Los Halcones"))
+                .andExpect(jsonPath("$[0].pagadorUsername").value("dev_jugador1"))
+                .andExpect(jsonPath("$[0].total").value(1100.00))
+                .andExpect(jsonPath("$[0].estado").value("CONFIRMADO"));
     }
 
     @Test

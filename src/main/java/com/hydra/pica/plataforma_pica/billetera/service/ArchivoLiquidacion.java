@@ -8,12 +8,14 @@ import java.text.DecimalFormatSymbols;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 import com.hydra.pica.plataforma_pica.billetera.dto.RepartoLiquidacion;
 import com.hydra.pica.plataforma_pica.billetera.dto.RepartoLiquidacion.Linea;
 import com.hydra.pica.plataforma_pica.billetera.dto.RepartoLiquidacion.Origen;
+import com.hydra.pica.plataforma_pica.billetera.service.Acreditacion.Rol;
 import com.hydra.pica.plataforma_pica.billetera.service.PanelFinancieroService.LiquidacionFinal;
 import com.lowagie.text.Document;
 import com.lowagie.text.Element;
@@ -48,9 +50,9 @@ public final class ArchivoLiquidacion {
         fila(csv, "Moneda", reparto.moneda());
         csv.append("\r\n");
         fila(csv, COLUMNAS);
-        for (Linea linea : reparto.lineas()) {
-            fila(csv, concepto(linea), beneficiario(linea), fechaHora(linea.acreditadoEn()),
-                    numero(linea.monto(), "0.00"));
+        for (Fila fila : filas(liquidacion)) {
+            fila(csv, fila.concepto(), fila.beneficiario(), fechaHora(fila.acreditadoEn()),
+                    numero(fila.monto(), "0.00"));
         }
         fila(csv, "Total repartido", "", "", numero(reparto.total(), "0.00"));
         return csv.toString().getBytes(StandardCharsets.UTF_8);
@@ -77,11 +79,11 @@ public final class ArchivoLiquidacion {
         for (String columna : COLUMNAS) {
             tabla.addCell(celda(columna, negrita, columna.equals("Monto")));
         }
-        for (Linea linea : reparto.lineas()) {
-            tabla.addCell(celda(concepto(linea), normal, false));
-            tabla.addCell(celda(beneficiario(linea), normal, false));
-            tabla.addCell(celda(fechaHora(linea.acreditadoEn()), normal, false));
-            tabla.addCell(celda(pesos(linea.monto()), normal, true));
+        for (Fila fila : filas(liquidacion)) {
+            tabla.addCell(celda(fila.concepto(), normal, false));
+            tabla.addCell(celda(fila.beneficiario(), normal, false));
+            tabla.addCell(celda(fechaHora(fila.acreditadoEn()), normal, false));
+            tabla.addCell(celda(pesos(fila.monto()), normal, true));
         }
         PdfPCell total = celda("Total repartido", negrita, false);
         total.setColspan(3);
@@ -93,11 +95,41 @@ public final class ArchivoLiquidacion {
         return salida.toByteArray();
     }
 
-    /** Qué se acreditó: el premio de un puesto, el reintegro al organizador, los gastos administrativos... */
+    /** Una fila del archivo: un concepto, a quién, cuándo y cuánto. */
+    private record Fila(String concepto, String beneficiario, Instant acreditadoEn, BigDecimal monto) {
+    }
+
+    /**
+     * Una fila por concepto. Lo que cobró el organizador va en un solo movimiento: hasta su reintegro son sus gastos, y
+     * lo que sobra es el pozo que nadie ganó (sin nadie en un puesto con premio, la liquidación se lo da a él).
+     */
+    private static List<Fila> filas(LiquidacionFinal liquidacion) {
+        List<Fila> filas = new ArrayList<>();
+        BigDecimal reintegroPendiente = liquidacion.reintegro();
+        for (Linea linea : liquidacion.reparto().lineas()) {
+            if (linea.rol() == Rol.ORGANIZADOR && linea.origen() == Origen.TORNEO) {
+                BigDecimal reintegro = linea.monto().min(reintegroPendiente);
+                reintegroPendiente = reintegroPendiente.subtract(reintegro);
+                agregar(filas, "Reintegro de gastos al organizador", linea, reintegro);
+                agregar(filas, "Pozo sin ganadores, al organizador", linea, linea.monto().subtract(reintegro));
+            } else {
+                agregar(filas, concepto(linea), linea, linea.monto());
+            }
+        }
+        return filas;
+    }
+
+    private static void agregar(List<Fila> filas, String concepto, Linea linea, BigDecimal monto) {
+        if (monto.signum() > 0) {
+            filas.add(new Fila(concepto, beneficiario(linea), linea.acreditadoEn(), monto));
+        }
+    }
+
+    /** Qué se acreditó: el premio de un puesto, los gastos administrativos, un honorario... */
     static String concepto(Linea linea) {
         String concepto = switch (linea.rol()) {
             case PREMIO -> "Premio del " + linea.puesto() + "º puesto" + (linea.origen() == Origen.RIFA ? " de la rifa" : "");
-            case ORGANIZADOR -> "Reintegro de gastos al organizador";
+            case ORGANIZADOR -> "Pozo sin ganadores, al organizador";
             case PLATAFORMA -> "Gastos administrativos (plataforma)";
             case HONORARIO -> "Honorario arbitral";
         };

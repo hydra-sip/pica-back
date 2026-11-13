@@ -15,7 +15,9 @@ import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
  * @param aporteRifa            lo que su rifa destina al pozo, por lo vendido hasta ahora
  * @param gastos                los gastos del torneo que se reintegran: los comunes y los honorarios depositados
  * @param reintegroOrganizador  los gastos, hasta lo recaudado: lo que cobra el organizador
- * @param comprometidoEnPremios lo recaudado menos el reintegro, más el aporte de la rifa
+ * @param comprometidoEnPremios en curso, lo recaudado menos el reintegro, más el aporte de la rifa; liquidado, lo que
+ *                              se acreditó en premios
+ * @param pozoAlOrganizador     liquidado sin nadie en un puesto con premio, el pozo que fue al organizador; si no, 0
  * @param pagos                 cuántas inscripciones pagaron
  */
 public record PanelFinanciero(
@@ -31,5 +33,6 @@ public record PanelFinanciero(
         BigDecimal gastos,
         BigDecimal reintegroOrganizador,
         BigDecimal comprometidoEnPremios,
+        BigDecimal pozoAlOrganizador,
         long pagos) {
 }

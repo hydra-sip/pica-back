@@ -3274,7 +3274,8 @@ paths:
 
         Con `formato` (HU-608, PICA-342) es la liquidación final para descargar, y también la puede bajar quien tiene
         `TORNEO_ADMINISTRAR`: el mismo detalle, una fila por concepto (premio de cada puesto, reintegro de gastos al
-        organizador, gastos administrativos de la plataforma, honorarios y lo que aportó la rifa) con el beneficiario,
+        organizador, pozo sin ganadores al organizador, gastos administrativos de la plataforma, honorarios y lo que
+        aportó la rifa) con el beneficiario,
         cuándo se acreditó y el monto, y el total repartido. El CSV va con `;`, coma decimal y BOM UTF-8. Sin liquidar,
         409 `FONDOS_EN_CUSTODIA`: el reporte final solo se emite después de la liquidación. 400 `VALIDACION` si el
         formato no es csv ni pdf.
@@ -3307,6 +3308,24 @@ paths:
         no existe o no lo puede ver.
       responses:
         '200': {description: El panel, content: {application/json: {schema: {$ref: '#/components/schemas/PanelFinanciero'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/ingresos:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Libro de ingresos por inscripción de mi torneo
+      x-jira: PICA-342
+      x-owner: Laura
+      description: >-
+        HU-608 (wireframe «Dashboard Contable y Liquidación»). El organizador del torneo o quien tiene
+        `TORNEO_ADMINISTRAR`: cada pago de inscripción que entró a la custodia, con su comprobante, quién pagó (el
+        capitán, en equipos), el monto, los gastos administrativos y el estado (REVERTIDO si se le devolvió). El más
+        nuevo primero; sin paginar, porque no pasa del cupo del torneo. Sin pagos, la lista vacía. 404
+        `TORNEO_NO_ENCONTRADO` si no existe o no lo puede ver.
+      responses:
+        '200': {description: Los pagos, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/IngresoInscripcion'}}}}}
         '401': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
 
@@ -5093,13 +5112,32 @@ components:
         moneda: {type: string, examples: [ARS]}
         eventoTerminado: {type: boolean, description: 'Si el evento terminó; hasta entonces nadie mueve los fondos'}
         liberadaEn: {type: [string, 'null'], format: date-time}
+    IngresoInscripcion:
+      type: object
+      required: [movimientoId, comprobante, pagadoEn, inscripcionId, equipoNombre, pagadorNombre, pagadorUsername,
+                 monto, gastosAdministrativos, total, estado]
+      description: Un pago de inscripción en el libro de ingresos del torneo (PICA-342).
+      properties:
+        movimientoId: {$ref: '#/components/schemas/Id'}
+        comprobante: {type: string, description: 'El número del comprobante, como lo ve quien pagó', examples: [I12-345]}
+        pagadoEn: {type: string, format: date-time}
+        inscripcionId: {type: [integer, 'null'], format: int64}
+        equipoNombre: {type: [string, 'null'], description: Null en un torneo individual}
+        pagadorNombre: {type: string, description: 'El jugador o, en equipos, el capitán'}
+        pagadorUsername: {type: string}
+        monto: {type: number, description: La inscripción}
+        gastosAdministrativos: {type: number, description: Lo que pagó aparte; va a la plataforma}
+        total: {type: number}
+        estado: {type: string, enum: [PENDIENTE, CONFIRMADO, RECHAZADO, REVERTIDO], description: 'REVERTIDO si se le devolvió'}
     PanelFinanciero:
       type: object
       required: [torneoId, torneoNombre, estado, liquidado, liquidadoEn, moneda, recaudado, gastosAdministrativos,
-                 aporteRifa, gastos, reintegroOrganizador, comprometidoEnPremios, pagos]
+                 aporteRifa, gastos, reintegroOrganizador, comprometidoEnPremios, pozoAlOrganizador, pagos]
       description: >-
-        El panel financiero de un torneo (PICA-342). `comprometidoEnPremios` = `recaudado` - `reintegroOrganizador` +
-        `aporteRifa`, y `reintegroOrganizador` = el menor entre `gastos` y `recaudado`: la cuenta de la liquidación.
+        El panel financiero de un torneo (PICA-342). `reintegroOrganizador` = el menor entre `gastos` y `recaudado`: la
+        cuenta de la liquidación. En curso, `comprometidoEnPremios` = `recaudado` - `reintegroOrganizador` +
+        `aporteRifa`; liquidado, es lo que se acreditó en premios, y si nadie quedó en un puesto con premio el pozo va al
+        organizador y queda en `pozoAlOrganizador`.
       properties:
         torneoId: {$ref: '#/components/schemas/Id'}
         torneoNombre: {type: string}
@@ -5113,6 +5151,7 @@ components:
         gastos: {type: number, description: Los gastos que se reintegran al organizador; los comunes y los honorarios depositados}
         reintegroOrganizador: {type: number, description: Lo que cobra el organizador al liquidar; sus gastos, hasta lo recaudado}
         comprometidoEnPremios: {type: number}
+        pozoAlOrganizador: {type: number, description: 'Liquidado sin nadie en un puesto con premio, el pozo que fue al organizador; si no, 0'}
         pagos: {type: integer, description: Cuántas inscripciones pagaron}
     RepartoLiquidacion:
       type: object
