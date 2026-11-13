@@ -58,4 +58,14 @@ public interface NumeroRepository extends JpaRepository<Numero, NumeroId> {
     @Query("DELETE FROM Numero n WHERE n.id.rifaId = :rifaId AND n.reservadoPor.id = :usuarioId"
             + " AND n.estado = com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero.RESERVADO")
     int liberarDelUsuario(@Param("rifaId") Long rifaId, @Param("usuarioId") Long usuarioId);
+
+    /**
+     * Marca todos los números vendidos de la rifa como reintegrados al cancelarla por fraude confirmado (HU-707).
+     * Conserva la fila y su FK para respetar el historial de tickets y premios sorteados.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Numero n SET n.estado = com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero.REINTEGRADO"
+            + " WHERE n.id.rifaId = :rifaId"
+            + " AND n.estado = com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero.VENDIDO")
+    int reintegrarVendidos(@Param("rifaId") Long rifaId);
 }

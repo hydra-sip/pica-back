@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.dto;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
@@ -9,7 +10,7 @@ import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 
 /**
- * Vista administrativa de un reclamo de rifa con los datos de la rifa y del reclamante (HU-706, PICA-339).
+ * Vista administrativa de un reclamo de rifa con los datos de la rifa y del reclamante (HU-706, HU-707).
  */
 public record ReclamoAdminDetalle(
         Long id,
@@ -20,7 +21,10 @@ public record ReclamoAdminDetalle(
         String resueltoPor,
         Instant creadoEn,
         RifaReclamoResumen rifa,
-        ReclamanteResumen reclamante
+        ReclamanteResumen reclamante,
+        Instant fondosLiberadosEn,
+        String fondosLiberadosPor,
+        BigDecimal fondosLiberadosMonto
 ) {
 
     public record RifaReclamoResumen(
@@ -63,7 +67,10 @@ public record ReclamoAdminDetalle(
                         reclamante.getId(),
                         reclamante.getUsername(),
                         reclamante.getEmail()
-                )
+                ),
+                reclamo.getFondosLiberadosEn(),
+                reclamo.getFondosLiberadosPor(),
+                reclamo.getFondosLiberadosMonto()
         );
     }
 }
