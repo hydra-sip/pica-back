@@ -164,6 +164,8 @@ public class BracketService {
         auditar(torneo, organizadorId, semilla, semillaAnterior, inscriptos.size());
         eventos.publishEvent(new com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado(
                 torneo.getId(), EstadoTorneo.INSCRIPCION_CERRADA, EstadoTorneo.EN_CURSO));
+        eventos.publishEvent(new com.hydra.pica.plataforma_pica.partido.event.LlaveSorteada(torneo.getId(),
+                semillaAnterior != null));
     }
 
     /** Solo los que aceptaron la designación (HU-807): un pendiente no arbitra, así que tampoco recibe partidos. */
