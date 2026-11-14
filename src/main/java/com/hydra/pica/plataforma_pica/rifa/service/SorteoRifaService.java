@@ -13,8 +13,10 @@ import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
+import com.hydra.pica.plataforma_pica.rifa.domain.Numero;
 import com.hydra.pica.plataforma_pica.rifa.domain.PremioRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.domain.SelloRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.SorteoRifa;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.event.RifaSorteada;
@@ -30,8 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * El sorteo de una rifa CERRADA (HU-504, PICA-265), lo dispare quien lo dispare: el organizador o la tarea programada
  * cuando llega {@code fechaSorteo} ({@link SorteoAutomaticoRifa}). Obtiene la semilla ({@link SemillaRifaService}, que
- * exige el compromiso publicado), ordena los vendidos con {@link SorteoRifa} y deja el ganador de cada premio; la
- * rifa pasa a SORTEADA y queda en la auditoría con la semilla, el compromiso y los ganadores.
+ * exige el compromiso publicado), ordena los vendidos con {@link SorteoRifa} y deja el ganador de cada premio, con las
+ * reglas de la versión con la que se selló la lista (desde CR-06, nadie gana dos veces); la rifa pasa a SORTEADA y
+ * queda en la auditoría con la semilla, el compromiso, la versión y los ganadores.
  *
  * <p>El organizador sortea desde {@code fechaSorteo}, que es parte del compromiso; antes, 409 SORTEO_ANTICIPADO. Con
  * {@code app.rifas.sorteo-anticipado=true} (solo para la demo) el cierre a mano adelanta {@code fechaSorteo} a unos
@@ -86,15 +89,16 @@ public class SorteoRifaService {
     /** @param actorId el organizador; null si la sortea la tarea programada */
     private void sortear(Rifa rifa, Long actorId) {
         String semilla = semillaRifaService.obtener(rifa.getId()).getSemilla();
-        List<Integer> vendidos = numeroRepository.findByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO).stream()
-                .map(n -> n.getId().getNumero())
-                .toList();
-        List<Integer> orden = SorteoRifa.orden(semilla, vendidos);
+        List<Numero> vendidos = numeroRepository.findByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO);
         List<PremioRifa> premios = premioRifaRepository.buscarPorRifa(rifa.getId());
+        // con la versión con la que se selló la lista: la 2 no deja ganar dos veces al mismo comprador (CR-06)
+        List<Integer> numeros = SorteoRifa.ganadores(rifa.getVersionSorteo(), semilla,
+                vendidos.stream().map(n -> n.getId().getNumero()).toList(), SelloRifa.compradores(vendidos),
+                premios.size());
         Map<Integer, Integer> ganadores = new LinkedHashMap<>();
-        for (int i = 0; i < premios.size() && i < orden.size(); i++) {
-            premios.get(i).setNumeroGanador(orden.get(i));
-            ganadores.put(premios.get(i).getId().getPuesto(), orden.get(i));
+        for (int i = 0; i < numeros.size(); i++) {
+            premios.get(i).setNumeroGanador(numeros.get(i));
+            ganadores.put(premios.get(i).getId().getPuesto(), numeros.get(i));
         }
         rifa.setEstado(EstadoRifa.SORTEADA);
         Rifa sorteada = rifaRepository.saveAndFlush(rifa);
@@ -108,6 +112,7 @@ public class SorteoRifaService {
         detalle.put("semilla", rifa.getSemilla());
         detalle.put("compromisoHash", rifa.getCompromisoHash());
         detalle.put("listaHash", rifa.getListaHash());
+        detalle.put("versionSorteo", rifa.getVersionSorteo());
         detalle.put("ganadores", ganadores);
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(actorId == null ? null : usuarioRepository.getReferenceById(actorId));

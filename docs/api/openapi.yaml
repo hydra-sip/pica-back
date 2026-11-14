@@ -5283,11 +5283,16 @@ components:
         estado: {type: string, enum: [VENDIDO, RESERVADO, REINTEGRADO]}
     LineaListaSellada:
       type: object
-      required: [numero, ticketCodigo]
-      description: Un número vendido de la lista sellada y el código de su ticket (HU-407)
+      required: [numero, ticketCodigo, comprador]
+      description: >-
+        Un número vendido de la lista sellada y el código de su ticket (HU-407). Desde la versión 2 del sorteo (CR-06),
+        también quién lo compró, con una etiqueta anónima de la rifa: C1 es el comprador del número más bajo, C2 el
+        siguiente comprador, y así. La línea del sello es `número;ticketCodigo` en la versión 1 y
+        `número;ticketCodigo;comprador` en la 2.
       properties:
         numero: {type: integer}
         ticketCodigo: {type: string}
+        comprador: {type: [string, 'null'], description: 'C1, C2...; null en la versión 1', examples: [C1]}
     RifaSorteadaResumen:
       type: object
       required: [id, titulo]
@@ -5303,11 +5308,14 @@ components:
       properties: {content: {type: array, items: {$ref: '#/components/schemas/RifaSorteadaResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
     SorteoRifa:
       type: object
-      required: [id, titulo, fechaSorteo, listaHash, lista, compromisoHash, semilla, premios]
+      required: [id, titulo, fechaSorteo, listaHash, versionSorteo, lista, compromisoHash, semilla, premios]
       description: >-
         Los datos para recalcular el sorteo de una rifa (HU-504): con el desglose se recalcula `listaHash`; con
         `listaHash:fechaSorteo`, el compromiso; y con el SHA-256 de `semilla:número` de cada vendido, ordenados de
-        menor a mayor, los ganadores por puesto.
+        menor a mayor (a igual hash, por número), los ganadores por puesto. En la versión 1 el primero del orden gana el
+        puesto 1, el segundo el 2, y así. En la versión 2 (CR-06) nadie gana dos veces: se recorre el orden salteando
+        los números de un `comprador` que ya ganó. Si no alcanzan los números o los compradores, los premios que
+        sobran quedan sin ganador.
       properties:
         id: {$ref: '#/components/schemas/Id'}
         titulo: {type: string}
@@ -5315,6 +5323,7 @@ components:
         fechaSorteo: {type: string, format: date-time, description: La fecha programada, la que entra en el compromiso}
         listaHash: {type: string}
         listaSelladaEn: {type: string, format: date-time}
+        versionSorteo: {type: integer, enum: [1, 2], description: 'Con qué reglas se selló y se sorteó: 2 desde CR-06 (nadie gana dos veces)'}
         lista: {type: array, items: {$ref: '#/components/schemas/LineaListaSellada'}}
         compromisoHash: {type: string}
         compromisoPublicadoEn: {type: string, format: date-time}

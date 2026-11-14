@@ -13,6 +13,8 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
+import com.hydra.pica.plataforma_pica.rifa.domain.Numero;
+import com.hydra.pica.plataforma_pica.rifa.domain.SelloRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import com.hydra.pica.plataforma_pica.rifa.dto.GanadorRifa;
@@ -83,8 +85,8 @@ public class RifaPublicaService {
     }
 
     /**
-     * El desglose de {@code listaHash}: los vendidos al cerrar la venta con el código de su ticket, por número, para
-     * recalcular el sello. Sin la lista sellada todavía, 404.
+     * El desglose de {@code listaHash}: los vendidos al cerrar la venta con el código de su ticket (y, desde la versión
+     * 2, el comprador anónimo), por número, para recalcular el sello. Sin la lista sellada todavía, 404.
      */
     @Transactional(readOnly = true)
     public List<LineaListaSellada> listaSellada(Long id) {
@@ -93,8 +95,11 @@ public class RifaPublicaService {
             throw new NoEncontradoException(CodigoError.RIFA_NO_ENCONTRADA,
                     "La rifa " + id + " todavía no cerró la venta: no tiene lista sellada");
         }
-        return numeroRepository.findByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO).stream()
-                .map(LineaListaSellada::de)
+        List<Numero> vendidos = numeroRepository.findByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO);
+        // desde la versión 2 (CR-06) cada línea lleva el comprador anónimo, como en el sello
+        Map<Integer, String> compradores = rifa.getVersionSorteo() >= 2 ? SelloRifa.compradores(vendidos) : Map.of();
+        return vendidos.stream()
+                .map(n -> LineaListaSellada.de(n, compradores.get(n.getId().getNumero())))
                 .sorted(Comparator.comparingInt(LineaListaSellada::numero))
                 .toList();
     }
