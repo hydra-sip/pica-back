@@ -1,0 +1,62 @@
+# Backup diario de la base de producción (PICA-357, RNF-DIS-03): pg_dump del esquema public cifrado con age
+# (scripts/backup-base.sh), guardado como artefacto del workflow por 14 días. El repo es público: el dump sale
+# cifrado con la clave pública BACKUP_AGE_RECIPIENT y la privada no está en GitHub. Cómo restaurarlo:
+# docs/backup-restore.md.
+#
+# Necesita el secret SUPABASE_DB_URL (la URI del session pooler de Supabase, puerto 5432: los runners no tienen
+# IPv6) y la variable BACKUP_AGE_RECIPIENT. El cron solo corre desde main, la rama por defecto.
+name: Backup
+
+on:
+  schedule:
+    - cron: '17 6 * * *' # 03:17 en Argentina; fuera de la hora en punto, que GitHub demora
+  workflow_dispatch:
+  # un PR que cambia el backup lo prueba de verdad
+  pull_request:
+    paths:
+      - .github/workflows/backup.yml
+      - scripts/backup-base.sh
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    # los PRs desde forks no tienen los secrets
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PG_MAYOR: '17'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cliente de Postgres y age
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq "postgresql-client-$PG_MAYOR" age
+          echo "/usr/lib/postgresql/$PG_MAYOR/bin" >> "$GITHUB_PATH"
+
+      - name: Dump cifrado
+        id: dump
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: scripts/backup-base.sh backup >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.dump.outputs.archivo }}
+          path: backup/${{ steps.dump.outputs.archivo }}
+          retention-days: 14
+          compression-level: 0 # ya va comprimido y cifrado
+          if-no-files-found: error
