@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
@@ -22,6 +24,7 @@ import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import jakarta.persistence.EntityManager;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +55,11 @@ class LiquidacionIntegracionTest {
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
+    @Autowired private ControlDeBalance controlDeBalance;
+
+    /** Los usuarios del escenario: el control de balance mira sus billeteras. */
+    private final List<Long> creados = new ArrayList<>();
+    private boolean diferenciaAProposito;
 
     private Long organizador;
     private BigDecimal plataformaAntes;
@@ -76,6 +84,14 @@ class LiquidacionIntegracionTest {
             inscripcionService.pagar(jugador[i], inscripcion[i]);
         }
         entityManager.flush();
+    }
+
+    /** RNF-CON-02: después de cada test, las billeteras y las custodias del escenario cierran contra sus movimientos. */
+    @AfterEach
+    void elBalanceCierra() {
+        if (!diferenciaAProposito) {
+            BalanceCero.assertCierra(controlDeBalance, jdbc, entityManager, creados);
+        }
     }
 
     // --- el reparto ---------------------------------------------------------------------------------
@@ -267,7 +283,8 @@ class LiquidacionIntegracionTest {
     @Test
     void siLoRepartidoNoDaLoRetenidoNoSePagaNadaYQuedaUnaAlerta() {
         terminar(1, 2, 3, 3);
-        // algo que la liquidación no sabe repartir
+        // algo que la liquidación no sabe repartir: es la diferencia que tiene que encontrar el control
+        diferenciaAProposito = true;
         jdbc.update("""
                 INSERT INTO movimiento (billetera_id, torneo_id, tipo, monto, saldo_resultante, estado, custodia_id,
                                         referencia_externa)
@@ -350,11 +367,9 @@ class LiquidacionIntegracionTest {
         });
     }
 
-    private void saldo(Long usuario, String disponible) {
-        jdbc.update("""
-                INSERT INTO billetera (usuario_id, saldo_disponible) VALUES (?, ?)
-                ON CONFLICT (usuario_id) DO UPDATE SET saldo_disponible = excluded.saldo_disponible
-                """, usuario, new BigDecimal(disponible));
+    /** Le carga esa plata, con su movimiento de carga para que el balance cierre. */
+    private void saldo(Long usuario, String monto) {
+        BalanceCero.cargar(jdbc, usuario, monto);
         entityManager.clear();
     }
 
@@ -385,6 +400,8 @@ class LiquidacionIntegracionTest {
         usuario.setEstado(EstadoUsuario.ACTIVO);
         usuario.setEmailVerificado(true);
         usuario.setPersona(persona);
-        return usuarioRepository.save(usuario).getId();
+        Long id = usuarioRepository.save(usuario).getId();
+        creados.add(id);
+        return id;
     }
 }

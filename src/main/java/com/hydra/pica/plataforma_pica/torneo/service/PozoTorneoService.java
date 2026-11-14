@@ -42,11 +42,11 @@ public class PozoTorneoService {
         BigDecimal pozoBase = cuentas.pozoNeto() != null ? cuentas.pozoNeto() : BigDecimal.ZERO;
 
         // la misma cuenta que el desglose de la rifa (HU-405)
-        BigDecimal aporteRifa = rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneo.getId())
+        BigDecimal aporteRifas = rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneo.getId()).stream()
                 .map(rifa -> RepartoRifa.de(rifa,
                         numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO)).alPozoTorneo())
-                .orElse(BigDecimal.ZERO);
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        return pozoBase.add(aporteRifa);
+        return pozoBase.add(aporteRifas);
     }
 }

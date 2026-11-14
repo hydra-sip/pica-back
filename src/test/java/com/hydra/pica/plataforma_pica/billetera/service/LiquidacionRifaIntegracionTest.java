@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -22,6 +23,7 @@ import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.rifa.service.RifaService;
 import com.hydra.pica.plataforma_pica.rifa.service.TicketService;
 import com.hydra.pica.plataforma_pica.rifa.service.VentaRifaService;
+import com.hydra.pica.plataforma_pica.torneo.service.PozoTorneoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -30,6 +32,7 @@ import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import jakarta.persistence.EntityManager;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +59,7 @@ class LiquidacionRifaIntegracionTest {
 
     @Autowired private LiquidacionRifaService liquidacionRifaService;
     @Autowired private LiquidacionService liquidacionService;
+    @Autowired private PozoTorneoService pozoTorneoService;
     @Autowired private RepartoLiquidacionService repartoLiquidacionService;
     @Autowired private RifaService rifaService;
     @Autowired private VentaRifaService ventaRifaService;
@@ -66,6 +70,10 @@ class LiquidacionRifaIntegracionTest {
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
+    @Autowired private ControlDeBalance controlDeBalance;
+
+    /** Los usuarios del escenario: el control de balance mira sus billeteras. */
+    private final List<Long> creados = new ArrayList<>();
 
     private Long organizador;
     private Long ana;
@@ -84,6 +92,12 @@ class LiquidacionRifaIntegracionTest {
         rifa = rifaEnVenta(List.of(60, 40));
         comprar(ana, 1, 2);
         comprar(beto, 3);
+    }
+
+    /** RNF-CON-02: después de cada test, las billeteras y las custodias del escenario cierran contra sus movimientos. */
+    @AfterEach
+    void elBalanceCierra() {
+        BalanceCero.assertCierra(controlDeBalance, jdbc, entityManager, creados);
     }
 
     // --- el reparto ---------------------------------------------------------------------------------
@@ -210,6 +224,39 @@ class LiquidacionRifaIntegracionTest {
                 BigDecimal.class, "liq-r" + rifa + "-%")).isEqualByComparingTo("1650.00");
     }
 
+    @Test
+    void conDosRifasEnElTorneoElPozoSumaLosDosAportesYLaLiquidacionPagaAmbos() {
+        long torneo = torneoConDosJugadores();
+        conTorneo(torneo);
+        BigDecimal pozoConUna = pozoTorneoService.calcularPozo(torneo);
+        long primera = rifa;
+        sortear(3, 1);
+        liquidacionRifaService.liquidarRifa(primera);
+
+        // CR-06: la segunda rifa del mismo torneo vende 1000 y aporta su 20 %
+        rifa = rifaEnVenta(List.of(60, 40));
+        comprar(ana, 5);
+        comprar(beto, 6);
+        conTorneo(torneo);
+        assertThat(pozoTorneoService.calcularPozo(torneo))
+                .isEqualByComparingTo(pozoConUna.add(new BigDecimal("200.00")));
+        sortear(5, 6);
+        assertThat(liquidacionRifaService.liquidarRifa(rifa).aportePendiente()).isTrue();
+
+        terminar(torneo);
+        liquidacionService.liquidarTorneo(torneo);
+
+        // el 1.º del torneo cobra el pozo (2000) y lo que aportaron las dos rifas (300 y 200)
+        assertBilletera(jugador1, "11400.00", "0.00");   // 10000 − 1100 + 2000 + 300 + 200
+        assertThat(jdbc.queryForList("SELECT estado FROM custodia WHERE rifa_id IN (?, ?)", String.class, primera, rifa))
+                .containsExactly("LIBERADA", "LIBERADA");
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(repartoLiquidacionService.delTorneo(organizador, torneo).lineas())
+                .extracting(l -> l.origen() + ":" + l.monto().toPlainString())
+                .contains("TORNEO:2000.00", "APORTE_RIFA:300.00", "APORTE_RIFA:200.00");
+    }
+
     // --- una sola vez y solo terminada --------------------------------------------------------------
 
     @Test
@@ -301,6 +348,7 @@ class LiquidacionRifaIntegracionTest {
     }
 
     private void terminar(long torneo) {
+        entityManager.flush(); // lo pendiente de la sesión (una liquidación anterior) no se pierde con el clear
         jdbc.update("""
                 UPDATE inscripcion SET posicion = CASE WHEN usuario_id = ? THEN 1 ELSE 2 END WHERE torneo_id = ?
                 """, jugador1, torneo);
@@ -310,6 +358,7 @@ class LiquidacionRifaIntegracionTest {
 
     /** La rifa pasa a aportar 20 % al torneo: los premios quedan en 80 % (48 y 32). */
     private void conTorneo(long torneo) {
+        entityManager.flush(); // lo pendiente de la sesión (una liquidación anterior) no se pierde con el clear
         jdbc.update("UPDATE rifa SET torneo_id = ?, pct_destinado_torneo = 20 WHERE id = ?", torneo, rifa);
         jdbc.update("UPDATE premio_rifa SET pct = CASE puesto WHEN 1 THEN 48 ELSE 32 END WHERE rifa_id = ?", rifa);
         entityManager.clear();
@@ -317,6 +366,7 @@ class LiquidacionRifaIntegracionTest {
 
     /** El resultado del sorteo, hace 50 h: el número de cada puesto (null si no hubo ganador). */
     private void sortear(Integer primero, Integer segundo) {
+        entityManager.flush(); // lo pendiente de la sesión (una liquidación anterior) no se pierde con el clear
         jdbc.update("UPDATE premio_rifa SET numero_ganador = ? WHERE rifa_id = ? AND puesto = 1", primero, rifa);
         jdbc.update("UPDATE premio_rifa SET numero_ganador = ? WHERE rifa_id = ? AND puesto = 2", segundo, rifa);
         jdbc.update("""
@@ -344,7 +394,7 @@ class LiquidacionRifaIntegracionTest {
 
     private void comprar(Long comprador, Integer... numeros) {
         ventaRifaService.reservar(comprador, rifa, List.of(numeros));
-        ventaRifaService.comprar(comprador, rifa, List.of(numeros), "liq-rifa-" + comprador);
+        ventaRifaService.comprar(comprador, rifa, List.of(numeros), "liq-rifa-" + rifa + "-" + comprador);
         entityManager.flush();
     }
 
@@ -360,11 +410,9 @@ class LiquidacionRifaIntegracionTest {
         });
     }
 
-    private void saldo(Long usuario, String disponible) {
-        jdbc.update("""
-                INSERT INTO billetera (usuario_id, saldo_disponible) VALUES (?, ?)
-                ON CONFLICT (usuario_id) DO UPDATE SET saldo_disponible = excluded.saldo_disponible
-                """, usuario, new BigDecimal(disponible));
+    /** Le carga esa plata, con su movimiento de carga para que el balance cierre. */
+    private void saldo(Long usuario, String monto) {
+        BalanceCero.cargar(jdbc, usuario, monto);
         entityManager.clear();
     }
 
@@ -394,6 +442,8 @@ class LiquidacionRifaIntegracionTest {
         usuario.setEstado(EstadoUsuario.ACTIVO);
         usuario.setEmailVerificado(true);
         usuario.setPersona(persona);
-        return usuarioRepository.save(usuario).getId();
+        Long id = usuarioRepository.save(usuario).getId();
+        creados.add(id);
+        return id;
     }
 }
