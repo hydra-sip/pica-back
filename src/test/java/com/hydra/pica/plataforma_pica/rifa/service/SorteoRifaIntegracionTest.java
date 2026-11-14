@@ -2,13 +2,18 @@ package com.hydra.pica.plataforma_pica.rifa.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
@@ -17,6 +22,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.SorteoRifa;
 import com.hydra.pica.plataforma_pica.rifa.dto.GanadorRifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.LineaListaSellada;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
@@ -102,12 +108,12 @@ class SorteoRifaIntegracionTest {
 
         entityManager.clear();
         SorteoRifaDetalle sorteo = rifaPublicaService.sorteo(rifa);
-        List<Integer> orden = SorteoRifa.orden(sorteo.semilla(), List.of(3, 12, 25, 40, 77));
+        List<Integer> esperados = sinRepetirComprador(SorteoRifa.orden(sorteo.semilla(), List.of(3, 12, 25, 40, 77)));
         assertThat(sorteo.premios()).extracting(GanadorRifa::numeroGanador)
-                .containsExactly(orden.get(0), orden.get(1));
+                .containsExactly(esperados.get(0), esperados.get(1));
         // en el portal se ve quién compró cada número ganador
         assertThat(sorteo.premios()).extracting(GanadorRifa::ganador)
-                .containsExactly(compradorDe(orden.get(0)), compradorDe(orden.get(1)));
+                .containsExactly(compradorDe(esperados.get(0)), compradorDe(esperados.get(1)));
         assertThat(rifaService.detalle(organizador, rifa).estado()).isEqualTo(EstadoRifa.SORTEADA);
         assertThat(jdbc.queryForObject("SELECT detalle->>'semilla' FROM auditoria WHERE accion = 'SORTEO' "
                 + "AND entidad = 'RIFA' AND entidad_id = ?", String.class, String.valueOf(rifa)))
@@ -126,13 +132,71 @@ class SorteoRifaIntegracionTest {
 
         SorteoRifaDetalle sorteo = rifaPublicaService.sorteo(rifa);
 
-        String texto = sorteo.lista().stream().map(l -> l.numero() + ";" + l.ticketCodigo())
+        assertThat(sorteo.versionSorteo()).isEqualTo(2);
+        String texto = sorteo.lista().stream().map(l -> l.numero() + ";" + l.ticketCodigo() + ";" + l.comprador())
                 .collect(Collectors.joining("\n"));
         assertThat(SelloTorneo.sha256(texto)).isEqualTo(sorteo.listaHash());
         assertThat(SelloTorneo.sha256(sorteo.listaHash() + ":" + sorteo.fechaSorteo())).isEqualTo(sorteo.compromisoHash());
         assertThat(sorteo.semillaObtenidaEn()).isAfter(sorteo.compromisoPublicadoEn());
-        List<Integer> orden = SorteoRifa.orden(sorteo.semilla(), sorteo.lista().stream().map(l -> l.numero()).toList());
-        assertThat(sorteo.premios().get(0).numeroGanador()).isEqualTo(orden.get(0));
+        // como lo haría un auditor: el orden, salteando al comprador que ya ganó, solo con lo publicado
+        Map<Integer, String> compradorDe = sorteo.lista().stream()
+                .collect(Collectors.toMap(LineaListaSellada::numero, LineaListaSellada::comprador));
+        List<Integer> ganadores = new ArrayList<>();
+        Set<String> yaGanaron = new HashSet<>();
+        for (Integer numero : SorteoRifa.orden(sorteo.semilla(), List.copyOf(compradorDe.keySet()))) {
+            if (ganadores.size() < sorteo.premios().size() && yaGanaron.add(compradorDe.get(numero))) {
+                ganadores.add(numero);
+            }
+        }
+        assertThat(sorteo.premios()).extracting(GanadorRifa::numeroGanador).containsExactlyElementsOf(ganadores);
+    }
+
+    // --- CR-06: nadie gana dos veces -----------------------------------------------------------------
+
+    @Test
+    void laListaSelladaLlevaElCompradorAnonimoDeCadaNumero() {
+        cerrarConElSorteoVencido();
+
+        // C1 es quien compró el número más bajo (3 y 12), C2 el siguiente (25, 40 y 77)
+        assertThat(rifaPublicaService.listaSellada(rifa)).extracting(LineaListaSellada::numero,
+                LineaListaSellada::comprador).containsExactly(tuple(3, "C1"), tuple(12, "C1"), tuple(25, "C2"),
+                tuple(40, "C2"), tuple(77, "C2"));
+        assertThat(jdbc.queryForObject("SELECT version_sorteo FROM rifa WHERE id = ?", Integer.class, rifa))
+                .isEqualTo(2);
+    }
+
+    @Test
+    void unCompradorConVariosNumerosGanaUnSoloPremioYSiNoAlcanzanLosCompradoresElPremioQuedaSinGanador() {
+        rifa = enVenta(List.of(new PremioRifaRequest(new BigDecimal("50"), null),
+                new PremioRifaRequest(new BigDecimal("30"), null), new PremioRifaRequest(new BigDecimal("20"), null)));
+        comprar(comprador, List.of(3, 12, 40, 58, 77, 91));
+        comprar(otro, List.of(25));
+        cerrarConElSorteoVencido();
+
+        RifaDetalle sorteada = sorteoRifaService.sortear(organizador, rifa);
+
+        List<Integer> numeros = sorteada.premios().stream().map(PremioRifaDetalle::numeroGanador).toList();
+        assertThat(numeros.subList(0, 2)).extracting(this::compradorDe)
+                .containsExactlyInAnyOrder("comprador_sorteo", "otro_sorteo");
+        assertThat(numeros.get(2)).isNull();
+    }
+
+    @Test
+    void unaRifaSelladaAntesDelCambioSeSorteaComoAntes() {
+        cerrarConElSorteoVencido();
+        // como las que ya estaban selladas al migrar (V52)
+        jdbc.update("UPDATE rifa SET version_sorteo = 1 WHERE id = ?", rifa);
+        entityManager.clear();
+
+        sorteoRifaService.sortear(organizador, rifa);
+        entityManager.flush();
+        entityManager.clear();
+
+        SorteoRifaDetalle sorteo = rifaPublicaService.sorteo(rifa);
+        List<Integer> orden = SorteoRifa.orden(sorteo.semilla(), List.of(3, 12, 25, 40, 77));
+        assertThat(sorteo.versionSorteo()).isEqualTo(1);
+        assertThat(sorteo.premios()).extracting(GanadorRifa::numeroGanador).containsExactly(orden.get(0), orden.get(1));
+        assertThat(sorteo.lista()).extracting(LineaListaSellada::comprador).containsOnlyNulls();
     }
 
     // --- pruebas de aceptación de HU-503 --------------------------------------------------------------
@@ -296,8 +360,17 @@ class SorteoRifaIntegracionTest {
         });
     }
 
+    /** El username de quien compró ese número en la rifa del test. */
     private String compradorDe(int numero) {
-        return List.of(3, 12).contains(numero) ? "comprador_sorteo" : "otro_sorteo";
+        return jdbc.queryForObject("""
+                SELECT u.username FROM numero n JOIN ticket t ON t.id = n.ticket_id JOIN usuario u ON u.id = t.comprador_id
+                WHERE n.rifa_id = ? AND n.numero = ?""", String.class, rifa, numero);
+    }
+
+    /** El orden sin los números de un comprador que ya salió, como sortea la versión 2 (CR-06). */
+    private List<Integer> sinRepetirComprador(List<Integer> orden) {
+        Set<String> yaSalieron = new HashSet<>();
+        return orden.stream().filter(n -> yaSalieron.add(compradorDe(n))).toList();
     }
 
     private Usuario usuario(String nombre) {

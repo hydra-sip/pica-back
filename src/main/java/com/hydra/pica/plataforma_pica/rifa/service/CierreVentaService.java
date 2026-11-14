@@ -110,7 +110,9 @@ public class CierreVentaService {
         if ((motivo == MotivoCierre.MANUAL && anticipado) || !rifa.getSorteadaEn().isAfter(ahora)) {
             rifa.setSorteadaEn(ahora.plus(drand.periodo()).truncatedTo(ChronoUnit.SECONDS));
         }
-        rifa.setListaHash(SelloRifa.lista(vendidos));
+        // las reglas del sorteo quedan fijas con la lista: las de ahora, con el comprador anónimo (CR-06)
+        rifa.setVersionSorteo(SelloRifa.VERSION_ACTUAL);
+        rifa.setListaHash(SelloRifa.lista(vendidos, SelloRifa.VERSION_ACTUAL));
         rifa.setListaSelladaEn(ahora);
         rifa.setCompromisoHash(SelloRifa.compromiso(rifa.getListaHash(), rifa.getSorteadaEn()));
         rifa.setCompromisoPublicadoEn(ahora);

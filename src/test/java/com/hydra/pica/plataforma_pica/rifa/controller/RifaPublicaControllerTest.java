@@ -96,12 +96,13 @@ class RifaPublicaControllerTest {
     @Test
     @DisplayName("GET /api/v1/rifas/publicas/{id}/lista-sellada es público y devuelve el desglose")
     void listaSelladaSinLogin() throws Exception {
-        when(rifaPublicaService.listaSellada(7L)).thenReturn(List.of(new LineaListaSellada(5, "R7-4F2K9Q")));
+        when(rifaPublicaService.listaSellada(7L)).thenReturn(List.of(new LineaListaSellada(5, "R7-4F2K9Q", "C1")));
 
         mockMvc.perform(get("/api/v1/rifas/publicas/7/lista-sellada"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].numero").value(5))
-                .andExpect(jsonPath("$[0].ticketCodigo").value("R7-4F2K9Q"));
+                .andExpect(jsonPath("$[0].ticketCodigo").value("R7-4F2K9Q"))
+                .andExpect(jsonPath("$[0].comprador").value("C1"));
     }
 
     @Test
