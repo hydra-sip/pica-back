@@ -34,7 +34,7 @@ else
     [[ -n $corrida ]] || { echo "No hay ningún backup exitoso en $REPO" >&2; exit 1; }
     echo "Bajando el backup de la corrida $corrida..." >&2
     gh run download "$corrida" -R "$REPO" --dir "$dir/bajado"
-    cifrado=$(find "$dir/bajado" -name '*.dump.age' | sort | tail -1)
+    cifrado=$(find "$dir/bajado" -type f -name '*.dump.age' | sort | tail -1)
 fi
 echo "Descifrando $(basename "$cifrado")..." >&2
 age --decrypt --identity "$CLAVE" --output "$dir/pica.dump" "$cifrado"
