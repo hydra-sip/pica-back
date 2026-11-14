@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -40,12 +41,15 @@ import com.hydra.pica.plataforma_pica.torneo.dto.MiTorneoResumen;
 import com.hydra.pica.plataforma_pica.torneo.dto.MisTorneos;
 import com.hydra.pica.plataforma_pica.torneo.dto.OpcionesTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
+import com.hydra.pica.plataforma_pica.torneo.service.DiscordTorneoService;
 import com.hydra.pica.plataforma_pica.torneo.service.InscripcionTorneoService;
 import com.hydra.pica.plataforma_pica.torneo.service.MisTorneosService;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -80,6 +84,9 @@ class TorneoControllerTest {
 
     @MockitoBean
     private InscripcionTorneoService inscripcionTorneoService;
+
+    @MockitoBean
+    private DiscordTorneoService discordTorneoService;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;
@@ -400,10 +407,75 @@ class TorneoControllerTest {
         verifyNoInteractions(inscripcionTorneoService);
     }
 
+    private static final String WEBHOOK = "https://discord.com/api/webhooks/1234567890/aBc-DeF_ghij";
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("PUT /api/v1/torneos/{id}/discord pasa el webhook y el usuario de la sesión")
+    void guardaDiscord() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(discordTorneoService.guardar(ORGANIZADOR, 9L, WEBHOOK)).thenReturn(borrador());
+
+        mockMvc.perform(put("/api/v1/torneos/9/discord")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"url\": \"" + WEBHOOK + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(9));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "https://discordapp.com/api/webhooks/1234567890/aBc-DeF_ghij",
+            "http://discord.com/api/webhooks/1234567890/aBc-DeF_ghij",
+            "https://discord.com/api/webhooks/abc/aBc-DeF_ghij",
+            "https://discord.com/api/webhooks/1234567890/",
+            "https://evil.example/https://discord.com/api/webhooks/1234567890/abc"})
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("PUT /api/v1/torneos/{id}/discord con algo que no es un webhook de Discord responde 400 en url")
+    void discordInvalido(String url) throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+
+        mockMvc.perform(put("/api/v1/torneos/9/discord")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"url\": \"" + url + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACION"))
+                .andExpect(jsonPath("$.errores[0].campo").value("url"))
+                .andExpect(jsonPath("$.errores[0].codigo").value("FORMATO_INVALIDO"));
+        verifyNoInteractions(discordTorneoService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("PUT /api/v1/torneos/{id}/discord sin url responde 400 REQUERIDO")
+    void discordSinUrl() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+
+        mockMvc.perform(put("/api/v1/torneos/9/discord")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[0].campo").value("url"))
+                .andExpect(jsonPath("$.errores[0].codigo").value("REQUERIDO"));
+        verifyNoInteractions(discordTorneoService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "TORNEO_GESTIONAR")
+    @DisplayName("DELETE /api/v1/torneos/{id}/discord quita el webhook")
+    void quitaDiscord() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(discordTorneoService.quitar(ORGANIZADOR, 9L)).thenReturn(borrador());
+
+        mockMvc.perform(delete("/api/v1/torneos/9/discord"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.discordWebhook").doesNotExist());
+    }
+
     private static TorneoInformacion borrador() {
         return new TorneoInformacion(9L, EstadoTorneo.BORRADOR, 1, "Apertura F5", "Fútbol 5", null,
                 Formato.ELIMINACION_DIRECTA, Modalidad.PRESENCIAL, null, "Club Mercedes", List.of("Cancha 1"), null,
                 null, null, null, null, null, null, null, null, null, null, null, CriterioSinPresentes.REPROGRAMAR, null,
-                null, null, null, null, null, CREADO, CREADO, List.of());
+                null, null, null, null, null, null, CREADO, CREADO, List.of());
     }
 }

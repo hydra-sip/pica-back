@@ -73,6 +73,10 @@ public class Partido extends AuditableEntity {
     @Column(name = "objecion_vence_en")
     private Instant objecionVenceEn;
 
+    /** La apertura de la ventana de check-in que ya se avisó al canal de Discord del torneo (PICA-371). */
+    @Column(name = "checkin_avisado_para")
+    private Instant checkinAvisadoPara;
+
     /** La parte que cargó el resultado (V22); la otra es la que lo acepta u objeta. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "resultado_cargado_por")

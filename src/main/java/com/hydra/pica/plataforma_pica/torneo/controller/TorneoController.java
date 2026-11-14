@@ -7,10 +7,12 @@ import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.CheckinTorneoRequest;
+import com.hydra.pica.plataforma_pica.torneo.dto.DiscordTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.MisTorneos;
 import com.hydra.pica.plataforma_pica.torneo.dto.OpcionesTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
+import com.hydra.pica.plataforma_pica.torneo.service.DiscordTorneoService;
 import com.hydra.pica.plataforma_pica.torneo.service.InscripcionTorneoService;
 import com.hydra.pica.plataforma_pica.torneo.service.MisTorneosService;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
@@ -21,6 +23,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,13 +46,16 @@ public class TorneoController {
     private final TorneoService torneoService;
     private final MisTorneosService misTorneosService;
     private final InscripcionTorneoService inscripcionTorneoService;
+    private final DiscordTorneoService discordTorneoService;
     private final CurrentUserProvider currentUserProvider;
 
     public TorneoController(TorneoService torneoService, MisTorneosService misTorneosService,
-            InscripcionTorneoService inscripcionTorneoService, CurrentUserProvider currentUserProvider) {
+            InscripcionTorneoService inscripcionTorneoService, DiscordTorneoService discordTorneoService,
+            CurrentUserProvider currentUserProvider) {
         this.torneoService = torneoService;
         this.misTorneosService = misTorneosService;
         this.inscripcionTorneoService = inscripcionTorneoService;
+        this.discordTorneoService = discordTorneoService;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -105,6 +111,17 @@ public class TorneoController {
     @PutMapping("/{id}/checkin")
     public TorneoInformacion configurarCheckin(@PathVariable Long id, @RequestBody CheckinTorneoRequest request) {
         return torneoService.configurarCheckin(usuarioActual(), id, request);
+    }
+
+    /** PICA-370: el webhook del canal de Discord al que van los avisos del torneo; al guardarlo va uno de prueba. */
+    @PutMapping("/{id}/discord")
+    public TorneoInformacion guardarDiscord(@PathVariable Long id, @Valid @RequestBody DiscordTorneoRequest request) {
+        return discordTorneoService.guardar(usuarioActual(), id, request.url());
+    }
+
+    @DeleteMapping("/{id}/discord")
+    public TorneoInformacion quitarDiscord(@PathVariable Long id) {
+        return discordTorneoService.quitar(usuarioActual(), id);
     }
 
     private Long usuarioActual() {
