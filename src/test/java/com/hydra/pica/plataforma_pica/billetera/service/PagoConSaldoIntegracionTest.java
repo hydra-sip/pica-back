@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -26,6 +27,7 @@ import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +58,10 @@ class PagoConSaldoIntegracionTest {
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
+    @Autowired private ControlDeBalance controlDeBalance;
+
+    /** Los usuarios del escenario: el control de balance mira sus billeteras. */
+    private final List<Long> creados = new ArrayList<>();
 
     private Long organizador;
     private Long jugador;
@@ -64,6 +70,12 @@ class PagoConSaldoIntegracionTest {
     void escenario() {
         organizador = usuario("org_saldo");
         jugador = usuario("jug_saldo");
+    }
+
+    /** RNF-CON-02: después de cada test, las billeteras y las custodias del escenario cierran contra sus movimientos. */
+    @AfterEach
+    void elBalanceCierra() {
+        BalanceCero.assertCierra(controlDeBalance, jdbc, entityManager, creados);
     }
 
     // --- inscripción --------------------------------------------------------------------------------
@@ -132,7 +144,7 @@ class PagoConSaldoIntegracionTest {
         assertBilletera(jugador, "500.00", "0");
 
         // carga lo que falta y paga con los mismos números todavía reservados
-        saldo(jugador, "1100.00");
+        saldo(jugador, "600.00");
         ventaRifaService.comprar(jugador, rifa, List.of(5, 6), "compra-saldo-2");
 
         assertThat(jdbc.queryForList("SELECT estado FROM numero WHERE rifa_id = ? ORDER BY numero", String.class, rifa))
@@ -142,11 +154,9 @@ class PagoConSaldoIntegracionTest {
 
     // --- ayudas -------------------------------------------------------------------------------------
 
-    private void saldo(Long usuario, String disponible) {
-        jdbc.update("""
-                INSERT INTO billetera (usuario_id, saldo_disponible) VALUES (?, ?)
-                ON CONFLICT (usuario_id) DO UPDATE SET saldo_disponible = excluded.saldo_disponible
-                """, usuario, new BigDecimal(disponible));
+    /** Le carga esa plata, con su movimiento de carga para que el balance cierre. */
+    private void saldo(Long usuario, String monto) {
+        BalanceCero.cargar(jdbc, usuario, monto);
         entityManager.clear();
     }
 
@@ -200,6 +210,8 @@ class PagoConSaldoIntegracionTest {
         usuario.setEstado(EstadoUsuario.ACTIVO);
         usuario.setEmailVerificado(true);
         usuario.setPersona(persona);
-        return usuarioRepository.save(usuario).getId();
+        Long id = usuarioRepository.save(usuario).getId();
+        creados.add(id);
+        return id;
     }
 }
