@@ -184,7 +184,7 @@ class SorteoRifaIntegracionTest {
     @Test
     void unaRifaSelladaAntesDelCambioSeSorteaComoAntes() {
         cerrarConElSorteoVencido();
-        // como las que ya estaban selladas al migrar (V51)
+        // como las que ya estaban selladas al migrar (V52)
         jdbc.update("UPDATE rifa SET version_sorteo = 1 WHERE id = ?", rifa);
         entityManager.clear();
 
