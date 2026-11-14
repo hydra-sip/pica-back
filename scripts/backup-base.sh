@@ -18,6 +18,14 @@ SALIDA=${1:?uso: $0 <carpeta de salida>}
 # pg_dump tiene que ser de la misma versión mayor que la base o más nueva
 PG_MAYOR=${PG_MAYOR:-17}
 
+# Una contraseña con @, /, # o ? sin codificar parte mal la URL y psql imprime el pedazo que tomó como host. El repo
+# es público: si no tiene la forma esperada, se corta acá sin mostrarla.
+if [[ ! $SUPABASE_DB_URL =~ ^postgres(ql)?://[^:@/?#]+:[^@/?#]+@[^@/:?#]+:[0-9]+/[^@/?#]+(\?[^@/#]*)?$ ]]; then
+    echo "SUPABASE_DB_URL no es postgresql://usuario:contraseña@host:puerto/base: codificá la contraseña" \
+        "(@ es %40, / es %2F, # es %23, ? es %3F)" >&2
+    exit 1
+fi
+
 servidor=$(psql "$SUPABASE_DB_URL" -XAtc 'SHOW server_version_num')
 if (( servidor / 10000 > PG_MAYOR )); then
     echo "La base es Postgres $(( servidor / 10000 )) y pg_dump es $PG_MAYOR: subí PG_MAYOR en el workflow" >&2
