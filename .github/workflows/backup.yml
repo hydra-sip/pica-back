@@ -3,8 +3,9 @@
 # cifrado con la clave pública BACKUP_AGE_RECIPIENT y la privada no está en GitHub. Cómo restaurarlo:
 # docs/backup-restore.md.
 #
-# Necesita el secret SUPABASE_DB_URL (la URI del session pooler de Supabase, puerto 5432: los runners no tienen
-# IPv6) y la variable BACKUP_AGE_RECIPIENT. El cron solo corre desde main, la rama por defecto.
+# Necesita los secrets SUPABASE_DB_URL (la URI del session pooler de Supabase sin la contraseña, puerto 5432: los
+# runners no tienen IPv6) y SUPABASE_DB_PASSWORD, y la variable BACKUP_AGE_RECIPIENT. El cron solo corre desde main,
+# la rama por defecto.
 name: Backup
 
 on:
@@ -50,6 +51,7 @@ jobs:
         id: dump
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
         run: scripts/backup-base.sh backup >> "$GITHUB_OUTPUT"
 

@@ -2,7 +2,8 @@
 # Backup de la base (PICA-357, RNF-DIS-03): pg_dump del esquema public, cifrado con age. Lo corre todos los días
 # .github/workflows/backup.yml; el restore está en scripts/restaurar-backup.sh y docs/backup-restore.md.
 #
-#   SUPABASE_DB_URL=postgresql://... BACKUP_AGE_RECIPIENT=age1... scripts/backup-base.sh <carpeta>
+#   SUPABASE_DB_URL=postgresql://usuario@host:5432/postgres PGPASSWORD=... BACKUP_AGE_RECIPIENT=age1... \
+#     scripts/backup-base.sh <carpeta>
 #
 # Deja en <carpeta> un solo archivo, pica-<fecha UTC>.dump.age, e imprime "archivo=<nombre>" (para $GITHUB_OUTPUT).
 # El dump sin cifrar vive en una carpeta temporal que se borra al salir. Nunca imprime la URL de la base.
@@ -18,11 +19,13 @@ SALIDA=${1:?uso: $0 <carpeta de salida>}
 # pg_dump tiene que ser de la misma versión mayor que la base o más nueva
 PG_MAYOR=${PG_MAYOR:-17}
 
-# Una contraseña con @, /, # o ? sin codificar parte mal la URL y psql imprime el pedazo que tomó como host. El repo
-# es público: si no tiene la forma esperada, se corta acá sin mostrarla.
-if [[ ! $SUPABASE_DB_URL =~ ^postgres(ql)?://[^:@/?#]+:[^@/?#]+@[^@/:?#]+:[0-9]+/[^@/?#]+(\?[^@/#]*)?$ ]]; then
-    echo "SUPABASE_DB_URL no es postgresql://usuario:contraseña@host:puerto/base: codificá la contraseña" \
-        "(@ es %40, / es %2F, # es %23, ? es %3F)" >&2
+# La contraseña va aparte, en PGPASSWORD: así no hay que codificarla. Si la URL no tiene la forma esperada (por
+# ejemplo, trae una contraseña con @ o /), psql imprimiría el pedazo que tomó como host, y el repo es público: se
+# corta acá sin mostrarla.
+: "${PGPASSWORD:?falta PGPASSWORD, la contraseña de la base}"
+export PGPASSWORD
+if [[ ! $SUPABASE_DB_URL =~ ^postgres(ql)?://[^:@/?#]+@[^@/:?#]+:[0-9]+/[^@/?#]+(\?[^@/#]*)?$ ]]; then
+    echo "SUPABASE_DB_URL tiene que ser postgresql://usuario@host:puerto/base, sin la contraseña" >&2
     exit 1
 fi
 

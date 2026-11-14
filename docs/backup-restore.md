@@ -12,18 +12,19 @@ La base de producción está en Supabase, en el proyecto **PICA** de la organiza
 2. Lo cifra con `age` y la clave pública `BACKUP_AGE_RECIPIENT` (variable del repo).
 3. Lo guarda como artefacto de la corrida, `pica-<fecha UTC>.dump.age`, por **14 días**.
 
-El repo es público, por eso el dump nunca sale sin cifrar. La URL de la base está en el secret `SUPABASE_DB_URL`.
+El repo es público, por eso el dump nunca sale sin cifrar. La URL y la contraseña de la base están en secrets.
 
 | Qué | Dónde |
 |---|---|
-| `SUPABASE_DB_URL` (secret) | La URI del **session pooler**, puerto 5432. La conexión directa es solo IPv6 y los runners de GitHub no la alcanzan. En Supabase: Connect → Direct → Session pooler. |
+| `SUPABASE_DB_URL` (secret) | La URI del **session pooler**, puerto 5432, **sin la contraseña**: `postgresql://postgres.<ref>@aws-0-sa-east-1.pooler.supabase.com:5432/postgres`. La conexión directa es solo IPv6 y los runners de GitHub no la alcanzan. En Supabase: Connect → Direct → Session pooler. |
+| `SUPABASE_DB_PASSWORD` (secret) | La contraseña de la base, tal cual (va aparte para no tener que codificarla en la URL). |
 | `BACKUP_AGE_RECIPIENT` (variable) | La clave pública (`age1…`). |
 | La clave privada | Fuera de GitHub, la guarda el equipo. Sin ella no se abre ningún backup. |
 
 El cron solo corre desde `main`, la rama por defecto: el backup automático empieza con el pase de `dev` a `main`.
 
 Si el workflow falla, GitHub le manda un mail a quien lo activó. Las causas probables:
-- la contraseña de la base cambió y hay que actualizar el secret;
+- la contraseña de la base cambió y hay que actualizar `SUPABASE_DB_PASSWORD` (también en Railway);
 - Supabase subió de versión mayor de Postgres y hay que subir `PG_MAYOR` en el workflow (el script lo avisa).
 
 ## El restore
@@ -34,11 +35,12 @@ Hace falta `gh` con sesión, `age`, `docker` y la clave privada.
 2. **Restaurar el último backup:**
 
    ```bash
-   RESTORE_DB_URL='postgresql://postgres.<ref>:<clave>@aws-0-sa-east-1.pooler.supabase.com:5432/postgres' \
+   RESTORE_DB_URL='postgresql://postgres.<ref>@aws-0-sa-east-1.pooler.supabase.com:5432/postgres' \
    BACKUP_AGE_KEY=~/pica-backup.key \
      scripts/restaurar-backup.sh
    ```
 
+   - Pide la contraseña de la base destino sin mostrarla (o la toma de `PGPASSWORD`).
    - Sin argumento baja el último backup exitoso.
    - Se le puede pasar el id de una corrida (`gh run list --workflow backup.yml`) o un archivo `.dump.age` ya bajado.
    - Al final muestra la última migración, cuántos usuarios, torneos y movimientos hay, y cuánto tardó.
