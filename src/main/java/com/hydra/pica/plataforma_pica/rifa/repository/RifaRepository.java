@@ -35,7 +35,7 @@ public interface RifaRepository extends JpaRepository<Rifa, Long> {
     @EntityGraph(attributePaths = "torneo")
     Optional<Rifa> findByIdAndEliminadoEnIsNull(Long id);
 
-    Optional<Rifa> findByTorneoIdAndEliminadoEnIsNull(Long torneoId);
+    List<Rifa> findByTorneoIdAndEliminadoEnIsNull(Long torneoId);
 
     List<Rifa> findByTorneoIdInAndEliminadoEnIsNull(Collection<Long> torneoIds);
 

@@ -508,19 +508,16 @@ class RifaServiceIntegracionTest {
     }
 
     @Test
-    void unTorneoTieneUnaSolaRifa() {
+    void unTorneoPuedeTenerVariasRifas() {
         Long torneo = torneo(organizador, null, null);
         RifaDetalle primera = rifaService.crear(organizador, conTorneo(null, null, null, torneo, 0));
-        RifaDetalle segunda = rifaService.crear(organizador, request(1, 10, null, null));
+        RifaDetalle segunda = rifaService.crear(organizador, conTorneo(null, null, null, torneo, 0));
+        RifaDetalle tercera = rifaService.crear(organizador, request(1, 10, null, null));
 
-        assertThatThrownBy(() -> rifaService.modificar(organizador, segunda.id(), conTorneo(null, null, null, torneo, 0)))
-                .isInstanceOfSatisfying(ApiException.class, e -> {
-                    assertThat(e.getStatus()).isEqualTo(HttpStatus.CONFLICT);
-                    assertThat(e.getCodigo()).isEqualTo(CodigoError.TORNEO_CON_RIFA);
-                });
-        // la que ya lo tiene se sigue modificando
-        assertThat(rifaService.modificar(organizador, primera.id(), conTorneo(null, null, null, torneo, 0)).torneoId())
+        assertThat(rifaService.modificar(organizador, tercera.id(), conTorneo(null, null, null, torneo, 0)).torneoId())
                 .isEqualTo(torneo);
+        assertThat(rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneo)).extracting(Rifa::getId)
+                .containsExactlyInAnyOrder(primera.id(), segunda.id(), tercera.id());
     }
 
     @Test

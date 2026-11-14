@@ -3,7 +3,6 @@ package com.hydra.pica.plataforma_pica.rifa.service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.common.config.RifaConfig.RifaProperties;
@@ -95,7 +94,7 @@ public class RifaService {
     /** Nace sin premios; se cargan con {@link #reemplazarPremios}. */
     @Transactional
     public RifaDetalle crear(Long organizadorId, RifaRequest request) {
-        Torneo torneo = buscarTorneo(organizadorId, null, request.torneoId());
+        Torneo torneo = buscarTorneo(organizadorId, request.torneoId());
         validar(request, torneo, List.of());
 
         Rifa rifa = new Rifa();
@@ -108,7 +107,7 @@ public class RifaService {
     @Transactional
     public RifaDetalle modificar(Long organizadorId, Long id, RifaRequest request) {
         Rifa rifa = buscarEditable(organizadorId, id);
-        Torneo torneo = buscarTorneo(organizadorId, id, request.torneoId());
+        Torneo torneo = buscarTorneo(organizadorId, request.torneoId());
         validar(request, torneo, premioRifaRepository.buscarPorRifa(rifa.getId()));
 
         aplicar(rifa, request, torneo);
@@ -275,10 +274,10 @@ public class RifaService {
 
     /**
      * El torneo al que se asocia la rifa: tiene que ser del mismo organizador (el de otro responde 404, como
-     * si no existiera), estar en borrador o publicado sin empezar, y no tener otra rifa (409). Sin
+     * si no existiera) y estar en borrador o publicado sin empezar. Puede tener otras rifas (CR-06). Sin
      * {@code torneoId}, null.
      */
-    private Torneo buscarTorneo(Long organizadorId, Long rifaId, Long torneoId) {
+    private Torneo buscarTorneo(Long organizadorId, Long torneoId) {
         if (torneoId == null) {
             return null;
         }
@@ -289,12 +288,6 @@ public class RifaService {
             throw new ConflictoException(CodigoError.TORNEO_NO_ADMITE_RIFA,
                     "El torneo " + torneoId + " está " + torneo.getEstado()
                             + ": la rifa va con uno en borrador o con la inscripción abierta o cerrada");
-        }
-        Optional<Rifa> otra = rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneoId)
-                .filter(r -> !r.getId().equals(rifaId));
-        if (otra.isPresent()) {
-            throw new ConflictoException(CodigoError.TORNEO_CON_RIFA,
-                    "El torneo " + torneoId + " ya tiene la rifa " + otra.get().getId());
         }
         return torneo;
     }

@@ -61,7 +61,7 @@ public class RepartoLiquidacionService {
                 .map(Custodia::getLiberadaEn)
                 .orElse(null);
         List<Movimiento> movimientos = new ArrayList<>(movimientoRepository.deLaLiquidacion("liq-t" + torneoId + "-%"));
-        rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneoId).ifPresent(rifa -> movimientos
+        rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneoId).forEach(rifa -> movimientos
                 .addAll(movimientoRepository.deLaLiquidacion("liq-r" + rifa.getId() + "-aporte-%")));
         return reparto(liquidadoEn != null, liquidadoEn, movimientos);
     }

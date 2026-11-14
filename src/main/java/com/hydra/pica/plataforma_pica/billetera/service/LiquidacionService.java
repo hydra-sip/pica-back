@@ -147,10 +147,10 @@ public class LiquidacionService {
         custodiaService.liberarTorneo(torneoId); // deja la sesión vacía: de acá en adelante, por id
         acreditador.acreditar(Evento.torneo(torneoId), juntarLosDelOrganizador(acreditaciones));
 
-        // la rifa ya se liquidó y su aporte al pozo esperaba a que terminara el torneo
-        rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneoId)
+        // las rifas ya liquidadas: su aporte al pozo esperaba a que terminara el torneo
+        rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneoId).stream()
                 .filter(rifa -> rifa.getEstado() == EstadoRifa.LIQUIDADA)
-                .ifPresent(rifa -> pagarAporteDeLaRifa(rifa.getId()));
+                .forEach(rifa -> pagarAporteDeLaRifa(rifa.getId()));
         return new LiquidacionTorneo(torneoId, custodiaId, retenido.total(), acreditaciones);
     }
 

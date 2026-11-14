@@ -1009,8 +1009,8 @@ paths:
         `ventaHasta` si no es posterior a `ventaDesde` o ya pasó; `REQUERIDO` en `ventaHasta` si viene
         `ventaDesde` sin ella.
         Con `torneoId` (PICA-218), el torneo tiene que ser del mismo organizador (404 `TORNEO_NO_ENCONTRADO`
-        si no), estar en BORRADOR, INSCRIPCION_ABIERTA o INSCRIPCION_CERRADA (409 `TORNEO_NO_ADMITE_RIFA`) y
-        no tener otra rifa (409 `TORNEO_CON_RIFA`). La venta tiene que empezar después de que se publicó el
+        si no), estar en BORRADOR, INSCRIPCION_ABIERTA o INSCRIPCION_CERRADA (409 `TORNEO_NO_ADMITE_RIFA`); puede
+        tener otras rifas (CR-06). La venta tiene que empezar después de que se publicó el
         torneo y terminar antes de su finalización (`fechaFin`) o, si el torneo no la tiene, antes de su inicio
         (`VENTANA_INVALIDA` en `ventaDesde` o `ventaHasta`); la fecha que el torneo todavía no tiene no se
         controla. `PREMIOS_INVALIDOS` en `pctDestinadoTorneo` si la rifa
@@ -3603,7 +3603,7 @@ components:
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
-        RIFA_INCOMPLETA (le falta algo para publicarse) · TORNEO_CON_RIFA (el torneo ya tiene otra rifa) ·
+        RIFA_INCOMPLETA (le falta algo para publicarse) ·
         TORNEO_NO_ADMITE_RIFA (la rifa va con un torneo en borrador o con la inscripción abierta o cerrada) ·
         TORNEO_NO_EDITABLE (la parte económica, el reglamento y la publicación solo en BORRADOR; los pasos 1 y 2, hasta que empieza) ·
         TORNEO_INCOMPLETO (le falta algo para publicarse; la lista va en `faltantes`) ·
@@ -3680,7 +3680,7 @@ components:
              DEMASIADOS_INTENTOS,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
-             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_CON_RIFA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
+             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
              TORNEO_INCOMPLETO,
              CAMPOS_BLOQUEADOS, COBRO_RECHAZADO, SALDO_INSUFICIENTE, FONDOS_EN_CUSTODIA, CUSTODIA_LIBERADA,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,

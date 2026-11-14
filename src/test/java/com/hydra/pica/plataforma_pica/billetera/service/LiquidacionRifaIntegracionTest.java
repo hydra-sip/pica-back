@@ -23,6 +23,7 @@ import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.rifa.service.RifaService;
 import com.hydra.pica.plataforma_pica.rifa.service.TicketService;
 import com.hydra.pica.plataforma_pica.rifa.service.VentaRifaService;
+import com.hydra.pica.plataforma_pica.torneo.service.PozoTorneoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -58,6 +59,7 @@ class LiquidacionRifaIntegracionTest {
 
     @Autowired private LiquidacionRifaService liquidacionRifaService;
     @Autowired private LiquidacionService liquidacionService;
+    @Autowired private PozoTorneoService pozoTorneoService;
     @Autowired private RepartoLiquidacionService repartoLiquidacionService;
     @Autowired private RifaService rifaService;
     @Autowired private VentaRifaService ventaRifaService;
@@ -222,6 +224,39 @@ class LiquidacionRifaIntegracionTest {
                 BigDecimal.class, "liq-r" + rifa + "-%")).isEqualByComparingTo("1650.00");
     }
 
+    @Test
+    void conDosRifasEnElTorneoElPozoSumaLosDosAportesYLaLiquidacionPagaAmbos() {
+        long torneo = torneoConDosJugadores();
+        conTorneo(torneo);
+        BigDecimal pozoConUna = pozoTorneoService.calcularPozo(torneo);
+        long primera = rifa;
+        sortear(3, 1);
+        liquidacionRifaService.liquidarRifa(primera);
+
+        // CR-06: la segunda rifa del mismo torneo vende 1000 y aporta su 20 %
+        rifa = rifaEnVenta(List.of(60, 40));
+        comprar(ana, 5);
+        comprar(beto, 6);
+        conTorneo(torneo);
+        assertThat(pozoTorneoService.calcularPozo(torneo))
+                .isEqualByComparingTo(pozoConUna.add(new BigDecimal("200.00")));
+        sortear(5, 6);
+        assertThat(liquidacionRifaService.liquidarRifa(rifa).aportePendiente()).isTrue();
+
+        terminar(torneo);
+        liquidacionService.liquidarTorneo(torneo);
+
+        // el 1.º del torneo cobra el pozo (2000) y lo que aportaron las dos rifas (300 y 200)
+        assertBilletera(jugador1, "11400.00", "0.00");   // 10000 − 1100 + 2000 + 300 + 200
+        assertThat(jdbc.queryForList("SELECT estado FROM custodia WHERE rifa_id IN (?, ?)", String.class, primera, rifa))
+                .containsExactly("LIBERADA", "LIBERADA");
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(repartoLiquidacionService.delTorneo(organizador, torneo).lineas())
+                .extracting(l -> l.origen() + ":" + l.monto().toPlainString())
+                .contains("TORNEO:2000.00", "APORTE_RIFA:300.00", "APORTE_RIFA:200.00");
+    }
+
     // --- una sola vez y solo terminada --------------------------------------------------------------
 
     @Test
@@ -359,7 +394,7 @@ class LiquidacionRifaIntegracionTest {
 
     private void comprar(Long comprador, Integer... numeros) {
         ventaRifaService.reservar(comprador, rifa, List.of(numeros));
-        ventaRifaService.comprar(comprador, rifa, List.of(numeros), "liq-rifa-" + comprador);
+        ventaRifaService.comprar(comprador, rifa, List.of(numeros), "liq-rifa-" + rifa + "-" + comprador);
         entityManager.flush();
     }
 
