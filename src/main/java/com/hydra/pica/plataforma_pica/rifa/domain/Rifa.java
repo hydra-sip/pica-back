@@ -50,7 +50,7 @@ public class Rifa extends AuditableEntity {
     private Usuario organizador;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "torneo_id", unique = true)
+    @JoinColumn(name = "torneo_id")
     private Torneo torneo;
 
     @Column(name = "titulo", length = 100, nullable = false)

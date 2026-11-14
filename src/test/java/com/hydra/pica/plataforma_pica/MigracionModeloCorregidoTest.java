@@ -208,13 +208,14 @@ class MigracionModeloCorregidoTest {
     }
 
     @Test
-    void unTorneoTieneComoMaximoUnaRifa() {
+    void unTorneoPuedeTenerVariasRifas() {
         long torneo = torneo("INDIVIDUAL");
         rifa(torneo);
+        rifa(torneo);
 
-        assertThatThrownBy(() -> rifa(torneo))
-                .isInstanceOf(DataAccessException.class)
-                .hasMessageContaining("uq_rifa_torneo_id");
+        // V53 (CR-06): sin el índice único de V30
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rifa WHERE torneo_id = ?", Long.class, torneo))
+                .isEqualTo(2);
     }
 
     @Test

@@ -61,7 +61,7 @@ public class PanelFinancieroService {
         Torneo torneo = visible(usuarioId, torneoId);
         Optional<Custodia> custodia = custodiaRepository.findByTorneoId(torneoId);
         Cuentas cuentas = cuentas(torneoId, custodia);
-        BigDecimal aporteRifa = aporteDeLaRifa(torneoId);
+        BigDecimal aporteRifa = aporteDeLasRifas(torneoId);
         BigDecimal premios = cuentas.retenido().recaudado().subtract(cuentas.reintegro()).add(aporteRifa);
         BigDecimal alOrganizador = BigDecimal.ZERO;
 
@@ -160,13 +160,14 @@ public class PanelFinancieroService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private BigDecimal aporteDeLaRifa(Long torneoId) {
-        return rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneoId)
+    private BigDecimal aporteDeLasRifas(Long torneoId) {
+        return rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneoId).stream()
                 .flatMap(rifa -> custodiaRepository.findByRifaId(rifa.getId())
                         .map(c -> RepartoRifa.deLoRecaudado(
                                 LiquidacionService.retenido(movimientoRepository, c.getId()).vendido(),
-                                rifa.getPctDestinadoTorneo()).alPozoTorneo()))
-                .orElse(BigDecimal.ZERO);
+                                rifa.getPctDestinadoTorneo()).alPozoTorneo())
+                        .stream())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private long pagos(Long custodiaId) {
