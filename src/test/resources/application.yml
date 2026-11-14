@@ -27,6 +27,11 @@ app:
   rifas:
     cierre-automatico: false
     sorteo-automatico: false
+  # Los avisos a Discord (PICA-369) salen en el hilo del test, para ver lo que llegó sin esperar
+  discord:
+    sincronico: true
+    espera-base: 0s
+    aviso-checkin: false   # los tests llaman a AvisoCheckinDiscord a mano
   cors:
     allowed-origins:
       - http://localhost:3000

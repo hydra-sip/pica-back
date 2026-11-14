@@ -53,6 +53,23 @@ public interface PartidoRepository extends JpaRepository<Partido, Long> {
             order by p.fecha_programada, p.id""", nativeQuery = true)
     List<Long> conVentanaVencida(@Param("limite") Instant limite);
 
+    /**
+     * Los partidos de torneos en curso con webhook de Discord cuya ventana de check-in está abierta, abrió después de
+     * {@code desde} y todavía no se avisó (PICA-371): la marca guarda la apertura avisada, así que un partido
+     * reprogramado vuelve a salir. Sin tolerancia: el aviso es de cuándo abre, no de cuándo se acepta el check-in.
+     */
+    @Query(value = """
+            select p.id from partido p join torneo t on t.id = p.torneo_id
+            where t.estado = 'EN_CURSO' and t.discord_webhook is not null and t.checkin_min_antes is not null
+              and p.estado in ('PROGRAMADO', 'CHECK_IN') and p.fecha_programada is not null
+              and (select count(*) from juega j where j.partido_id = p.id) = 2
+              and p.fecha_programada - t.checkin_min_antes * interval '1 minute' <= :ahora
+              and p.fecha_programada - t.checkin_min_antes * interval '1 minute' > :desde
+              and p.fecha_programada - (t.checkin_min_antes - t.checkin_duracion_min) * interval '1 minute' > :ahora
+              and p.checkin_avisado_para is distinct from p.fecha_programada - t.checkin_min_antes * interval '1 minute'
+            order by p.fecha_programada, p.id""", nativeQuery = true)
+    List<Long> conCheckinPorAvisar(@Param("ahora") Instant ahora, @Param("desde") Instant desde);
+
     /** Cuántas rondas tiene el bracket: con eso se nombra cada una ("Final", "Semifinal"...). */
     @Query("select coalesce(max(p.ronda), 0) from Partido p where p.torneo.id = :torneoId")
     int rondasDelTorneo(@Param("torneoId") Long torneoId);
