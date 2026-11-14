@@ -107,6 +107,7 @@ public class Rifa extends AuditableEntity {
     private Instant listaSelladaEn;
 
     /** Con qué reglas se selló y se sortea ({@link SelloRifa}); null hasta sellar la lista. */
+    @JdbcTypeCode(SqlTypes.SMALLINT)
     @Column(name = "version_sorteo")
     private Integer versionSorteo;
 
