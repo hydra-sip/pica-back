@@ -67,3 +67,4 @@ Hace falta `gh` con sesión, `age`, `docker` y la clave privada.
 | Fecha | Backup | Destino | Restore | API | Tiempo |
 |---|---|---|---|---|---|
 | 14/11/2026 | Local, Postgres 17 con las migraciones V1 a V52 | Postgres 17 vacío | OK, V52 | — | 2 s |
+| 14/11/2026 | El de producción de las 04:15 (41 tablas, 208 KB cifrado) | Proyecto nuevo de Supabase (`sa-east-1`) | OK, V52: 107 usuarios, 18 torneos, 172 movimientos | No se apuntó | 23 s |
