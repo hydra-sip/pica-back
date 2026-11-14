@@ -165,6 +165,10 @@ public class Torneo extends AuditableEntity {
     @Column(name = "checkin_sin_presentes", length = 20, nullable = false)
     private CriterioSinPresentes checkinSinPresentes = CriterioSinPresentes.REPROGRAMAR;
 
+    /** El webhook del canal de Discord del torneo (PICA-370): un secreto que solo ve su organizador, enmascarado. */
+    @Column(name = "discord_webhook")
+    private String discordWebhook;
+
     @Column(name = "eliminado_en")
     private Instant eliminadoEn;
 

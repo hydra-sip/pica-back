@@ -298,7 +298,8 @@ public class PronosticoService {
      */
     private static void validarVentanaPronostico(Partido partido, List<Juega> lados) {
         EstadoTorneo torneoEstado = partido.getTorneo().getEstado();
-        if (torneoEstado == EstadoTorneo.BORRADOR || torneoEstado == EstadoTorneo.CANCELADO) {
+        if (torneoEstado == EstadoTorneo.BORRADOR || torneoEstado == EstadoTorneo.CANCELADO
+                || torneoEstado == EstadoTorneo.CANCELACION_EN_REVISION) {
             throw new ConflictoException(CodigoError.PRONOSTICO_FUERA_DE_VENTANA,
                     "No se pueden pronosticar partidos de un torneo en estado " + torneoEstado);
         }

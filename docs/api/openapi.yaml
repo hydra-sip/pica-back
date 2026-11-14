@@ -50,6 +50,7 @@ tags:
   - {name: Admin – Personas, description: 'ABM de personas. HU-104, Laura.'}
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
   - {name: Admin – Parámetros, description: 'Parámetros de la plataforma (gastos administrativos, plazos y retiros). HU-702, Tomás.'}
+  - {name: Admin – Reclamos, description: 'Reclamos sobre el resultado de rifas y su resolución definitiva. HU-706, Salvador.'}
   - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
   - {name: Torneos, description: 'Asistente de crear torneo del organizador logueado (HU-201, PICA-38; HU-601, PICA-55), Tomás. Catálogo y ficha públicos (HU-208), Salvador.'}
   - {name: Equipos, description: 'Equipos del capitán para elegir al inscribirse. HU-204 (PICA-234), Mateo.'}
@@ -691,6 +692,125 @@ paths:
       responses:
         '200': {description: Permisos agrupados, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ModuloPermisos'}}}}}
 
+  /api/v1/admin/conciliacion:
+    get:
+      tags: [Admin]
+      summary: Conciliar las cargas con cripto contra los eventos del contrato
+      x-jira: PICA-343
+      x-permiso: TORNEO_ADMINISTRAR
+      x-owner: Laura
+      description: >-
+        HU-608. Lee todos los `CargaRegistrada` del contrato PasarelaCargas desde el bloque de su deploy
+        (`app.cripto.bloque-deploy`) y los cruza por la referencia con las cargas con cripto. Los eventos se traen por
+        la API de Etherscan v2 (BaseScan) y no por el nodo, que los da de a 200 bloques. Cada registro es CONCILIADA
+        (acreditada y en la cadena por el mismo monto), HUERFANA (acreditada, con su movimiento CARGA, sin evento),
+        NO_ACREDITADA (un pago en la cadena sin carga acreditada: pendiente o de una referencia ajena) o
+        MONTO_DISTINTO. Primero las diferencias. 503 `RED_NO_DISPONIBLE` si la API no responde o falta la API key.
+      responses:
+        '200': {description: La conciliación, content: {application/json: {schema: {$ref: '#/components/schemas/ConciliacionCargas'}}}}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/admin/cancelaciones:
+    get:
+      tags: [Admin]
+      summary: Cola de cancelaciones en revisión
+      x-jira: PICA-348
+      x-permiso: CANCELACION_REVISAR
+      x-owner: Mateo
+      description: >-
+        HU-605. Solo las EN_REVISION, de la más vieja a la más nueva por cuándo se pidieron; el orden no se elige.
+        Cada una trae el torneo, el organizador, el motivo, el pozo (lo recaudado en inscripciones), el total de gastos
+        y cada gasto; el archivo se baja con `GET …/gastos/{gastoId}/comprobante`.
+      parameters:
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200':
+          description: Una página de la cola
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PageCancelacionEnRevision'}
+  /api/v1/admin/cancelaciones/{torneoId}/gastos/{gastoId}/comprobante:
+    parameters:
+      - {name: torneoId, in: path, required: true, schema: {type: integer, format: int64}}
+      - {name: gastoId, in: path, required: true, schema: {type: integer, format: int64}}
+    get:
+      tags: [Admin]
+      summary: Comprobante de un gasto de una cancelación
+      x-jira: PICA-348
+      x-permiso: CANCELACION_REVISAR
+      x-owner: Mateo
+      description: >-
+        HU-605. El archivo (PDF, JPG o PNG) con su `Content-Type` y `Content-Disposition: inline`, para abrirlo en el
+        navegador. 404 `COMPROBANTE_NO_ENCONTRADO` si el gasto no existe o es de otra cancelación. Solo lo ven quienes
+        revisan, no el organizador.
+      responses:
+        '200':
+          description: El archivo
+          content:
+            application/pdf: {schema: {type: string, format: binary}}
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/png: {schema: {type: string, format: binary}}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/v1/admin/cancelaciones/{torneoId}/aprobar:
+    parameters: [{name: torneoId, in: path, required: true, schema: {type: integer, format: int64}}]
+    post:
+      tags: [Admin]
+      summary: Aprobar los gastos de una cancelación en revisión
+      x-jira: PICA-348
+      x-permiso: CANCELACION_REVISAR
+      x-owner: Mateo
+      description: >-
+        HU-605. Soporte aprueba todos los gastos juntos. A cada billetera que pagó se le descuenta su parte:
+        gastos × lo que pagó de inscripción / pozo, hacia abajo al centavo, y los centavos que sobran van de a uno a
+        las primeras billeteras; los gastos administrativos vuelven enteros. Recibe un REINTEGRO por el resto, que dice
+        cuánto se retuvo. El organizador cobra el total de gastos como LIQUIDACION (referencia
+        `canc-t{torneoId}-organizador`). El torneo, las inscripciones y la custodia quedan como al rechazar, y la
+        cancelación APROBADA. Mismos 404 y 409 que al rechazar. Después del commit, cada uno que pagó recibe un mail
+        con lo devuelto, el porcentaje sobre lo que pagó y el desglose de los gastos, y el organizador uno con lo que
+        cobró.
+      responses:
+        '200':
+          description: La resolución
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ResolucionCancelacion'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+  /api/v1/admin/cancelaciones/{torneoId}/rechazar:
+    parameters: [{name: torneoId, in: path, required: true, schema: {type: integer, format: int64}}]
+    post:
+      tags: [Admin]
+      summary: Rechazar los gastos de una cancelación en revisión
+      x-jira: PICA-348
+      x-permiso: CANCELACION_REVISAR
+      x-owner: Mateo
+      description: >-
+        HU-605. Soporte rechaza la retención que pidió el organizador: cada billetera que pagó recupera el 100 %
+        (inscripción y gastos administrativos) con un REINTEGRO, el torneo pasa a CANCELADO, las inscripciones
+        confirmadas a REINTEGRADA y las que no terminaron de pagar a CANCELADA, y la custodia queda REINTEGRADA. La
+        cancelación queda RECHAZADA con quién la revisó, cuándo y el motivo. 400 `VALIDACION` en `motivo`
+        (`REQUERIDO`, o `LONGITUD` si pasa los 500 caracteres). 404 `CANCELACION_NO_ENCONTRADA` si el torneo no tiene
+        cancelación. 409 `CANCELACION_PROPIA` si quien revisa es el organizador del torneo; 409
+        `CANCELACION_YA_RESUELTA` si ya se resolvió o fue automática (el estado va en `estado`). Después del commit,
+        cada uno que pagó recibe un mail con el 100 % devuelto y el motivo, y el organizador uno con el motivo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo: {type: string, maxLength: 500}
+      responses:
+        '200':
+          description: La resolución
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ResolucionCancelacion'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
   /api/v1/admin/parametros:
     get:
       tags: [Admin – Parámetros]
@@ -727,6 +847,148 @@ paths:
       responses:
         '200': {description: Los parámetros después del cambio, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ParametroDetalle'}}}}}
         '400': {$ref: '#/components/responses/Error'}
+  /api/v1/admin/auditoria:
+    get:
+      tags: [Admin]
+      summary: Consultar el libro de auditoría
+      x-jira: PICA-345
+      x-owner: Laura
+      x-permiso: AUDITORIA_VER
+      description: >-
+        HU-704. Los filtros son opcionales y se combinan; sin ninguno, todo. Del más nuevo al más viejo; el orden no se
+        elige. `entidad` sin `entidadId` trae todos los registros de ese tipo; con `entidadId`, los de esa entidad. Con
+        `entidad=TORNEO` trae además lo suyo: los registros de sus partidos, de su rifa y de la custodia del torneo o de
+        su rifa (ahí quedan los pagos de las inscripciones); el resto es la coincidencia exacta. `desde` incluye ese
+        instante y `hasta` no: para un día, `desde` a las 00:00 y `hasta` a las 00:00 del día siguiente. Una entidad,
+        usuario o acción sin registros responde la página vacía. 400 `VALIDACION` si `accion` no es una de la lista,
+        una fecha no es ISO-8601 o `entidad`/`entidadId` pasan los 50 caracteres.
+      parameters:
+        - {name: entidad, in: query, schema: {type: string, maxLength: 50, enum: [TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO]}}
+        - {name: entidadId, in: query, description: 'El id, o la clave si es un PARAMETRO. Sin `entidad` no filtra', schema: {type: string, maxLength: 50}}
+        - {name: usuario, in: query, description: Id del usuario que hizo la acción, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: accion, in: query, schema: {$ref: '#/components/schemas/AccionAuditoria'}}
+        - {name: desde, in: query, schema: {type: string, format: date-time}}
+        - {name: hasta, in: query, schema: {type: string, format: date-time}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200':
+          description: Una página del libro
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PageRegistroAuditoria'}
+        '400': {$ref: '#/components/responses/Error'}
+  /api/v1/admin/auditoria/ids:
+    get:
+      tags: [Admin]
+      summary: Ids de una entidad con registros en la auditoría
+      x-jira: PICA-345
+      x-owner: Laura
+      x-permiso: AUDITORIA_VER
+      description: >-
+        HU-704. Para elegir el id en el filtro por entidad: los que tienen al menos un registro, primero el que tuvo
+        el último más reciente; hasta 200. Una entidad sin registros responde la lista vacía.
+      parameters:
+        - {name: entidad, in: query, required: true, schema: {type: string, maxLength: 50, enum: [TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO]}}
+      responses:
+        '200': {description: Los ids (o las claves si es PARAMETRO), content: {application/json: {schema: {type: array, items: {type: string}, examples: [['15', '22']]}}}}
+        '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/reclamos:
+    get:
+      tags: [Admin – Reclamos]
+      summary: Listar reclamos de rifas
+      x-jira: PICA-339
+      x-owner: Salvador
+      x-permiso: RECLAMO_RESOLVER
+      description: >-
+        HU-706 (T706-1). Lista paginada de reclamos con los datos de su rifa y del reclamante.
+        Se puede filtrar por estado; los pendientes aparecen primero.
+      parameters:
+        - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoReclamo'}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página de reclamos, content: {application/json: {schema: {$ref: '#/components/schemas/PageReclamoAdminDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/reclamos/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Admin – Reclamos]
+      summary: Ver detalle administrativo de un reclamo
+      x-jira: PICA-339
+      x-owner: Salvador
+      x-permiso: RECLAMO_RESOLVER
+      description: >-
+        HU-706 (T706-1). Devuelve el reclamo con los datos de su rifa y del reclamante.
+        404 `RECLAMO_NO_ENCONTRADO` si no existe.
+      responses:
+        '200': {description: Detalle del reclamo, content: {application/json: {schema: {$ref: '#/components/schemas/ReclamoAdminDetalle'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/reclamos/{id}/resolucion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Admin – Reclamos]
+      summary: Resolver definitivamente un reclamo
+      x-jira: PICA-339
+      x-owner: Salvador
+      x-permiso: RECLAMO_RESOLVER
+      description: >-
+        HU-706 (T706-1). Registra la decisión definitiva (`SIN_FRAUDE` → `RECHAZADO`; `FRAUDE_CONFIRMADO` → `ACEPTADO`)
+        y la resolución escrita, guardando `resueltoEn` y `resueltoPor`. Si no quedan otros reclamos `PENDIENTE` en la
+        rifa, esta sale de `EN_REVISION` y vuelve a `SORTEADA`. Registra auditoría (`LAUDO` sobre `RECLAMO_RIFA`) y envía
+        mail al reclamante con la decisión. No admite reapertura ni apelaciones.
+        400 `VALIDACION` si falta `decision` o `resolucion`.
+        401 `NO_AUTENTICADO` si no hay sesión.
+        403 `SIN_PERMISO` sin `RECLAMO_RESOLVER`.
+        404 `RECLAMO_NO_ENCONTRADO` si no existe.
+        409 `RECLAMO_YA_RESUELTO` si ya fue resuelto previamente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResolverReclamoRequest'}
+      responses:
+        '200': {description: Reclamo resuelto, content: {application/json: {schema: {$ref: '#/components/schemas/ReclamoAdminDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/admin/reclamos/{id}/liberar:
+    post:
+      tags: [Admin, Rifas]
+      summary: Liberar los fondos congelados de un reclamo resuelto
+      x-jira: PICA-341
+      x-permiso: RECLAMO_RESOLVER
+      x-owner: Salvador
+      description: >-
+        HU-707 (PICA-22, T707-1). Ejecuta la liberación de fondos congelados según la resolución definitiva del
+        reclamo. Con `RECHAZADO` (`SIN_FRAUDE`), dispara la liquidación normal de la rifa (T606-2). Con `ACEPTADO`
+        (`FRAUDE_CONFIRMADO`), cancela la rifa, marca los números vendidos como `REINTEGRADO` y acredita el 100 % pagado
+        (números + comisión) como `REINTEGRO` en las billeteras de los compradores, liberando la custodia como
+        `REINTEGRADA`. Registra la ejecución en auditoría con la rifa, el monto, el destino y el usuario de soporte.
+        401 `NO_AUTENTICADO` si no hay sesión.
+        403 `SIN_PERMISO` sin `RECLAMO_RESOLVER`.
+        404 `RECLAMO_NO_ENCONTRADO` si no existe.
+        409 `RECLAMO_NO_RESUELTO` si sigue `PENDIENTE`.
+        409 `FONDOS_EN_CUSTODIA` si quedan otros reclamos pendientes o no venció el plazo de 48 h para liquidar.
+        409 `CUSTODIA_LIBERADA` si los fondos del reclamo o la custodia de la rifa ya fueron liberados.
+      parameters:
+        - {name: id, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+      responses:
+        '200': {description: Fondos liberados, content: {application/json: {schema: {$ref: '#/components/schemas/ReclamoAdminDetalle'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
 
   # --- Rifas -------------------------------------------------------------------
   # Todas exigen RIFA_GESTIONAR (ORGANIZADOR, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO. La rifa de otro
@@ -1251,6 +1513,223 @@ paths:
         '409':
           $ref: '#/components/responses/Conflicto'
 
+  /api/v1/billetera/cargas/cripto:
+    post:
+      tags: [Billetera]
+      summary: Iniciar una carga de saldo con la wallet
+      x-jira: PICA-333
+      x-owner: Mateo
+      description: >-
+        Inicia una carga pagada con la wallet en el contrato PasarelaCargas de Base Sepolia (HU-609). Devuelve la
+        referencia (el bytes32 que se pasa a `cargar` en el contrato), la dirección del contrato, la red y los wei
+        exactos que hay que mandar, calculados con la cotización fija de testnet. La carga queda pendiente hasta que
+        se confirma con el hash de la transacción. No vence: un pago confirmado en la cadena se acredita aunque haya
+        pasado tiempo. Los límites del monto son los de la carga de saldo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CargaRequest'
+      responses:
+        '201':
+          description: Carga iniciada, pendiente de pago
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CargaCripto'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+
+  /api/v1/billetera/cargas/cripto/{referencia}/confirmar:
+    post:
+      tags: [Billetera]
+      summary: Confirmar una carga con cripto con el hash de la transacción
+      x-jira: PICA-333
+      x-owner: Mateo
+      description: >-
+        Lee la transacción en Base Sepolia y, si pagó esta carga, la acredita en la billetera: el movimiento CARGA
+        queda con el hash como `referenciaExterna`, la descripción «Carga con cripto» y `enlaceExplorador`. Para
+        acreditarse, la transacción tiene que ser exitosa y tener un evento `CargaRegistrada` emitido por el
+        contrato con esta referencia y exactamente `montoWei`. No importa el `to` de la transacción (una smart
+        wallet paga a través de otra dirección), ni la wallet que pagó. 404 `CARGA_NO_ENCONTRADA` si la
+        referencia no existe o es de otro usuario. 400 `VALIDACION` si el hash no es 0x y 64 caracteres hex.
+        Si la transacción no paga la carga, 400 y el rechazo queda en auditoría; la carga sigue pendiente y se
+        puede confirmar con la transacción correcta: `TRANSACCION_FALLIDA` (revirtió; no se cobró nada) ·
+        `TRANSACCION_SIN_CARGA` (no tiene un `CargaRegistrada` del contrato con esta referencia) ·
+        `MONTO_NO_COINCIDE` (pagó otro monto que `montoWei`; si hace falta, se devuelve a mano desde el contrato) ·
+        `TRANSACCION_INEXISTENTE` (la red no conoce el hash; reintentar no sirve) · `TRANSACCION_YA_USADA` (la
+        transacción ya acreditó otra carga: una transacción acredita una sola, aunque pague varias). 409 `TRANSACCION_PENDIENTE` si
+        la transacción todavía no entró en un bloque o no tiene las confirmaciones mínimas (3 bloques, unos 6 s):
+        reintentar en unos segundos. 503 `RED_NO_DISPONIBLE` si el nodo de Base Sepolia no respondió: reintentar
+        más tarde; no dice nada de la transacción.
+        Es idempotente: confirmar otra vez una carga ya acreditada con el mismo hash devuelve 200 con el mismo
+        movimiento sin consultar la red, y con otro hash es 409 `CARGA_YA_ACREDITADA`. Dos confirmaciones al mismo
+        tiempo acreditan una sola vez.
+      parameters:
+        - name: referencia
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[0-9a-fA-F]{64}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmarCargaCripto'
+      responses:
+        '200':
+          description: Carga acreditada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovimientoBilletera'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+        '503':
+          $ref: '#/components/responses/Error'
+
+  /api/v1/billetera/cuentas:
+    get:
+      tags: [Billetera]
+      summary: Mis cuentas bancarias
+      x-jira: PICA-336
+      x-owner: Salvador
+      description: >-
+        Lista las cuentas bancarias y virtuales (CBU, CVU, Alias) del usuario autenticado que no han sido dadas de
+        baja, ordenadas de la más reciente a la más antigua.
+      responses:
+        '200':
+          description: Lista de cuentas bancarias
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CuentaBancaria'
+        '401':
+          $ref: '#/components/responses/Error'
+
+    post:
+      tags: [Billetera]
+      summary: Agregar cuenta bancaria o virtual
+      x-jira: PICA-336
+      x-owner: Salvador
+      description: >-
+        Registra una cuenta bancaria o virtual del usuario autenticado. Valida el formato (CBU y CVU de 22 dígitos con
+        dígito verificador; alias de 6 a 20 caracteres) y ejecuta la validación simulada contra el documento de la persona
+        del usuario: si el CUIT/CUIL del titular contiene el documento queda VALIDADA; si no, queda RECHAZADA y responde
+        409 CUENTA_TITULAR_NO_COINCIDE ("La cuenta destino debe estar a nombre del titular verificado en la plataforma").
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearCuentaBancariaRequest'
+      responses:
+        '201':
+          description: Cuenta bancaria agregada y validada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CuentaBancaria'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+
+  /api/v1/billetera/cuentas/{id}:
+    delete:
+      tags: [Billetera]
+      summary: Eliminar cuenta bancaria
+      x-jira: PICA-336
+      x-owner: Salvador
+      description: >-
+        Da de baja lógica (`eliminadoEn`) una cuenta bancaria del usuario autenticado. Responde 404
+        CUENTA_BANCARIA_NO_ENCONTRADA si no existe, ya fue eliminada o pertenece a otro usuario.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '204':
+          description: Cuenta eliminada con éxito
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+
+  /api/v1/billetera/retiros/limites:
+    get:
+      tags: [Billetera]
+      summary: Límites de retiro de la plataforma
+      x-jira: PICA-337
+      x-owner: Salvador
+      description: >-
+        Devuelve los montos mínimo y máximo permitidos para solicitar un retiro de la billetera, leídos de los
+        parámetros vigentes de la plataforma.
+      responses:
+        '200':
+          description: Límites vigentes de retiro
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LimitesRetiro'
+        '401':
+          $ref: '#/components/responses/Error'
+
+  /api/v1/billetera/retiros:
+    post:
+      tags: [Billetera]
+      summary: Solicitar retiro de fondos a cuenta bancaria
+      x-jira: PICA-337
+      x-owner: Salvador
+      description: >-
+        Solicita el retiro de fondos del saldo disponible hacia una cuenta bancaria o virtual validada del usuario
+        autenticado (HU-607, T607-2). Bloquea pesimistamente la billetera para evitar saldos negativos bajo concurrencia,
+        descuenta el importe del saldo disponible y registra el movimiento como RETIRO en estado PENDIENTE ("en proceso").
+        Valida que el monto respete los topes mínimo y máximo parametrizados (400 RETIRO_FUERA_DE_TOPES).
+        Valida que la cuenta pertenezca al usuario y esté en estado VALIDADA (404 CUENTA_BANCARIA_NO_ENCONTRADA / 409
+        CUENTA_NO_VALIDADA). Si el monto supera el saldo disponible, responde 409 SALDO_INSUFICIENTE, aclarando que
+        los fondos retenidos no pueden ser movilizados.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitarRetiroRequest'
+      responses:
+        '201':
+          description: Retiro solicitado con éxito en estado PENDIENTE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovimientoBilletera'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+
   # --- Equipos -----------------------------------------------------------------
 
 
@@ -1432,6 +1911,76 @@ paths:
         '409': {$ref: '#/components/responses/Conflicto'}
         '502': {$ref: '#/components/responses/Error'}
 
+  /api/v1/torneos/{id}/cancelacion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: La cancelación del torneo, para su organizador
+      x-jira: PICA-349
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        HU-605. Solo el organizador (para otro, 404 `TORNEO_NO_ENCONTRADO`). Siempre trae `pozo` (lo recaudado en
+        inscripciones), `pctMaximo` (el parámetro CANCELACION_GASTOS_TOPE) y `maximoGastos` (ese % del pozo, hacia
+        abajo al centavo), para que la consola no deje declarar más antes de enviar. Si el torneo no se canceló,
+        `estado` es null y lo demás va vacío; si se canceló, trae la decisión, los gastos (sin los archivos), lo
+        reintegrado a las billeteras y lo que retuvo el organizador.
+      responses:
+        '200':
+          description: El tope y, si hay, la cancelación
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CancelacionDelTorneo'}
+        '404': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Torneos]
+      summary: Cancelar el torneo
+      x-jira: PICA-347
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        HU-605. Solo el organizador del torneo (para otro, 404 `TORNEO_NO_ENCONTRADO`), con la inscripción abierta o
+        cerrada, o en curso. Sin gastos se aprueba sola (`estado` AUTOMATICA): el torneo pasa a CANCELADO con el
+        motivo, las inscripciones confirmadas a REINTEGRADA y las que no terminaron de pagar a CANCELADA, la custodia
+        queda REINTEGRADA y cada billetera que pagó recupera todo lo que pagó (inscripción y gastos administrativos)
+        con un movimiento REINTEGRO, y un mail que lo dice. Con gastos queda en revisión (`estado` EN_REVISION, `reintegrado` 0): el torneo
+        pasa a CANCELACION_EN_REVISION con el motivo, la plata sigue en custodia y las inscripciones no cambian hasta
+        que soporte decida; no se puede editar ni volver a enviar. Mientras tanto se bloquea lo mismo que con
+        CANCELADO: pronósticos (409 `PRONOSTICO_FUERA_DE_VENTANA`), árbitros y designaciones (409
+        `TORNEO_NO_EDITABLE`), y la custodia no se libera ni se liquida. La ficha pública muestra el estado, sin el
+        motivo ni los gastos. `pozo` es lo recaudado en inscripciones. 400
+        `VALIDACION`, con todos los errores juntos: `motivo` (`REQUERIDO`, o `LONGITUD` si pasa los 500 caracteres),
+        `gastos` (`LONGITUD` si son más de 10), `gastos[i].monto` (`VALOR_INVALIDO` si no es mayor a 0 con hasta dos
+        decimales), `gastos[i].concepto` (`REQUERIDO`, `LONGITUD` si pasa los 255) y `gastos[i].comprobante`
+        (`REQUERIDO` con "Debe adjuntar un comprobante válido por cada gasto declarado", `FORMATO_INVALIDO` si no es
+        un PDF, JPG o PNG, mirando el contenido, `LONGITUD` si pasa los 5 MB). 400 `GASTOS_SOBRE_TOPE` si la suma de
+        los gastos pasa el % del pozo del parámetro CANCELACION_GASTOS_TOPE (20 por defecto), con "Los gastos a
+        retener no pueden superar el 20% del pozo. El monto excedente debe ser devuelto a los participantes" y
+        `pctMaximo`, `pozo`, `maximo` y `declarado`; sin pagos, el máximo es 0. 409 `TORNEO_NO_CANCELABLE` en
+        cualquier otro estado, también si ya se canceló o está en revisión (el estado va en `estado`). 502
+        `ALMACENAMIENTO_NO_DISPONIBLE` si no se pudo guardar un comprobante.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo: {type: string, maxLength: 500}
+                gastos[0].monto: {type: number, description: 'Uno por gasto, con su índice: gastos[0], gastos[1]…'}
+                gastos[0].concepto: {type: string, maxLength: 255}
+                gastos[0].comprobante: {type: string, format: binary, description: PDF, JPG o PNG de hasta 5 MB}
+      responses:
+        '201':
+          description: La cancelación
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CancelacionRealizada'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+        '502': {$ref: '#/components/responses/Error'}
   /api/v1/arbitros:
     get:
       tags: [Torneos]
@@ -1442,13 +1991,14 @@ paths:
       description: >-
         El buscador del paso 2. Usuarios activos con el rol ÁRBITRO (activo), ordenados por apellidos y nombres;
         `q` busca igual que en `GET /usuarios` (cada palabra en el username, los nombres o los apellidos). Sin
-        `q`, los primeros de la lista.
+        `q`, los primeros de la lista. Cada uno trae `identidadVerificada` (HU-604, PICA-350): en un torneo con
+        dinero solo se designa a quien la tiene.
       parameters:
         - {name: q, in: query, required: false, schema: {type: string, maxLength: 100}}
         - {$ref: '#/components/parameters/page'}
         - {$ref: '#/components/parameters/size'}
       responses:
-        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageUsuarioPublico'}}}}
+        '200': {description: Página, content: {application/json: {schema: {$ref: '#/components/schemas/PageArbitroBuscado'}}}}
         '400': {$ref: '#/components/responses/Error'}
 
   /api/v1/torneos/{id}/arbitros:
@@ -1481,7 +2031,9 @@ paths:
         400 `VALIDACION` con `REQUERIDO` en `permisos` si viene vacío. 404 `USUARIO_NO_ENCONTRADO` si el usuario no
         existe. 409 `USUARIO_NO_ES_ARBITRO` si no está activo o no tiene el rol ÁRBITRO, `ARBITRO_DUPLICADO` si ya
         está designado en el torneo (PENDIENTE o ACEPTADO) y `ARBITRO_NO_PERMITIDO` si es el organizador o juega el torneo (inscripción
-        pendiente de pago o confirmada, propia o en una nómina).
+        pendiente de pago o confirmada, propia o en una nómina). En un torneo con dinero (cobra inscripción), 409
+        `IDENTIDAD_NO_VERIFICADA` ("El usuario propuesto debe verificar su identidad antes de arbitrar torneos con
+        dinero") si no tiene el email verificado y el documento y la fecha de nacimiento cargados (HU-604, PICA-350).
       requestBody:
         required: true
         content:
@@ -1512,7 +2064,8 @@ paths:
       description: >-
         Deja de figurar en el torneo y pierde sus permisos en el momento. 404 `ARBITRO_NO_ENCONTRADO` si no está
         designado. 409 `TORNEO_NO_EDITABLE` si el torneo ya terminó y `ARBITRO_CON_PARTIDOS` si tiene partidos
-        asignados (PICA-237): primero se reasignan.
+        asignados (PICA-237): primero se reasignan. Si tenía un honorario depositado, vuelve a la billetera del
+        organizador (HU-604).
       responses:
         '204': {description: Quitado}
         '404': {$ref: '#/components/responses/Error'}
@@ -1575,6 +2128,7 @@ paths:
         hay; en el paso 2 figura RECHAZADO con el motivo y lo puede volver a designar. 400 `VALIDACION` con
         `LONGITUD` en `motivo` si pasa los 500 caracteres. 404 `DESIGNACION_NO_ENCONTRADA` si no está designado en el
         torneo. 409 `DESIGNACION_YA_RESPONDIDA` si ya aceptó o rechazó y `TORNEO_NO_EDITABLE` si el torneo terminó.
+        Si el organizador le había depositado un honorario, vuelve a su billetera (HU-604).
       requestBody:
         content:
           application/json:
@@ -1685,6 +2239,50 @@ paths:
       responses:
         '200': {$ref: '#/components/responses/TorneoInformacion'}
         '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/torneos/{id}/discord:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      tags: [Torneos]
+      summary: Guardar el webhook de Discord del torneo
+      x-jira: PICA-370
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        PICA-369. El webhook del canal de Discord al que van los avisos del torneo: la llave, los resultados, los pases
+        directos, el campeón y la apertura de cada ventana de check-in. Lo copia el organizador desde Discord (Editar
+        canal → Integraciones → Webhooks → Copiar URL). Reemplaza al que había. Cada vez que se guarda, aunque sea el
+        mismo, va un mensaje de prueba al canal; si Discord falla, el webhook queda guardado igual y la respuesta no
+        cambia. La URL es un secreto: la respuesta (y `GET /torneos/{id}`) la trae enmascarada en `discordWebhook`, y la
+        ficha pública no la trae. Solo el organizador (si no, 404 `TORNEO_NO_ENCONTRADO`), desde BORRADOR hasta
+        EN_CURSO (si no, 409 `TORNEO_NO_EDITABLE`). 400 `VALIDACION`: `REQUERIDO` o `FORMATO_INVALIDO` en `url` si
+        falta o no es `https://discord.com/api/webhooks/{id}/{token}` (el dominio viejo, discordapp.com, no se acepta).
+        Queda en la auditoría sin la URL (MODIFICACION, entidad TORNEO).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DiscordTorneoRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Torneos]
+      summary: Quitar el webhook de Discord del torneo
+      x-jira: PICA-370
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Mateo
+      description: >-
+        PICA-369. Deja de publicar en el canal; sin webhook no hace nada. Mismas reglas que el PUT: solo el
+        organizador (404) y desde BORRADOR hasta EN_CURSO (409). Queda en la auditoría.
+      responses:
+        '200': {$ref: '#/components/responses/TorneoInformacion'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
@@ -2195,7 +2793,9 @@ paths:
       x-jira: PICA-203
       x-permiso: TORNEO_GESTIONAR
       x-owner: Tomás
-      description: 404 `GASTO_NO_ENCONTRADO` si el torneo no tiene ese gasto. 409 `TORNEO_NO_EDITABLE`.
+      description: >-
+        404 `GASTO_NO_ENCONTRADO` si el torneo no tiene ese gasto. 409 `TORNEO_NO_EDITABLE` y
+        `HONORARIO_YA_DEPOSITADO` si es un honorario depositado: primero se retira el depósito.
       requestBody: {$ref: '#/components/requestBodies/Gasto'}
       responses:
         '200': {description: Gasto, content: {application/json: {schema: {$ref: '#/components/schemas/GastoDetalle'}}}}
@@ -2207,9 +2807,70 @@ paths:
       x-jira: PICA-203
       x-permiso: TORNEO_GESTIONAR
       x-owner: Tomás
-      description: 404 `GASTO_NO_ENCONTRADO`. 409 `TORNEO_NO_EDITABLE`.
+      description: 404 `GASTO_NO_ENCONTRADO`. 409 `TORNEO_NO_EDITABLE` y `HONORARIO_YA_DEPOSITADO`.
       responses:
         '204': {description: Borrado}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/torneos/{id}/gastos/{gastoId}/pago:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {name: gastoId, in: path, required: true, schema: {type: integer, minimum: 1}}
+    post:
+      tags: [Torneos]
+      summary: Pagar un gasto previsto (depositar un honorario o registrar el comprobante)
+      x-jira: PICA-350
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        HU-604 (wireframe 49). Solo el organizador, con el torneo sin terminar (de BORRADOR a EN_CURSO). Va
+        `arbitroId` o `comprobante`, no los dos: 400 `VALIDACION` si no viene ninguno o vienen los dos.
+
+        Con `arbitroId`, un honorario arbitral se paga por la plataforma: el monto del gasto sale del disponible del
+        organizador (movimiento PAGO_SERVICIO) y queda en la custodia del torneo hasta la liquidación, que se lo
+        acredita al árbitro (HONORARIO) y le devuelve el gasto al organizador. El árbitro tiene que estar designado
+        (PENDIENTE o ACEPTADO) y con la identidad verificada. Errores: 404 `ARBITRO_NO_ENCONTRADO` si no está
+        designado o rechazó; 409 `GASTO_NO_ES_HONORARIO`, `HONORARIO_YA_DEPOSITADO`, `IDENTIDAD_NO_VERIFICADA`,
+        `SALDO_INSUFICIENTE` (con `faltante`) y `BILLETERA_BLOQUEADA`/`COBRO_RECHAZADO`.
+
+        Con `comprobante`, se registra un gasto común pagado por fuera. Un honorario así no es deducible: 409
+        `HONORARIO_NO_DEDUCIBLE` ("Los honorarios arbitrales solo son deducibles si se abonan mediante transferencia
+        interna de la plataforma"). 409 `GASTO_YA_PAGADO` si ya está pagado.
+
+        Comunes a los dos: 404 `TORNEO_NO_ENCONTRADO` (o de otro organizador) y `GASTO_NO_ENCONTRADO`; 409
+        `TORNEO_NO_EDITABLE` con el torneo FINALIZADO, CANCELADO o con la cancelación en revisión (HU-605).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PagoGastoRequest'}
+      responses:
+        '200':
+          description: Pagado
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GastoDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+    delete:
+      tags: [Torneos]
+      summary: Retirar el honorario depositado
+      x-jira: PICA-350
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Tomás
+      description: >-
+        HU-604. El depósito queda REVERTIDO y vuelve al disponible del organizador con un REINTEGRO; el gasto queda
+        PENDIENTE y se puede volver a depositar, para el mismo u otro árbitro. Pasa solo si el árbitro rechaza la
+        designación o lo quitan. 409 `HONORARIO_SIN_DEPOSITAR` si no hay depósito y `TORNEO_NO_EDITABLE` si el
+        torneo terminó.
+      responses:
+        '200':
+          description: Retirado
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GastoDetalle'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
@@ -2659,6 +3320,92 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/liquidacion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Reparto de la liquidación de mi torneo
+      x-jira: PICA-331
+      x-owner: Tomás
+      description: >-
+        Solo el organizador del torneo: a quién le acreditó qué la liquidación (HU-606, wireframe 64). Los premios por
+        puesto, lo suyo (los gastos del torneo), los gastos administrativos de la plataforma y lo que le aportó su
+        rifa. Sin liquidar, `liquidado` en false y sin líneas. 404 `TORNEO_NO_ENCONTRADO` si no existe o es de otro
+        organizador.
+
+        Con `formato` (HU-608, PICA-342) es la liquidación final para descargar, y también la puede bajar quien tiene
+        `TORNEO_ADMINISTRAR`: el mismo detalle, una fila por concepto (premio de cada puesto, reintegro de gastos al
+        organizador, pozo sin ganadores al organizador, gastos administrativos de la plataforma, honorarios y lo que
+        aportó la rifa) con el beneficiario,
+        cuándo se acreditó y el monto, y el total repartido. El CSV va con `;`, coma decimal y BOM UTF-8. Sin liquidar,
+        409 `FONDOS_EN_CUSTODIA`: el reporte final solo se emite después de la liquidación. 400 `VALIDACION` si el
+        formato no es csv ni pdf.
+      parameters:
+        - {name: formato, in: query, required: false, description: 'Sin él, el reparto en JSON', schema: {type: string, enum: [csv, pdf]}}
+      responses:
+        '200':
+          description: El reparto en JSON o, con `formato`, el archivo (`Content-Disposition` attachment, `liquidacion-torneo-{id}.csv|pdf`)
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/RepartoLiquidacion'}}
+            text/csv: {schema: {type: string}}
+            application/pdf: {schema: {type: string, format: binary}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/panel-financiero:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Panel financiero de mi torneo
+      x-jira: PICA-342
+      x-owner: Laura
+      description: >-
+        HU-608. El organizador del torneo o quien tiene `TORNEO_ADMINISTRAR`: cómo viene la plata, en vivo, con la
+        cuenta de la liquidación sobre lo que hay en custodia. De lo recaudado se le reintegran al organizador sus
+        gastos (los comunes y los honorarios que depositó), hasta lo recaudado; el resto, más lo que aporta la rifa por
+        lo vendido, es lo comprometido en premios. Liquidado, los números ya no cambian. 404 `TORNEO_NO_ENCONTRADO` si
+        no existe o no lo puede ver.
+      responses:
+        '200': {description: El panel, content: {application/json: {schema: {$ref: '#/components/schemas/PanelFinanciero'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/ingresos:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Libro de ingresos por inscripción de mi torneo
+      x-jira: PICA-342
+      x-owner: Laura
+      description: >-
+        HU-608 (wireframe «Dashboard Contable y Liquidación»). El organizador del torneo o quien tiene
+        `TORNEO_ADMINISTRAR`: cada pago de inscripción que entró a la custodia, con su comprobante, quién pagó (el
+        capitán, en equipos), el monto, los gastos administrativos y el estado (REVERTIDO si se le devolvió). El más
+        nuevo primero; sin paginar, porque no pasa del cupo del torneo. Sin pagos, la lista vacía. 404
+        `TORNEO_NO_ENCONTRADO` si no existe o no lo puede ver.
+      responses:
+        '200': {description: Los pagos, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/IngresoInscripcion'}}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/rifas/{id}/liquidacion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Reparto de la liquidación de mi rifa
+      x-jira: PICA-331
+      x-owner: Tomás
+      description: >-
+        Como el del torneo: los premios a quien compró cada número ganador, los gastos administrativos y lo que la rifa
+        aportó a los ganadores de su torneo (`APORTE_RIFA`, puede llegar después, cuando se liquida el torneo). 404
+        `RIFA_NO_ENCONTRADA` si no existe o es de otro organizador.
+      responses:
+        '200': {description: El reparto, content: {application/json: {schema: {$ref: '#/components/schemas/RepartoLiquidacion'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/inscripciones/{id}/comprobante:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -2824,14 +3571,15 @@ components:
       type: string
       enum: [PENDIENTE_VERIFICACION, ACTIVO, BLOQUEADO]
       description: PENDIENTE hasta el clic en el mail; BLOQUEADO lo pone un admin. La baja lógica no es un estado.
-    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS]}
+    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS, AUDITORIA]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224) y PARAMETRO_ADMINISTRAR de V35 (PICA-282). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), AUDITORIA_VER de V49 (PICA-345) y TORNEO_ADMINISTRAR de V50 (PICA-342). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
-             RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR]
+             RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR,
+             CANCELACION_REVISAR, RECLAMO_RESOLVER, AUDITORIA_VER, TORNEO_ADMINISTRAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -2841,9 +3589,17 @@ components:
         backend lo agrega acá.
         Genéricos: VALIDACION 400 · NO_AUTENTICADO / TOKEN_INVALIDO / TOKEN_VENCIDO / SESION_REVOCADA 401 · SIN_PERMISO 403 · *_NO_ENCONTRADO 404 ·
         ALMACENAMIENTO_NO_DISPONIBLE 502 (el almacenamiento de archivos no respondió; se puede reintentar).
+        Carga con cripto (HU-609), 400: TRANSACCION_INEXISTENTE (la red no conoce el hash) · TRANSACCION_FALLIDA (la
+        transacción revirtió) · TRANSACCION_SIN_CARGA (no pagó esta carga en el contrato) · MONTO_NO_COINCIDE (pagó
+        otro monto) · TRANSACCION_YA_USADA (ya acreditó otra carga) · CARGA_NO_ENCONTRADA 404 · TRANSACCION_PENDIENTE 409 (sin las confirmaciones mínimas; reintentar
+        en unos segundos) · CARGA_YA_ACREDITADA 409 (se acreditó con otra transacción) · RED_NO_DISPONIBLE 503 (el nodo de Base Sepolia no respondió; reintentar más tarde).
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
         DEMASIADOS_INTENTOS 429 (login).
+        Cancelación de torneo: GASTOS_SOBRE_TOPE 400 (los gastos declarados pasan el % del pozo de
+        CANCELACION_GASTOS_TOPE; trae `pctMaximo`, `pozo`, `maximo` y `declarado`, HU-605) ·
+        CANCELACION_NO_ENCONTRADA 404 · CANCELACION_PROPIA 409 (quien revisa organiza el torneo) ·
+        CANCELACION_YA_RESUELTA 409 (ya se aprobó, rechazó o fue automática; trae `estado`).
         Negocio (409): USERNAME_DUPLICADO · EMAIL_DUPLICADO · DOCUMENTO_DUPLICADO · ROL_DUPLICADO ·
         PERSONA_INACTIVA · PERSONA_CON_USUARIO · DOCUMENTO_NO_EDITABLE · ROL_INACTIVO · USUARIO_NO_ACTIVO ·
         USUARIO_YA_BLOQUEADO · RIFA_NO_EDITABLE (solo se modifica en BORRADOR) ·
@@ -2851,11 +3607,14 @@ components:
         TORNEO_NO_ADMITE_RIFA (la rifa va con un torneo en borrador o con la inscripción abierta o cerrada) ·
         TORNEO_NO_EDITABLE (la parte económica, el reglamento y la publicación solo en BORRADOR; los pasos 1 y 2, hasta que empieza) ·
         TORNEO_INCOMPLETO (le falta algo para publicarse; la lista va en `faltantes`) ·
+        TORNEO_NO_CANCELABLE (se cancela con la inscripción abierta o cerrada, o en curso; una vez cancelado o en revisión, no; trae `estado`, HU-605) ·
         CAMPOS_BLOQUEADOS (el torneo publicado ya no admite cambios en esos campos; la lista va en `campos`) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) · SALDO_INSUFICIENTE (el disponible de la
         billetera no alcanza para el total; lo que falta va en `faltante`, HU-603) · FONDOS_EN_CUSTODIA (los
-        fondos de un torneo o una rifa no se mueven antes de que termine; tampoco los saca el organizador, HU-603) ·
-        CUSTODIA_LIBERADA (la custodia ya se liquidó o reintegró; trae `estado`) ·
+        fondos de un torneo o una rifa no se mueven antes de que termine; tampoco los saca el organizador, HU-603;
+        en un torneo: "El evento debe estar cerrado y validado oficialmente para liberar la custodia"; en una rifa,
+        sorteada, con el plazo de reclamo vencido y sin reclamos pendientes, HU-606) ·
+        CUSTODIA_LIBERADA (la custodia ya se liquidó o reintegró, también si se liquida dos veces; trae `estado`) ·
         INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
@@ -2867,7 +3626,11 @@ components:
         torneo) · ARBITRO_NO_PERMITIDO (es el organizador o juega el torneo) · ARBITRO_CON_PARTIDOS (quitar a un
         árbitro con partidos asignados) · ARBITRO_NO_HABILITADO (asignarle un partido a quien no aceptó la
         designación) · DESIGNACION_YA_RESPONDIDA (el árbitro ya aceptó o rechazó) · COMPROMISO_NO_ACEPTADO (aceptar
-        la designación sin el código de imparcialidad) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
+        la designación sin el código de imparcialidad) · IDENTIDAD_NO_VERIFICADA (arbitrar o cobrar honorarios en un
+        torneo con dinero sin la identidad verificada, HU-604) · GASTO_NO_ES_HONORARIO (depositar un gasto común) ·
+        HONORARIO_NO_DEDUCIBLE (un honorario con un comprobante externo) · HONORARIO_YA_DEPOSITADO (ya hay un
+        depósito; también al modificar o borrar ese gasto) · HONORARIO_SIN_DEPOSITAR (retirar sin depósito) ·
+        GASTO_YA_PAGADO (el gasto común ya tiene comprobante) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
         PARTICIPANTES_INSUFICIENTES (menos de 2 inscripciones confirmadas) · BRACKET_YA_GENERADO (se puede regenerar) ·
         SIN_ARBITROS (cada partido necesita un árbitro que haya aceptado la designación) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
         regenera) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
@@ -2888,8 +3651,13 @@ components:
         (la rifa tiene números vendidos: no vuelve a borrador ni se elimina; trae `numerosVendidos`) ·
         RIFA_CON_RESERVAS (alguien está pagando números de la rifa). Reclamo de una rifa (PICA-268):
         RIFA_NO_SORTEADA (todavía no se sorteó) · PLAZO_RECLAMO_VENCIDO (pasaron las 48 h o ya se liquidó o
-        canceló) · RECLAMO_DUPLICADO (el usuario ya tiene un reclamo pendiente en la rifa). Sorteo de una rifa
-        (PICA-265): SORTEO_ANTICIPADO (todavía no llegó la fecha de sorteo comprometida).
+        canceló) · RECLAMO_DUPLICADO (el usuario ya tiene un reclamo pendiente en la rifa) · RECLAMO_YA_RESUELTO (el
+        reclamo ya fue resuelto y no se reabre ni admite apelación). Sorteo de una rifa
+        (PICA-265): SORTEO_ANTICIPADO (todavía no llegó la fecha de sorteo comprometida). Cuentas bancarias (HU-607,
+        PICA-336): CUENTA_BANCARIA_NO_ENCONTRADA 404 · CUENTA_BANCARIA_DUPLICADA 409 · CUENTA_TITULAR_NO_COINCIDE 409
+        ("La cuenta destino debe estar a nombre del titular verificado en la plataforma"). Retiro de fondos (HU-607,
+        PICA-337): RETIRO_FUERA_DE_TOPES 400 (el monto está fuera del rango mínimo y máximo) · CUENTA_NO_VALIDADA 409
+        (solo se puede solicitar retiros a una cuenta bancaria validada).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
@@ -2900,10 +3668,13 @@ components:
 
       enum: [VALIDACION, NO_AUTENTICADO, TOKEN_INVALIDO, TOKEN_VENCIDO, SESION_REVOCADA, SIN_PERMISO, ERROR_INTERNO,
              ALMACENAMIENTO_NO_DISPONIBLE,
+             RED_NO_DISPONIBLE, TRANSACCION_INEXISTENTE, TRANSACCION_FALLIDA, TRANSACCION_SIN_CARGA, MONTO_NO_COINCIDE,
+             TRANSACCION_YA_USADA, TRANSACCION_PENDIENTE, CARGA_YA_ACREDITADA,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
-             OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO,
+             OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO, CARGA_NO_ENCONTRADA,
+              CUENTA_BANCARIA_NO_ENCONTRADA, RECLAMO_NO_ENCONTRADO,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
@@ -2915,13 +3686,16 @@ components:
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
-             ARBITRO_NO_HABILITADO, DESIGNACION_YA_RESPONDIDA, COMPROMISO_NO_ACEPTADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
+             ARBITRO_NO_HABILITADO, DESIGNACION_YA_RESPONDIDA, COMPROMISO_NO_ACEPTADO, IDENTIDAD_NO_VERIFICADA,
+             GASTO_NO_ES_HONORARIO, HONORARIO_NO_DEDUCIBLE, HONORARIO_YA_DEPOSITADO, HONORARIO_SIN_DEPOSITAR,
+             GASTO_YA_PAGADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, SORTEO_ANTICIPADO, RECLAMO_DUPLICADO,
+             RECLAMO_YA_RESUELTO, RECLAMO_NO_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR, BILLETERA_BLOQUEADA]
 
@@ -3005,6 +3779,10 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/UsuarioPublico'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageArbitroBuscado:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/ArbitroBuscado'}}, page: {$ref: '#/components/schemas/PageInfo'}}
     PagePersonaResumen:
       type: object
       required: [content, page]
@@ -3017,6 +3795,33 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/RifaResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageCancelacionEnRevision:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/CancelacionEnRevision'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    CancelacionEnRevision:
+      type: object
+      required: [torneoId, torneoNombre, torneoSlug, organizador, motivo, pedidaEn, pozo, totalGastos, gastos]
+      description: Una cancelación en la cola de soporte (PICA-348).
+      properties:
+        torneoId: {type: integer, format: int64}
+        torneoNombre: {type: string}
+        torneoSlug: {type: string}
+        organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
+        motivo: {type: string}
+        pedidaEn: {type: string, format: date-time}
+        pozo: {type: number, description: Lo recaudado en inscripciones}
+        totalGastos: {type: number}
+        gastos:
+          type: array
+          items:
+            type: object
+            required: [id, concepto, monto, tipoContenido]
+            properties:
+              id: {type: integer, format: int64}
+              concepto: {type: string}
+              monto: {type: number}
+              tipoContenido: {type: string, enum: [application/pdf, image/jpeg, image/png]}
     PageTorneoResumen:
       type: object
       required: [content, page]
@@ -3037,6 +3842,10 @@ components:
       type: object
       required: [content, page]
       properties: {content: {type: array, items: {$ref: '#/components/schemas/MovimientoBilletera'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    PageReclamoAdminDetalle:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/ReclamoAdminDetalle'}}, page: {$ref: '#/components/schemas/PageInfo'}}
 
     # --- auth ----------------------------------------------------------------
     RegistroRequest:
@@ -3306,11 +4115,41 @@ components:
     ClaveParametro:
       type: string
       enum: [GASTOS_ADMINISTRATIVOS, GASTOS_ADMINISTRATIVOS_TOPE, MARGEN_CIERRE_INICIO_MIN, CHECKIN_DURACION_MAX_MIN,
-             RETIRO_MINIMO, RETIRO_MAXIMO]
+             RETIRO_MINIMO, RETIRO_MAXIMO, CANCELACION_GASTOS_TOPE]
       description: >-
         HU-702. GASTOS_ADMINISTRATIVOS (% que paga aparte quien se inscribe o compra) y su tope;
         MARGEN_CIERRE_INICIO_MIN (CE4-5); CHECKIN_DURACION_MAX_MIN (máximo de la ventana de check-in);
-        RETIRO_MINIMO y RETIRO_MAXIMO (pesos, para HU-607).
+        RETIRO_MINIMO y RETIRO_MAXIMO (pesos, para HU-607); CANCELACION_GASTOS_TOPE (% máximo del pozo que el
+        organizador puede retener en gastos al cancelar un torneo, HU-605).
+    PageRegistroAuditoria:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/RegistroAuditoria'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    RegistroAuditoria:
+      type: object
+      required: [id, fecha, usuarioId, username, accion, entidad, entidadId, descripcion, ip, detalle]
+      description: Una fila del libro de auditoría (PICA-345).
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        fecha: {type: string, format: date-time}
+        usuarioId: {type: [integer, 'null'], format: int64, description: 'Null en lo que hace el sistema (liquidaciones, cierres por fecha) y en el login fallido de un usuario que no existe'}
+        username: {type: [string, 'null']}
+        accion: {$ref: '#/components/schemas/AccionAuditoria'}
+        entidad: {type: [string, 'null'], description: 'Sobre qué fue: TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO', examples: [TORNEO]}
+        entidadId: {type: [string, 'null'], description: 'El id de la entidad, o la clave si es un PARAMETRO', examples: ['42']}
+        descripcion:
+          type: [string, 'null']
+          description: >-
+            El nombre de la entidad, buscado al leer: TORNEO su nombre; PARTIDO `Ronda N – torneo`; RIFA su título;
+            CUSTODIA `Torneo: …` o `Rifa: …`; USUARIO, BILLETERA y CARGA_CRIPTO el `@username` (la billetera sin
+            usuario, `Plataforma`); PARAMETRO su descripción. Null si no se encuentra. Lo dado de baja también se ve.
+          examples: [Liga Abierta de Ajedrez Rápido]
+        ip: {type: [string, 'null'], description: Solo la guardan el login y el login fallido}
+        detalle: {type: [object, 'null'], additionalProperties: true, description: 'Lo propio de cada acción; cambia según quién la registró'}
+    AccionAuditoria:
+      type: string
+      enum: [LOGIN, LOGIN_FALLIDO, LOGOUT, ALTA, MODIFICACION, BAJA, BLOQUEO, DESBLOQUEO, PAGO, LAUDO, SORTEO,
+             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO]
     ActualizarParametrosRequest:
       type: object
       required: [valores]
@@ -3331,7 +4170,7 @@ components:
           items: {type: object, required: [codigo, descripcion], properties: {codigo: {$ref: '#/components/schemas/CodigoPermiso'}, descripcion: {type: string}}}
 
     # --- torneos -------------------------------------------------------------
-    EstadoTorneo: {type: string, enum: [BORRADOR, INSCRIPCION_ABIERTA, INSCRIPCION_CERRADA, EN_CURSO, FINALIZADO, CANCELADO]}
+    EstadoTorneo: {type: string, enum: [BORRADOR, INSCRIPCION_ABIERTA, INSCRIPCION_CERRADA, EN_CURSO, FINALIZADO, CANCELACION_EN_REVISION, CANCELADO]}
     Formato: {type: string, enum: [ELIMINACION_DIRECTA]}
     Modalidad: {type: string, enum: [PRESENCIAL, ONLINE]}
     TipoParticipante: {type: string, enum: [INDIVIDUAL, EQUIPO]}
@@ -3398,6 +4237,10 @@ components:
         checkinMinAntes: {type: [integer, 'null'], description: 'Ventana de check-in: cuántos minutos antes del cruce abre (HU-308); null sin configurar'}
         checkinDuracion: {type: [integer, 'null'], description: Cuántos minutos dura la ventana de check-in}
         checkinSinPresentes: {$ref: '#/components/schemas/CriterioSinPresentes'}
+        discordWebhook:
+          type: [string, 'null']
+          description: 'El webhook de Discord del torneo (PICA-370), enmascarado: solo los últimos 4 caracteres del token. Null sin webhook'
+          examples: ['https://discord.com/api/webhooks/…/••••ghij']
         economia: {$ref: '#/components/schemas/EconomiaTorneo'}
         slug: {type: [string, 'null'], description: 'El enlace público (`GET /torneos/slug/{slug}`); se genera al publicar', examples: [apertura-f5-2026]}
         esquemaHash:
@@ -3458,6 +4301,23 @@ components:
         designadoEn: {type: string, format: date-time}
         respondidoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo aceptó o rechazó (HU-807)'}
         motivoRechazo: {type: [string, 'null'], description: 'El que dio al rechazar, si dio uno'}
+        identidadVerificada: {type: boolean, description: 'Si puede arbitrar torneos con dinero y cobrar honorarios (HU-604)'}
+    ArbitroBuscado:
+      description: Un resultado del buscador de árbitros (HU-604).
+      allOf:
+        - {$ref: '#/components/schemas/UsuarioPublico'}
+        - type: object
+          required: [identidadVerificada]
+          properties:
+            identidadVerificada: {type: boolean, description: 'Email verificado, y documento y fecha de nacimiento cargados'}
+    HonorarioDesignacion:
+      type: object
+      required: [monto, moneda, estado]
+      description: Lo que el organizador depositó para el árbitro en el torneo (HU-604, wireframe 49).
+      properties:
+        monto: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        estado: {type: string, enum: [EN_CUSTODIA, ACREDITADO, REINTEGRADO], description: 'EN_CUSTODIA hasta la liquidación; REINTEGRADO si el torneo se canceló'}
     MiDesignacion:
       type: object
       required: [torneoId, torneo, disciplina, estadoTorneo, organizador, estado, permisos, designadoEn]
@@ -3476,6 +4336,11 @@ components:
         designadoEn: {type: string, format: date-time}
         respondidoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo aceptó o rechazó; null si está PENDIENTE'}
         motivoRechazo: {type: [string, 'null'], description: 'Solo si RECHAZADO, y opcional'}
+        honorario:
+          description: 'El honorario depositado en la custodia del torneo (HU-604); null si no hay ninguno'
+          oneOf:
+            - {$ref: '#/components/schemas/HonorarioDesignacion'}
+            - {type: 'null'}
     AceptarDesignacionRequest:
       type: object
       description: 'El código de imparcialidad del wireframe 49: sin el campo o en false, 409 COMPROMISO_NO_ACEPTADO.'
@@ -3629,6 +4494,15 @@ components:
         minAntes: {type: integer, minimum: 1, description: Cuántos minutos antes del cruce abre la ventana}
         duracion: {type: integer, minimum: 1, description: 'Cuántos minutos dura; no más que `minAntes` ni que el máximo de la plataforma'}
         sinPresentes: {$ref: '#/components/schemas/CriterioSinPresentes'}
+    DiscordTorneoRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          pattern: '^https://discord\.com/api/webhooks/\d+/[\w-]+$'
+          description: El webhook del canal de Discord, como lo copia el organizador
+          examples: ['https://discord.com/api/webhooks/1234567890/aBc-DeF_ghij']
     CriterioSinPresentes:
       type: string
       enum: [REPROGRAMAR, DESCALIFICAR_AMBOS]
@@ -3766,13 +4640,43 @@ components:
       properties:
         descripcion: {type: string, maxLength: 255, examples: [Honorarios de árbitros]}
         monto: {type: number, exclusiveMinimum: 0, description: En ARS}
+        tipo: {$ref: '#/components/schemas/TipoGasto'}
+    TipoGasto:
+      type: string
+      enum: [HONORARIO_ARBITRAL, OTRO]
+      default: OTRO
+      description: >-
+        HU-604. Un honorario arbitral solo se deduce del pozo si se deposita por la plataforma
+        (`POST /torneos/{id}/gastos/{gastoId}/pago`); si no, queda en el pozo. Un gasto común (OTRO) se deduce
+        siempre. No entra en el sello del esquema económico.
+    PagoGastoRequest:
+      type: object
+      description: 'Va uno de los dos (HU-604).'
+      properties:
+        arbitroId: {$ref: '#/components/schemas/Id', description: 'Un honorario: el árbitro designado para el que se deposita'}
+        comprobante: {type: string, maxLength: 500, description: 'Un gasto común pagado por fuera: número de factura, enlace, etc.'}
     GastoDetalle:
       type: object
-      required: [gastoId, descripcion, monto]
+      required: [gastoId, descripcion, monto, tipo, estadoPago]
       properties:
         gastoId: {type: integer, minimum: 1, description: Numera los gastos dentro del torneo}
         descripcion: {type: string}
         monto: {type: number}
+        tipo: {$ref: '#/components/schemas/TipoGasto'}
+        estadoPago:
+          type: string
+          enum: [PENDIENTE, EN_CUSTODIA, ACREDITADO, REINTEGRADO, PAGADO]
+          description: >-
+            PENDIENTE sin pagar; EN_CUSTODIA un honorario depositado; ACREDITADO cuando la liquidación se lo pagó al
+            árbitro; REINTEGRADO si el torneo se canceló y volvió al organizador; PAGADO un gasto común con su
+            comprobante.
+        beneficiario:
+          description: 'El árbitro de un honorario depositado; null si no hay depósito'
+          oneOf:
+            - {$ref: '#/components/schemas/UsuarioPublico'}
+            - {type: 'null'}
+        abonadoEn: {type: [string, 'null'], format: date-time}
+        comprobante: {type: [string, 'null'], description: 'El de afuera, o "Transferencia interna <referencia>" en un honorario'}
     ResumenEconomico:
       type: object
       required: [pctGastosAdministrativos, gastos, premios]
@@ -4222,6 +5126,53 @@ components:
       type: string
       enum: [RETENIDA, LIBERADA, REINTEGRADA]
       description: RETENIDA hasta que termina el evento; LIBERADA por la liquidación (HU-606); REINTEGRADA si se canceló.
+    CancelacionDelTorneo:
+      type: object
+      required: [pozo, pctMaximo, maximoGastos, gastos, totalGastos, reintegrado, retenido]
+      description: La cancelación de un torneo como la ve su organizador (PICA-349).
+      properties:
+        pozo: {type: number, description: Lo recaudado en inscripciones}
+        pctMaximo: {type: number, description: El % del pozo que se puede retener en gastos}
+        maximoGastos: {type: number}
+        estado: {type: [string, 'null'], enum: [AUTOMATICA, EN_REVISION, APROBADA, RECHAZADA, null]}
+        motivo: {type: [string, 'null']}
+        pedidaEn: {type: [string, 'null'], format: date-time}
+        gastos:
+          type: array
+          items:
+            type: object
+            required: [concepto, monto]
+            properties:
+              concepto: {type: string}
+              monto: {type: number}
+        totalGastos: {type: number}
+        revisadaEn: {type: [string, 'null'], format: date-time}
+        motivoRechazo: {type: [string, 'null']}
+        reintegrado: {type: number, description: Lo devuelto a las billeteras de quienes pagaron}
+        retenido: {type: number, description: Lo que cobró el organizador; 0 salvo APROBADA}
+    CancelacionRealizada:
+      type: object
+      required: [cancelacionId, torneoId, estado, totalGastos, pozo, reintegrado]
+      description: >-
+        El resultado de cancelar un torneo (PICA-347). AUTOMATICA si se canceló sin gastos y ya se reintegró todo;
+        EN_REVISION si declaró gastos y espera a soporte.
+      properties:
+        cancelacionId: {type: integer, format: int64}
+        torneoId: {type: integer, format: int64}
+        estado: {type: string, enum: [AUTOMATICA, EN_REVISION]}
+        totalGastos: {type: number, description: La suma de los gastos declarados}
+        pozo: {type: number, description: Lo recaudado en inscripciones, sin gastos administrativos}
+        reintegrado: {type: number, description: Lo devuelto a las billeteras}
+    ResolucionCancelacion:
+      type: object
+      required: [torneoId, estado, reintegrado, retenido, alOrganizador]
+      description: La decisión de soporte sobre una cancelación con gastos (PICA-348).
+      properties:
+        torneoId: {type: integer, format: int64}
+        estado: {type: string, enum: [APROBADA, RECHAZADA]}
+        reintegrado: {type: number, description: Lo que volvió a las billeteras de quienes pagaron}
+        retenido: {type: number, description: Lo que se descontó de los gastos; 0 si se rechazó}
+        alOrganizador: {type: number, description: Lo que cobró el organizador; 0 si se rechazó}
     CustodiaResumen:
       type: object
       required: [estado, total, recaudado, gastosAdministrativos, pagos, moneda, eventoTerminado]
@@ -4235,6 +5186,104 @@ components:
         moneda: {type: string, examples: [ARS]}
         eventoTerminado: {type: boolean, description: 'Si el evento terminó; hasta entonces nadie mueve los fondos'}
         liberadaEn: {type: [string, 'null'], format: date-time}
+    ConciliacionCargas:
+      type: object
+      required: [revisadaEn, desdeBloque, eventos, cargasAcreditadas, conciliadas, huerfanas, noAcreditadas,
+                 montosDistintos, registros]
+      description: Las cargas con cripto contra la cadena (PICA-343).
+      properties:
+        revisadaEn: {type: string, format: date-time}
+        desdeBloque: {type: integer, format: int64, description: El bloque del deploy del contrato}
+        eventos: {type: integer, description: Cuántos CargaRegistrada emitió el contrato}
+        cargasAcreditadas: {type: integer}
+        conciliadas: {type: integer}
+        huerfanas: {type: integer}
+        noAcreditadas: {type: integer}
+        montosDistintos: {type: integer}
+        registros:
+          type: array
+          items:
+            type: object
+            required: [estado, referencia, cargaId, username, movimientoId, montoPesos, montoWei, montoWeiEnCadena,
+                       hash, hashEnCadena, bloque, pagador]
+            description: Los montos en wei van como texto porque no entran en un número de JavaScript.
+            properties:
+              estado: {type: string, enum: [CONCILIADA, HUERFANA, NO_ACREDITADA, MONTO_DISTINTO]}
+              referencia: {type: string, description: 'El bytes32 que se pagó en el contrato'}
+              cargaId: {type: [integer, 'null'], format: int64, description: Null si la referencia no es de ninguna carga}
+              username: {type: [string, 'null'], description: Quien inició la carga}
+              movimientoId: {type: [integer, 'null'], format: int64, description: El movimiento CARGA de una carga acreditada}
+              montoPesos: {type: [number, 'null']}
+              montoWei: {type: [string, 'null'], description: Lo que la carga tenía que pagar}
+              montoWeiEnCadena: {type: [string, 'null'], description: Lo que registró el contrato; null sin evento}
+              hash: {type: [string, 'null'], description: La transacción con la que se acreditó la carga}
+              hashEnCadena: {type: [string, 'null'], description: La transacción del evento}
+              bloque: {type: [integer, 'null'], format: int64}
+              pagador: {type: [string, 'null']}
+    IngresoInscripcion:
+      type: object
+      required: [movimientoId, comprobante, pagadoEn, inscripcionId, equipoNombre, pagadorNombre, pagadorUsername,
+                 monto, gastosAdministrativos, total, estado]
+      description: Un pago de inscripción en el libro de ingresos del torneo (PICA-342).
+      properties:
+        movimientoId: {$ref: '#/components/schemas/Id'}
+        comprobante: {type: string, description: 'El número del comprobante, como lo ve quien pagó', examples: [I12-345]}
+        pagadoEn: {type: string, format: date-time}
+        inscripcionId: {type: [integer, 'null'], format: int64}
+        equipoNombre: {type: [string, 'null'], description: Null en un torneo individual}
+        pagadorNombre: {type: string, description: 'El jugador o, en equipos, el capitán'}
+        pagadorUsername: {type: string}
+        monto: {type: number, description: La inscripción}
+        gastosAdministrativos: {type: number, description: Lo que pagó aparte; va a la plataforma}
+        total: {type: number}
+        estado: {type: string, enum: [PENDIENTE, CONFIRMADO, RECHAZADO, REVERTIDO], description: 'REVERTIDO si se le devolvió'}
+    PanelFinanciero:
+      type: object
+      required: [torneoId, torneoNombre, estado, liquidado, liquidadoEn, moneda, recaudado, gastosAdministrativos,
+                 aporteRifa, gastos, reintegroOrganizador, comprometidoEnPremios, pozoAlOrganizador, pagos]
+      description: >-
+        El panel financiero de un torneo (PICA-342). `reintegroOrganizador` = el menor entre `gastos` y `recaudado`: la
+        cuenta de la liquidación. En curso, `comprometidoEnPremios` = `recaudado` - `reintegroOrganizador` +
+        `aporteRifa`; liquidado, es lo que se acreditó en premios, y si nadie quedó en un puesto con premio el pozo va al
+        organizador y queda en `pozoAlOrganizador`.
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneoNombre: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoTorneo'}
+        liquidado: {type: boolean, description: 'Si ya se liquidó: recién entonces se descarga la liquidación final'}
+        liquidadoEn: {type: [string, 'null'], format: date-time}
+        moneda: {type: string, examples: [ARS]}
+        recaudado: {type: number, description: Lo que pagaron los inscriptos y está en custodia, sin gastos administrativos}
+        gastosAdministrativos: {type: number, description: Lo que pagaron aparte los inscriptos; va a la plataforma}
+        aporteRifa: {type: number, description: Lo que su rifa destina al pozo por lo vendido hasta ahora; 0 sin rifa}
+        gastos: {type: number, description: Los gastos que se reintegran al organizador; los comunes y los honorarios depositados}
+        reintegroOrganizador: {type: number, description: Lo que cobra el organizador al liquidar; sus gastos, hasta lo recaudado}
+        comprometidoEnPremios: {type: number}
+        pozoAlOrganizador: {type: number, description: 'Liquidado sin nadie en un puesto con premio, el pozo que fue al organizador; si no, 0'}
+        pagos: {type: integer, description: Cuántas inscripciones pagaron}
+    RepartoLiquidacion:
+      type: object
+      required: [liquidado, total, moneda, lineas]
+      description: Cómo se repartió la custodia de un torneo o una rifa (PICA-331). `total` es la suma de las líneas.
+      properties:
+        liquidado: {type: boolean}
+        liquidadoEn: {type: [string, 'null'], format: date-time}
+        total: {type: number}
+        moneda: {type: string, examples: [ARS]}
+        lineas: {type: array, items: {$ref: '#/components/schemas/LineaReparto'}}
+    LineaReparto:
+      type: object
+      required: [rol, origen, monto, acreditadoEn]
+      description: Una acreditación de la liquidación.
+      properties:
+        rol: {type: string, enum: [PREMIO, ORGANIZADOR, PLATAFORMA, HONORARIO], description: 'HONORARIO: lo depositado para un árbitro (HU-604)'}
+        origen: {type: string, enum: [TORNEO, RIFA, APORTE_RIFA], description: 'APORTE_RIFA: lo que la rifa aporta al pozo del torneo, pagado a sus ganadores'}
+        puesto: {type: [integer, 'null'], description: El de un premio}
+        beneficiarioNombre: {type: [string, 'null'], description: 'Nombres y apellidos; null en la plataforma'}
+        beneficiarioUsername: {type: [string, 'null']}
+        equipoNombre: {type: [string, 'null'], description: 'El equipo del capitán que cobra, en un torneo por equipos'}
+        monto: {type: number}
+        acreditadoEn: {type: string, format: date-time}
     ComprobantePago:
       type: object
       required: [numero, pagadoEn, pagadorNombre, pagadorUsername, concepto, torneoId, torneoNombre, monto,
@@ -4281,6 +5330,7 @@ components:
         esComprador: {type: boolean, description: 'False si lo mira un administrador'}
         ventanaReclamoAbierta: {type: boolean, description: 'Si ahora se puede reclamar el resultado (HU-506): la rifa SORTEADA o EN_REVISION y dentro de las 48 h del sorteo'}
         premiosGanados: {type: array, items: {$ref: '#/components/schemas/PremioRifa'}, description: 'Los premios que ganó alguno de sus números (HU-504); vacío antes del sorteo o si no ganó'}
+        premioAcreditado: {type: [number, 'null'], description: 'Lo que la liquidación le acreditó por esos premios (HU-606, PICA-330); null mientras la rifa no se liquidó o si no ganó'}
     NumeroOcupado:
       type: object
       required: [numero, estado]
@@ -4290,11 +5340,16 @@ components:
         estado: {type: string, enum: [VENDIDO, RESERVADO, REINTEGRADO]}
     LineaListaSellada:
       type: object
-      required: [numero, ticketCodigo]
-      description: Un número vendido de la lista sellada y el código de su ticket (HU-407)
+      required: [numero, ticketCodigo, comprador]
+      description: >-
+        Un número vendido de la lista sellada y el código de su ticket (HU-407). Desde la versión 2 del sorteo (CR-06),
+        también quién lo compró, con una etiqueta anónima de la rifa: C1 es el comprador del número más bajo, C2 el
+        siguiente comprador, y así. La línea del sello es `número;ticketCodigo` en la versión 1 y
+        `número;ticketCodigo;comprador` en la 2.
       properties:
         numero: {type: integer}
         ticketCodigo: {type: string}
+        comprador: {type: [string, 'null'], description: 'C1, C2...; null en la versión 1', examples: [C1]}
     RifaSorteadaResumen:
       type: object
       required: [id, titulo]
@@ -4310,11 +5365,14 @@ components:
       properties: {content: {type: array, items: {$ref: '#/components/schemas/RifaSorteadaResumen'}}, page: {$ref: '#/components/schemas/PageInfo'}}
     SorteoRifa:
       type: object
-      required: [id, titulo, fechaSorteo, listaHash, lista, compromisoHash, semilla, premios]
+      required: [id, titulo, fechaSorteo, listaHash, versionSorteo, lista, compromisoHash, semilla, premios]
       description: >-
         Los datos para recalcular el sorteo de una rifa (HU-504): con el desglose se recalcula `listaHash`; con
         `listaHash:fechaSorteo`, el compromiso; y con el SHA-256 de `semilla:número` de cada vendido, ordenados de
-        menor a mayor, los ganadores por puesto.
+        menor a mayor (a igual hash, por número), los ganadores por puesto. En la versión 1 el primero del orden gana el
+        puesto 1, el segundo el 2, y así. En la versión 2 (CR-06) nadie gana dos veces: se recorre el orden salteando
+        los números de un `comprador` que ya ganó. Si no alcanzan los números o los compradores, los premios que
+        sobran quedan sin ganador.
       properties:
         id: {$ref: '#/components/schemas/Id'}
         titulo: {type: string}
@@ -4322,6 +5380,7 @@ components:
         fechaSorteo: {type: string, format: date-time, description: La fecha programada, la que entra en el compromiso}
         listaHash: {type: string}
         listaSelladaEn: {type: string, format: date-time}
+        versionSorteo: {type: integer, enum: [1, 2], description: 'Con qué reglas se selló y se sorteó: 2 desde CR-06 (nadie gana dos veces)'}
         lista: {type: array, items: {$ref: '#/components/schemas/LineaListaSellada'}}
         compromisoHash: {type: string}
         compromisoPublicadoEn: {type: string, format: date-time}
@@ -4418,6 +5477,7 @@ components:
         reglamentoHash: {type: [string, 'null'], description: 'SHA-256 del reglamento (el PDF o, sin PDF, el texto), sellado al publicar'}
         organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
         publicadoEn: {type: [string, 'null'], format: date-time}
+        liquidadoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se repartió la custodia del torneo terminado (HU-606, PICA-329); null mientras no se liquidó'}
 
     PronosticoDetalle:
       type: object
@@ -4505,11 +5565,66 @@ components:
         rifaId: {type: integer, format: int64}
         usuarioId: {type: integer, format: int64}
         motivo: {type: string}
-        estado: {type: string, enum: [PENDIENTE, ACEPTADO, RECHAZADO]}
+        estado: {$ref: '#/components/schemas/EstadoReclamo'}
         resolucion: {type: [string, 'null']}
         resueltoEn: {type: [string, 'null'], format: date-time}
         resueltoPor: {type: [string, 'null']}
         creadoEn: {type: string, format: date-time}
+
+    EstadoReclamo:
+      type: string
+      enum: [PENDIENTE, ACEPTADO, RECHAZADO]
+
+    DecisionReclamo:
+      type: string
+      enum: [SIN_FRAUDE, FRAUDE_CONFIRMADO]
+      description: 'SIN_FRAUDE pasa el reclamo a RECHAZADO; FRAUDE_CONFIRMADO pasa el reclamo a ACEPTADO.'
+
+    ResolverReclamoRequest:
+      type: object
+      required: [decision, resolucion]
+      properties:
+        decision: {$ref: '#/components/schemas/DecisionReclamo'}
+        resolucion:
+          type: string
+          minLength: 1
+          description: Resolución escrita definitiva dictada por soporte o administración
+
+    RifaReclamoResumen:
+      type: object
+      required: [id, titulo, estado]
+      properties:
+        id: {type: integer, format: int64}
+        titulo: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoRifa'}
+        torneoNombre: {type: [string, 'null']}
+        fechaSorteo: {type: [string, 'null'], format: date-time}
+        semillaObtenidaEn: {type: [string, 'null'], format: date-time}
+
+    ReclamanteResumen:
+      type: object
+      required: [id, username, email]
+      properties:
+        id: {type: integer, format: int64}
+        username: {type: string}
+        email: {type: string}
+
+    ReclamoAdminDetalle:
+      type: object
+      required: [id, motivo, estado, creadoEn, rifa, reclamante]
+      properties:
+        id: {type: integer, format: int64}
+        motivo: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoReclamo'}
+        resolucion: {type: [string, 'null']}
+        resueltoEn: {type: [string, 'null'], format: date-time}
+        resueltoPor: {type: [string, 'null']}
+        creadoEn: {type: string, format: date-time}
+        rifa: {$ref: '#/components/schemas/RifaReclamoResumen'}
+        reclamante: {$ref: '#/components/schemas/ReclamanteResumen'}
+        fondosLiberadosEn: {type: [string, 'null'], format: date-time}
+        fondosLiberadosPor: {type: [string, 'null']}
+        fondosLiberadosMonto: {type: [number, 'null'], format: double}
 
     # --- Billetera (HU-602) ----------------------------------------------------
     Billetera:
@@ -4576,7 +5691,15 @@ components:
           $ref: '#/components/schemas/Id'
         tipo:
           type: string
-          enum: [CARGA, INSCRIPCION, COMPRA_NUMERO, PREMIO, REINTEGRO, COMISION, RETIRO, PAGO_SERVICIO]
+          enum: [CARGA, INSCRIPCION, COMPRA_NUMERO, PREMIO, REINTEGRO, COMISION, RETIRO, PAGO_SERVICIO, LIQUIDACION,
+                 HONORARIO]
+          description: >-
+            PREMIO lo acredita la liquidación a cada ganador (HU-606): del torneo, con el torneo y la inscripción; de
+            la rifa, con la rifa; lo que la rifa aporta al pozo del torneo, con los dos. LIQUIDACION, lo que la
+            liquidación le acredita al organizador (los gastos del torneo) y a la plataforma (los gastos
+            administrativos). PAGO_SERVICIO, el honorario que el organizador deposita en la custodia del torneo
+            (egreso; si lo retira queda REVERTIDO y vuelve con un REINTEGRO), y HONORARIO, lo que la liquidación le
+            acredita al árbitro (HU-604).
           example: CARGA
         monto:
           type: number
@@ -4606,12 +5729,58 @@ components:
             - $ref: '#/components/schemas/TorneoMovimiento'
             - type: 'null'
         rifa:
+          description: 'La de la compra (por su ticket) o la de lo que acredita su liquidación (HU-606)'
           oneOf:
             - $ref: '#/components/schemas/RifaMovimiento'
             - type: 'null'
         creadoEn:
           type: string
           format: date-time
+        enlaceExplorador:
+          type: [string, 'null']
+          description: >-
+            La transacción en BaseScan, en las cargas con cripto (HU-609); null en el resto de los movimientos.
+          example: 'https://sepolia.basescan.org/tx/0x2f27d3c26ea9b5b2dd0a441a17a70ea3dc2830757e2f2cf564f0cf6d9479e9eb'
+
+    ConfirmarCargaCripto:
+      type: object
+      required: [hash]
+      properties:
+        hash:
+          type: string
+          pattern: '^0x[0-9a-fA-F]{64}$'
+          description: El hash de la transacción que pagó la carga en el contrato.
+          example: '0x2f27d3c26ea9b5b2dd0a441a17a70ea3dc2830757e2f2cf564f0cf6d9479e9eb'
+
+    CargaCripto:
+      type: object
+      required: [referencia, contrato, chainId, montoWei, montoPesos]
+      properties:
+        referencia:
+          type: string
+          pattern: '^0x[0-9a-f]{64}$'
+          description: El bytes32 que se paga con `cargar(referencia)` en el contrato. Al azar y único.
+          example: '0x5f2c0a9e3b7d41e6a8c2f0b19d4e7a3c6b8f1e2d9a0c4b7e5f3a1d8c6e2b9f40'
+        contrato:
+          type: string
+          description: La dirección de PasarelaCargas.
+          example: '0x36e633eDD1E79Ef2b9A3c6A099D873D52e44EDF0'
+        chainId:
+          type: integer
+          description: La red del contrato (84532 es Base Sepolia).
+          example: 84532
+        montoWei:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+          description: >-
+            Los wei exactos que hay que mandar como `value`. Va como texto porque pasa el rango de los números que
+            JavaScript representa con exactitud: usar `BigInt(montoWei)`.
+          example: '100000000000000'
+        montoPesos:
+          type: number
+          format: double
+          description: Los pesos que se acreditan al confirmar el pago.
+          example: 10000.00
 
     CargaRequest:
       type: object
@@ -4626,3 +5795,92 @@ components:
           example: 5000.00
 
 
+
+    TipoCuenta:
+      type: string
+      enum: [CBU, CVU, ALIAS]
+      example: CBU
+
+    EstadoValidacionCuenta:
+      type: string
+      enum: [PENDIENTE, VALIDADA, RECHAZADA]
+      example: VALIDADA
+
+    CuentaBancaria:
+      type: object
+      required: [id, tipo, valor, titular, cuitCuil, estadoValidacion, creadoEn]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        tipo:
+          $ref: '#/components/schemas/TipoCuenta'
+        valor:
+          type: string
+          description: CBU o CVU de 22 dígitos, o alias de 6 a 20 caracteres.
+          example: '2850590940090418135201'
+        titular:
+          type: string
+          description: Nombre y apellido del titular.
+          example: Marcos Paz
+        cuitCuil:
+          type: string
+          description: CUIT o CUIL del titular (11 dígitos, con o sin guiones).
+          example: '20-12345678-9'
+        estadoValidacion:
+          $ref: '#/components/schemas/EstadoValidacionCuenta'
+        validadaEn:
+          type: [string, 'null']
+          format: date-time
+        creadoEn:
+          type: string
+          format: date-time
+
+    CrearCuentaBancariaRequest:
+      type: object
+      required: [tipo, valor, titular, cuitCuil]
+      properties:
+        tipo:
+          $ref: '#/components/schemas/TipoCuenta'
+        valor:
+          type: string
+          description: CBU/CVU de 22 dígitos con dígito verificador, o alias de 6 a 20 caracteres.
+          example: '2850590940090418135201'
+        titular:
+          type: string
+          description: Nombre y apellido del titular.
+          example: Marcos Paz
+        cuitCuil:
+          type: string
+          description: CUIT o CUIL del titular (11 dígitos).
+          example: '20-12345678-9'
+
+    SolicitarRetiroRequest:
+      type: object
+      required: [cuentaId, monto]
+      properties:
+        cuentaId:
+          $ref: '#/components/schemas/Id'
+          description: Identificador de la cuenta bancaria o virtual validada a la que se retiran los fondos.
+        monto:
+          type: number
+          format: double
+          minimum: 0.01
+          description: >-
+            Monto a retirar en ARS. Debe respetar los topes mínimo y máximo parametrizados en la plataforma
+            (400 RETIRO_FUERA_DE_TOPES si no los cumple).
+          example: 5000.00
+
+    LimitesRetiro:
+      type: object
+      required: [minimo, maximo]
+      properties:
+        minimo:
+          type: number
+          format: double
+          description: Monto mínimo permitido para un retiro en ARS.
+          example: 1000.00
+        maximo:
+          type: number
+          format: double
+          description: Monto máximo permitido para un retiro en ARS.
+          example: 500000.00

@@ -11,7 +11,8 @@ import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
  * no del usuario, así que fallan con {@link IllegalArgumentException}.
  *
  * @param usuarioId         quien paga
- * @param tipo              INSCRIPCION, COMPRA_NUMERO o COMISION
+ * @param tipo              INSCRIPCION, COMPRA_NUMERO, COMISION o PAGO_SERVICIO (el honorario arbitral que el
+ *                          organizador deposita en la custodia del torneo, HU-604)
  * @param torneoId          opcional; sin rifa, el pago entra a la custodia del torneo
  * @param inscripcionId     obligatorio en una INSCRIPCION
  * @param claveIdempotencia la arma quien cobra ("inscripcion-42", la clave del ticket...): con la
@@ -30,7 +31,8 @@ public record SolicitudCobro(
         Long rifaId) {
 
     private static final Set<TipoMovimiento> TIPOS_DE_PAGO =
-            Set.of(TipoMovimiento.INSCRIPCION, TipoMovimiento.COMPRA_NUMERO, TipoMovimiento.COMISION);
+            Set.of(TipoMovimiento.INSCRIPCION, TipoMovimiento.COMPRA_NUMERO, TipoMovimiento.COMISION,
+                    TipoMovimiento.PAGO_SERVICIO);
 
     /** Un pago que no es de una rifa. */
     public SolicitudCobro(Long usuarioId, TipoMovimiento tipo, BigDecimal monto, Long torneoId, Long inscripcionId,

@@ -88,4 +88,9 @@ public interface InscripcionRepository extends JpaRepository<Inscripcion, Long> 
             + "or (i.estado = com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion.CONFIRMADA "
             + "and exists (select 1 from Nomina n where n.id.inscripcionId = i.id and n.id.usuarioId = :usuarioId))) "
             + "and (:torneoId is null or i.torneo.id = :torneoId)";
+
+    /** Las que terminaron en un puesto, con quien cobra el premio: el participante o el capitán (HU-606). */
+    @Query("select i from Inscripcion i left join fetch i.usuario left join fetch i.equipo e left join fetch e.capitan "
+            + "where i.torneo.id = :torneoId and i.posicion is not null order by i.posicion, i.id")
+    List<Inscripcion> conPuestoDelTorneo(@Param("torneoId") Long torneoId);
 }

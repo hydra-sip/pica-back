@@ -3,7 +3,10 @@ package com.hydra.pica.plataforma_pica.rifa.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.torneo.domain.SelloTorneo;
 import org.junit.jupiter.api.Test;
@@ -36,5 +39,44 @@ class SorteoRifaTest {
     @Test
     void elOrdenNoDependeDeComoVieneLaLista() {
         assertThat(SorteoRifa.orden(SEMILLA, VENDIDOS.reversed())).isEqualTo(SorteoRifa.orden(SEMILLA, VENDIDOS));
+    }
+
+    // --- CR-06: nadie gana dos veces -----------------------------------------------------------------
+
+    @Test
+    void conLaVersion1LosGanadoresSonLosPrimerosDelOrdenAunqueSeanDelMismoComprador() {
+        Map<Integer, String> todosDeUno = VENDIDOS.stream().collect(Collectors.toMap(n -> n, n -> "C1"));
+
+        assertThat(SorteoRifa.ganadores(1, SEMILLA, VENDIDOS, todosDeUno, 3))
+                .isEqualTo(SorteoRifa.orden(SEMILLA, VENDIDOS).subList(0, 3));
+    }
+
+    @Test
+    void conLaVersion2SeSalteaAlCompradorQueYaGano() {
+        List<Integer> orden = SorteoRifa.orden(SEMILLA, VENDIDOS);
+        // el primero y el segundo del orden son del mismo comprador; el resto, de otros dos
+        Map<Integer, String> compradores = new HashMap<>();
+        compradores.put(orden.get(0), "C1");
+        compradores.put(orden.get(1), "C1");
+        compradores.put(orden.get(2), "C2");
+        orden.subList(3, orden.size()).forEach(n -> compradores.put(n, "C3"));
+
+        assertThat(SorteoRifa.ganadores(2, SEMILLA, VENDIDOS, compradores, 3))
+                .containsExactly(orden.get(0), orden.get(2), orden.get(3));
+    }
+
+    @Test
+    void conLaVersion2SiHayMasPremiosQueCompradoresLosQueSobranQuedanSinGanador() {
+        Map<Integer, String> dos = VENDIDOS.stream().collect(Collectors.toMap(n -> n, n -> n < 40 ? "C1" : "C2"));
+
+        assertThat(SorteoRifa.ganadores(2, SEMILLA, VENDIDOS, dos, 5)).hasSize(2)
+                .extracting(dos::get).containsExactlyInAnyOrder("C1", "C2");
+    }
+
+    @Test
+    void conMasPremiosQueVendidosLosQueSobranQuedanSinGanador() {
+        Map<Integer, String> cadaUno = VENDIDOS.stream().collect(Collectors.toMap(n -> n, n -> "C" + n));
+
+        assertThat(SorteoRifa.ganadores(2, SEMILLA, VENDIDOS, cadaUno, 20)).hasSize(VENDIDOS.size());
     }
 }

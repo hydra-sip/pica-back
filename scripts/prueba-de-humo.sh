@@ -187,6 +187,7 @@ DELETE FROM movimiento
         WHERE torneo_id IN (SELECT id FROM humo_tor) OR usuario_id IN (SELECT id FROM humo_u));
 DELETE FROM movimiento
     WHERE billetera_id IN (SELECT id FROM billetera WHERE usuario_id IN (SELECT id FROM humo_u));
+DELETE FROM cuenta_bancaria WHERE usuario_id IN (SELECT id FROM humo_u);
 DELETE FROM billetera WHERE usuario_id IN (SELECT id FROM humo_u);
 DELETE FROM nomina
     WHERE inscripcion_id IN (SELECT id FROM inscripcion
@@ -342,6 +343,15 @@ pedir 200 GET /api/v1/billetera/movimientos "/api/v1/billetera/movimientos?page=
 # y esa tabla no admite DELETE, lo que impediría la limpieza final del usuario de prueba.
 pedir 401 POST /api/v1/billetera/cargas "" "" '{"monto":100.00}'
 pedir 400:VALIDACION POST /api/v1/billetera/cargas "" "$USUARIO" '{"monto":0.00}'
+pedir 401 GET /api/v1/billetera/cuentas
+pedir 200 GET /api/v1/billetera/cuentas "" "$USUARIO"
+pedir 401 POST /api/v1/billetera/cuentas "" "" '{"tipo":"CBU","valor":"2850590940090418135201","titular":"Prueba","cuitCuil":"20123456789"}'
+pedir 400:VALIDACION POST /api/v1/billetera/cuentas "" "$USUARIO" '{"tipo":"CBU","valor":"invalido","titular":"","cuitCuil":""}'
+pedir 401 DELETE /api/v1/billetera/cuentas/{id} "/api/v1/billetera/cuentas/0"
+pedir 404:CUENTA_BANCARIA_NO_ENCONTRADA DELETE /api/v1/billetera/cuentas/{id} "/api/v1/billetera/cuentas/0" "$USUARIO"
+pedir 401 POST /api/v1/billetera/retiros "" "" '{"cuentaId":1,"monto":1000.00}'
+pedir 400:VALIDACION POST /api/v1/billetera/retiros "" "$USUARIO" '{"cuentaId":1,"monto":0.00}'
+pedir 400:VALIDACION POST /api/v1/billetera/retiros "" "$USUARIO" '{"monto":1000.00}'
 
 echo
 echo "Inscripciones (en torneos y equipos cargados por SQL: todavía no hay API para crearlos)"
@@ -381,6 +391,14 @@ pedir 404:RIFA_NO_ENCONTRADA GET /api/v1/rifas/publicas/{id}/sorteo "/api/v1/rif
 pedir 404:RIFA_NO_ENCONTRADA POST /api/v1/rifas/{id}/sorteo "/api/v1/rifas/0/sorteo" "$ADMIN"
 # reclamos de rifa (HU-506, PICA-268)
 pedir 404:RIFA_NO_ENCONTRADA POST /api/v1/rifas/{id}/reclamos "/api/v1/rifas/0/reclamos" "$USUARIO" '{"motivo":"Irregularidad en sorteo"}'
+# reclamos de rifa en el admin (HU-706, PICA-339)
+pedir 403:SIN_PERMISO GET /api/v1/admin/reclamos "/api/v1/admin/reclamos" "$USUARIO"
+pedir 200 GET /api/v1/admin/reclamos "/api/v1/admin/reclamos?page=0&size=20" "$ADMIN"
+pedir 404:RECLAMO_NO_ENCONTRADO GET /api/v1/admin/reclamos/{id} "/api/v1/admin/reclamos/0" "$ADMIN"
+pedir 404:RECLAMO_NO_ENCONTRADO POST /api/v1/admin/reclamos/{id}/resolucion "/api/v1/admin/reclamos/0/resolucion" "$ADMIN" '{"decision":"SIN_FRAUDE","resolucion":"Prueba de humo"}'
+# liberación de fondos congelados de un reclamo (HU-707, PICA-341)
+pedir 403:SIN_PERMISO POST /api/v1/admin/reclamos/{id}/liberar "/api/v1/admin/reclamos/0/liberar" "$USUARIO"
+pedir 404:RECLAMO_NO_ENCONTRADO POST /api/v1/admin/reclamos/{id}/liberar "/api/v1/admin/reclamos/0/liberar" "$ADMIN"
 pedir 201 POST /api/v1/torneos/{id}/inscripciones "/api/v1/torneos/$TORNEO_ID/inscripciones" "$USUARIO"
 
 

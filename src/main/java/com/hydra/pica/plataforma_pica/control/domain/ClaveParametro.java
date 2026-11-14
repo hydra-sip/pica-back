@@ -1,7 +1,7 @@
 package com.hydra.pica.plataforma_pica.control.domain;
 
 /**
- * Los parámetros de la plataforma que existen (V26, V33 y V35), en el orden en que se muestran en el admin
+ * Los parámetros de la plataforma que existen (V26, V33, V35 y V42), en el orden en que se muestran en el admin
  * (HU-702, PICA-282). Uno que no está acá no se puede editar.
  */
 public enum ClaveParametro {
@@ -11,7 +11,8 @@ public enum ClaveParametro {
     MARGEN_CIERRE_INICIO_MIN(Unidad.MINUTOS),
     CHECKIN_DURACION_MAX_MIN(Unidad.MINUTOS),
     RETIRO_MINIMO(Unidad.PESOS),
-    RETIRO_MAXIMO(Unidad.PESOS);
+    RETIRO_MAXIMO(Unidad.PESOS),
+    CANCELACION_GASTOS_TOPE(Unidad.PORCENTAJE);
 
     /** Cómo se valida y se muestra: un % va de 0 a 100, los minutos son enteros y los pesos llevan centavos. */
     public enum Unidad {

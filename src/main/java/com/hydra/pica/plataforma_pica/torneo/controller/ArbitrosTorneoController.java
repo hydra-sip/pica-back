@@ -5,10 +5,10 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.dto.PaginaResponse;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.torneo.dto.ArbitroBuscado;
 import com.hydra.pica.plataforma_pica.torneo.dto.ArbitroDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.DesignarArbitroRequest;
 import com.hydra.pica.plataforma_pica.torneo.service.ArbitrosTorneoService;
-import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -42,7 +42,7 @@ public class ArbitrosTorneoController {
 
     /** Para el buscador del paso 2: sin {@code q}, los primeros por apellido. */
     @GetMapping("/arbitros")
-    public PaginaResponse<UsuarioPublico> buscar(
+    public PaginaResponse<ArbitroBuscado> buscar(
             @RequestParam(required = false) @Size(max = 100) String q,
             @RequestParam(required = false, defaultValue = "0") @Min(0) int page,
             @RequestParam(required = false, defaultValue = "20") @Min(1) @Max(100) int size) {

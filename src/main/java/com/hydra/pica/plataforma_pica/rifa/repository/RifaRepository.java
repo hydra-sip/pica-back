@@ -62,6 +62,16 @@ public interface RifaRepository extends JpaRepository<Rifa, Long> {
     List<Long> paraSortear(@Param("ahora") Instant ahora);
 
     Page<Rifa> findByEstadoInAndEliminadoEnIsNull(Collection<EstadoRifa> estados, Pageable pageable);
+
+    /**
+     * Las sorteadas cuyo plazo de reclamo ya venció ({@code limite} es ahora menos las 48 h) y sin reclamos pendientes
+     * ni aceptados (fraude confirmado, que espera la liberación/reintegro de T707-1): las que le quedan a la liquidación
+     * normal (HU-606). Una EN_REVISION espera la resolución del reclamo.
+     */
+    @Query("select r.id from Rifa r where r.estado = com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa.SORTEADA "
+            + "and r.eliminadoEn is null and coalesce(r.semillaObtenidaEn, r.sorteadaEn) < :limite "
+            + "and not exists (select c.id from ReclamoRifa c where c.rifa.id = r.id "
+            + "and c.estado in (com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo.PENDIENTE, "
+            + "com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo.ACEPTADO)) order by r.id")
+    List<Long> paraLiquidar(@Param("limite") Instant limite);
 }
-
-

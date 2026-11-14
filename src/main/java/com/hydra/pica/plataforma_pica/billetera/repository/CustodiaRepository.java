@@ -1,8 +1,11 @@
 package com.hydra.pica.plataforma_pica.billetera.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.Custodia;
+import com.hydra.pica.plataforma_pica.billetera.domain.EstadoCustodia;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -60,4 +63,18 @@ public interface CustodiaRepository extends JpaRepository<Custodia, Long> {
             WHERE b.id = p.billetera_id
             """, nativeQuery = true)
     int descontarDelRetenido(@Param("custodiaId") Long custodiaId);
+
+    /** Los torneos finalizados cuya custodia no se liquidó (o que no tienen): los que le quedan a la liquidación. */
+    @Query("""
+            SELECT t.id FROM Torneo t
+            WHERE t.estado = :finalizado AND t.eliminadoEn IS NULL
+              AND NOT EXISTS (SELECT c.id FROM Custodia c WHERE c.torneo.id = t.id AND c.estado <> :retenida)
+            ORDER BY t.id
+            """)
+    List<Long> torneosSinLiquidar(@Param("finalizado") EstadoTorneo finalizado,
+                                  @Param("retenida") EstadoCustodia retenida);
+
+    default List<Long> torneosFinalizadosSinLiquidar() {
+        return torneosSinLiquidar(EstadoTorneo.FINALIZADO, EstadoCustodia.RETENIDA);
+    }
 }

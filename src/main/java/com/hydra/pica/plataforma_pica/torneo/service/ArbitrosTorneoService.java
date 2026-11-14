@@ -15,13 +15,13 @@ import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignadoId;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.dto.ArbitroBuscado;
 import com.hydra.pica.plataforma_pica.torneo.dto.ArbitroDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.DesignarArbitroRequest;
 import com.hydra.pica.plataforma_pica.torneo.event.ArbitroDesignadoEnTorneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.ArbitroDesignadoRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
-import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioSpecifications;
@@ -39,6 +39,9 @@ import org.springframework.transaction.annotation.Transactional;
  * delega. La designación nace PENDIENTE hasta que el árbitro la acepta o la rechaza (HU-807,
  * {@link DesignacionesService}); a uno que rechazó se lo puede volver a designar.
  *
+ * En un torneo con dinero, solo se designa a quien tiene la identidad verificada (HU-604). Al quitar a uno, vuelve al
+ * organizador el honorario que tenía depositado.
+ *
  * Se cambian desde el borrador hasta que el torneo termina, para poder reemplazar a uno que no puede ir. El torneo
  * queda bloqueado mientras tanto, como en el asistente.
  */
@@ -47,7 +50,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class ArbitrosTorneoService {
 
     static final String ROL_ARBITRO = "ARBITRO";
-    private static final Set<EstadoTorneo> TERMINADOS = Set.of(EstadoTorneo.FINALIZADO, EstadoTorneo.CANCELADO);
+    private static final Set<EstadoTorneo> TERMINADOS = Set.of(EstadoTorneo.FINALIZADO, EstadoTorneo.CANCELADO,
+            // la cancelación ya está decidida: soporte solo revisa los gastos (HU-605)
+            EstadoTorneo.CANCELACION_EN_REVISION);
     private static final List<EstadoInscripcion> ACTIVAS =
             List.of(EstadoInscripcion.PENDIENTE_PAGO, EstadoInscripcion.CONFIRMADA);
     private static final Sort ORDEN = Sort.by("persona.apellidos", "persona.nombres", "id");
@@ -59,16 +64,17 @@ public class ArbitrosTorneoService {
     private final InscripcionRepository inscripcionRepository;
     private final NominaRepository nominaRepository;
     private final PartidoRepository partidoRepository;
+    private final HonorariosService honorariosService;
     private final ApplicationEventPublisher eventos;
 
     /** Usuarios activos con rol ARBITRO, por usuario, nombres o apellidos; sin texto, todos. */
     @Transactional(readOnly = true)
-    public Page<UsuarioPublico> buscar(String q, int page, int size) {
+    public Page<ArbitroBuscado> buscar(String q, int page, int size) {
         Specification<Usuario> filtro = Specification
                 .where(UsuarioSpecifications.conNombreOUsername(q))
                 .and(UsuarioSpecifications.conEstado(EstadoUsuario.ACTIVO))
                 .and(UsuarioSpecifications.conRolActivo(ROL_ARBITRO));
-        return usuarioRepository.findAll(filtro, PageRequest.of(page, size, ORDEN)).map(UsuarioPublico::desde);
+        return usuarioRepository.findAll(filtro, PageRequest.of(page, size, ORDEN)).map(ArbitroBuscado::desde);
     }
 
     @Transactional(readOnly = true)
@@ -94,6 +100,7 @@ public class ArbitrosTorneoService {
                     "El usuario " + usuario.getId() + " ya es árbitro del torneo " + id);
         }
         validarQueNoJuegaNiOrganiza(torneo, usuario.getId());
+        HonorariosService.exigirIdentidad(torneo, usuario);
         ArbitroDesignado arbitro;
         if (previo != null) {
             // Había rechazado: se le vuelve a preguntar, con los permisos de ahora.
@@ -112,7 +119,7 @@ public class ArbitrosTorneoService {
      */
     @Transactional
     public void quitar(Long organizadorId, Long id, Long usuarioId) {
-        modificable(organizadorId, id);
+        Torneo torneo = modificable(organizadorId, id);
         ArbitroDesignado arbitro = arbitroRepository.findById(new ArbitroDesignadoId(id, usuarioId))
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.ARBITRO_NO_ENCONTRADO,
                         "El usuario " + usuarioId + " no es árbitro del torneo " + id));
@@ -120,6 +127,7 @@ public class ArbitrosTorneoService {
             throw new ConflictoException(CodigoError.ARBITRO_CON_PARTIDOS,
                     "El usuario " + usuarioId + " tiene partidos asignados en el torneo " + id + ": hay que reasignarlos");
         }
+        honorariosService.devolverDelArbitro(torneo, usuarioId, "el organizador lo quitó del torneo");
         arbitroRepository.delete(arbitro);
         arbitroRepository.flush();
     }

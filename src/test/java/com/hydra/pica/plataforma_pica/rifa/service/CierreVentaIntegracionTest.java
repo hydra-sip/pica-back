@@ -115,9 +115,9 @@ class CierreVentaIntegracionTest {
         entityManager.clear();
         RifaDetalle cerrada = rifaService.detalle(organizador, rifa);
         assertThat(cerrada.estado()).isEqualTo(EstadoRifa.CERRADA);
-        // una línea por vendido, de menor a mayor: número;código del ticket
+        // una línea por vendido, de menor a mayor: número;código del ticket;comprador (C1 el del número más bajo)
         assertThat(cerrada.listaHash()).isEqualTo(SelloTorneo.sha256(
-                "5;" + segunda.ticketCodigo() + "\n12;" + primera.ticketCodigo()));
+                "5;" + segunda.ticketCodigo() + ";C1\n12;" + primera.ticketCodigo() + ";C2"));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM numero WHERE rifa_id = ? AND estado = 'RESERVADO'",
                 Long.class, rifa)).isZero();
         assertThat(rifaService.detalle(organizador, sigueEnVenta).estado()).isEqualTo(EstadoRifa.EN_VENTA);
@@ -243,9 +243,9 @@ class CierreVentaIntegracionTest {
         RifaDetalle cerrada = cierreVentaService.cerrar(organizador, rifa);
 
         List<LineaListaSellada> lista = rifaPublicaService.listaSellada(rifa);
-        assertThat(lista).containsExactly(new LineaListaSellada(5, segunda.ticketCodigo()),
-                new LineaListaSellada(12, primera.ticketCodigo()));
-        String texto = lista.stream().map(l -> l.numero() + ";" + l.ticketCodigo())
+        assertThat(lista).containsExactly(new LineaListaSellada(5, segunda.ticketCodigo(), "C1"),
+                new LineaListaSellada(12, primera.ticketCodigo(), "C2"));
+        String texto = lista.stream().map(l -> l.numero() + ";" + l.ticketCodigo() + ";" + l.comprador())
                 .collect(java.util.stream.Collectors.joining("\n"));
         assertThat(SelloTorneo.sha256(texto)).isEqualTo(cerrada.listaHash());
     }

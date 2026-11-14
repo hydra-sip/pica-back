@@ -133,6 +133,14 @@ public class CustodiaService {
         return new LiberacionCustodia(custodiaId, destino, totales.total(), totales.gastos());
     }
 
+    /** El pozo de un torneo: lo recaudado en inscripciones, sin gastos administrativos (HU-605). Sin pagos, 0. */
+    @Transactional(readOnly = true)
+    public BigDecimal recaudadoDelTorneo(Long torneoId) {
+        return custodiaRepository.findByTorneoId(torneoId)
+                .map(c -> LiquidacionService.retenido(movimientoRepository, c.getId()).recaudado())
+                .orElse(BigDecimal.ZERO);
+    }
+
     // --- el organizador -----------------------------------------------------------------------------
 
     @Transactional(readOnly = true)
@@ -184,8 +192,7 @@ public class CustodiaService {
         if (torneo.getEstado() == EstadoTorneo.CANCELADO) {
             return EstadoCustodia.REINTEGRADA;
         }
-        throw new FondosEnCustodiaException("Los fondos del torneo " + torneo.getId()
-                + " están en custodia y no se pueden mover hasta que el torneo finalice");
+        throw new FondosEnCustodiaException(LiquidacionService.SIN_CERRAR);
     }
 
     private static EstadoCustodia destino(Rifa rifa, Instant ahora) {

@@ -6,12 +6,14 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.torneo.domain.Gasto;
 import com.hydra.pica.plataforma_pica.torneo.domain.GastoId;
 import com.hydra.pica.plataforma_pica.torneo.domain.GastosAdministrativos;
+import com.hydra.pica.plataforma_pica.torneo.domain.TipoGasto;
 import com.hydra.pica.plataforma_pica.torneo.domain.Premio;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.EconomiaTorneoRequest;
@@ -81,7 +83,7 @@ public class EconomiaTorneoService {
     @Transactional
     public GastoDetalle modificarGasto(Long organizadorId, Long id, int gastoId, GastoRequest request) {
         torneosPropios.buscarEditable(organizadorId, id);
-        Gasto gasto = buscarGasto(id, gastoId);
+        Gasto gasto = sinDeposito(buscarGasto(id, gastoId));
         aplicar(gasto, request);
         return GastoDetalle.de(gasto);
     }
@@ -89,7 +91,7 @@ public class EconomiaTorneoService {
     @Transactional
     public void eliminarGasto(Long organizadorId, Long id, int gastoId) {
         torneosPropios.buscarEditable(organizadorId, id);
-        gastoRepository.delete(buscarGasto(id, gastoId));
+        gastoRepository.delete(sinDeposito(buscarGasto(id, gastoId)));
     }
 
     /** Las cuentas con el cupo completo; ver {@link ResumenEconomico} y {@link CuentasTorneo}. */
@@ -135,6 +137,16 @@ public class EconomiaTorneoService {
     private static void aplicar(Gasto gasto, GastoRequest request) {
         gasto.setDescripcion(request.descripcion().strip());
         gasto.setMonto(request.monto());
+        gasto.setTipo(request.tipo() != null ? request.tipo() : TipoGasto.OTRO);
+    }
+
+    /** Un honorario depositado no cambia ni se borra: primero se retira el depósito (HU-604). */
+    private static Gasto sinDeposito(Gasto gasto) {
+        if (gasto.getMovimiento() != null) {
+            throw new ConflictoException(CodigoError.HONORARIO_YA_DEPOSITADO, "El honorario "
+                    + gasto.getId().getGastoId() + " está depositado: para cambiarlo, primero se retira el depósito");
+        }
+        return gasto;
     }
 
     // --- validaciones entre campos ------------------------------------------

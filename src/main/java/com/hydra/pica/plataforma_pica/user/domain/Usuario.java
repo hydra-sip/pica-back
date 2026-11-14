@@ -87,6 +87,15 @@ public class Usuario extends AuditableEntity {
     @Column(name = "eliminado_en")
     private Instant eliminadoEn;
 
+    /**
+     * Identidad verificada para arbitrar torneos con dinero (HU-604): el email verificado y el documento (tipo y
+     * número) y la fecha de nacimiento cargados en su persona.
+     */
+    public boolean identidadVerificada() {
+        return emailVerificado && persona != null && persona.getTipoDoc() != null && persona.getNroDoc() != null
+                && !persona.getNroDoc().isBlank() && persona.getFechaNacimiento() != null;
+    }
+
     @Override
     public String toString() {
         return "Usuario{"

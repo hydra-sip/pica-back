@@ -16,4 +16,13 @@ public interface BilleteraRepository extends JpaRepository<Billetera, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT b FROM Billetera b WHERE b.usuario.id = :usuarioId")
     Optional<Billetera> findConBloqueoPorUsuarioId(@Param("usuarioId") Long usuarioId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM Billetera b WHERE b.id = :id")
+    Optional<Billetera> findConBloqueoPorId(@Param("id") Long id);
+
+    /** La de la plataforma (V40): la única sin usuario. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM Billetera b WHERE b.usuario IS NULL")
+    Optional<Billetera> findPlataformaConBloqueo();
 }
