@@ -692,6 +692,23 @@ paths:
       responses:
         '200': {description: Permisos agrupados, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ModuloPermisos'}}}}}
 
+  /api/v1/admin/conciliacion:
+    get:
+      tags: [Admin]
+      summary: Conciliar las cargas con cripto contra los eventos del contrato
+      x-jira: PICA-343
+      x-permiso: TORNEO_ADMINISTRAR
+      x-owner: Laura
+      description: >-
+        HU-608. Lee todos los `CargaRegistrada` del contrato PasarelaCargas desde el bloque de su deploy
+        (`app.cripto.bloque-deploy`) y los cruza por la referencia con las cargas con cripto. Los eventos se traen por
+        la API de Etherscan v2 (BaseScan) y no por el nodo, que los da de a 200 bloques. Cada registro es CONCILIADA
+        (acreditada y en la cadena por el mismo monto), HUERFANA (acreditada, con su movimiento CARGA, sin evento),
+        NO_ACREDITADA (un pago en la cadena sin carga acreditada: pendiente o de una referencia ajena) o
+        MONTO_DISTINTO. Primero las diferencias. 503 `RED_NO_DISPONIBLE` si la API no responde o falta la API key.
+      responses:
+        '200': {description: La conciliación, content: {application/json: {schema: {$ref: '#/components/schemas/ConciliacionCargas'}}}}
+        '503': {$ref: '#/components/responses/Error'}
   /api/v1/admin/cancelaciones:
     get:
       tags: [Admin]
@@ -829,6 +846,52 @@ paths:
             schema: {$ref: '#/components/schemas/ActualizarParametrosRequest'}
       responses:
         '200': {description: Los parámetros después del cambio, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ParametroDetalle'}}}}}
+        '400': {$ref: '#/components/responses/Error'}
+  /api/v1/admin/auditoria:
+    get:
+      tags: [Admin]
+      summary: Consultar el libro de auditoría
+      x-jira: PICA-345
+      x-owner: Laura
+      x-permiso: AUDITORIA_VER
+      description: >-
+        HU-704. Los filtros son opcionales y se combinan; sin ninguno, todo. Del más nuevo al más viejo; el orden no se
+        elige. `entidad` sin `entidadId` trae todos los registros de ese tipo; con `entidadId`, los de esa entidad. Con
+        `entidad=TORNEO` trae además lo suyo: los registros de sus partidos, de su rifa y de la custodia del torneo o de
+        su rifa (ahí quedan los pagos de las inscripciones); el resto es la coincidencia exacta. `desde` incluye ese
+        instante y `hasta` no: para un día, `desde` a las 00:00 y `hasta` a las 00:00 del día siguiente. Una entidad,
+        usuario o acción sin registros responde la página vacía. 400 `VALIDACION` si `accion` no es una de la lista,
+        una fecha no es ISO-8601 o `entidad`/`entidadId` pasan los 50 caracteres.
+      parameters:
+        - {name: entidad, in: query, schema: {type: string, maxLength: 50, enum: [TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO]}}
+        - {name: entidadId, in: query, description: 'El id, o la clave si es un PARAMETRO. Sin `entidad` no filtra', schema: {type: string, maxLength: 50}}
+        - {name: usuario, in: query, description: Id del usuario que hizo la acción, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: accion, in: query, schema: {$ref: '#/components/schemas/AccionAuditoria'}}
+        - {name: desde, in: query, schema: {type: string, format: date-time}}
+        - {name: hasta, in: query, schema: {type: string, format: date-time}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200':
+          description: Una página del libro
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PageRegistroAuditoria'}
+        '400': {$ref: '#/components/responses/Error'}
+  /api/v1/admin/auditoria/ids:
+    get:
+      tags: [Admin]
+      summary: Ids de una entidad con registros en la auditoría
+      x-jira: PICA-345
+      x-owner: Laura
+      x-permiso: AUDITORIA_VER
+      description: >-
+        HU-704. Para elegir el id en el filtro por entidad: los que tienen al menos un registro, primero el que tuvo
+        el último más reciente; hasta 200. Una entidad sin registros responde la lista vacía.
+      parameters:
+        - {name: entidad, in: query, required: true, schema: {type: string, maxLength: 50, enum: [TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO]}}
+      responses:
+        '200': {description: Los ids (o las claves si es PARAMETRO), content: {application/json: {schema: {type: array, items: {type: string}, examples: [['15', '22']]}}}}
         '400': {$ref: '#/components/responses/Error'}
 
   /api/v1/admin/reclamos:
@@ -3269,8 +3332,61 @@ paths:
         puesto, lo suyo (los gastos del torneo), los gastos administrativos de la plataforma y lo que le aportó su
         rifa. Sin liquidar, `liquidado` en false y sin líneas. 404 `TORNEO_NO_ENCONTRADO` si no existe o es de otro
         organizador.
+
+        Con `formato` (HU-608, PICA-342) es la liquidación final para descargar, y también la puede bajar quien tiene
+        `TORNEO_ADMINISTRAR`: el mismo detalle, una fila por concepto (premio de cada puesto, reintegro de gastos al
+        organizador, pozo sin ganadores al organizador, gastos administrativos de la plataforma, honorarios y lo que
+        aportó la rifa) con el beneficiario,
+        cuándo se acreditó y el monto, y el total repartido. El CSV va con `;`, coma decimal y BOM UTF-8. Sin liquidar,
+        409 `FONDOS_EN_CUSTODIA`: el reporte final solo se emite después de la liquidación. 400 `VALIDACION` si el
+        formato no es csv ni pdf.
+      parameters:
+        - {name: formato, in: query, required: false, description: 'Sin él, el reparto en JSON', schema: {type: string, enum: [csv, pdf]}}
       responses:
-        '200': {description: El reparto, content: {application/json: {schema: {$ref: '#/components/schemas/RepartoLiquidacion'}}}}
+        '200':
+          description: El reparto en JSON o, con `formato`, el archivo (`Content-Disposition` attachment, `liquidacion-torneo-{id}.csv|pdf`)
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/RepartoLiquidacion'}}
+            text/csv: {schema: {type: string}}
+            application/pdf: {schema: {type: string, format: binary}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/panel-financiero:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Panel financiero de mi torneo
+      x-jira: PICA-342
+      x-owner: Laura
+      description: >-
+        HU-608. El organizador del torneo o quien tiene `TORNEO_ADMINISTRAR`: cómo viene la plata, en vivo, con la
+        cuenta de la liquidación sobre lo que hay en custodia. De lo recaudado se le reintegran al organizador sus
+        gastos (los comunes y los honorarios que depositó), hasta lo recaudado; el resto, más lo que aporta la rifa por
+        lo vendido, es lo comprometido en premios. Liquidado, los números ya no cambian. 404 `TORNEO_NO_ENCONTRADO` si
+        no existe o no lo puede ver.
+      responses:
+        '200': {description: El panel, content: {application/json: {schema: {$ref: '#/components/schemas/PanelFinanciero'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/ingresos:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Billetera]
+      summary: Libro de ingresos por inscripción de mi torneo
+      x-jira: PICA-342
+      x-owner: Laura
+      description: >-
+        HU-608 (wireframe «Dashboard Contable y Liquidación»). El organizador del torneo o quien tiene
+        `TORNEO_ADMINISTRAR`: cada pago de inscripción que entró a la custodia, con su comprobante, quién pagó (el
+        capitán, en equipos), el monto, los gastos administrativos y el estado (REVERTIDO si se le devolvió). El más
+        nuevo primero; sin paginar, porque no pasa del cupo del torneo. Sin pagos, la lista vacía. 404
+        `TORNEO_NO_ENCONTRADO` si no existe o no lo puede ver.
+      responses:
+        '200': {description: Los pagos, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/IngresoInscripcion'}}}}}
         '401': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
 
@@ -3455,15 +3571,15 @@ components:
       type: string
       enum: [PENDIENTE_VERIFICACION, ACTIVO, BLOQUEADO]
       description: PENDIENTE hasta el clic en el mail; BLOQUEADO lo pone un admin. La baja lógica no es un estado.
-    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS]}
+    Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS, AUDITORIA]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO) y RECLAMO_RESOLVER de V45 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), AUDITORIA_VER de V49 (PICA-345) y TORNEO_ADMINISTRAR de V50 (PICA-342). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
              RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR,
-             CANCELACION_REVISAR, RECLAMO_RESOLVER]
+             CANCELACION_REVISAR, RECLAMO_RESOLVER, AUDITORIA_VER, TORNEO_ADMINISTRAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -4005,6 +4121,35 @@ components:
         MARGEN_CIERRE_INICIO_MIN (CE4-5); CHECKIN_DURACION_MAX_MIN (máximo de la ventana de check-in);
         RETIRO_MINIMO y RETIRO_MAXIMO (pesos, para HU-607); CANCELACION_GASTOS_TOPE (% máximo del pozo que el
         organizador puede retener en gastos al cancelar un torneo, HU-605).
+    PageRegistroAuditoria:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/RegistroAuditoria'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    RegistroAuditoria:
+      type: object
+      required: [id, fecha, usuarioId, username, accion, entidad, entidadId, descripcion, ip, detalle]
+      description: Una fila del libro de auditoría (PICA-345).
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        fecha: {type: string, format: date-time}
+        usuarioId: {type: [integer, 'null'], format: int64, description: 'Null en lo que hace el sistema (liquidaciones, cierres por fecha) y en el login fallido de un usuario que no existe'}
+        username: {type: [string, 'null']}
+        accion: {$ref: '#/components/schemas/AccionAuditoria'}
+        entidad: {type: [string, 'null'], description: 'Sobre qué fue: TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO', examples: [TORNEO]}
+        entidadId: {type: [string, 'null'], description: 'El id de la entidad, o la clave si es un PARAMETRO', examples: ['42']}
+        descripcion:
+          type: [string, 'null']
+          description: >-
+            El nombre de la entidad, buscado al leer: TORNEO su nombre; PARTIDO `Ronda N – torneo`; RIFA su título;
+            CUSTODIA `Torneo: …` o `Rifa: …`; USUARIO, BILLETERA y CARGA_CRIPTO el `@username` (la billetera sin
+            usuario, `Plataforma`); PARAMETRO su descripción. Null si no se encuentra. Lo dado de baja también se ve.
+          examples: [Liga Abierta de Ajedrez Rápido]
+        ip: {type: [string, 'null'], description: Solo la guardan el login y el login fallido}
+        detalle: {type: [object, 'null'], additionalProperties: true, description: 'Lo propio de cada acción; cambia según quién la registró'}
+    AccionAuditoria:
+      type: string
+      enum: [LOGIN, LOGIN_FALLIDO, LOGOUT, ALTA, MODIFICACION, BAJA, BLOQUEO, DESBLOQUEO, PAGO, LAUDO, SORTEO,
+             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO]
     ActualizarParametrosRequest:
       type: object
       required: [valores]
@@ -5041,6 +5186,81 @@ components:
         moneda: {type: string, examples: [ARS]}
         eventoTerminado: {type: boolean, description: 'Si el evento terminó; hasta entonces nadie mueve los fondos'}
         liberadaEn: {type: [string, 'null'], format: date-time}
+    ConciliacionCargas:
+      type: object
+      required: [revisadaEn, desdeBloque, eventos, cargasAcreditadas, conciliadas, huerfanas, noAcreditadas,
+                 montosDistintos, registros]
+      description: Las cargas con cripto contra la cadena (PICA-343).
+      properties:
+        revisadaEn: {type: string, format: date-time}
+        desdeBloque: {type: integer, format: int64, description: El bloque del deploy del contrato}
+        eventos: {type: integer, description: Cuántos CargaRegistrada emitió el contrato}
+        cargasAcreditadas: {type: integer}
+        conciliadas: {type: integer}
+        huerfanas: {type: integer}
+        noAcreditadas: {type: integer}
+        montosDistintos: {type: integer}
+        registros:
+          type: array
+          items:
+            type: object
+            required: [estado, referencia, cargaId, username, movimientoId, montoPesos, montoWei, montoWeiEnCadena,
+                       hash, hashEnCadena, bloque, pagador]
+            description: Los montos en wei van como texto porque no entran en un número de JavaScript.
+            properties:
+              estado: {type: string, enum: [CONCILIADA, HUERFANA, NO_ACREDITADA, MONTO_DISTINTO]}
+              referencia: {type: string, description: 'El bytes32 que se pagó en el contrato'}
+              cargaId: {type: [integer, 'null'], format: int64, description: Null si la referencia no es de ninguna carga}
+              username: {type: [string, 'null'], description: Quien inició la carga}
+              movimientoId: {type: [integer, 'null'], format: int64, description: El movimiento CARGA de una carga acreditada}
+              montoPesos: {type: [number, 'null']}
+              montoWei: {type: [string, 'null'], description: Lo que la carga tenía que pagar}
+              montoWeiEnCadena: {type: [string, 'null'], description: Lo que registró el contrato; null sin evento}
+              hash: {type: [string, 'null'], description: La transacción con la que se acreditó la carga}
+              hashEnCadena: {type: [string, 'null'], description: La transacción del evento}
+              bloque: {type: [integer, 'null'], format: int64}
+              pagador: {type: [string, 'null']}
+    IngresoInscripcion:
+      type: object
+      required: [movimientoId, comprobante, pagadoEn, inscripcionId, equipoNombre, pagadorNombre, pagadorUsername,
+                 monto, gastosAdministrativos, total, estado]
+      description: Un pago de inscripción en el libro de ingresos del torneo (PICA-342).
+      properties:
+        movimientoId: {$ref: '#/components/schemas/Id'}
+        comprobante: {type: string, description: 'El número del comprobante, como lo ve quien pagó', examples: [I12-345]}
+        pagadoEn: {type: string, format: date-time}
+        inscripcionId: {type: [integer, 'null'], format: int64}
+        equipoNombre: {type: [string, 'null'], description: Null en un torneo individual}
+        pagadorNombre: {type: string, description: 'El jugador o, en equipos, el capitán'}
+        pagadorUsername: {type: string}
+        monto: {type: number, description: La inscripción}
+        gastosAdministrativos: {type: number, description: Lo que pagó aparte; va a la plataforma}
+        total: {type: number}
+        estado: {type: string, enum: [PENDIENTE, CONFIRMADO, RECHAZADO, REVERTIDO], description: 'REVERTIDO si se le devolvió'}
+    PanelFinanciero:
+      type: object
+      required: [torneoId, torneoNombre, estado, liquidado, liquidadoEn, moneda, recaudado, gastosAdministrativos,
+                 aporteRifa, gastos, reintegroOrganizador, comprometidoEnPremios, pozoAlOrganizador, pagos]
+      description: >-
+        El panel financiero de un torneo (PICA-342). `reintegroOrganizador` = el menor entre `gastos` y `recaudado`: la
+        cuenta de la liquidación. En curso, `comprometidoEnPremios` = `recaudado` - `reintegroOrganizador` +
+        `aporteRifa`; liquidado, es lo que se acreditó en premios, y si nadie quedó en un puesto con premio el pozo va al
+        organizador y queda en `pozoAlOrganizador`.
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneoNombre: {type: string}
+        estado: {$ref: '#/components/schemas/EstadoTorneo'}
+        liquidado: {type: boolean, description: 'Si ya se liquidó: recién entonces se descarga la liquidación final'}
+        liquidadoEn: {type: [string, 'null'], format: date-time}
+        moneda: {type: string, examples: [ARS]}
+        recaudado: {type: number, description: Lo que pagaron los inscriptos y está en custodia, sin gastos administrativos}
+        gastosAdministrativos: {type: number, description: Lo que pagaron aparte los inscriptos; va a la plataforma}
+        aporteRifa: {type: number, description: Lo que su rifa destina al pozo por lo vendido hasta ahora; 0 sin rifa}
+        gastos: {type: number, description: Los gastos que se reintegran al organizador; los comunes y los honorarios depositados}
+        reintegroOrganizador: {type: number, description: Lo que cobra el organizador al liquidar; sus gastos, hasta lo recaudado}
+        comprometidoEnPremios: {type: number}
+        pozoAlOrganizador: {type: number, description: 'Liquidado sin nadie en un puesto con premio, el pozo que fue al organizador; si no, 0'}
+        pagos: {type: integer, description: Cuántas inscripciones pagaron}
     RepartoLiquidacion:
       type: object
       required: [liquidado, total, moneda, lineas]

@@ -50,6 +50,12 @@ public class RepartoLiquidacionService {
         Torneo torneo = torneoRepository.findByIdAndOrganizadorIdAndEliminadoEnIsNull(torneoId, usuarioId)
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO,
                         "No existe el torneo " + torneoId));
+        return delTorneo(torneo);
+    }
+
+    /** Para quien ya sabe que puede verlo: el panel financiero también lo abre el admin (HU-608). */
+    RepartoLiquidacion delTorneo(Torneo torneo) {
+        Long torneoId = torneo.getId();
         Instant liquidadoEn = custodiaRepository.findByTorneoId(torneo.getId())
                 .filter(c -> c.getEstado() == EstadoCustodia.LIBERADA)
                 .map(Custodia::getLiberadaEn)
