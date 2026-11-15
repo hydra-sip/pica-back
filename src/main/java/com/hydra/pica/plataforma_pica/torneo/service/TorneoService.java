@@ -27,6 +27,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Cancha;
 import com.hydra.pica.plataforma_pica.torneo.domain.CriterioSinPresentes;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
+import com.hydra.pica.plataforma_pica.torneo.domain.ReglasGrupos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
@@ -139,7 +140,8 @@ public class TorneoService {
         torneo.setNombre(request.nombre().strip());
         torneo.setDisciplina(request.disciplina().strip());
         torneo.setDescripcion(limpiar(request.descripcion()));
-        torneo.setFormato(request.formato() == null ? Formato.ELIMINACION_DIRECTA : request.formato());
+        torneo.setFormato(formato(request));
+        torneo.setReglasGrupos(reglasGrupos(request));
         torneo.setModalidad(request.modalidad());
         torneo.setTipoParticipante(request.tipoParticipante());
         torneo.setSede(limpiar(request.sede()));
@@ -256,12 +258,12 @@ public class TorneoService {
     // --- qué cambia en un torneo publicado ------------------------------------
 
     private static List<String> cambiados(Torneo t, InformacionTorneoRequest r) {
-        Formato formato = r.formato() == null ? Formato.ELIMINACION_DIRECTA : r.formato();
         Map<String, Boolean> cambia = Map.ofEntries(
                 Map.entry("nombre", !r.nombre().strip().equals(t.getNombre())),
                 Map.entry("disciplina", !r.disciplina().strip().equals(t.getDisciplina())),
                 Map.entry("descripcion", !Objects.equals(limpiar(r.descripcion()), t.getDescripcion())),
-                Map.entry("formato", formato != t.getFormato()),
+                Map.entry("formato", formato(r) != t.getFormato()),
+                Map.entry("reglasGrupos", !Objects.equals(reglasGrupos(r), ReglasGrupos.de(t))),
                 Map.entry("modalidad", r.modalidad() != t.getModalidad()),
                 Map.entry("tipoParticipante", r.tipoParticipante() != t.getTipoParticipante()),
                 Map.entry("sede", !Objects.equals(limpiar(r.sede()), t.getSede())),
@@ -334,6 +336,7 @@ public class TorneoService {
         validarFechas(request, cambiados, errores);
         validarSede(request, errores);
         validarCupos(request, errores);
+        validarGrupos(request, errores);
         validarNomina(request, errores);
         return errores;
     }
@@ -406,6 +409,72 @@ public class TorneoService {
         } else if (minimo != null && maximo != null && minimo > maximo) {
             errores.add(new ErrorCampo("cupoMinimo", ErrorCampo.Codigo.RANGO_INVALIDO,
                     "No puede ser mayor que el cupo máximo"));
+        }
+    }
+
+    private static Formato formato(InformacionTorneoRequest request) {
+        return request.formato() == null ? Formato.ELIMINACION_DIRECTA : request.formato();
+    }
+
+    /** Con grupos, las que vinieron completadas con las de por defecto; en eliminación directa, null. */
+    private static ReglasGrupos reglasGrupos(InformacionTorneoRequest request) {
+        if (formato(request) != Formato.GRUPOS_Y_ELIMINACION) {
+            return null;
+        }
+        return request.reglasGrupos() == null ? ReglasGrupos.POR_DEFECTO : request.reglasGrupos().completas();
+    }
+
+    /**
+     * Las reglas de la fase de grupos (CR-02) y lo que piden del cupo: el máximo es una cantidad justa de grupos, los
+     * que pasan a la llave son potencia de 2 (la llave sin BYE) y el mínimo deja en cada grupo uno más que los que
+     * pasan, para que los grupos desparejos sigan teniendo sentido.
+     */
+    private static void validarGrupos(InformacionTorneoRequest request, List<ErrorCampo> errores) {
+        ReglasGrupos reglas = reglasGrupos(request);
+        if (reglas == null) {
+            if (request.reglasGrupos() != null) {
+                errores.add(new ErrorCampo("reglasGrupos", ErrorCampo.Codigo.VALOR_INVALIDO,
+                        "Solo en torneos con fase de grupos"));
+            }
+            return;
+        }
+        int antes = errores.size();
+        int tamanio = reglas.tamanioGrupo();
+        if (tamanio < ReglasGrupos.TAMANIO_MINIMO || tamanio > ReglasGrupos.TAMANIO_MAXIMO) {
+            errores.add(new ErrorCampo("reglasGrupos.tamanioGrupo", ErrorCampo.Codigo.RANGO_INVALIDO,
+                    "Tiene que estar entre " + ReglasGrupos.TAMANIO_MINIMO + " y " + ReglasGrupos.TAMANIO_MAXIMO));
+        } else if (reglas.clasificanPorGrupo() < 1 || reglas.clasificanPorGrupo() >= tamanio) {
+            errores.add(new ErrorCampo("reglasGrupos.clasificanPorGrupo", ErrorCampo.Codigo.RANGO_INVALIDO,
+                    "Tiene que pasar al menos 1 y menos que el tamaño del grupo"));
+        }
+        if (reglas.puntosVictoria() < 1 || reglas.puntosVictoria() > ReglasGrupos.PUNTOS_MAXIMOS) {
+            errores.add(new ErrorCampo("reglasGrupos.puntosVictoria", ErrorCampo.Codigo.RANGO_INVALIDO,
+                    "Tiene que estar entre 1 y " + ReglasGrupos.PUNTOS_MAXIMOS));
+        } else if (reglas.puntosEmpate() < 0 || reglas.puntosEmpate() >= reglas.puntosVictoria()) {
+            errores.add(new ErrorCampo("reglasGrupos.puntosEmpate", ErrorCampo.Codigo.RANGO_INVALIDO,
+                    "Tiene que ser menos que por ganar"));
+        }
+        Integer maximo = request.cupoMaximo();
+        if (errores.size() > antes || maximo == null) {
+            return;
+        }
+        if (maximo % tamanio != 0) {
+            errores.add(new ErrorCampo("cupoMaximo", ErrorCampo.Codigo.RANGO_INVALIDO,
+                    "Tiene que ser múltiplo del tamaño del grupo (" + tamanio + ")"));
+            return;
+        }
+        int grupos = reglas.grupos(maximo);
+        int clasificados = grupos * reglas.clasificanPorGrupo();
+        if (clasificados < 2 || Integer.bitCount(clasificados) != 1) {
+            errores.add(new ErrorCampo("reglasGrupos.clasificanPorGrupo", ErrorCampo.Codigo.RANGO_INVALIDO,
+                    "Con " + grupos + " grupos pasan " + clasificados + " a la llave: tienen que ser 2, 4, 8, 16…"));
+        }
+        int necesarios = grupos * (reglas.clasificanPorGrupo() + 1);
+        Integer minimo = request.cupoMinimo();
+        if (minimo != null && minimo < necesarios && minimo <= maximo) {
+            errores.add(new ErrorCampo("cupoMinimo", ErrorCampo.Codigo.RANGO_INVALIDO,
+                    "Con " + grupos + " grupos hacen falta al menos " + necesarios
+                            + " para iniciar: en cada grupo, uno más que los que pasan"));
         }
     }
 

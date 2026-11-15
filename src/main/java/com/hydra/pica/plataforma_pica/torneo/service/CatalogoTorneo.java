@@ -29,7 +29,7 @@ final class CatalogoTorneo {
     static final List<FormatoOpcion> FORMATOS = List.of(
             new FormatoOpcion(Formato.ELIMINACION_DIRECTA.name(), "Eliminación directa (llaves)", true),
             new FormatoOpcion("LIGA", "Liga (todos contra todos)", false),
-            new FormatoOpcion("GRUPOS_Y_ELIMINACION", "Grupos + eliminación", false));
+            new FormatoOpcion(Formato.GRUPOS_Y_ELIMINACION.name(), "Grupos + eliminación", true));
 
     private CatalogoTorneo() {
     }

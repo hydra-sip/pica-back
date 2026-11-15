@@ -474,8 +474,8 @@ class TorneoControllerTest {
 
     private static TorneoInformacion borrador() {
         return new TorneoInformacion(9L, EstadoTorneo.BORRADOR, 1, "Apertura F5", "Fútbol 5", null,
-                Formato.ELIMINACION_DIRECTA, Modalidad.PRESENCIAL, null, "Club Mercedes", List.of("Cancha 1"), null,
-                null, null, null, null, null, null, null, null, null, null, null, CriterioSinPresentes.REPROGRAMAR, null,
+                Formato.ELIMINACION_DIRECTA, null, Modalidad.PRESENCIAL, null, "Club Mercedes", List.of("Cancha 1"),
+                null, null, null, null, null, null, null, null, null, null, null, null, CriterioSinPresentes.REPROGRAMAR, null,
                 null, null, null, null, null, null, CREADO, CREADO, List.of());
     }
 }

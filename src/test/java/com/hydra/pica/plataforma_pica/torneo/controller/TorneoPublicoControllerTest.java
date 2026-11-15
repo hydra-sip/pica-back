@@ -107,6 +107,7 @@ class TorneoPublicoControllerTest {
                 "Torneo abierto de fútbol 5",
                 "Fútbol 5",
                 Formato.ELIMINACION_DIRECTA,
+                null,
                 Modalidad.PRESENCIAL,
                 TipoParticipante.EQUIPO,
                 "Sede Central",

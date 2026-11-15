@@ -4171,7 +4171,29 @@ components:
 
     # --- torneos -------------------------------------------------------------
     EstadoTorneo: {type: string, enum: [BORRADOR, INSCRIPCION_ABIERTA, INSCRIPCION_CERRADA, EN_CURSO, FINALIZADO, CANCELACION_EN_REVISION, CANCELADO]}
-    Formato: {type: string, enum: [ELIMINACION_DIRECTA]}
+    Formato: {type: string, enum: [ELIMINACION_DIRECTA, GRUPOS_Y_ELIMINACION]}
+    ReglasGrupos:
+      type: object
+      required: [tamanioGrupo, clasificanPorGrupo, puntosVictoria, puntosEmpate]
+      description: >-
+        Las reglas de la fase de grupos (CR-02), solo con `GRUPOS_Y_ELIMINACION`; las elige el organizador y quedan
+        selladas al publicar, en el esquema (líneas `formato`, `grupos:<tamaño>:<pasan>`, `puntos:<ganar>:<empatar>` y
+        `desempate:puntos,entre-si,ganados,partido`, después de la del torneo). El desempate no se configura: puntos,
+        resultado entre sí, partidos ganados y, si sigue y toca un puesto que clasifica, partido de desempate. Perder
+        da 0 puntos.
+      properties:
+        tamanioGrupo: {type: integer, minimum: 3, maximum: 8, description: 'Integrantes por grupo con el cupo lleno. Por defecto 4'}
+        clasificanPorGrupo: {type: integer, minimum: 1, description: 'Cuántos pasan a la llave; menos que el tamaño. Por defecto 2'}
+        puntosVictoria: {type: integer, minimum: 1, maximum: 10, description: 'Por defecto 3'}
+        puntosEmpate: {type: integer, minimum: 0, description: 'Menos que por ganar. Por defecto 1'}
+    ReglasGruposRequest:
+      type: object
+      description: 'Como ReglasGrupos, pero lo que no viene toma el valor por defecto (4, 2, 3 y 1).'
+      properties:
+        tamanioGrupo: {type: [integer, 'null']}
+        clasificanPorGrupo: {type: [integer, 'null']}
+        puntosVictoria: {type: [integer, 'null']}
+        puntosEmpate: {type: [integer, 'null']}
     Modalidad: {type: string, enum: [PRESENCIAL, ONLINE]}
     TipoParticipante: {type: string, enum: [INDIVIDUAL, EQUIPO]}
     InformacionTorneoRequest:
@@ -4185,12 +4207,17 @@ components:
         `sede` si es presencial o trae canchas · `VALOR_INVALIDO` en `canchas` si es online · `RANGO_INVALIDO` en
         `cupoMaximo` fuera de 2 a `OpcionesTorneo.cupoMaximo`, en `cupoMinimo` menor que 2 o mayor que el cupo, y
         en `nominaMaxima` menor que `tamanioEquipo` · `VALOR_INVALIDO` en `tamanioEquipo` o `nominaMaxima` si no
-        es por equipos, o si no son positivos.
+        es por equipos, o si no son positivos. Con grupos (CR-02): `VALOR_INVALIDO` en `reglasGrupos` si el formato es
+        eliminación directa · `RANGO_INVALIDO` en `reglasGrupos.tamanioGrupo`, `reglasGrupos.clasificanPorGrupo`,
+        `reglasGrupos.puntosVictoria` o `reglasGrupos.puntosEmpate` fuera de rango, en `cupoMaximo` si no es múltiplo
+        del tamaño del grupo, en `reglasGrupos.clasificanPorGrupo` si los que pasan a la llave (grupos × pasan) no
+        son potencia de 2 y en `cupoMinimo` si no deja en cada grupo uno más que los que pasan.
       properties:
         nombre: {type: string, maxLength: 100}
         disciplina: {type: string, maxLength: 50, description: 'Texto libre; las sugeridas salen de `GET /torneos/opciones`'}
         descripcion: {type: [string, 'null'], maxLength: 2000}
         formato: {oneOf: [{$ref: '#/components/schemas/Formato'}, {type: 'null'}], description: 'Sin valor, ELIMINACION_DIRECTA'}
+        reglasGrupos: {oneOf: [{$ref: '#/components/schemas/ReglasGruposRequest'}, {type: 'null'}], description: 'Solo con GRUPOS_Y_ELIMINACION; sin valor, las de por defecto'}
         modalidad: {oneOf: [{$ref: '#/components/schemas/Modalidad'}, {type: 'null'}]}
         tipoParticipante: {oneOf: [{$ref: '#/components/schemas/TipoParticipante'}, {type: 'null'}]}
         sede: {type: [string, 'null'], maxLength: 255}
@@ -4215,6 +4242,7 @@ components:
         disciplina: {type: string}
         descripcion: {type: [string, 'null']}
         formato: {$ref: '#/components/schemas/Formato'}
+        reglasGrupos: {oneOf: [{$ref: '#/components/schemas/ReglasGrupos'}, {type: 'null'}], description: 'Null en eliminación directa'}
         modalidad: {oneOf: [{$ref: '#/components/schemas/Modalidad'}, {type: 'null'}]}
         tipoParticipante: {oneOf: [{$ref: '#/components/schemas/TipoParticipante'}, {type: 'null'}]}
         sede: {type: [string, 'null']}
@@ -4273,7 +4301,7 @@ components:
           items: {type: string}
           description: >-
             Los campos de InformacionTorneoRequest que ya no se pueden cambiar (HU-202). Vacío en BORRADOR; en curso,
-            finalizado o cancelado, todos.
+            finalizado o cancelado, todos. Publicado, siempre `formato` y `reglasGrupos` (quedan sellados, CR-02).
     PermisoArbitro:
       type: string
       enum: [CARGAR_RESULTADOS, RESOLVER_OBJECIONES]
@@ -5453,6 +5481,7 @@ components:
         descripcion: {type: [string, 'null']}
         disciplina: {type: string}
         formato: {$ref: '#/components/schemas/Formato'}
+        reglasGrupos: {oneOf: [{$ref: '#/components/schemas/ReglasGrupos'}, {type: 'null'}], description: 'Las selladas; null en eliminación directa'}
         modalidad: {$ref: '#/components/schemas/Modalidad'}
         tipoParticipante: {$ref: '#/components/schemas/TipoParticipante'}
         sede: {type: [string, 'null']}

@@ -78,6 +78,19 @@ public class Torneo extends AuditableEntity {
     @Column(name = "formato", length = 30, nullable = false)
     private Formato formato = Formato.ELIMINACION_DIRECTA;
 
+    /** Solo con grupos (CR-02): ver {@link ReglasGrupos}. En eliminación directa, las cuatro en null. */
+    @Column(name = "tamanio_grupo")
+    private Integer tamanioGrupo;
+
+    @Column(name = "clasifican_por_grupo")
+    private Integer clasificanPorGrupo;
+
+    @Column(name = "puntos_victoria")
+    private Integer puntosVictoria;
+
+    @Column(name = "puntos_empate")
+    private Integer puntosEmpate;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "modalidad", length = 20)
     private Modalidad modalidad;
@@ -178,4 +191,12 @@ public class Torneo extends AuditableEntity {
             joinColumns = @JoinColumn(name = "torneo_id"),
             inverseJoinColumns = @JoinColumn(name = "cancha_id"))
     private Set<Cancha> canchas = new HashSet<>();
+
+    /** Con null (eliminación directa), las cuatro quedan vacías. */
+    public void setReglasGrupos(ReglasGrupos reglas) {
+        tamanioGrupo = reglas == null ? null : reglas.tamanioGrupo();
+        clasificanPorGrupo = reglas == null ? null : reglas.clasificanPorGrupo();
+        puntosVictoria = reglas == null ? null : reglas.puntosVictoria();
+        puntosEmpate = reglas == null ? null : reglas.puntosEmpate();
+    }
 }
