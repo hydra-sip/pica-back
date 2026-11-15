@@ -6,6 +6,7 @@ import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.domain.SorteoBracket;
@@ -33,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 2, y el que perdió en la ronda r de n, 2^(n - r) + 1. Sin partido por el tercer puesto, los dos semifinalistas
  * quedan 3.</li>
  * <li>Publica {@link ResultadoConfirmado} para los pronósticos y el tiempo real.</li>
+ * <li>Un partido de la fase de grupos (CR-02) no avanza: lo cierra {@link FaseDeGrupos}.</li>
  * <li>Si el partido hermano terminó sin ganador (HU-309), el ganador gana el partido siguiente sin jugar
  * ({@link #paseDirecto}).</li>
  * </ul>
@@ -46,6 +48,7 @@ public class AvanceLlave {
     private final TorneoRepository torneoRepository;
     private final AuditoriaRepository auditoriaRepository;
     private final ApplicationEventPublisher eventos;
+    private final FaseDeGrupos faseDeGrupos;
 
     /**
      * Dentro de la transacción de quien lo llama, con la fila del partido ya bloqueada.
@@ -55,6 +58,10 @@ public class AvanceLlave {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void confirmar(Partido partido, List<Juega> lados, EstadoPartido estado) {
+        if (partido.getFase() == FasePartido.GRUPOS) {
+            faseDeGrupos.confirmar(partido, lados, estado);
+            return;
+        }
         Juega ganador = lados.stream()
                 .filter(j -> Boolean.TRUE.equals(j.getEsGanador()))
                 .findFirst()
@@ -128,6 +135,9 @@ public class AvanceLlave {
         Torneo bloqueado = torneoRepository.buscarBloqueado(torneo.getId()).orElseThrow();
         bloqueado.setEstado(EstadoTorneo.FINALIZADO);
         for (Juega lado : juegaRepository.delTorneo(torneo.getId())) {
+            if (lado.getPartido().getFase() != FasePartido.ELIMINACION) {
+                continue; // los eliminados en grupos no tienen puesto: no cobran premio (CR-02)
+            }
             int ronda = lado.getPartido().getRonda();
             if (Boolean.FALSE.equals(lado.getEsGanador())) {
                 lado.getInscripcion().setPosicion((1 << (rondas - ronda)) + 1);

@@ -21,7 +21,6 @@ import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.LaudoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionComparada;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionResumen;
-import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.VersionResultado;
 import com.hydra.pica.plataforma_pica.partido.repository.EvidenciaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
@@ -119,7 +118,7 @@ public class ObjecionService {
     private static ObjecionResumen resumen(Objecion objecion, List<Juega> lados, List<Auditoria> historial,
             int rondas) {
         Partido partido = objecion.getPartido();
-        return new ObjecionResumen(partido.getId(), partido.getRonda(), RondaBracket.nombre(partido.getRonda(), rondas),
+        return new ObjecionResumen(partido.getId(), partido.getRonda(), Partidos.nombreRonda(partido, rondas),
                 nombre(lados, Lado.LOCAL), nombre(lados, Lado.VISITANTE), cargada(partido, lados, historial, null),
                 objetada(objecion, lados, null), objecion.getMotivo(), objecion.getCreadoEn(), objecion.getDecision(),
                 objecion.getResueltaEn());

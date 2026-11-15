@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -19,18 +20,36 @@ public interface PartidoRepository extends JpaRepository<Partido, Long> {
     /** Si tiene algún partido del torneo asignado, jugado o no: la FK no deja quitarlo (PICA-237). */
     boolean existsByTorneoIdAndArbitroId(Long torneoId, Long arbitroId);
 
-    /** El bracket, con el árbitro y la cancha, por ronda y posición. */
+    /** El bracket (la llave, sin los partidos de grupos), con el árbitro y la cancha, por ronda y posición. */
     @Query("select p from Partido p join fetch p.arbitro a left join fetch a.persona left join fetch p.cancha "
-            + "where p.torneo.id = :torneoId order by p.ronda, p.posicion")
+            + "where p.torneo.id = :torneoId "
+            + "and p.fase = com.hydra.pica.plataforma_pica.partido.domain.FasePartido.ELIMINACION "
+            + "order by p.ronda, p.posicion")
     List<Partido> delTorneo(@Param("torneoId") Long torneoId);
+
+    /** Los de una fase de un grupo (CR-02), con el árbitro y la cancha, por fecha y posición. */
+    @Query("select p from Partido p join fetch p.arbitro a left join fetch a.persona left join fetch p.cancha "
+            + "where p.grupo.id = :grupoId and p.fase = :fase order by p.ronda, p.posicion")
+    List<Partido> delGrupo(@Param("grupoId") Long grupoId, @Param("fase") FasePartido fase);
+
+    /** Los de grupos y desempates del torneo (CR-02), por grupo, fecha y posición. */
+    @Query("select p from Partido p join fetch p.grupo g join fetch p.arbitro a left join fetch a.persona "
+            + "left join fetch p.cancha where p.torneo.id = :torneoId "
+            + "and p.fase <> com.hydra.pica.plataforma_pica.partido.domain.FasePartido.ELIMINACION "
+            + "order by g.letra, p.fase, p.ronda, p.posicion")
+    List<Partido> deLosGrupos(@Param("torneoId") Long torneoId);
 
     /** Para cargar el resultado y aceptarlo: uno a la vez por partido. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Partido p where p.id = :id")
     Optional<Partido> buscarBloqueado(@Param("id") Long id);
 
-    /** Donde sigue el ganador: el partido de la ronda siguiente que le toca. */
-    Optional<Partido> findByTorneoIdAndRondaAndPosicion(Long torneoId, int ronda, int posicion);
+    /** Donde sigue el ganador: el partido de la llave de la ronda siguiente que le toca. */
+    @Query("select p from Partido p where p.torneo.id = :torneoId "
+            + "and p.fase = com.hydra.pica.plataforma_pica.partido.domain.FasePartido.ELIMINACION "
+            + "and p.ronda = :ronda and p.posicion = :posicion")
+    Optional<Partido> findByTorneoIdAndRondaAndPosicion(@Param("torneoId") Long torneoId, @Param("ronda") int ronda,
+                                                        @Param("posicion") int posicion);
 
     /** Los que tienen un resultado cargado que nadie objetó y cuyo plazo ya venció: se confirman solos. */
     @Query("""
@@ -70,8 +89,9 @@ public interface PartidoRepository extends JpaRepository<Partido, Long> {
             order by p.fecha_programada, p.id""", nativeQuery = true)
     List<Long> conCheckinPorAvisar(@Param("ahora") Instant ahora, @Param("desde") Instant desde);
 
-    /** Cuántas rondas tiene el bracket: con eso se nombra cada una ("Final", "Semifinal"...). */
-    @Query("select coalesce(max(p.ronda), 0) from Partido p where p.torneo.id = :torneoId")
+    /** Cuántas rondas tiene el bracket (la llave): con eso se nombra cada una ("Final", "Semifinal"...). */
+    @Query("select coalesce(max(p.ronda), 0) from Partido p where p.torneo.id = :torneoId "
+            + "and p.fase = com.hydra.pica.plataforma_pica.partido.domain.FasePartido.ELIMINACION")
     int rondasDelTorneo(@Param("torneoId") Long torneoId);
 
     /**
