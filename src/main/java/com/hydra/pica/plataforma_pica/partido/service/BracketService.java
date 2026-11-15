@@ -34,6 +34,7 @@ import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignado;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.ArbitroDesignadoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -54,6 +55,7 @@ import org.springframework.transaction.annotation.Transactional;
  * un partido de primera ronda con un solo lado, ya CONFIRMADO, y quien lo recibe ya está en la segunda ronda.</li>
  * <li>Cada partido necesita un árbitro designado (FK de V9): se reparten en rueda entre los que aceptaron la
  * designación (HU-807). Sin ninguno que haya aceptado, el bracket no se genera (409 SIN_ARBITROS).</li>
+ * <li>Con fase de grupos (CR-02), generar sortea los grupos ({@link SorteoGruposService}) y no se regenera.</li>
  * <li>Regenerar es otro sorteo con otra semilla, mientras no haya ningún resultado cargado. Cada sorteo queda en la
  * auditoría, con la semilla anterior si la hubo: rearmar el cuadro hasta que guste queda a la vista.</li>
  * </ul>
@@ -72,6 +74,7 @@ public class BracketService {
     private final JuegaRepository juegaRepository;
     private final AuditoriaRepository auditoriaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final SorteoGruposService sorteoGruposService;
     private final org.springframework.context.ApplicationEventPublisher eventos;
 
     @Transactional
@@ -86,7 +89,11 @@ public class BracketService {
                     "El torneo " + torneoId + " está " + torneo.getEstado() + ": el bracket se genera con la "
                             + "inscripción cerrada");
         }
-        sortear(torneo, organizadorId, null);
+        if (torneo.getFormato() == Formato.GRUPOS_Y_ELIMINACION) {
+            empezarConGrupos(torneo, organizadorId);
+        } else {
+            sortear(torneo, organizadorId, null);
+        }
         return armar(torneo);
     }
 
@@ -96,6 +103,11 @@ public class BracketService {
         Torneo torneo = propio(organizadorId, torneoId);
         if (torneo.getSemillaBracket() == null) {
             return generar(organizadorId, torneoId);
+        }
+        if (torneo.getFormato() == Formato.GRUPOS_Y_ELIMINACION) {
+            throw new ConflictoException(CodigoError.GRUPOS_YA_SORTEADOS,
+                    "Los grupos del torneo " + torneoId + " salen de drand: con la misma lista sale lo mismo, no se "
+                            + "vuelven a sortear");
         }
         if (!CON_BRACKET.contains(torneo.getEstado())) {
             throw new ConflictoException(CodigoError.TORNEO_NO_EDITABLE,
@@ -166,6 +178,17 @@ public class BracketService {
                 torneo.getId(), EstadoTorneo.INSCRIPCION_CERRADA, EstadoTorneo.EN_CURSO));
         eventos.publishEvent(new com.hydra.pica.plataforma_pica.partido.event.LlaveSorteada(torneo.getId(),
                 semillaAnterior != null));
+    }
+
+    /**
+     * Con fase de grupos (CR-02): se sortean los grupos con la semilla de drand ({@link SorteoGruposService}) y el
+     * torneo empieza.
+     */
+    private void empezarConGrupos(Torneo torneo, Long organizadorId) {
+        sorteoGruposService.sortear(torneo, organizadorId);
+        torneo.setEstado(EstadoTorneo.EN_CURSO);
+        eventos.publishEvent(new com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado(
+                torneo.getId(), EstadoTorneo.INSCRIPCION_CERRADA, EstadoTorneo.EN_CURSO));
     }
 
     /** Solo los que aceptaron la designación (HU-807): un pendiente no arbitra, así que tampoco recibe partidos. */

@@ -165,8 +165,22 @@ public class Torneo extends AuditableEntity {
     @Column(name = "lista_sellada_en")
     private Instant listaSelladaEn;
 
+    /** La de la llave; con grupos, la del sorteo de grupos, que sale de drand (CR-02). */
     @Column(name = "semilla_bracket", length = 64)
     private String semillaBracket;
+
+    /** Grupos (CR-02, V55): la ronda de drand fijada al sellar la lista; su valor es la semilla. */
+    @Column(name = "semilla_ronda")
+    private Long semillaRonda;
+
+    /** Grupos: SHA-256(listaHash:semillaRonda), publicado al sellar la lista, antes de que exista la semilla. */
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "compromiso_hash", length = 64)
+    private String compromisoHash;
+
+    /** Grupos: la firma de drand de la ronda. */
+    @Column(name = "semilla_firma", columnDefinition = "TEXT")
+    private String semillaFirma;
 
     @Column(name = "checkin_min_antes")
     private Integer checkinMinAntes;

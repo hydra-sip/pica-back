@@ -2178,6 +2178,11 @@ paths:
         (SORTEO). 409 `INSCRIPCION_NO_CERRADA` si la inscripción no está cerrada, `PARTICIPANTES_INSUFICIENTES` con
         menos de 2 confirmadas, `BRACKET_YA_GENERADO` si ya lo tiene, `SIN_ARBITROS` si ningún árbitro aceptó la
         designación. Solo el organizador del torneo; para otro, 404 `TORNEO_NO_ENCONTRADO`.
+
+        Con fase de grupos (CR-02, PICA-397) en cambio sortea los grupos: la semilla es el valor de la ronda de drand
+        fijada al cerrar la inscripción (ver `GET /torneos/{id}/sorteo-grupos`), y el torneo pasa a EN_CURSO. 409
+        `SEMILLA_NO_DISPONIBLE` si la ronda todavía no salió (unos segundos), `PARTICIPANTES_INSUFICIENTES` si no hay
+        en cada grupo uno más que los que pasan.
       responses:
         '201':
           description: El bracket generado
@@ -2200,7 +2205,8 @@ paths:
       description: >-
         Otro sorteo con otra semilla, con las mismas reglas que el alta, mientras no haya ningún resultado cargado
         (409 `BRACKET_CON_RESULTADOS`). La auditoría guarda también la semilla anterior. Sin bracket todavía, lo
-        genera. 409 `TORNEO_NO_EDITABLE` si el torneo terminó o se canceló.
+        genera. 409 `TORNEO_NO_EDITABLE` si el torneo terminó o se canceló. Con fase de grupos, 409
+        `GRUPOS_YA_SORTEADOS`: salen de drand y con la misma lista saldría lo mismo.
       responses:
         '200':
           description: El bracket nuevo
@@ -2209,6 +2215,30 @@ paths:
               schema: {$ref: '#/components/schemas/BracketTorneo'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/torneos/{id}/sorteo-grupos:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: Ver el sorteo de los grupos (público, para verificarlo)
+      x-jira: PICA-397
+      x-owner: Tomás
+      security: []
+      description: >-
+        CR-02. Todo para recalcular el reparto. Al cerrar la inscripción se sella la lista (`listaHash`), se fija una
+        ronda de drand que todavía no salió (`semillaRonda`) y se publica `compromisoHash` = SHA-256 de
+        `listaHash:semillaRonda`. La semilla es el `randomness` de esa ronda (`semillaUrl`, con su firma). Versión 1 del
+        algoritmo: las `inscripciones` se ordenan por el SHA-256 en hexadecimal de `semilla:inscripcionId`, de menor a
+        mayor (como la llave), y se reparten en serpentina entre `cantidadGrupos` grupos: A, B, C, D, D, C, B, A, A…
+        Antes del sorteo, `semilla`, `semillaFirma` y `grupos` vienen vacíos. 404 `TORNEO_NO_ENCONTRADO` si no existe,
+        está en BORRADOR o no es de grupos.
+      responses:
+        '200':
+          description: El sorteo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SorteoGruposDetalle'}
+        '404': {$ref: '#/components/responses/Error'}
 
   /api/v1/torneos/{id}/checkin:
     parameters: [{$ref: '#/components/parameters/id'}]
@@ -3633,7 +3663,8 @@ components:
         GASTO_YA_PAGADO (el gasto común ya tiene comprobante) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
         PARTICIPANTES_INSUFICIENTES (menos de 2 inscripciones confirmadas) · BRACKET_YA_GENERADO (se puede regenerar) ·
         SIN_ARBITROS (cada partido necesita un árbitro que haya aceptado la designación) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
-        regenera) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
+        regenera) · SEMILLA_NO_DISPONIBLE (la ronda de drand del sorteo de grupos todavía no salió) ·
+        GRUPOS_YA_SORTEADOS (los grupos no se vuelven a sortear) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
         sin resultado) · PARTIDO_CERRADO (ya no se le suma evidencia) · RESULTADO_NO_PENDIENTE (no hay un resultado
         cargado para aceptar u objetar) · RESULTADO_PROPIO (el resultado lo acepta u objeta el rival, no quien lo
         cargó) · PLAZO_OBJECION_VENCIDO (venció el plazo para objetar el resultado) · PARTIDO_NO_OBJETADO
@@ -3689,7 +3720,8 @@ components:
              ARBITRO_NO_HABILITADO, DESIGNACION_YA_RESPONDIDA, COMPROMISO_NO_ACEPTADO, IDENTIDAD_NO_VERIFICADA,
              GASTO_NO_ES_HONORARIO, HONORARIO_NO_DEDUCIBLE, HONORARIO_YA_DEPOSITADO, HONORARIO_SIN_DEPOSITAR,
              GASTO_YA_PAGADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
-             SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
+             SIN_ARBITROS, BRACKET_CON_RESULTADOS, SEMILLA_NO_DISPONIBLE, GRUPOS_YA_SORTEADOS,
+             PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
@@ -4378,6 +4410,38 @@ components:
       type: object
       properties:
         motivo: {type: [string, 'null'], maxLength: 500, description: Opcional; le llega al organizador}
+    SorteoGruposDetalle:
+      type: object
+      required: [torneoId, torneoNombre, version, listaHash, inscripciones, cantidadGrupos, grupos]
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneoNombre: {type: string}
+        version: {type: integer, description: '1: el orden de la llave repartido en serpentina'}
+        listaHash: {type: string, description: SHA-256 de la lista de inscriptos sellada al cerrar}
+        listaSelladaEn: {type: [string, 'null'], format: date-time}
+        inscripciones: {type: array, items: {$ref: '#/components/schemas/Id'}, description: 'Las confirmadas que entran al sorteo, por id'}
+        semillaRonda: {type: [integer, 'null'], format: int64, description: Ronda de drand fijada al cerrar}
+        compromisoHash: {type: [string, 'null'], description: 'SHA-256 de listaHash:semillaRonda'}
+        semilla: {type: [string, 'null'], description: El randomness de la ronda; null antes del sorteo}
+        semillaFirma: {type: [string, 'null']}
+        semillaUrl: {type: [string, 'null'], description: Donde se consulta la ronda en drand}
+        cantidadGrupos: {type: integer, description: 'cupoMaximo / tamanioGrupo'}
+        grupos:
+          type: array
+          items:
+            type: object
+            required: [letra, integrantes]
+            properties:
+              letra: {type: string}
+              integrantes:
+                type: array
+                description: En el orden del sorteo
+                items:
+                  type: object
+                  required: [inscripcionId, nombre]
+                  properties:
+                    inscripcionId: {$ref: '#/components/schemas/Id'}
+                    nombre: {type: string}
     BracketTorneo:
       type: object
       required: [torneoId, rondas]

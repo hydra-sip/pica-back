@@ -42,6 +42,11 @@ public class Drand {
         return (instante.getEpochSecond() - genesis) / periodo + 1;
     }
 
+    /** Si la ronda ya salió: hasta entonces su valor no existe. */
+    public boolean salio(long ronda) {
+        return ronda(Instant.now()) >= ronda;
+    }
+
     public Duration periodo() {
         return Duration.ofSeconds(periodo);
     }
