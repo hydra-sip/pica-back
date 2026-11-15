@@ -30,7 +30,6 @@ import com.hydra.pica.plataforma_pica.partido.dto.PosicionRanking;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.RankingResponse;
-import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
@@ -99,7 +98,7 @@ public class PronosticoService {
                 continue;
             }
             int rondas = rondasPorTorneo.getOrDefault(partido.getTorneo().getId(), 1);
-            String nombreRonda = RondaBracket.nombre(partido.getRonda(), rondas);
+            String nombreRonda = Partidos.nombreRonda(partido, rondas);
             LadoBracket local = Partidos.ladoBracket(lados, Lado.LOCAL);
             LadoBracket visitante = Partidos.ladoBracket(lados, Lado.VISITANTE);
 

@@ -19,6 +19,9 @@ import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FixtureGrupos;
+import com.hydra.pica.plataforma_pica.partido.domain.Grupo;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
@@ -55,7 +58,8 @@ import org.springframework.transaction.annotation.Transactional;
  * un partido de primera ronda con un solo lado, ya CONFIRMADO, y quien lo recibe ya está en la segunda ronda.</li>
  * <li>Cada partido necesita un árbitro designado (FK de V9): se reparten en rueda entre los que aceptaron la
  * designación (HU-807). Sin ninguno que haya aceptado, el bracket no se genera (409 SIN_ARBITROS).</li>
- * <li>Con fase de grupos (CR-02), generar sortea los grupos ({@link SorteoGruposService}) y no se regenera.</li>
+ * <li>Con fase de grupos (CR-02), generar sortea los grupos ({@link SorteoGruposService}), arma el fixture de cada
+ * grupo y la llave vacía, que se llena al terminar los grupos; no se regenera.</li>
  * <li>Regenerar es otro sorteo con otra semilla, mientras no haya ningún resultado cargado. Cada sorteo queda en la
  * auditoría, con la semilla anterior si la hubo: rearmar el cuadro hasta que guste queda a la vista.</li>
  * </ul>
@@ -181,11 +185,43 @@ public class BracketService {
     }
 
     /**
-     * Con fase de grupos (CR-02): se sortean los grupos con la semilla de drand ({@link SorteoGruposService}) y el
-     * torneo empieza.
+     * Con fase de grupos (CR-02): se sortean los grupos con la semilla de drand ({@link SorteoGruposService}), se arma
+     * el fixture de cada grupo (todos contra todos, {@link FixtureGrupos}) y la llave vacía para los que pasen, todo
+     * con árbitro en rueda, y el torneo empieza.
      */
     private void empezarConGrupos(Torneo torneo, Long organizadorId) {
-        sorteoGruposService.sortear(torneo, organizadorId);
+        List<Usuario> arbitros = arbitros(torneo.getId());
+        if (arbitros.isEmpty()) {
+            throw new ConflictoException(CodigoError.SIN_ARBITROS,
+                    "El torneo " + torneo.getId() + " no tiene árbitros que hayan aceptado: cada partido necesita uno");
+        }
+        Map<Grupo, List<Long>> grupos = sorteoGruposService.sortear(torneo, organizadorId);
+        int asignados = 0;
+        List<Juega> lados = new ArrayList<>();
+        for (Map.Entry<Grupo, List<Long>> grupo : grupos.entrySet()) {
+            List<List<FixtureGrupos.Cruce>> fechas = FixtureGrupos.fechas(grupo.getValue());
+            for (int fecha = 1; fecha <= fechas.size(); fecha++) {
+                List<FixtureGrupos.Cruce> cruces = fechas.get(fecha - 1);
+                for (int posicion = 1; posicion <= cruces.size(); posicion++) {
+                    Partido partido = new Partido();
+                    partido.setTorneo(torneo);
+                    partido.setFase(FasePartido.GRUPOS);
+                    partido.setGrupo(grupo.getKey());
+                    partido.setRonda(fecha);
+                    partido.setPosicion(posicion);
+                    partido.setArbitro(arbitros.get(asignados++ % arbitros.size()));
+                    partido = partidoRepository.save(partido);
+                    FixtureGrupos.Cruce cruce = cruces.get(posicion - 1);
+                    lados.add(new Juega(partido, inscripcionRepository.getReferenceById(cruce.local()), Lado.LOCAL));
+                    lados.add(new Juega(partido, inscripcionRepository.getReferenceById(cruce.visitante()),
+                            Lado.VISITANTE));
+                }
+            }
+        }
+        juegaRepository.saveAll(lados);
+        int clasificados = grupos.size() * torneo.getClasificanPorGrupo();
+        int rondas = Integer.numberOfTrailingZeros(clasificados);
+        crearPartidos(torneo, new Cuadro(rondas, List.of()), arbitros);
         torneo.setEstado(EstadoTorneo.EN_CURSO);
         eventos.publishEvent(new com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado(
                 torneo.getId(), EstadoTorneo.INSCRIPCION_CERRADA, EstadoTorneo.EN_CURSO));

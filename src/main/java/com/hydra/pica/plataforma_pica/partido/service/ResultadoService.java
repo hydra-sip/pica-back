@@ -15,6 +15,7 @@ import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Objecion;
@@ -41,7 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <li>Lo carga el capitán de uno de los dos lados: el jugador inscripto o el capitán del equipo.</li>
  * <li>Solo con el partido en juego: el torneo en curso, los dos rivales definidos y el resultado sin cargar. El
  * check-in (HU-308) no es requisito: PROGRAMADO también cuenta como en juego.</li>
- * <li>Es eliminación directa: un empate se define por penales, y los penales no pueden empatar.</li>
+ * <li>En la llave un empate se define por penales, y los penales no pueden empatar. En la fase de grupos (CR-02) se
+ * puede empatar y no hay penales.</li>
  * <li>El partido queda RESULTADO_CARGADO y el rival tiene {@code app.partidos.plazo-objecion} para aceptarlo u
  * objetarlo.</li>
  * <li>Lo acepta el capitán del otro lado, el que no lo cargó. Si nadie lo objeta (HU-302) en el plazo, se confirma
@@ -71,7 +73,7 @@ public class ResultadoService {
         List<Juega> lados = juegaRepository.delPartido(partidoId);
         Juega mio = Partidos.exigirCapitan(lados, usuarioId, partidoId);
         Partidos.exigirEnJuego(partido, lados, "le carga resultado");
-        validar(request);
+        validar(partido, request);
 
         fijarMarcador(lados, request.puntajeLocal(), request.puntajeVisitante(), request.penalesLocal(),
                 request.penalesVisitante());
@@ -115,7 +117,7 @@ public class ResultadoService {
             throw new ConflictoException(CodigoError.PLAZO_OBJECION_VENCIDO,
                     "Venció el plazo para objetar el resultado del partido " + partidoId);
         }
-        List<ErrorCampo> errores = erroresDelMarcador(request.puntajeLocal(), request.puntajeVisitante(),
+        List<ErrorCampo> errores = erroresDelMarcador(partido, request.puntajeLocal(), request.puntajeVisitante(),
                 request.penalesLocal(), request.penalesVisitante());
         if (!evidenciaRepository.existsByPartidoIdAndInscripcionId(partidoId, mio.getId().getInscripcionId())) {
             errores.add(new ErrorCampo("evidencia", ErrorCampo.Codigo.REQUERIDO,
@@ -180,14 +182,26 @@ public class ResultadoService {
     }
 
     /** Todos los errores juntos en un 400, como el resto de las validaciones. */
-    private static void validar(ResultadoRequest request) {
-        lanzarSiHay(erroresDelMarcador(request.puntajeLocal(), request.puntajeVisitante(), request.penalesLocal(),
-                request.penalesVisitante()));
+    private static void validar(Partido partido, ResultadoRequest request) {
+        lanzarSiHay(erroresDelMarcador(partido, request.puntajeLocal(), request.puntajeVisitante(),
+                request.penalesLocal(), request.penalesVisitante()));
     }
 
-    static List<ErrorCampo> erroresDelMarcador(Integer puntajeLocal, Integer puntajeVisitante,
-                                                       Integer penalesLocal, Integer penalesVisitante) {
+    /** En la fase de grupos (CR-02) se puede empatar y no hay penales; en la llave y en los desempates, sí. */
+    static List<ErrorCampo> erroresDelMarcador(Partido partido, Integer puntajeLocal, Integer puntajeVisitante,
+                                               Integer penalesLocal, Integer penalesVisitante) {
         List<ErrorCampo> errores = new ArrayList<>();
+        if (partido.getFase() == FasePartido.GRUPOS) {
+            if (penalesLocal != null) {
+                errores.add(new ErrorCampo("penalesLocal", ErrorCampo.Codigo.VALOR_INVALIDO,
+                        "En la fase de grupos no hay penales: el partido puede terminar empatado"));
+            }
+            if (penalesVisitante != null) {
+                errores.add(new ErrorCampo("penalesVisitante", ErrorCampo.Codigo.VALOR_INVALIDO,
+                        "En la fase de grupos no hay penales: el partido puede terminar empatado"));
+            }
+            return errores;
+        }
         if (puntajeLocal.equals(puntajeVisitante)) {
             if (penalesLocal == null) {
                 errores.add(new ErrorCampo("penalesLocal", ErrorCampo.Codigo.REQUERIDO,
@@ -214,7 +228,10 @@ public class ResultadoService {
         return errores;
     }
 
-    /** Puntajes, penales y ganador de cada lado; el marcador ya está validado. */
+    /**
+     * Puntajes, penales y ganador de cada lado; el marcador ya está validado. Un empate sin penales (fase de grupos)
+     * deja a los dos sin ganar.
+     */
     static void fijarMarcador(List<Juega> lados, int puntajeLocal, int puntajeVisitante, Integer penalesLocal,
                               Integer penalesVisitante) {
         Juega local = Partidos.lado(lados, Lado.LOCAL).orElseThrow();
@@ -223,6 +240,11 @@ public class ResultadoService {
         local.setPenales(penalesLocal);
         visitante.setPuntaje(puntajeVisitante);
         visitante.setPenales(penalesVisitante);
+        if (puntajeLocal == puntajeVisitante && penalesLocal == null) {
+            local.setEsGanador(false);
+            visitante.setEsGanador(false);
+            return;
+        }
         boolean ganaLocal = puntajeLocal > puntajeVisitante
                 || (puntajeLocal == puntajeVisitante && penalesLocal > penalesVisitante);
         local.setEsGanador(ganaLocal);

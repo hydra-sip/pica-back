@@ -48,10 +48,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  * abierta. Las subclases llevan {@code @SpringBootTest}, el Postgres de Testcontainers y {@code @Transactional}.
  * drand no sale a internet: la ronda ya salió y su valor es el SHA-256 de {@code "ronda:<n>"}.
  */
-abstract class TorneoConGruposBase {
+public abstract class TorneoConGruposBase {
 
-    static final Instant EN_UNA_SEMANA = Instant.now().plus(7, ChronoUnit.DAYS);
-    static final Instant EN_DOS_SEMANAS = Instant.now().plus(14, ChronoUnit.DAYS);
+    protected static final Instant EN_UNA_SEMANA = Instant.now().plus(7, ChronoUnit.DAYS);
+    protected static final Instant EN_DOS_SEMANAS = Instant.now().plus(14, ChronoUnit.DAYS);
 
     @Autowired protected TorneoService torneoService;
     @Autowired protected ArbitrosTorneoService arbitrosService;
@@ -74,7 +74,7 @@ abstract class TorneoConGruposBase {
     private int jugadores;
 
     @BeforeEach
-    void torneoConGrupos() {
+    protected void torneoConGrupos() {
         doAnswer(invocacion -> {
             long ronda = invocacion.getArgument(0);
             return new Drand.Pulso(ronda, valorDeLaRonda(ronda), "firma-" + ronda);
@@ -107,7 +107,7 @@ abstract class TorneoConGruposBase {
         return 6;
     }
 
-    static String valorDeLaRonda(long ronda) {
+    protected static String valorDeLaRonda(long ronda) {
         return SelloTorneo.sha256("ronda:" + ronda);
     }
 

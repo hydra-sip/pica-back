@@ -8,7 +8,6 @@ import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.VentanaCheckin;
-import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.partido.service.Partidos;
@@ -100,7 +99,7 @@ public class AvisoCheckinDiscord {
     private String texto(Partido partido, VentanaCheckin ventana) {
         Torneo torneo = partido.getTorneo();
         List<Juega> lados = juegaRepository.delPartido(partido.getId());
-        String ronda = RondaBracket.nombre(partido.getRonda(), partidoRepository.rondasDelTorneo(torneo.getId()));
+        String ronda = Partidos.nombreRonda(partido, partidoRepository.rondasDelTorneo(torneo.getId()));
         long cierre = ventana.cierraEn().getEpochSecond();
         return avisos.firmado(torneo, "⏰ Se abrió el check-in de **" + ronda + "**: " + nombre(lados, Lado.LOCAL)
                 + " vs " + nombre(lados, Lado.VISITANTE) + ". Cierra a las <t:" + cierre + ":t> (<t:" + cierre

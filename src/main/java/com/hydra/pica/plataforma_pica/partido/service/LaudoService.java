@@ -59,7 +59,7 @@ public class LaudoService {
             throw new ConflictoException(CodigoError.PARTIDO_NO_OBJETADO,
                     "El partido " + partidoId + " está " + partido.getEstado() + ": no hay objeción para resolver");
         }
-        List<ErrorCampo> errores = ResultadoService.erroresDelMarcador(request.puntajeLocal(),
+        List<ErrorCampo> errores = ResultadoService.erroresDelMarcador(partido, request.puntajeLocal(),
                 request.puntajeVisitante(), request.penalesLocal(), request.penalesVisitante());
         Evidencia evidencia = evidenciaRepository.findById(request.evidenciaId())
                 .filter(e -> e.getPartido().getId().equals(partidoId))

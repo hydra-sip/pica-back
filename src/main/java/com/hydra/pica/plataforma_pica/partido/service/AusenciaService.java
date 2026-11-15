@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.EstadoVentana;
@@ -32,6 +33,7 @@ public class AusenciaService {
     private final JuegaRepository juegaRepository;
     private final VentanasCheckin ventanas;
     private final AvanceLlave avanceLlave;
+    private final FaseDeGrupos faseDeGrupos;
     private final ResultadoService resultadoService;
     private final ApplicationEventPublisher eventos;
 
@@ -74,7 +76,8 @@ public class AusenciaService {
      */
     private boolean sinPresentes(Partido partido, List<Juega> lados) {
         CriterioSinPresentes criterio = partido.getTorneo().getCheckinSinPresentes();
-        if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS
+        boolean deGrupos = partido.getFase() == FasePartido.GRUPOS;
+        if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS && !deGrupos
                 && (avanceLlave.esFinal(partido) || avanceLlave.terminoSinGanador(avanceLlave.hermano(partido)))) {
             criterio = CriterioSinPresentes.REPROGRAMAR;
         }
@@ -89,6 +92,13 @@ public class AusenciaService {
         detalle.put("criterio", criterio.name());
         resultadoService.auditar(partido, null, detalle);
         eventos.publishEvent(new PartidoSinPresentes(partido.getTorneo().getId(), partido.getId()));
+        if (deGrupos) {
+            // en grupos no hay a quién pasar: descalificados, ninguno suma (CR-02)
+            if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS) {
+                faseDeGrupos.terminado(partido);
+            }
+            return true;
+        }
         if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS) {
             Partido siguiente = avanceLlave.siguiente(partido);
             List<Juega> esperan = juegaRepository.delPartido(siguiente.getId());

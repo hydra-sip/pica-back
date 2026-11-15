@@ -2563,9 +2563,10 @@ paths:
         HU-301. Lo carga el capitán de uno de los dos lados: el jugador inscripto o el capitán del equipo (si no, 403
         `NO_ES_CAPITAN`). El partido tiene que estar en juego: torneo EN_CURSO, los dos rivales definidos y estado
         PROGRAMADO, CHECK_IN o EN_JUEGO (el check-in de HU-308 no es requisito); si no, 409
-        `PARTIDO_NO_EN_JUEGO`. Es eliminación directa: con empate van los dos penales y tienen que definir un ganador;
+        `PARTIDO_NO_EN_JUEGO`. En la llave: con empate van los dos penales y tienen que definir un ganador;
         sin empate, sin penales (400 `VALIDACION`: `REQUERIDO` o `VALOR_INVALIDO` en `penalesLocal` /
-        `penalesVisitante`). El partido queda RESULTADO_CARGADO, con `cargadoPor` y `objecionVenceEn` (ahora más
+        `penalesVisitante`). En la fase de grupos (CR-02) se puede empatar y nunca hay penales (`VALOR_INVALIDO` si
+        vienen); un empate deja a los dos lados con `ganador: false`. Las mismas reglas valen para objetar y laudar. El partido queda RESULTADO_CARGADO, con `cargadoPor` y `objecionVenceEn` (ahora más
         `app.partidos.plazo-objecion`, 15 minutos por defecto): hasta entonces el rival lo acepta o lo objeta. Queda en
         la auditoría (MODIFICACION, entidad PARTIDO). La evidencia es opcional y va aparte, en
         `POST /partidos/{id}/evidencias`. 404 `PARTIDO_NO_ENCONTRADO`.
@@ -4445,7 +4446,9 @@ components:
     BracketTorneo:
       type: object
       required: [torneoId, rondas]
-      description: Las rondas de la primera a la final. Sin generar, `rondas` vacío y `semilla` null.
+      description: >-
+        Las rondas de la primera a la final. Sin generar, `rondas` vacío y `semilla` null. Con fase de grupos (CR-02)
+        es solo la llave: se crea vacía al empezar y se llena con los que pasan; `semilla` es la del sorteo de grupos.
       properties:
         torneoId: {$ref: '#/components/schemas/Id'}
         semilla: {type: [string, 'null'], description: 'Con la que se sorteó: 64 caracteres hexadecimales'}
@@ -4494,7 +4497,7 @@ components:
         torneo: {type: string, description: Nombre del torneo}
         torneoSlug: {type: [string, 'null'], description: El del enlace de la ficha pública}
         ronda: {type: integer, minimum: 1}
-        nombreRonda: {type: string, description: 'Como en `RondaBracket.nombre`'}
+        nombreRonda: {type: string, description: 'Como en `RondaBracket.nombre`; en la fase de grupos (CR-02), «Grupo A · Fecha 2» o «Desempate del grupo A»'}
         posicion: {type: integer, minimum: 1}
         estado: {$ref: '#/components/schemas/EstadoPartido'}
         bye: {type: boolean}
@@ -4668,7 +4671,7 @@ components:
     ResultadoRequest:
       type: object
       required: [puntajeLocal, puntajeVisitante]
-      description: Los penales solo con empate, y tienen que definir un ganador.
+      description: En la llave, los penales solo con empate, y tienen que definir un ganador. En la fase de grupos no hay penales y se puede empatar.
       properties:
         puntajeLocal: {type: integer, minimum: 0}
         puntajeVisitante: {type: integer, minimum: 0}

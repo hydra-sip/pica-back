@@ -12,7 +12,6 @@ import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.dto.LadoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
-import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.ObjecionRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
@@ -70,7 +69,7 @@ public class PartidoService {
                 .orElse(null);
         boolean bye = partido.getRonda() == 1 && local != null && visitante == null;
         return new PartidoDetalle(partido.getId(), partido.getTorneo().getId(), partido.getTorneo().getNombre(),
-                partido.getTorneo().getSlug(), partido.getRonda(), RondaBracket.nombre(partido.getRonda(), rondas),
+                partido.getTorneo().getSlug(), partido.getRonda(), Partidos.nombreRonda(partido, rondas),
                 partido.getPosicion(), partido.getEstado(), bye, local, visitante,
                 partido.getCancha() == null ? null : partido.getCancha().getNombre(), partido.getFechaProgramada(),
                 Partidos.nombre(partido.getArbitro()), cargadoPor, partido.getResultadoCargadoEn(),

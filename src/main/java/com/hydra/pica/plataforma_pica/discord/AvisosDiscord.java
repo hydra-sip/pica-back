@@ -4,17 +4,21 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.domain.SorteoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
+import com.hydra.pica.plataforma_pica.partido.event.GruposSorteados;
 import com.hydra.pica.plataforma_pica.partido.event.LlaveSorteada;
 import com.hydra.pica.plataforma_pica.partido.event.PaseDirecto;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
+import com.hydra.pica.plataforma_pica.partido.repository.GrupoInscripcionRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.partido.service.Partidos;
@@ -41,15 +45,17 @@ public class AvisosDiscord {
     private final TorneoRepository torneoRepository;
     private final PartidoRepository partidoRepository;
     private final JuegaRepository juegaRepository;
+    private final GrupoInscripcionRepository grupoInscripcionRepository;
     private final CanalDiscord canal;
     private final String webUrl;
 
     AvisosDiscord(TorneoRepository torneoRepository, PartidoRepository partidoRepository,
-                  JuegaRepository juegaRepository, CanalDiscord canal,
-                  @Value("${app.web-url:http://localhost:5173}") String webUrl) {
+                  JuegaRepository juegaRepository, GrupoInscripcionRepository grupoInscripcionRepository,
+                  CanalDiscord canal, @Value("${app.web-url:http://localhost:5173}") String webUrl) {
         this.torneoRepository = torneoRepository;
         this.partidoRepository = partidoRepository;
         this.juegaRepository = juegaRepository;
+        this.grupoInscripcionRepository = grupoInscripcionRepository;
         this.canal = canal;
         this.webUrl = webUrl;
     }
@@ -63,6 +69,12 @@ public class AvisosDiscord {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public void alSortearLlave(LlaveSorteada evento) {
+        avisar(evento);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void alSortearGrupos(GruposSorteados evento) {
         avisar(evento);
     }
 
@@ -95,7 +107,7 @@ public class AvisosDiscord {
             return;
         }
         Map<Integer, List<Juega>> primeraRonda = juegaRepository.delTorneo(torneo.getId()).stream()
-                .filter(j -> j.getPartido().getRonda() == 1)
+                .filter(j -> j.getPartido().getFase() == FasePartido.ELIMINACION && j.getPartido().getRonda() == 1)
                 .collect(Collectors.groupingBy(j -> j.getPartido().getPosicion()));
         List<String> cruces = primeraRonda.keySet().stream().sorted()
                 .map(posicion -> cruce(primeraRonda.get(posicion)))
@@ -107,6 +119,24 @@ public class AvisosDiscord {
         String encabezado = titulo + "\n**" + RondaBracket.nombre(1, rondas)
                 + "**";
         canal.publicar(torneo.getDiscordWebhook(), firmado(torneo, encabezado + "\n" + entrando(cruces,
+                CanalDiscord.LARGO_MAXIMO - encabezado.length() - firma(torneo).length() - 2)));
+    }
+
+    /** Los grupos que salieron del sorteo (CR-02), uno por línea, con sus integrantes. */
+    void avisar(GruposSorteados evento) {
+        Torneo torneo = torneoRepository.findById(evento.torneoId()).orElseThrow();
+        if (torneo.getDiscordWebhook() == null) {
+            return;
+        }
+        Map<String, List<String>> porLetra = new TreeMap<>();
+        grupoInscripcionRepository.delTorneo(torneo.getId()).forEach(gi -> porLetra
+                .computeIfAbsent(gi.getGrupo().getLetra(), l -> new ArrayList<>())
+                .add(Partidos.nombre(gi.getInscripcion())));
+        List<String> grupos = porLetra.entrySet().stream()
+                .map(e -> "• **Grupo " + e.getKey() + "**: " + String.join(", ", e.getValue()))
+                .toList();
+        String encabezado = "🎲 Los grupos están sorteados (semilla de drand, verificable en el portal).";
+        canal.publicar(torneo.getDiscordWebhook(), firmado(torneo, encabezado + "\n" + entrando(grupos,
                 CanalDiscord.LARGO_MAXIMO - encabezado.length() - firma(torneo).length() - 2)));
     }
 
@@ -122,6 +152,11 @@ public class AvisosDiscord {
         }
         int rondas = partidoRepository.rondasDelTorneo(torneo.getId());
         List<Juega> lados = juegaRepository.delPartido(partido.getId());
+        if (partido.getFase() == FasePartido.GRUPOS) {
+            canal.publicar(torneo.getDiscordWebhook(), firmado(torneo, "✅ **" + Partidos.nombreRonda(partido, rondas)
+                    + "**: " + resultadoDeGrupo(partido, lados)));
+            return;
+        }
         Juega ganador = lados.stream().filter(j -> Boolean.TRUE.equals(j.getEsGanador())).findFirst().orElseThrow();
         String nombreGanador = Partidos.nombre(ganador.getInscripcion());
         List<String> lineas = new ArrayList<>();
@@ -172,6 +207,18 @@ public class AvisosDiscord {
             marcador += " (penales " + ganador.getPenales() + "–" + perdedor.getPenales() + ")";
         }
         return gano + " le ganó " + marcador + " a " + perdio + ".";
+    }
+
+    /** Como {@link #resultado}, o «A empató 1–1 con B» (CR-02). */
+    private static String resultadoDeGrupo(Partido partido, List<Juega> lados) {
+        Juega ganador = lados.stream().filter(j -> Boolean.TRUE.equals(j.getEsGanador())).findFirst().orElse(null);
+        if (ganador != null) {
+            return resultado(partido, ganador, lados.stream().filter(j -> j != ganador).findFirst().orElseThrow());
+        }
+        Juega local = Partidos.lado(lados, Lado.LOCAL).orElseThrow();
+        Juega visitante = Partidos.lado(lados, Lado.VISITANTE).orElseThrow();
+        return "**" + Partidos.nombre(local.getInscripcion()) + "** empató " + local.getPuntaje() + "–"
+                + visitante.getPuntaje() + " con **" + Partidos.nombre(visitante.getInscripcion()) + "**.";
     }
 
     /** «A vs B», o «A pasa directo» si es un BYE. */
