@@ -13,7 +13,10 @@ import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.MotivoCierre;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
+import com.hydra.pica.plataforma_pica.partido.domain.SorteoGrupos;
+import com.hydra.pica.plataforma_pica.rifa.service.Drand;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
 import com.hydra.pica.plataforma_pica.torneo.domain.SelloTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -35,6 +38,7 @@ public class CierreInscripcion {
     private final AuditoriaRepository auditoriaRepository;
     private final UsuarioRepository usuarioRepository;
     private final TorneoRepository torneoRepository;
+    private final Drand drand;
 
     /** @param actorId el organizador que cierra a mano; null si se cierra sola, por cupo o por fecha */
     public void cerrar(Torneo torneo, MotivoCierre motivo, Long actorId) {
@@ -42,8 +46,22 @@ public class CierreInscripcion {
         int canceladas = cancelarLasQueQuedanEnCurso(torneo);
         torneo.setListaHash(SelloTorneo.lista(lineas(torneo)));
         torneo.setListaSelladaEn(Instant.now());
+        if (torneo.getFormato() == Formato.GRUPOS_Y_ELIMINACION) {
+            comprometerSorteoDeGrupos(torneo);
+        }
         auditar(torneo, motivo, actorId, canceladas);
         torneoRepository.saveAndFlush(torneo);
+    }
+
+    /**
+     * Con grupos (CR-02, PICA-397): la semilla del sorteo de grupos va a ser el valor de la próxima ronda de drand, que
+     * todavía no salió. Se publica el compromiso con la lista ya sellada, así nadie (ni el organizador ni la
+     * plataforma) elige la semilla.
+     */
+    private void comprometerSorteoDeGrupos(Torneo torneo) {
+        long ronda = drand.ronda(Instant.now()) + 1;
+        torneo.setSemillaRonda(ronda);
+        torneo.setCompromisoHash(SorteoGrupos.compromiso(torneo.getListaHash(), ronda));
     }
 
     // los borradores y las pendientes de pago no llegaron a pagar: no hay nada que devolver
@@ -76,6 +94,10 @@ public class CierreInscripcion {
         detalle.put("motivo", motivo.name());
         detalle.put("canceladas", canceladas);
         detalle.put("listaHash", torneo.getListaHash());
+        if (torneo.getCompromisoHash() != null) {
+            detalle.put("semillaRonda", torneo.getSemillaRonda());
+            detalle.put("compromisoHash", torneo.getCompromisoHash());
+        }
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(actorId == null ? null : usuarioRepository.getReferenceById(actorId));
         auditoria.setAccion(AccionAuditoria.CIERRE_INSCRIPCION);

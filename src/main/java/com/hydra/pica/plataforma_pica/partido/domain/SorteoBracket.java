@@ -61,9 +61,7 @@ public final class SorteoBracket {
         if (inscripciones.size() < 2) {
             throw new IllegalArgumentException("Hacen falta al menos dos inscripciones");
         }
-        List<Long> orden = inscripciones.stream()
-                .sorted(Comparator.comparing((Long id) -> sha256(semilla + ":" + id)).thenComparing(id -> id))
-                .toList();
+        List<Long> orden = orden(semilla, inscripciones);
 
         int rondas = 32 - Integer.numberOfLeadingZeros(orden.size() - 1);
         int partidos = 1 << (rondas - 1);
@@ -88,6 +86,16 @@ public final class SorteoBracket {
             }
         }
         return new Cuadro(rondas, List.of(cruces));
+    }
+
+    /**
+     * El orden del sorteo: por el SHA-256 en hexadecimal de {@code semilla + ":" + inscripcionId}, de menor a mayor
+     * (y por id si dos dieran igual). También lo usa el sorteo de grupos ({@link SorteoGrupos}).
+     */
+    public static List<Long> orden(String semilla, List<Long> inscripciones) {
+        return inscripciones.stream()
+                .sorted(Comparator.comparing((Long id) -> sha256(semilla + ":" + id)).thenComparing(id -> id))
+                .toList();
     }
 
     /** Dónde sigue el ganador del partido {@code posicion}: la posición en la ronda siguiente. */
