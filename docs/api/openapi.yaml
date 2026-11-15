@@ -2216,6 +2216,31 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/torneos/{id}/grupos:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: Ver los grupos, sus tablas y sus partidos (público)
+      x-jira: PICA-399
+      x-owner: Tomás
+      security: []
+      description: >-
+        CR-02. Se calcula con los partidos terminados (CONFIRMADO, CORREGIDO o WALKOVER): una objeción que cambia un
+        resultado cambia la tabla. Puntos según `reglas`; perder da 0; un walkover suma la victoria sin tantos y, sin
+        presentes, ninguno suma. Desempate en cascada: puntos, resultado entre sí (si separa a algunos, se vuelve a
+        empezar entre los que siguen), partidos ganados y partido de desempate. Lo que sigue igual comparte el puesto
+        (`criterio` EMPATE); con el grupo terminado, si toca un puesto que clasifica, va a `desempatesPendientes`. Al
+        confirmarse un partido de grupos llega `RESULTADO_CONFIRMADO` por WebSocket, como en la llave: es el aviso
+        para volver a pedir esto. Sin sortear, `grupos` vacío. 404 `TORNEO_NO_ENCONTRADO` si no existe, está en
+        BORRADOR o no es de grupos.
+      responses:
+        '200':
+          description: Los grupos
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GruposTorneo'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/torneos/{id}/sorteo-grupos:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -4411,6 +4436,46 @@ components:
       type: object
       properties:
         motivo: {type: [string, 'null'], maxLength: 500, description: Opcional; le llega al organizador}
+    GruposTorneo:
+      type: object
+      required: [torneoId, reglas, desempate, grupos]
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        reglas: {$ref: '#/components/schemas/ReglasGrupos'}
+        desempate: {type: string, description: 'El orden sellado: puntos,entre-si,ganados,partido'}
+        grupos:
+          type: array
+          items:
+            type: object
+            required: [letra, terminado, tabla, partidos, desempate, desempatesPendientes]
+            properties:
+              letra: {type: string}
+              terminado: {type: boolean, description: Si se jugaron todos sus partidos}
+              tabla:
+                type: array
+                items:
+                  type: object
+                  required: [inscripcionId, nombre, posicion, jugados, ganados, empatados, perdidos, aFavor, enContra, diferencia, puntos, criterio, clasifica]
+                  properties:
+                    inscripcionId: {$ref: '#/components/schemas/Id'}
+                    nombre: {type: string}
+                    posicion: {type: integer, description: Los que comparten puesto tienen la misma}
+                    jugados: {type: integer}
+                    ganados: {type: integer}
+                    empatados: {type: integer}
+                    perdidos: {type: integer}
+                    aFavor: {type: integer}
+                    enContra: {type: integer}
+                    diferencia: {type: integer}
+                    puntos: {type: integer}
+                    criterio: {type: string, enum: [PUNTOS, ENTRE_SI, GANADOS, DESEMPATE, EMPATE], description: 'Con qué se definió el puesto; EMPATE si lo comparte'}
+                    clasifica: {type: boolean, description: Si pasa a la llave}
+              partidos: {type: array, items: {$ref: '#/components/schemas/PartidoBracket'}, description: 'Todos contra todos; la ronda es la fecha'}
+              desempate: {type: array, items: {$ref: '#/components/schemas/PartidoBracket'}, description: El partido de desempate, si hubo}
+              desempatesPendientes:
+                type: array
+                items: {type: array, items: {$ref: '#/components/schemas/Id'}}
+                description: Con el grupo terminado, los empatados que tocan un puesto que clasifica
     SorteoGruposDetalle:
       type: object
       required: [torneoId, torneoNombre, version, listaHash, inscripciones, cantidadGrupos, grupos]

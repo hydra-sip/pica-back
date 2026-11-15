@@ -76,6 +76,7 @@ public class SecurityConfig {
                                 "/api/v1/torneos/*/bracket",
                                 // el sorteo de grupos, para el portal de verificación (CR-02)
                                 "/api/v1/torneos/*/sorteo-grupos",
+                                "/api/v1/torneos/*/grupos",
                                 // las rifas para quien compra (PICA-221)
                                 "/api/v1/rifas/publicas",
                                 "/api/v1/rifas/publicas/*",

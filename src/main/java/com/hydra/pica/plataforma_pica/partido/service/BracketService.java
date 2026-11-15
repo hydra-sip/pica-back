@@ -288,7 +288,7 @@ public class BracketService {
         return new BracketTorneo(torneo.getId(), torneo.getSemillaBracket(), torneo.getListaHash(), lista);
     }
 
-    private static PartidoBracket partidoBracket(Partido partido, List<Juega> lados) {
+    static PartidoBracket partidoBracket(Partido partido, List<Juega> lados) {
         LadoBracket local = Partidos.ladoBracket(lados, Lado.LOCAL);
         LadoBracket visitante = Partidos.ladoBracket(lados, Lado.VISITANTE);
         boolean bye = partido.getRonda() == 1 && local != null && visitante == null;
