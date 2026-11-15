@@ -76,6 +76,9 @@ public class AusenciaService {
      */
     private boolean sinPresentes(Partido partido, List<Juega> lados) {
         CriterioSinPresentes criterio = partido.getTorneo().getCheckinSinPresentes();
+        if (partido.getFase() == FasePartido.DESEMPATE) {
+            criterio = CriterioSinPresentes.REPROGRAMAR; // un desempate tiene que tener ganador (CR-02)
+        }
         boolean deGrupos = partido.getFase() == FasePartido.GRUPOS;
         if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS && !deGrupos
                 && (avanceLlave.esFinal(partido) || avanceLlave.terminoSinGanador(avanceLlave.hermano(partido)))) {

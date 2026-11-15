@@ -152,7 +152,7 @@ public class AvisosDiscord {
         }
         int rondas = partidoRepository.rondasDelTorneo(torneo.getId());
         List<Juega> lados = juegaRepository.delPartido(partido.getId());
-        if (partido.getFase() == FasePartido.GRUPOS) {
+        if (partido.getFase() != FasePartido.ELIMINACION) {
             canal.publicar(torneo.getDiscordWebhook(), firmado(torneo, "✅ **" + Partidos.nombreRonda(partido, rondas)
                     + "**: " + resultadoDeGrupo(partido, lados)));
             return;

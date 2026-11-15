@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.partido.repository;
 
 import java.util.List;
 
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.JuegaId;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -20,6 +21,9 @@ public interface JuegaRepository extends JpaRepository<Juega, JuegaId> {
     @Query("select j from Juega j join fetch j.inscripcion i left join fetch i.equipo e left join fetch e.capitan "
             + "left join fetch i.usuario u left join fetch u.persona where j.partido.id = :partidoId")
     List<Juega> delPartido(@Param("partidoId") Long partidoId);
+
+    /** Si algún partido de esa fase ya tiene lados: con ELIMINACION, si la llave de un torneo con grupos ya se armó. */
+    boolean existsByPartidoTorneoIdAndPartidoFase(Long torneoId, FasePartido fase);
 
     /** Si ya se cargó algún resultado en el torneo (un BYE no tiene puntaje). */
     boolean existsByPartidoTorneoIdAndPuntajeIsNotNull(Long torneoId);
