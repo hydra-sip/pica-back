@@ -2229,7 +2229,15 @@ paths:
         resultado cambia la tabla. Puntos según `reglas`; perder da 0; un walkover suma la victoria sin tantos y, sin
         presentes, ninguno suma. Desempate en cascada: puntos, resultado entre sí (si separa a algunos, se vuelve a
         empezar entre los que siguen), partidos ganados y partido de desempate. Lo que sigue igual comparte el puesto
-        (`criterio` EMPATE); con el grupo terminado, si toca un puesto que clasifica, va a `desempatesPendientes`. Al
+        (`criterio` EMPATE); con el grupo terminado, si toca un puesto que clasifica, va a `desempatesPendientes` y
+        se arma solo el partido de desempate (CR-02-6): un mini cuadro de eliminación directa entre los empatados, con
+        penales, BYE si son impares y árbitro en rueda, sorteado con SHA-256 de `semilla:desempate:<letra>:<ronda>`.
+        Su orden: el campeón, el finalista y después por la ronda en que cayeron; los que cayeron en la misma ronda,
+        por SHA-256 de `semilla:desempate:<letra>:<inscripcionId>`. Si hay más de uno en el grupo se juegan de a uno.
+        Con todos los grupos terminados y sin desempates por jugar, la llave se llena sola con cruces fijos: 1A–2B,
+        1B–2A, 1C–2D… (el i.º de un grupo con el puesto `pasan + 1 - i` del otro, alternando mitades del cuadro), sale
+        `LlaveSorteada` (aviso a Discord) y queda en la auditoría. Los eliminados en grupos no tienen puesto ni
+        premio. Al
         confirmarse un partido de grupos llega `RESULTADO_CONFIRMADO` por WebSocket, como en la llave: es el aviso
         para volver a pedir esto. Sin sortear, `grupos` vacío. 404 `TORNEO_NO_ENCONTRADO` si no existe, está en
         BORRADOR o no es de grupos.

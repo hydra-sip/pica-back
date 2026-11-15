@@ -1,7 +1,9 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -89,8 +91,79 @@ public class TablaGruposService {
                 .map(p -> resultado(datos.lados(p)))
                 .filter(Objects::nonNull)
                 .toList();
+        Map<Set<Long>, List<Long>> desempates = new HashMap<>();
+        for (CuadroDesempate cuadro : cuadros(grupo, datos)) {
+            if (cuadro.terminado(datos)) {
+                desempates.put(cuadro.empatados(), cuadro.orden(datos, torneo.getSemillaBracket(), grupo.getLetra()));
+            }
+        }
         return TablaGrupo.calcular(integrantes, resultados, torneo.getPuntosVictoria(), torneo.getPuntosEmpate(),
-                torneo.getClasificanPorGrupo(), terminado(grupo, datos), Map.of());
+                torneo.getClasificanPorGrupo(), terminado(grupo, datos), desempates);
+    }
+
+    /**
+     * Los mini cuadros de desempate del grupo (CR-02-6), uno detrás del otro: cada uno empieza en la ronda siguiente a
+     * la última del anterior. Sus empatados son los de su primera ronda (con el BYE, si hubo).
+     */
+    static List<CuadroDesempate> cuadros(Grupo grupo, Datos datos) {
+        List<Partido> partidos = datos.partidos(grupo, FasePartido.DESEMPATE);
+        List<CuadroDesempate> cuadros = new ArrayList<>();
+        int desde = 1;
+        while (true) {
+            int primera = desde;
+            Set<Long> empatados = partidos.stream()
+                    .filter(p -> p.getRonda() == primera)
+                    .flatMap(p -> datos.lados(p).stream())
+                    .map(j -> j.getId().getInscripcionId())
+                    .collect(Collectors.toSet());
+            if (empatados.size() < 2) {
+                return cuadros;
+            }
+            int rondas = 32 - Integer.numberOfLeadingZeros(empatados.size() - 1);
+            int hasta = desde + rondas - 1;
+            cuadros.add(new CuadroDesempate(desde, rondas, Set.copyOf(empatados), partidos.stream()
+                    .filter(p -> p.getRonda() >= primera && p.getRonda() <= hasta)
+                    .toList()));
+            desde += rondas;
+        }
+    }
+
+    /** Un mini cuadro de desempate: eliminación directa entre los empatados, en las rondas {@code desde}… */
+    record CuadroDesempate(int desde, int rondas, Set<Long> empatados, List<Partido> partidos) {
+
+        int ultima() {
+            return desde + rondas - 1;
+        }
+
+        Partido finalDelCuadro() {
+            return partidos.stream().filter(p -> p.getRonda() == ultima()).findFirst().orElseThrow();
+        }
+
+        boolean terminado(Datos datos) {
+            Partido final_ = finalDelCuadro();
+            return TERMINADOS.contains(final_.getEstado())
+                    && datos.lados(final_).stream().anyMatch(j -> Boolean.TRUE.equals(j.getEsGanador()));
+        }
+
+        /**
+         * El orden que deja: el que ganó la final, el que la perdió y después por la ronda en que quedó afuera; los
+         * que cayeron en la misma ronda, por SHA-256 de {@code semilla:desempate:<letra>:<id>}, que cualquiera
+         * recalcula.
+         */
+        List<Long> orden(Datos datos, String semilla, String letra) {
+            Map<Long, Integer> cayoEn = new HashMap<>();
+            for (Partido partido : partidos) {
+                for (Juega lado : datos.lados(partido)) {
+                    if (Boolean.FALSE.equals(lado.getEsGanador())) {
+                        cayoEn.put(lado.getId().getInscripcionId(), partido.getRonda());
+                    }
+                }
+            }
+            return empatados.stream()
+                    .sorted(Comparator.comparingInt((Long id) -> cayoEn.getOrDefault(id, Integer.MAX_VALUE)).reversed()
+                            .thenComparing(id -> SelloTorneo.sha256(semilla + ":desempate:" + letra + ":" + id)))
+                    .toList();
+        }
     }
 
     /** Si se jugaron todos sus partidos de todos contra todos. */

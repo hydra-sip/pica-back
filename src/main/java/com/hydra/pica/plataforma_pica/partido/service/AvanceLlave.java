@@ -34,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 2, y el que perdió en la ronda r de n, 2^(n - r) + 1. Sin partido por el tercer puesto, los dos semifinalistas
  * quedan 3.</li>
  * <li>Publica {@link ResultadoConfirmado} para los pronósticos y el tiempo real.</li>
- * <li>Un partido de la fase de grupos (CR-02) no avanza: lo cierra {@link FaseDeGrupos}.</li>
+ * <li>Un partido de la fase de grupos o de un desempate (CR-02) lo cierra {@link FaseDeGrupos}.</li>
  * <li>Si el partido hermano terminó sin ganador (HU-309), el ganador gana el partido siguiente sin jugar
  * ({@link #paseDirecto}).</li>
  * </ul>
@@ -60,6 +60,10 @@ public class AvanceLlave {
     public void confirmar(Partido partido, List<Juega> lados, EstadoPartido estado) {
         if (partido.getFase() == FasePartido.GRUPOS) {
             faseDeGrupos.confirmar(partido, lados, estado);
+            return;
+        }
+        if (partido.getFase() == FasePartido.DESEMPATE) {
+            faseDeGrupos.confirmarDesempate(partido, lados, estado);
             return;
         }
         Juega ganador = lados.stream()
