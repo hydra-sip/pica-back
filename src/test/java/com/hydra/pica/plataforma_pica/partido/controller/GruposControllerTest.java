@@ -10,8 +10,12 @@ import java.util.List;
 import com.hydra.pica.plataforma_pica.common.config.JwtTestSupportConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.SecurityConfig;
 import com.hydra.pica.plataforma_pica.common.config.WebConfig;
+import com.hydra.pica.plataforma_pica.partido.domain.TablaGrupo;
+import com.hydra.pica.plataforma_pica.partido.dto.GruposTorneo;
 import com.hydra.pica.plataforma_pica.partido.dto.SorteoGruposDetalle;
 import com.hydra.pica.plataforma_pica.partido.service.SorteoGruposService;
+import com.hydra.pica.plataforma_pica.partido.service.TablaGruposService;
+import com.hydra.pica.plataforma_pica.torneo.domain.ReglasGrupos;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +36,25 @@ class GruposControllerTest {
 
     @MockitoBean
     private SorteoGruposService sorteoGruposService;
+
+    @MockitoBean
+    private TablaGruposService tablaGruposService;
+
+    @Test
+    @DisplayName("GET /grupos responde sin sesión con las tablas y el criterio de cada puesto")
+    void gruposPublicos() throws Exception {
+        when(tablaGruposService.ver(9L)).thenReturn(new GruposTorneo(9L, ReglasGrupos.POR_DEFECTO,
+                "puntos,entre-si,ganados,partido", List.of(new GruposTorneo.Grupo("A", true,
+                List.of(new GruposTorneo.Fila(4L, "Ana", 1, 3, 2, 0, 1, 5, 2, 3, 6, TablaGrupo.Criterio.ENTRE_SI,
+                        true)),
+                List.of(), List.of(), List.of()))));
+
+        mockMvc.perform(get("/api/v1/torneos/9/grupos"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reglas.clasificanPorGrupo").value(2))
+                .andExpect(jsonPath("$.grupos[0].tabla[0].criterio").value("ENTRE_SI"))
+                .andExpect(jsonPath("$.grupos[0].tabla[0].clasifica").value(true));
+    }
 
     @Test
     @DisplayName("GET /sorteo-grupos responde sin sesión con el compromiso, la semilla y los grupos")
