@@ -54,6 +54,15 @@ public class Partido extends AuditableEntity {
     @JoinColumn(name = "cancha_id")
     private Cancha cancha;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fase", length = 20, nullable = false)
+    private FasePartido fase = FasePartido.ELIMINACION;
+
+    /** El de los partidos de grupos y de desempate (CR-02); null en la llave. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "grupo_id")
+    private Grupo grupo;
+
     @Column(name = "ronda", nullable = false)
     private Integer ronda;
 

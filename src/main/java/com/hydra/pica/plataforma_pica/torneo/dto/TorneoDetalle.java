@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
+import com.hydra.pica.plataforma_pica.torneo.domain.ReglasGrupos;
 import com.hydra.pica.plataforma_pica.torneo.domain.GastosAdministrativos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
@@ -17,7 +18,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * y cada premio trae su monto. Quien se inscribe paga {@code totalAPagar}: el valor más los gastos administrativos
  * sellados al publicar (PICA-283).
  * En los torneos por equipos, {@code tamanioEquipo} es el mínimo de la nómina y {@code nominaMaxima} el máximo, con
- * suplentes; en los individuales, los dos son null. El reglamento puede venir escrito, en PDF o los dos.
+ * suplentes; en los individuales, los dos son null. {@code reglasGrupos}: las de la fase de grupos (CR-02), selladas;
+ * null en eliminación directa. El reglamento puede venir escrito, en PDF o los dos.
  * {@code liquidadoEn} es cuándo se repartió la custodia del torneo terminado (HU-606); null mientras no se liquidó.
  */
 public record TorneoDetalle(
@@ -27,6 +29,7 @@ public record TorneoDetalle(
         String descripcion,
         String disciplina,
         Formato formato,
+        ReglasGrupos reglasGrupos,
         Modalidad modalidad,
         TipoParticipante tipoParticipante,
         String sede,
@@ -66,6 +69,7 @@ public record TorneoDetalle(
                 torneo.getDescripcion(),
                 torneo.getDisciplina(),
                 torneo.getFormato(),
+                ReglasGrupos.de(torneo),
                 torneo.getModalidad(),
                 torneo.getTipoParticipante(),
                 torneo.getSede(),

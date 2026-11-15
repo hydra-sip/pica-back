@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
+import com.hydra.pica.plataforma_pica.torneo.domain.ReglasGrupos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
@@ -242,7 +243,7 @@ class TorneoServiceIntegracionTest {
 
         assertThat(opciones.disciplinas()).extracting(OpcionesTorneo.Disciplina::nombre).contains("Fútbol 5", "Ajedrez");
         assertThat(opciones.formatos()).filteredOn(OpcionesTorneo.FormatoOpcion::disponible)
-                .extracting(OpcionesTorneo.FormatoOpcion::codigo).containsExactly("ELIMINACION_DIRECTA");
+                .extracting(OpcionesTorneo.FormatoOpcion::codigo).containsExactly("ELIMINACION_DIRECTA", "GRUPOS_Y_ELIMINACION");
         assertThat(opciones.modalidades()).containsExactly(Modalidad.PRESENCIAL, Modalidad.ONLINE);
         assertThat(opciones.cupoMaximo()).isEqualTo(64);
         assertThat(opciones.pctGastosAdministrativos()).isEqualByComparingTo("10");
@@ -297,6 +298,74 @@ class TorneoServiceIntegracionTest {
                 .containsExactly("ADMINISTRADOR", "ORGANIZADOR", "SUPER_USUARIO");
     }
 
+    // --- fase de grupos (CR-02) -----------------------------------------------
+
+    @Test
+    void conGruposSinReglasTomaLasDeFede() {
+        TorneoInformacion torneo = torneoService.crear(organizador, conGrupos(null, 16, 12));
+
+        assertThat(torneo.formato()).isEqualTo(Formato.GRUPOS_Y_ELIMINACION);
+        assertThat(torneo.reglasGrupos()).isEqualTo(new ReglasGrupos(4, 2, 3, 1));
+    }
+
+    @Test
+    void conGruposCompletaLasReglasQueNoVinieron() {
+        TorneoInformacion torneo = torneoService.crear(organizador,
+                conGrupos(new ReglasGrupos(3, 1, 2, null), 12, 8));
+
+        assertThat(torneo.reglasGrupos()).isEqualTo(new ReglasGrupos(3, 1, 2, 1));
+    }
+
+    @Test
+    void enEliminacionDirectaNoHayReglasDeGrupos() {
+        assertThatValidacion(() -> torneoService.crear(organizador, new InformacionTorneoRequest("Apertura F5",
+                "Fútbol 5", null, Formato.ELIMINACION_DIRECTA, ReglasGrupos.POR_DEFECTO, null, null, null, null, null,
+                null, null, null, null, null, null, null, Map.of())))
+                .containsEntry("reglasGrupos", ErrorCampo.Codigo.VALOR_INVALIDO);
+    }
+
+    @Test
+    void lasReglasDeGruposTienenSusRangos() {
+        assertThatValidacion(() -> torneoService.crear(organizador, conGrupos(new ReglasGrupos(9, 2, 3, 1), null, null)))
+                .containsEntry("reglasGrupos.tamanioGrupo", ErrorCampo.Codigo.RANGO_INVALIDO);
+        assertThatValidacion(() -> torneoService.crear(organizador, conGrupos(new ReglasGrupos(4, 4, 3, 1), null, null)))
+                .containsEntry("reglasGrupos.clasificanPorGrupo", ErrorCampo.Codigo.RANGO_INVALIDO);
+        assertThatValidacion(() -> torneoService.crear(organizador, conGrupos(new ReglasGrupos(4, 2, 3, 3), null, null)))
+                .containsEntry("reglasGrupos.puntosEmpate", ErrorCampo.Codigo.RANGO_INVALIDO);
+        assertThatValidacion(() -> torneoService.crear(organizador, conGrupos(new ReglasGrupos(4, 2, 0, 0), null, null)))
+                .containsEntry("reglasGrupos.puntosVictoria", ErrorCampo.Codigo.RANGO_INVALIDO);
+    }
+
+    @Test
+    void elCupoMaximoEsUnaCantidadJustaDeGrupos() {
+        assertThatValidacion(() -> torneoService.crear(organizador, conGrupos(null, 10, null)))
+                .containsEntry("cupoMaximo", ErrorCampo.Codigo.RANGO_INVALIDO);
+    }
+
+    @Test
+    void losQuePasanALaLlaveSonPotenciaDeDos() {
+        // 3 grupos de 4 y pasan 2: 6 a la llave
+        assertThatValidacion(() -> torneoService.crear(organizador, conGrupos(null, 12, null)))
+                .containsEntry("reglasGrupos.clasificanPorGrupo", ErrorCampo.Codigo.RANGO_INVALIDO);
+    }
+
+    @Test
+    void elCupoMinimoDejaEnCadaGrupoUnoMasQueLosQuePasan() {
+        // 4 grupos y pasan 2: hacen falta 12
+        assertThatValidacion(() -> torneoService.crear(organizador, conGrupos(null, 16, 11)))
+                .containsEntry("cupoMinimo", ErrorCampo.Codigo.RANGO_INVALIDO);
+    }
+
+    @Test
+    void cambiarAEliminacionDirectaBorraLasReglas() {
+        TorneoInformacion creado = torneoService.crear(organizador, conGrupos(null, 16, 12));
+
+        TorneoInformacion actualizado = torneoService.actualizarInformacion(organizador, creado.id(), completo());
+
+        assertThat(actualizado.formato()).isEqualTo(Formato.ELIMINACION_DIRECTA);
+        assertThat(actualizado.reglasGrupos()).isNull();
+    }
+
     // --- helpers --------------------------------------------------------------
 
     private static InformacionTorneoRequest minimo() {
@@ -312,6 +381,11 @@ class TorneoServiceIntegracionTest {
         return new InformacionTorneoRequest(" Apertura F5 ", "Fútbol 5", null, Formato.ELIMINACION_DIRECTA,
                 Modalidad.PRESENCIAL, TipoParticipante.EQUIPO, "Club Mercedes", canchas, EN_DOS_SEMANAS, EN_UN_MES,
                 EN_UNA_SEMANA, "Dos tiempos de 20 minutos", 16, 12, 5, 10);
+    }
+
+    private static InformacionTorneoRequest conGrupos(ReglasGrupos reglas, Integer maximo, Integer minimo) {
+        return new InformacionTorneoRequest("Copa con grupos", "Fútbol 5", null, Formato.GRUPOS_Y_ELIMINACION, reglas,
+                null, null, null, null, null, null, null, null, maximo, minimo, null, null, Map.of());
     }
 
     private static InformacionTorneoRequest conFechas(Instant inicio, Instant fin, Instant cierre) {

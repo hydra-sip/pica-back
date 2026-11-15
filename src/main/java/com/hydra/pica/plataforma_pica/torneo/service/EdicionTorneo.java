@@ -15,10 +15,10 @@ import org.springframework.stereotype.Component;
  * Los campos se nombran como en {@code InformacionTorneoRequest}.
  * <ul>
  * <li>En BORRADOR, todos.</li>
- * <li>Publicado (inscripción abierta o cerrada): nunca la disciplina, si es individual o por equipos ni el reglamento,
- * que quedó sellado; con la inscripción cerrada, tampoco el cierre ni el cupo máximo (el cierre es definitivo,
- * HU-206). Con al menos una inscripción paga, además, nada
- * de sede, fechas, formato ni cupo mínimo: quedan el nombre, la descripción y el cupo máximo.</li>
+ * <li>Publicado (inscripción abierta o cerrada): nunca la disciplina, si es individual o por equipos, el reglamento ni
+ * el formato con sus reglas de grupos (CR-02), que quedaron sellados; con la inscripción cerrada, tampoco el cierre
+ * ni el cupo máximo (el cierre es definitivo, HU-206). Con al menos una inscripción paga, además, nada de sede, fechas
+ * ni cupo mínimo: quedan el nombre, la descripción y el cupo máximo.</li>
  * <li>En curso, finalizado o cancelado, ninguno.</li>
  * </ul>
  * La parte económica no pasa por acá: sus endpoints solo la cambian en BORRADOR.
@@ -27,13 +27,14 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 class EdicionTorneo {
 
-    static final List<String> CAMPOS = List.of("nombre", "disciplina", "descripcion", "formato", "modalidad",
-            "tipoParticipante", "sede", "canchas", "fechaInicio", "fechaFin", "cierreInscripcionEn", "reglamentoTexto",
-            "cupoMaximo", "cupoMinimo", "tamanioEquipo", "nominaMaxima");
+    static final List<String> CAMPOS = List.of("nombre", "disciplina", "descripcion", "formato", "reglasGrupos",
+            "modalidad", "tipoParticipante", "sede", "canchas", "fechaInicio", "fechaFin", "cierreInscripcionEn",
+            "reglamentoTexto", "cupoMaximo", "cupoMinimo", "tamanioEquipo", "nominaMaxima");
 
-    private static final List<String> SELLADOS = List.of("disciplina", "tipoParticipante", "reglamentoTexto");
+    private static final List<String> SELLADOS = List.of("disciplina", "formato", "reglasGrupos", "tipoParticipante",
+            "reglamentoTexto");
 
-    private static final List<String> CON_INSCRIPCIONES_PAGAS = List.of("formato", "modalidad", "sede", "canchas",
+    private static final List<String> CON_INSCRIPCIONES_PAGAS = List.of("modalidad", "sede", "canchas",
             "fechaInicio", "fechaFin", "cierreInscripcionEn", "cupoMinimo", "tamanioEquipo", "nominaMaxima");
 
     private static final List<EstadoInscripcion> ACTIVAS =

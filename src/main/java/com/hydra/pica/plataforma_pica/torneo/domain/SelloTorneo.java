@@ -26,7 +26,17 @@ import java.util.stream.Collectors;
  * premio:1:60.00
  * gasto:1:20000.00:Honorarios árbitros
  * </pre>
- * Lo que se paga de un gasto después no entra: pagarlo no cambia el sello.
+ * Lo que se paga de un gasto después no entra: pagarlo no cambia el sello. Con fase de grupos (CR-02), después de la
+ * línea del torneo van el formato, el tamaño del grupo y cuántos pasan, los puntos por ganar y por empatar, y el orden
+ * de desempate; en eliminación directa no van, así que el texto de los torneos anteriores no cambia:
+ * <pre>
+ * torneo:18
+ * formato:GRUPOS_Y_ELIMINACION
+ * grupos:4:2
+ * puntos:3:1
+ * desempate:puntos,entre-si,ganados,partido
+ * inscripcion:20000.00 ARS
+ * </pre>
  *
  * <p>El de la lista de inscriptos se fija al cerrar la inscripción (HU-206): una línea por inscripción confirmada,
  * ordenadas por id y separadas con {@code \n}, sin salto al final. La individual lleva el usuario; la de equipo, el
@@ -38,6 +48,9 @@ import java.util.stream.Collectors;
  */
 public final class SelloTorneo {
 
+    /** El orden de desempate de la fase de grupos (CR-02): fijo, pero sellado para que quede escrito. */
+    public static final String DESEMPATE = "puntos,entre-si,ganados,partido";
+
     private SelloTorneo() {
     }
 
@@ -48,6 +61,13 @@ public final class SelloTorneo {
     public static String textoEsquema(Torneo torneo, List<Premio> premios, List<Gasto> gastos) {
         List<String> lineas = new ArrayList<>();
         lineas.add("torneo:" + torneo.getId());
+        ReglasGrupos grupos = ReglasGrupos.de(torneo);
+        if (grupos != null) {
+            lineas.add("formato:" + torneo.getFormato());
+            lineas.add("grupos:" + grupos.tamanioGrupo() + ":" + grupos.clasificanPorGrupo());
+            lineas.add("puntos:" + grupos.puntosVictoria() + ":" + grupos.puntosEmpate());
+            lineas.add("desempate:" + DESEMPATE);
+        }
         lineas.add("inscripcion:" + decimal(torneo.getValorInscripcion()) + " " + torneo.getMoneda());
         lineas.add("gastos-administrativos:" + decimal(torneo.getPctGastosAdministrativos()));
         premios.forEach(p -> lineas.add("premio:" + p.getId().getPuesto() + ":" + decimal(p.getPct())));
