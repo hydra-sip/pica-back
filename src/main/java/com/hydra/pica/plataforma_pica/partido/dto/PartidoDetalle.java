@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.partido.dto;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 
 /**
@@ -23,6 +24,7 @@ public record PartidoDetalle(
         String torneoSlug,
         int ronda,
         String nombreRonda,
+        FasePartido fase,
         int posicion,
         EstadoPartido estado,
         boolean bye,

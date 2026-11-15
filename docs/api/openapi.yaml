@@ -4563,7 +4563,7 @@ components:
     Lado: {type: string, enum: [LOCAL, VISITANTE]}
     PartidoDetalle:
       type: object
-      required: [id, torneoId, torneo, ronda, nombreRonda, posicion, estado, bye]
+      required: [id, torneoId, torneo, ronda, nombreRonda, fase, posicion, estado, bye]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         torneoId: {$ref: '#/components/schemas/Id'}
@@ -4571,6 +4571,7 @@ components:
         torneoSlug: {type: [string, 'null'], description: El del enlace de la ficha pública}
         ronda: {type: integer, minimum: 1}
         nombreRonda: {type: string, description: 'Como en `RondaBracket.nombre`; en la fase de grupos (CR-02), «Grupo A · Fecha 2» o «Desempate del grupo A»'}
+        fase: {type: string, enum: [GRUPOS, DESEMPATE, ELIMINACION], description: 'CR-02: en GRUPOS se puede empatar y no hay penales; en eliminación directa, siempre ELIMINACION'}
         posicion: {type: integer, minimum: 1}
         estado: {$ref: '#/components/schemas/EstadoPartido'}
         bye: {type: boolean}

@@ -24,6 +24,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.EstadoVentana;
@@ -61,7 +62,8 @@ import org.springframework.test.web.servlet.MockMvc;
 class PartidoControllerTest {
 
     private static final Long CAPITAN = 7L;
-    private static final PartidoDetalle CARGADO = new PartidoDetalle(3L, 9L, "Copa", "copa", 1, "Semifinal", 1,
+    private static final PartidoDetalle CARGADO = new PartidoDetalle(3L, 9L, "Copa", "copa", 1, "Semifinal",
+            FasePartido.ELIMINACION, 1,
             EstadoPartido.RESULTADO_CARGADO, false, new LadoBracket(11L, "Los Galácticos", 3, null, true),
             new LadoBracket(12L, "Dep. Luján", 1, null, false), null, null, "Mario Gómez", Lado.LOCAL,
             Instant.parse("2026-10-26T18:00:00Z"), Instant.parse("2026-10-26T18:15:00Z"), Lado.LOCAL, null, false);

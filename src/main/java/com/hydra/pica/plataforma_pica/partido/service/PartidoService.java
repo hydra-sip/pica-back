@@ -70,7 +70,7 @@ public class PartidoService {
         boolean bye = partido.getRonda() == 1 && local != null && visitante == null;
         return new PartidoDetalle(partido.getId(), partido.getTorneo().getId(), partido.getTorneo().getNombre(),
                 partido.getTorneo().getSlug(), partido.getRonda(), Partidos.nombreRonda(partido, rondas),
-                partido.getPosicion(), partido.getEstado(), bye, local, visitante,
+                partido.getFase(), partido.getPosicion(), partido.getEstado(), bye, local, visitante,
                 partido.getCancha() == null ? null : partido.getCancha().getNombre(), partido.getFechaProgramada(),
                 Partidos.nombre(partido.getArbitro()), cargadoPor, partido.getResultadoCargadoEn(),
                 partido.getObjecionVenceEn(), Partidos.deCapitan(lados, usuarioId).map(Juega::getLado).orElse(null),
