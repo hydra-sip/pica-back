@@ -10,6 +10,7 @@ import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.EstadoVentana;
+import com.hydra.pica.plataforma_pica.partido.event.AusenciaDeclarada;
 import com.hydra.pica.plataforma_pica.partido.event.PartidoSinPresentes;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.CriterioSinPresentes;
@@ -65,6 +66,8 @@ public class AusenciaService {
         ausente.setEsGanador(false);
         avanceLlave.confirmar(partido, lados, EstadoPartido.WALKOVER);
         resultadoService.auditar(partido, null, ResultadoService.detalle("WALKOVER", ausente));
+        eventos.publishEvent(new AusenciaDeclarada(partido.getTorneo().getId(), partidoId,
+                List.of(ausente.getId().getInscripcionId())));
         return true;
     }
 
@@ -95,6 +98,8 @@ public class AusenciaService {
         detalle.put("criterio", criterio.name());
         resultadoService.auditar(partido, null, detalle);
         eventos.publishEvent(new PartidoSinPresentes(partido.getTorneo().getId(), partido.getId()));
+        eventos.publishEvent(new AusenciaDeclarada(partido.getTorneo().getId(), partido.getId(),
+                lados.stream().map(j -> j.getId().getInscripcionId()).toList()));
         if (deGrupos) {
             // en grupos no hay a quién pasar: descalificados, ninguno suma (CR-02)
             if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS) {

@@ -76,7 +76,14 @@ class ParametrosAdminServiceIntegracionTest {
                         tuple(ClaveParametro.CHECKIN_DURACION_MAX_MIN, "60"),
                         tuple(ClaveParametro.RETIRO_MINIMO, "1000"),
                         tuple(ClaveParametro.RETIRO_MAXIMO, "500000"),
-                        tuple(ClaveParametro.CANCELACION_GASTOS_TOPE, "20"));
+                        tuple(ClaveParametro.CANCELACION_GASTOS_TOPE, "20"),
+                        tuple(ClaveParametro.FAIR_PLAY_INICIAL, "100"),
+                        tuple(ClaveParametro.FAIR_PLAY_MAXIMO, "100"),
+                        tuple(ClaveParametro.FAIR_PLAY_CHECKIN, "1"),
+                        tuple(ClaveParametro.FAIR_PLAY_AUSENCIA, "10"),
+                        tuple(ClaveParametro.FAIR_PLAY_SANCION_LEVE, "5"),
+                        tuple(ClaveParametro.FAIR_PLAY_SANCION_MEDIA, "15"),
+                        tuple(ClaveParametro.FAIR_PLAY_SANCION_GRAVE, "30"));
         assertThat(parametrosAdminService.listar())
                 .allSatisfy(p -> {
                     assertThat(p.descripcion()).isNotBlank();
@@ -132,6 +139,41 @@ class ParametrosAdminServiceIntegracionTest {
         assertErrores(Map.of("GASTOS_ADMINISTRATIVOS_TOPE", BigDecimal.valueOf(101)),
                 new ErrorCampo("GASTOS_ADMINISTRATIVOS_TOPE", ErrorCampo.Codigo.RANGO_INVALIDO,
                         "Tiene que estar entre 0 y 100"));
+    }
+
+    @Test
+    void losPuntosDelFairPlaySonEnterosDe0A1000() {
+        assertErrores(Map.of("FAIR_PLAY_CHECKIN", new BigDecimal("1.5")),
+                new ErrorCampo("FAIR_PLAY_CHECKIN", ErrorCampo.Codigo.FORMATO_INVALIDO, "Son puntos enteros"));
+        assertErrores(Map.of("FAIR_PLAY_AUSENCIA", BigDecimal.valueOf(-1)),
+                new ErrorCampo("FAIR_PLAY_AUSENCIA", ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que estar entre 0 y 1000"));
+        assertErrores(Map.of("FAIR_PLAY_MAXIMO", BigDecimal.valueOf(1001)),
+                new ErrorCampo("FAIR_PLAY_MAXIMO", ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que estar entre 0 y 1000"));
+
+        parametrosAdminService.actualizar(admin.getId(), Map.of("FAIR_PLAY_SANCION_GRAVE", BigDecimal.valueOf(50)));
+        assertThat(parametrosPlataforma.puntos(ClaveParametro.FAIR_PLAY_SANCION_GRAVE)).isEqualTo(50);
+    }
+
+    @Test
+    void elInicialNoSuperaAlMaximoYLasSancionesVanDeMenorAMayor() {
+        assertErrores(Map.of("FAIR_PLAY_INICIAL", BigDecimal.valueOf(120)),
+                new ErrorCampo("FAIR_PLAY_INICIAL", ErrorCampo.Codigo.RANGO_INVALIDO, "No puede superar el índice máximo"));
+        assertErrores(Map.of("FAIR_PLAY_MAXIMO", BigDecimal.valueOf(90)),
+                new ErrorCampo("FAIR_PLAY_MAXIMO", ErrorCampo.Codigo.RANGO_INVALIDO,
+                        "No puede ser menor que el índice inicial"));
+        assertErrores(Map.of("FAIR_PLAY_SANCION_MEDIA", BigDecimal.valueOf(40)),
+                new ErrorCampo("FAIR_PLAY_SANCION_MEDIA", ErrorCampo.Codigo.RANGO_INVALIDO,
+                        "No puede restar más que una sanción grave"));
+        assertErrores(Map.of("FAIR_PLAY_SANCION_LEVE", BigDecimal.valueOf(20)),
+                new ErrorCampo("FAIR_PLAY_SANCION_LEVE", ErrorCampo.Codigo.RANGO_INVALIDO,
+                        "No puede restar más que una sanción media"));
+    }
+
+    @Test
+    void losPuntosSoloSeLeenDeUnParametroEnPuntos() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> parametrosPlataforma.puntos(ClaveParametro.GASTOS_ADMINISTRATIVOS))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

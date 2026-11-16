@@ -379,7 +379,7 @@ class TorneoControllerTest {
     void inscripcionesDelTorneo() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
         InscripcionDelTorneo fila = new InscripcionDelTorneo(31L, EstadoInscripcion.CONFIRMADA, CREADO, null,
-                new EquipoInscripto(4L, "Los Halcones", 7L), new UsuarioPublico(7L, "cap", "Ana", "Paz"), 5);
+                new EquipoInscripto(4L, "Los Halcones", 7L), new UsuarioPublico(7L, "cap", "Ana", "Paz"), 5, 85);
         when(inscripcionTorneoService.listar(eq(ORGANIZADOR), eq(9L), eq(EstadoInscripcion.CONFIRMADA), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(fila), PageRequest.of(0, 10), 1));
 
@@ -389,6 +389,7 @@ class TorneoControllerTest {
                 .andExpect(jsonPath("$.content[0].equipo.nombre").value("Los Halcones"))
                 .andExpect(jsonPath("$.content[0].capitan.username").value("cap"))
                 .andExpect(jsonPath("$.content[0].jugadores").value(5))
+                .andExpect(jsonPath("$.content[0].fairPlay").value(85))
                 .andExpect(jsonPath("$.page.totalElements").value(1));
 
         ArgumentCaptor<Pageable> pagina = ArgumentCaptor.forClass(Pageable.class);

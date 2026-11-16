@@ -13,6 +13,7 @@ import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
  * {@link InscripcionDetalle}.
  *
  * @param jugadores en la de equipo, los de la nómina con el capitán incluido; null en la individual
+ * @param fairPlay el índice de fair play de quien responde por la inscripción: el jugador o el capitán (HU-802)
  */
 public record InscripcionDelTorneo(
         Long id,
@@ -21,14 +22,16 @@ public record InscripcionDelTorneo(
         UsuarioPublico usuario,
         EquipoInscripto equipo,
         UsuarioPublico capitan,
-        Integer jugadores) {
+        Integer jugadores,
+        int fairPlay) {
 
-    public static InscripcionDelTorneo de(Inscripcion inscripcion, int jugadores) {
+    public static InscripcionDelTorneo de(Inscripcion inscripcion, int jugadores, int fairPlay) {
         if (!inscripcion.esDeEquipo()) {
             return new InscripcionDelTorneo(inscripcion.getId(), inscripcion.getEstado(), inscripcion.getCreadoEn(),
-                    UsuarioPublico.desde(inscripcion.getUsuario()), null, null, null);
+                    UsuarioPublico.desde(inscripcion.getUsuario()), null, null, null, fairPlay);
         }
         return new InscripcionDelTorneo(inscripcion.getId(), inscripcion.getEstado(), inscripcion.getCreadoEn(), null,
-                EquipoInscripto.de(inscripcion.getEquipo()), UsuarioPublico.desde(inscripcion.titular()), jugadores);
+                EquipoInscripto.de(inscripcion.getEquipo()), UsuarioPublico.desde(inscripcion.titular()), jugadores,
+                fairPlay);
     }
 }
