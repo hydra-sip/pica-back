@@ -75,7 +75,8 @@ public class PartidoService {
                 Partidos.nombre(partido.getArbitro()), cargadoPor, partido.getResultadoCargadoEn(),
                 partido.getObjecionVenceEn(), Partidos.deCapitan(lados, usuarioId).map(Juega::getLado).orElse(null),
                 objecion(partido, lados),
-                partido.getEstado() == EstadoPartido.OBJETADO && puedeResolver(partido, usuarioId));
+                partido.getEstado() == EstadoPartido.OBJETADO && puedeResolver(partido, usuarioId),
+                puedeSancionar(partido.getTorneo(), usuarioId));
     }
 
     /** El organizador o un árbitro aceptado del torneo con permiso para resolver objeciones. */
@@ -88,6 +89,12 @@ public class PartidoService {
         return usuarioId != null
                 && (torneo.getOrganizador().getId().equals(usuarioId)
                         || arbitraje.puedeArbitrar(torneo.getId(), usuarioId, PermisoArbitro.RESOLVER_OBJECIONES));
+    }
+
+    /** El organizador o un árbitro que aceptó, con los permisos que sean (HU-803). */
+    private boolean puedeSancionar(Torneo torneo, Long usuarioId) {
+        return usuarioId != null && (torneo.getOrganizador().getId().equals(usuarioId)
+                || arbitraje.esArbitroAceptado(torneo.getId(), usuarioId));
     }
 
     private ObjecionDetalle objecion(Partido partido, List<Juega> lados) {

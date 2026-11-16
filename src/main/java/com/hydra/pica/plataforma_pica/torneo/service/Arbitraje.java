@@ -34,7 +34,6 @@ public class Arbitraje {
                 .isPresent();
     }
 
-    /** 403 SIN_PERMISO si no es un árbitro aceptado del torneo con ese permiso. */
     /** Si aceptó la designación en el torneo, con los permisos que sean: para sancionar alcanza (HU-803). */
     public boolean esArbitroAceptado(Long torneoId, Long usuarioId) {
         return arbitroRepository.findById(new ArbitroDesignadoId(torneoId, usuarioId))
@@ -42,6 +41,7 @@ public class Arbitraje {
                 .isPresent();
     }
 
+    /** 403 SIN_PERMISO si no es un árbitro aceptado del torneo con ese permiso. */
     public void exigir(Long torneoId, Long usuarioId, PermisoArbitro permiso) {
         if (!puedeArbitrar(torneoId, usuarioId, permiso)) {
             throw new ProhibidoException(CodigoError.SIN_PERMISO,

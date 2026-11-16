@@ -39,6 +39,31 @@ public interface SancionRepository extends JpaRepository<Sancion, Long> {
             ORDER BY i.id LIMIT 1""", nativeQuery = true)
     Optional<Long> inscripcionDelJugador(@Param("torneoId") Long torneoId, @Param("usuarioId") Long usuarioId);
 
+    /** Una fila de {@link #sancionables}. */
+    interface FilaSancionable {
+        Long getInscripcionId();
+
+        String getEquipo();
+
+        Long getUsuarioId();
+    }
+
+    /**
+     * Los jugadores de las inscripciones confirmadas del torneo: el inscripto, si es individual, o los de la nómina, si
+     * es de equipo. Con partido, solo los de las dos inscripciones que lo juegan.
+     */
+    @Query(value = """
+            SELECT i.id AS inscripcionId, e.nombre AS equipo, COALESCE(n.usuario_id, i.usuario_id) AS usuarioId
+            FROM inscripcion i
+            LEFT JOIN equipo e ON e.id = i.equipo_id
+            LEFT JOIN nomina n ON n.inscripcion_id = i.id
+            WHERE i.torneo_id = :torneoId AND i.estado = 'CONFIRMADA'
+              AND COALESCE(n.usuario_id, i.usuario_id) IS NOT NULL
+              AND (CAST(:partidoId AS bigint) IS NULL OR EXISTS (
+                   SELECT 1 FROM juega j WHERE j.partido_id = CAST(:partidoId AS bigint) AND j.inscripcion_id = i.id))
+            ORDER BY i.id, usuarioId""", nativeQuery = true)
+    List<FilaSancionable> sancionables(@Param("torneoId") Long torneoId, @Param("partidoId") Long partidoId);
+
     @Query(value = "SELECT EXISTS (SELECT 1 FROM juega WHERE partido_id = :partidoId AND inscripcion_id = :inscripcionId)",
             nativeQuery = true)
     boolean juega(@Param("partidoId") Long partidoId, @Param("inscripcionId") Long inscripcionId);

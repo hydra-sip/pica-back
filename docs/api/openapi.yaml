@@ -2420,6 +2420,31 @@ paths:
               schema: {type: array, items: {$ref: '#/components/schemas/SancionDetalle'}}
         '404': {$ref: '#/components/responses/Error'}
 
+  /api/v1/torneos/{id}/sanciones/jugadores:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Reputación]
+      summary: Jugadores que se pueden sancionar
+      x-jira: PICA-423
+      x-owner: Tomás
+      description: >-
+        HU-803. Para elegir a quién sancionar: los jugadores de las inscripciones CONFIRMADAS del torneo (el inscripto,
+        si es individual, o los de la nómina, si es de equipo), ordenados por inscripción. Con `partidoId`, solo los
+        de las dos inscripciones que lo juegan. Lo consultan el organizador o un árbitro que aceptó (si no, 403
+        `SIN_PERMISO`). 400 `VALIDACION` en `partidoId` si el partido no es del torneo. 404 `TORNEO_NO_ENCONTRADO` si
+        no existe o está en BORRADOR.
+      parameters:
+        - {name: partidoId, in: query, required: false, schema: {$ref: '#/components/schemas/Id'}}
+      responses:
+        '200':
+          description: Los jugadores
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/JugadorSancionable'}}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/sanciones/mias:
     get:
       tags: [Reputación]
@@ -4291,6 +4316,16 @@ components:
         partidoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'Opcional: del torneo y del jugador'}
         gravedad: {$ref: '#/components/schemas/Gravedad'}
         motivo: {type: string, minLength: 1, maxLength: 1000, examples: [Insultó al árbitro al terminar el partido]}
+    JugadorSancionable:
+      type: object
+      description: >-
+        HU-803. Un jugador al que se puede sancionar: el de una inscripción individual confirmada o uno de la nómina de
+        un equipo confirmado.
+      required: [inscripcionId, jugador]
+      properties:
+        inscripcionId: {$ref: '#/components/schemas/Id'}
+        equipo: {type: [string, 'null'], description: 'Nombre del equipo; null si la inscripción es individual'}
+        jugador: {$ref: '#/components/schemas/UsuarioPublico'}
     SancionDetalle:
       type: object
       required: [id, torneoId, torneo, jugador, partidoId, gravedad, motivo, aplicadaPor, aplicadaEn, anuladaEn]
@@ -4675,6 +4710,9 @@ components:
         miLado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}], description: El lado del que es capitán quien consulta}
         objecion: {oneOf: [{$ref: '#/components/schemas/ObjecionDetalle'}, {type: 'null'}], description: 'Si lo objetaron, con su laudo si ya se resolvió'}
         puedoResolver: {type: boolean, description: 'Con el partido OBJETADO, si quien consulta lo puede laudar'}
+        puedoSancionar:
+          type: boolean
+          description: 'Si quien consulta puede sancionar a sus jugadores (HU-803): el organizador o un árbitro que aceptó'
     ObjecionDetalle:
       type: object
       required: [lado, motivo, puntajeLocal, puntajeVisitante, creadaEn]

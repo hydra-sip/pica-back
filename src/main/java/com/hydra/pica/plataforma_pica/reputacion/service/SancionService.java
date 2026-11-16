@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
@@ -15,6 +16,7 @@ import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.reputacion.domain.Sancion;
+import com.hydra.pica.plataforma_pica.reputacion.dto.JugadorSancionable;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionDetalle;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionRequest;
 import com.hydra.pica.plataforma_pica.reputacion.event.SancionAplicada;
@@ -23,6 +25,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.torneo.service.Arbitraje;
+import com.hydra.pica.plataforma_pica.user.domain.Usuario;
+import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -113,6 +117,36 @@ public class SancionService {
     @Transactional(readOnly = true)
     public List<SancionDetalle> mias(Long usuarioId) {
         return sancionRepository.delJugador(usuarioId).stream().map(SancionDetalle::desde).toList();
+    }
+
+    /**
+     * A quiénes puede sancionar: los jugadores del torneo o, con partido, los de ese partido. 403 SIN_PERMISO si no lo
+     * organiza ni lo arbitra; 400 VALIDACION si el partido no es del torneo.
+     */
+    @Transactional(readOnly = true)
+    public List<JugadorSancionable> sancionables(Long usuarioId, Long torneoId, Long partidoId) {
+        Torneo torneo = torneo(torneoId);
+        if (!puedeSancionar(torneo, usuarioId)) {
+            throw new ProhibidoException(CodigoError.SIN_PERMISO,
+                    "El usuario " + usuarioId + " no organiza ni arbitra el torneo " + torneoId);
+        }
+        if (partidoId != null && partidoRepository.findById(partidoId)
+                .filter(p -> p.getTorneo().getId().equals(torneoId)).isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay campos inválidos")
+                    .con("errores", List.of(new ErrorCampo("partidoId", ErrorCampo.Codigo.VALOR_INVALIDO,
+                            "El partido tiene que ser del torneo")));
+        }
+        List<SancionRepository.FilaSancionable> filas = sancionRepository.sancionables(torneoId, partidoId);
+        if (filas.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, UsuarioPublico> usuarios = usuarioRepository
+                .findConPersonaByIdIn(filas.stream().map(SancionRepository.FilaSancionable::getUsuarioId).toList())
+                .stream()
+                .collect(Collectors.toMap(Usuario::getId, UsuarioPublico::desde));
+        return filas.stream()
+                .map(f -> new JugadorSancionable(f.getInscripcionId(), f.getEquipo(), usuarios.get(f.getUsuarioId())))
+                .toList();
     }
 
     /** Para que el front sepa si muestra el botón de sancionar. */

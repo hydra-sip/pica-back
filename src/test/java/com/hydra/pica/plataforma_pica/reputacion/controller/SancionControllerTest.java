@@ -21,6 +21,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.reputacion.domain.Gravedad;
+import com.hydra.pica.plataforma_pica.reputacion.dto.JugadorSancionable;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionDetalle;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionRequest;
 import com.hydra.pica.plataforma_pica.reputacion.service.SancionService;
@@ -128,5 +129,20 @@ class SancionControllerTest {
         mockMvc.perform(get("/api/v1/sanciones/mias"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].torneo").value("Copa"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Los sancionables de un partido responden 200 con el equipo y el jugador")
+    void sancionables() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
+        when(sancionService.sancionables(ORGANIZADOR, 9L, 4L)).thenReturn(List.of(
+                new JugadorSancionable(11L, "Los Rudos", new UsuarioPublico(3L, "juan", "Juan", "Uno"))));
+
+        mockMvc.perform(get("/api/v1/torneos/9/sanciones/jugadores").param("partidoId", "4"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].inscripcionId").value(11))
+                .andExpect(jsonPath("$[0].equipo").value("Los Rudos"))
+                .andExpect(jsonPath("$[0].jugador.username").value("juan"));
     }
 }

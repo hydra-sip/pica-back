@@ -2,14 +2,17 @@ package com.hydra.pica.plataforma_pica.reputacion.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.util.List;
 import java.util.Map;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.partido.service.PartidoService;
 import com.hydra.pica.plataforma_pica.partido.service.TorneoConGruposBase;
 import com.hydra.pica.plataforma_pica.reputacion.domain.Gravedad;
+import com.hydra.pica.plataforma_pica.reputacion.dto.JugadorSancionable;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionDetalle;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionRequest;
 import com.hydra.pica.plataforma_pica.reputacion.event.SancionAplicada;
@@ -36,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 class SancionIntegracionTest extends TorneoConGruposBase {
 
     @Autowired private SancionService sancionService;
+    @Autowired private PartidoService partidoService;
     @Autowired private ApplicationEvents eventos;
 
     @Test
@@ -123,20 +127,7 @@ class SancionIntegracionTest extends TorneoConGruposBase {
 
     @Test
     void seSancionaAUnJugadorDeLaNominaDeUnEquipo() {
-        jdbc.update("UPDATE torneo SET tipo_participante = 'EQUIPO', tamanio_equipo = 2, nomina_maxima = 3 WHERE id = ?",
-                torneo);
-        entityManager.clear();
-        Long capitan = usuario("capitan_sancion", "PARTICIPANTE").getId();
-        Long jugador = usuario("jugador_sancion", "PARTICIPANTE").getId();
-        Long equipo = jdbc.queryForObject("INSERT INTO equipo (capitan_id, nombre) VALUES (?, 'Los Rudos') RETURNING id",
-                Long.class, capitan);
-        jdbc.update("INSERT INTO usuario_equipo (usuario_id, equipo_id) VALUES (?, ?), (?, ?)", capitan, equipo,
-                jugador, equipo);
-        Long inscripcion = jdbc.queryForObject("""
-                INSERT INTO inscripcion (torneo_id, equipo_id, estado, reglamento_aceptado_en)
-                VALUES (?, ?, 'CONFIRMADA', now()) RETURNING id""", Long.class, torneo, equipo);
-        jdbc.update("INSERT INTO nomina (inscripcion_id, usuario_id, equipo_id) VALUES (?, ?, ?), (?, ?, ?)",
-                inscripcion, capitan, equipo, inscripcion, jugador, equipo);
+        Long jugador = equipoConfirmado()[2];
 
         SancionDetalle sancion = sancionService.aplicar(organizador, torneo,
                 new SancionRequest(jugador, null, Gravedad.MEDIA, "Protestó cada fallo"));
@@ -196,8 +187,68 @@ class SancionIntegracionTest extends TorneoConGruposBase {
         assertThat(sancionService.mias(organizador)).isEmpty();
     }
 
+    @Test
+    void organizadorYArbitroVenAQuienesPuedenSancionarYUnJugadorNo() {
+        List<Long> inscripciones = inscribir(8);
+        cerrar();
+        bracketService.generar(organizador, torneo);
+        entityManager.flush();
+        entityManager.clear();
+        Long partido = partidoDe(inscripciones.getFirst(), true);
+        List<Long> lados = jdbc.queryForList("SELECT inscripcion_id FROM juega WHERE partido_id = ? ORDER BY 1",
+                Long.class, partido);
+
+        assertThat(sancionService.sancionables(organizador, torneo, null))
+                .extracting(JugadorSancionable::inscripcionId).containsExactlyElementsOf(inscripciones);
+        List<JugadorSancionable> delPartido = sancionService.sancionables(arbitro, torneo, partido);
+        assertThat(delPartido).extracting(JugadorSancionable::inscripcionId).containsExactlyElementsOf(lados);
+        assertThat(delPartido).extracting(j -> j.jugador().id())
+                .containsExactly(jugadorDe(lados.get(0)), jugadorDe(lados.get(1)));
+        assertThat(delPartido).allSatisfy(j -> {
+            assertThat(j.equipo()).isNull();
+            assertThat(j.jugador().username()).isNotBlank();
+        });
+        assertThat(partidoService.ver(organizador, partido).puedoSancionar()).isTrue();
+        assertThat(partidoService.ver(arbitro, partido).puedoSancionar()).isTrue();
+        assertThat(partidoService.ver(jugadorDe(lados.get(0)), partido).puedoSancionar()).isFalse();
+
+        error(() -> sancionService.sancionables(jugadorDe(lados.get(0)), torneo, null), HttpStatus.FORBIDDEN,
+                CodigoError.SIN_PERMISO);
+        ApiException error = error(() -> sancionService.sancionables(organizador, torneo, 999_999L),
+                HttpStatus.BAD_REQUEST, CodigoError.VALIDACION);
+        assertThat(error.getPropiedades().get("errores").toString()).contains("partidoId");
+    }
+
+    @Test
+    void deUnEquipoSonSancionablesLosDeLaNomina() {
+        Long[] equipo = equipoConfirmado();
+
+        assertThat(sancionService.sancionables(organizador, torneo, null))
+                .extracting(JugadorSancionable::inscripcionId, JugadorSancionable::equipo, j -> j.jugador().id())
+                .containsExactly(tuple(equipo[0], "Los Rudos", equipo[1]), tuple(equipo[0], "Los Rudos", equipo[2]));
+    }
+
     private Long jugadorDe(Long inscripcion) {
         return jdbc.queryForObject("SELECT usuario_id FROM inscripcion WHERE id = ?", Long.class, inscripcion);
+    }
+
+    /** Un equipo confirmado con su nómina: la inscripción, el capitán y otro jugador. */
+    private Long[] equipoConfirmado() {
+        jdbc.update("UPDATE torneo SET tipo_participante = 'EQUIPO', tamanio_equipo = 2, nomina_maxima = 3 WHERE id = ?",
+                torneo);
+        entityManager.clear();
+        Long capitan = usuario("capitan_sancion", "PARTICIPANTE").getId();
+        Long jugador = usuario("jugador_sancion", "PARTICIPANTE").getId();
+        Long equipo = jdbc.queryForObject("INSERT INTO equipo (capitan_id, nombre) VALUES (?, 'Los Rudos') RETURNING id",
+                Long.class, capitan);
+        jdbc.update("INSERT INTO usuario_equipo (usuario_id, equipo_id) VALUES (?, ?), (?, ?)", capitan, equipo,
+                jugador, equipo);
+        Long inscripcion = jdbc.queryForObject("""
+                INSERT INTO inscripcion (torneo_id, equipo_id, estado, reglamento_aceptado_en)
+                VALUES (?, ?, 'CONFIRMADA', now()) RETURNING id""", Long.class, torneo, equipo);
+        jdbc.update("INSERT INTO nomina (inscripcion_id, usuario_id, equipo_id) VALUES (?, ?, ?), (?, ?, ?)",
+                inscripcion, capitan, equipo, inscripcion, jugador, equipo);
+        return new Long[] {inscripcion, capitan, jugador};
     }
 
     /** Un partido de grupos en el que juega (o no) la inscripción. */

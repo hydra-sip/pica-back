@@ -66,7 +66,7 @@ class PartidoControllerTest {
             FasePartido.ELIMINACION, 1,
             EstadoPartido.RESULTADO_CARGADO, false, new LadoBracket(11L, "Los Galácticos", 3, null, true),
             new LadoBracket(12L, "Dep. Luján", 1, null, false), null, null, "Mario Gómez", Lado.LOCAL,
-            Instant.parse("2026-10-26T18:00:00Z"), Instant.parse("2026-10-26T18:15:00Z"), Lado.LOCAL, null, false);
+            Instant.parse("2026-10-26T18:00:00Z"), Instant.parse("2026-10-26T18:15:00Z"), Lado.LOCAL, null, false, false);
 
     @Autowired
     private MockMvc mockMvc;

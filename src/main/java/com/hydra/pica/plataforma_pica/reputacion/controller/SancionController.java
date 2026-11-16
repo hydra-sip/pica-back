@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.reputacion.controller;
 import java.net.URI;
 import java.util.List;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.reputacion.dto.JugadorSancionable;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionDetalle;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionRequest;
 import com.hydra.pica.plataforma_pica.reputacion.service.SancionService;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -38,6 +40,12 @@ public class SancionController {
     @GetMapping("/torneos/{id}/sanciones")
     public List<SancionDetalle> delTorneo(@PathVariable Long id) {
         return sancionService.delTorneo(id);
+    }
+
+    @GetMapping("/torneos/{id}/sanciones/jugadores")
+    public List<JugadorSancionable> sancionables(@PathVariable Long id,
+            @RequestParam(required = false) Long partidoId) {
+        return sancionService.sancionables(usuarioActual(), id, partidoId);
     }
 
     @GetMapping("/sanciones/mias")
