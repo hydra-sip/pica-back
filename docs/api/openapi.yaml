@@ -57,6 +57,7 @@ tags:
   - {name: Inscripciones, description: 'Inscripción de un participante a un torneo. HU-204 (PICA-50), Mateo.'}
   - {name: Torneos, description: 'Catálogo público y detalle de torneos. HU-208, Tomás.'}
   - {name: Partidos, description: 'Resultado y evidencia de cada partido. HU-301 (PICA-23), Tomás.'}
+  - {name: Reputación, description: 'Sanciones a jugadores (HU-803, PICA-64) e índice de fair play (HU-802, PICA-58), Tomás.'}
 
 security:
   - bearerAuth: []
@@ -2372,6 +2373,67 @@ paths:
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
 
+  /api/v1/torneos/{id}/sanciones:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Reputación]
+      summary: Sancionar a un jugador del torneo
+      x-jira: PICA-423
+      x-owner: Tomás
+      description: >-
+        HU-803. La aplica el organizador o un árbitro que aceptó la designación, con cualquier permiso (si no, 403
+        `SIN_PERMISO`). El jugador tiene que estar en una inscripción CONFIRMADA del torneo: la suya, si es individual,
+        o la de un equipo en cuya nómina figura (si no, 409 `JUGADOR_NO_PARTICIPA`). El partido es opcional; si viene,
+        tiene que ser del torneo y del jugador (si no, 400 `VALIDACION` en `partidoId`). Sin motivo o sin gravedad, 400
+        `VALIDACION`. Queda en la auditoría (`SANCION`, entidad TORNEO), le llega un mail al jugador y baja su índice de
+        fair play según la gravedad (HU-802). 404 `TORNEO_NO_ENCONTRADO` si no existe o está en BORRADOR.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SancionRequest'}
+      responses:
+        '201':
+          description: La sanción registrada
+          headers:
+            Location: {schema: {type: string}, description: 'Las sanciones del torneo'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SancionDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+    get:
+      tags: [Reputación]
+      summary: Sanciones del torneo
+      x-jira: PICA-423
+      x-owner: Tomás
+      description: >-
+        HU-803. Con sesión, cualquiera: la más reciente primero. 404 `TORNEO_NO_ENCONTRADO` si no existe o está en
+        BORRADOR.
+      responses:
+        '200':
+          description: Las sanciones del torneo
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/SancionDetalle'}}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/sanciones/mias:
+    get:
+      tags: [Reputación]
+      summary: Mis sanciones
+      x-jira: PICA-423
+      x-owner: Tomás
+      description: HU-803. Las que recibió el usuario logueado, en todos los torneos, la más reciente primero.
+      responses:
+        '200':
+          description: Mis sanciones
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/SancionDetalle'}}
+
   /api/v1/torneos/{id}/mi-proximo-partido:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -3723,6 +3785,7 @@ components:
         ("La cuenta destino debe estar a nombre del titular verificado en la plataforma"). Retiro de fondos (HU-607,
         PICA-337): RETIRO_FUERA_DE_TOPES 400 (el monto está fuera del rango mínimo y máximo) · CUENTA_NO_VALIDADA 409
         (solo se puede solicitar retiros a una cuenta bancaria validada).
+        Sanciones (HU-803, PICA-423): JUGADOR_NO_PARTICIPA 409 (el jugador no está en una inscripción confirmada del torneo).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
@@ -3757,7 +3820,7 @@ components:
              SIN_ARBITROS, BRACKET_CON_RESULTADOS, SEMILLA_NO_DISPONIBLE, GRUPOS_YA_SORTEADOS,
              PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
-             PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
+             PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, JUGADOR_NO_PARTICIPA, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, SORTEO_ANTICIPADO, RECLAMO_DUPLICADO,
@@ -4215,7 +4278,33 @@ components:
     AccionAuditoria:
       type: string
       enum: [LOGIN, LOGIN_FALLIDO, LOGOUT, ALTA, MODIFICACION, BAJA, BLOQUEO, DESBLOQUEO, PAGO, LAUDO, SORTEO,
-             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO]
+             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO, SANCION]
+    Gravedad:
+      type: string
+      enum: [LEVE, MEDIA, GRAVE]
+      description: 'HU-803: cuánto resta del índice de fair play lo fija un parámetro de la plataforma (HU-802)'
+    SancionRequest:
+      type: object
+      required: [usuarioId, gravedad, motivo]
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        partidoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'Opcional: del torneo y del jugador'}
+        gravedad: {$ref: '#/components/schemas/Gravedad'}
+        motivo: {type: string, minLength: 1, maxLength: 1000, examples: [Insultó al árbitro al terminar el partido]}
+    SancionDetalle:
+      type: object
+      required: [id, torneoId, torneo, jugador, partidoId, gravedad, motivo, aplicadaPor, aplicadaEn, anuladaEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {type: string, description: Nombre del torneo}
+        jugador: {$ref: '#/components/schemas/UsuarioPublico'}
+        partidoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}]}
+        gravedad: {$ref: '#/components/schemas/Gravedad'}
+        motivo: {type: string}
+        aplicadaPor: {$ref: '#/components/schemas/UsuarioPublico', description: El organizador o el árbitro}
+        aplicadaEn: {type: string, format: date-time}
+        anuladaEn: {type: [string, 'null'], format: date-time, description: 'Null: vigente. Por ahora no hay cómo anularla'}
     ActualizarParametrosRequest:
       type: object
       required: [valores]
