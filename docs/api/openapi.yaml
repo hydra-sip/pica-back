@@ -4690,7 +4690,7 @@ components:
                     nombre: {type: string}
     BracketTorneo:
       type: object
-      required: [torneoId, rondas]
+      required: [torneoId, rondas, version]
       description: >-
         Las rondas de la primera a la final. Sin generar, `rondas` vacío y `semilla` null. Con fase de grupos (CR-02)
         es solo la llave: se crea vacía al empezar y se llena con los que pasan; `semilla` es la del sorteo de grupos.
@@ -4699,6 +4699,13 @@ components:
         semilla: {type: [string, 'null'], description: 'Con la que se sorteó: 64 caracteres hexadecimales'}
         listaHash: {type: [string, 'null'], description: SHA-256 de la lista de inscriptos, sellada al cerrar la inscripción}
         rondas: {type: array, items: {$ref: '#/components/schemas/RondaBracket'}}
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            La versión del bracket (HU-809): sube con cada cambio de la llave. La misma viaja en el tópico del torneo;
+            un bracket con versión menor que el que ya se muestra es más viejo y se descarta.
     RondaBracket:
       type: object
       required: [numero, nombre, partidos]
