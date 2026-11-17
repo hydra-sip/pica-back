@@ -1308,7 +1308,8 @@ paths:
         administrativos que la rifa fijó al publicar. 400 `VALIDACION` con `RANGO_INVALIDO` en `numeros` si alguno
         está fuera del rango, y `VALOR_INVALIDO` si hay repetidos. 404 `RIFA_NO_ENCONTRADA`. 409 `VENTA_CERRADA`
         fuera de la ventana de venta, `LISTA_SELLADA` con la venta ya cerrada (HU-407), `RIFA_PROPIA` si es el
-        organizador y `NUMERO_NO_DISPONIBLE` (con `numeros`)
+        organizador, `ORGANIZADOR_BLOQUEADO` si el organizador está bloqueado (HU-703) y `NUMERO_NO_DISPONIBLE`
+        (con `numeros`)
         si alguno está vendido o reservado por otro; dos pedidos a la vez por el mismo número reservan uno solo.
       requestBody:
         required: true
@@ -1341,7 +1342,8 @@ paths:
         como la inscripción; el ticket también guarda el monto y los gastos por separado), emite el ticket y los números pasan a VENDIDO. Publica la venta en
         `/topic/rifas/{id}` y, con torneo, `/topic/torneos/{id}`. Idempotente: con la misma clave devuelve el mismo
         ticket sin volver a cobrar. 400 `VALIDACION` con `REQUERIDO` en `Idempotency-Key` sin la clave. 409
-        `VENTA_CERRADA`, `LISTA_SELLADA`, `RIFA_PROPIA`, `NUMERO_NO_DISPONIBLE` si alguno ya no es suyo, `RESERVA_VENCIDA` (con
+        `VENTA_CERRADA`, `LISTA_SELLADA`, `RIFA_PROPIA`, `ORGANIZADOR_BLOQUEADO` (HU-703: no se cobra nada),
+        `NUMERO_NO_DISPONIBLE` si alguno ya no es suyo, `RESERVA_VENCIDA` (con
         `numeros`) si la reserva venció o no existe, `CLAVE_IDEMPOTENCIA_USADA` si la clave es de otra compra y
         `SALDO_INSUFICIENTE` (con `faltante`) si el disponible no alcanza para los números más los gastos (HU-603): los
         números siguen reservados a su nombre hasta que venza la reserva, así que después de cargar saldo se compran
@@ -5408,7 +5410,7 @@ components:
         fechaSorteo: {type: string, format: date-time}
     RifaPublicaDetalle:
       type: object
-      required: [id, titulo, estado, pctDestinadoTorneo, numeroDesde, numeroHasta, precioNumero, moneda, premios, reparto]
+      required: [id, titulo, estado, pctDestinadoTorneo, numeroDesde, numeroHasta, precioNumero, moneda, premios, reparto, ventaSuspendida]
       description: >-
         Una rifa como la ve quien compra (PICA-221), sin datos del organizador ni de los compradores. `reparto` es lo
         recaudado hasta ahora y cuánto va al pozo del torneo y a los premios (HU-405).
@@ -5440,6 +5442,7 @@ components:
         listaSelladaEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se cerró la venta y se selló la lista; null antes'}
         compromisoHash: {type: [string, 'null'], description: 'Compromiso del sorteo (HU-502): SHA-256 de `listaHash:fechaSorteo`, con la fecha en ISO-8601 UTC como la devuelve la API; null antes del cierre'}
         compromisoPublicadoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se publicó el compromiso, con el sello; siempre antes de obtener la semilla'}
+        ventaSuspendida: {type: boolean, description: 'La rifa está en venta pero el organizador está bloqueado: no se reserva ni se compra (HU-703, PICA-414)'}
     VentaRifaRequest:
       type: object
       required: [numeros]

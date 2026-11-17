@@ -338,6 +338,53 @@ class BloqueoHU703IntegracionTest {
         fichaDelTorneo(torneo).andExpect(jsonPath("$.inscripcionSuspendida").value(false));
     }
 
+    // ---- venta suspendida en las rifas del organizador bloqueado
+
+    @Test
+    void conElOrganizadorBloqueadoNoSeReservanNumeros() throws Exception {
+        String organizador = usuarioCon("ORGANIZADOR");
+        Long rifa = rifaEnVenta(organizador);
+        bloquear(tokenDe(usuarioCon("SOPORTE")), idDe(organizador)).andExpect(status().isOk());
+
+        reservar(tokenDe(usuarioCon("PARTICIPANTE")), rifa, 7)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("ORGANIZADOR_BLOQUEADO"));
+    }
+
+    @Test
+    void conElOrganizadorBloqueadoNoSeCompraLoQueEstabaReservado() throws Exception {
+        String organizador = usuarioCon("ORGANIZADOR");
+        Long rifa = rifaEnVenta(organizador);
+        String comprador = tokenDe(usuarioCon("PARTICIPANTE"));
+        reservar(comprador, rifa, 7).andExpect(status().isOk());
+        bloquear(tokenDe(usuarioCon("SOPORTE")), idDe(organizador)).andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/rifas/{id}/comprar", rifa)
+                        .header("Authorization", "Bearer " + comprador)
+                        .header("Idempotency-Key", "hu703-" + SECUENCIA.incrementAndGet())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"numeros\":[7]}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("ORGANIZADOR_BLOQUEADO"));
+    }
+
+    @Test
+    void laFichaDeLaRifaAvisaQueLaVentaEstaSuspendidaHastaQueSeDesbloquea() throws Exception {
+        String organizador = usuarioCon("ORGANIZADOR");
+        Long rifa = rifaEnVenta(organizador);
+        String soporte = tokenDe(usuarioCon("SOPORTE"));
+        fichaDeLaRifa(rifa).andExpect(jsonPath("$.ventaSuspendida").value(false));
+
+        bloquear(soporte, idDe(organizador)).andExpect(status().isOk());
+        fichaDeLaRifa(rifa).andExpect(jsonPath("$.ventaSuspendida").value(true));
+
+        mockMvc.perform(delete("/api/v1/admin/usuarios/{id}/bloqueo", idDe(organizador))
+                        .header("Authorization", "Bearer " + soporte))
+                .andExpect(status().isOk());
+        fichaDeLaRifa(rifa).andExpect(jsonPath("$.ventaSuspendida").value(false));
+        reservar(tokenDe(usuarioCon("PARTICIPANTE")), rifa, 7).andExpect(status().isOk());
+    }
+
     // ---- ayudas
 
     private ResultActions bloquear(String token, Long usuarioId) throws Exception {
@@ -359,6 +406,28 @@ class BloqueoHU703IntegracionTest {
                         'INSCRIPCION_ABIERTA', now())
                 RETURNING id
                 """, Long.class, idDe(organizador), slug);
+    }
+
+    private Long rifaEnVenta(String organizador) {
+        return jdbc.queryForObject("""
+                INSERT INTO rifa (organizador_id, titulo, numero_desde, numero_hasta, precio_numero, venta_desde,
+                                  venta_hasta, sorteada_en, terminos_aceptados_en, loteria_declarada_en,
+                                  pct_gastos_administrativos, estado)
+                VALUES (?, 'Rifa HU-703', 1, 100, 500, now() - interval '1 hour', now() + interval '7 days',
+                        now() + interval '8 days', now(), now(), 10, 'EN_VENTA')
+                RETURNING id
+                """, Long.class, idDe(organizador));
+    }
+
+    private ResultActions reservar(String token, Long rifa, int numero) throws Exception {
+        return mockMvc.perform(post("/api/v1/rifas/{id}/reservas", rifa)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"numeros\":[" + numero + "]}"));
+    }
+
+    private ResultActions fichaDeLaRifa(Long rifa) throws Exception {
+        return mockMvc.perform(get("/api/v1/rifas/publicas/{id}", rifa)).andExpect(status().isOk());
     }
 
     private ResultActions inscribirse(String token, Long torneo) throws Exception {
