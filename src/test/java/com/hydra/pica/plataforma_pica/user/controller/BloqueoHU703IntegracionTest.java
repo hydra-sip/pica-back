@@ -147,6 +147,68 @@ class BloqueoHU703IntegracionTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    // ---- el bloqueo queda en el libro de auditoría
+
+    @Test
+    void bloquearQuedaEnLaAuditoriaConQuienMotivoYFechaDeFin() throws Exception {
+        String soporte = usuarioCon("SOPORTE");
+        Long victima = idDe(usuarioCon("PARTICIPANTE"));
+        String hasta = "2099-01-01T00:00:00Z";
+
+        mockMvc.perform(post("/api/v1/admin/usuarios/{id}/bloqueo", victima)
+                        .header("Authorization", "Bearer " + tokenDe(soporte))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("motivo", "Insultos en el chat", "hasta", hasta))))
+                .andExpect(status().isOk());
+
+        auditoriaDe(victima, "BLOQUEO")
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].username").value(soporte))
+                .andExpect(jsonPath("$.content[0].detalle.motivo").value("Insultos en el chat"))
+                .andExpect(jsonPath("$.content[0].detalle.hasta").value(hasta));
+    }
+
+    @Test
+    void unBloqueoSinFechaDeFinQuedaComoIndefinido() throws Exception {
+        Long victima = idDe(usuarioCon("PARTICIPANTE"));
+        bloquear(tokenDe(usuarioCon("SOPORTE")), victima).andExpect(status().isOk());
+
+        auditoriaDe(victima, "BLOQUEO")
+                .andExpect(jsonPath("$.content[0].detalle.hasta").value("indefinido"));
+    }
+
+    @Test
+    void desbloquearQuedaEnLaAuditoria() throws Exception {
+        String soporte = usuarioCon("SOPORTE");
+        String token = tokenDe(soporte);
+        Long victima = idDe(usuarioCon("PARTICIPANTE"));
+        bloquear(token, victima).andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/v1/admin/usuarios/{id}/bloqueo", victima).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        auditoriaDe(victima, "DESBLOQUEO")
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].username").value(soporte))
+                .andExpect(jsonPath("$.content[0].detalle.motivo").value("Incumple las condiciones de uso"));
+    }
+
+    @Test
+    void elBloqueoQueVenceAlEntrarQuedaComoDesbloqueoDelSistema() throws Exception {
+        String victima = usuarioCon("PARTICIPANTE");
+        Long id = idDe(victima);
+        bloquear(tokenDe(usuarioCon("SOPORTE")), id).andExpect(status().isOk());
+        jdbc.update("UPDATE bloqueo SET desde = now() - interval '2 days', hasta = now() - interval '1 day' "
+                + "WHERE usuario_id = ?", id);
+
+        tokenDe(victima);
+
+        auditoriaDe(id, "DESBLOQUEO")
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].usuarioId").doesNotExist())
+                .andExpect(jsonPath("$.content[0].detalle.vencido").value(true));
+    }
+
     // ---- ayudas
 
     private ResultActions bloquear(String token, Long usuarioId) throws Exception {
@@ -154,6 +216,15 @@ class BloqueoHU703IntegracionTest {
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("motivo", "Incumple las condiciones de uso"))));
+    }
+
+    private ResultActions auditoriaDe(Long usuarioId, String accion) throws Exception {
+        return mockMvc.perform(get("/api/v1/admin/auditoria")
+                        .param("entidad", "USUARIO")
+                        .param("entidadId", usuarioId.toString())
+                        .param("accion", accion)
+                        .header("Authorization", "Bearer " + tokenDe(usuarioCon("ADMINISTRADOR"))))
+                .andExpect(status().isOk());
     }
 
     private String usuarioCon(String rol) {
