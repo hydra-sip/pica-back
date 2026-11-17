@@ -133,7 +133,8 @@ class TorneoPublicoControllerTest {
                 "abc123hash",
                 new OrganizadorResumen(2L, "Juan Perez", "juanp"),
                 Instant.parse("2026-10-15T09:00:00Z"),
-                null);
+                null,
+                false);
 
         when(torneoPublicoService.detallePublico("copa-verano")).thenReturn(detalle);
 

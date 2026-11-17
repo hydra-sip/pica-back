@@ -257,6 +257,87 @@ class BloqueoHU703IntegracionTest {
                 .andExpect(jsonPath("$.codigo").value("BLOQUEO_POR_ENDPOINT_PROPIO"));
     }
 
+    // ---- inscripción suspendida en los torneos del organizador bloqueado
+
+    @Test
+    void conElOrganizadorBloqueadoNoSePuedeEmpezarUnaInscripcion() throws Exception {
+        String organizador = usuarioCon("ORGANIZADOR");
+        Long torneo = torneoAbierto(organizador);
+        bloquear(tokenDe(usuarioCon("SOPORTE")), idDe(organizador)).andExpect(status().isOk());
+
+        inscribirse(tokenDe(usuarioCon("PARTICIPANTE")), torneo)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("ORGANIZADOR_BLOQUEADO"));
+    }
+
+    @Test
+    void conElOrganizadorBloqueadoNoSePuedeConfirmarUnBorrador() throws Exception {
+        String organizador = usuarioCon("ORGANIZADOR");
+        Long torneo = torneoAbierto(organizador);
+        String participante = tokenDe(usuarioCon("PARTICIPANTE"));
+        Long inscripcion = idDeLaRespuesta(inscribirse(participante, torneo).andExpect(status().isCreated()));
+        bloquear(tokenDe(usuarioCon("SOPORTE")), idDe(organizador)).andExpect(status().isOk());
+
+        confirmar(participante, inscripcion)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("ORGANIZADOR_BLOQUEADO"));
+    }
+
+    @Test
+    void conElOrganizadorBloqueadoNoSePuedePagarYLaInscripcionSigueComoEstaba() throws Exception {
+        String organizador = usuarioCon("ORGANIZADOR");
+        Long torneo = torneoAbierto(organizador);
+        String participante = tokenDe(usuarioCon("PARTICIPANTE"));
+        Long inscripcion = idDeLaRespuesta(inscribirse(participante, torneo).andExpect(status().isCreated()));
+        confirmar(participante, inscripcion).andExpect(jsonPath("$.estado").value("PENDIENTE_PAGO"));
+        bloquear(tokenDe(usuarioCon("SOPORTE")), idDe(organizador)).andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/inscripciones/{id}/pago", inscripcion).header("Authorization", "Bearer " + participante))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("ORGANIZADOR_BLOQUEADO"));
+        mockMvc.perform(get("/api/v1/inscripciones/{id}", inscripcion).header("Authorization", "Bearer " + participante))
+                .andExpect(jsonPath("$.estado").value("PENDIENTE_PAGO"));
+    }
+
+    @Test
+    void laFichaDelTorneoAvisaQueLaInscripcionEstaSuspendida() throws Exception {
+        String organizador = usuarioCon("ORGANIZADOR");
+        Long torneo = torneoAbierto(organizador);
+        fichaDelTorneo(torneo).andExpect(jsonPath("$.inscripcionSuspendida").value(false));
+
+        bloquear(tokenDe(usuarioCon("SOPORTE")), idDe(organizador)).andExpect(status().isOk());
+
+        fichaDelTorneo(torneo).andExpect(jsonPath("$.inscripcionSuspendida").value(true));
+    }
+
+    @Test
+    void alDesbloquearAlOrganizadorSuTorneoVuelveAInscribir() throws Exception {
+        String organizador = usuarioCon("ORGANIZADOR");
+        Long torneo = torneoAbierto(organizador);
+        String soporte = tokenDe(usuarioCon("SOPORTE"));
+        bloquear(soporte, idDe(organizador)).andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/v1/admin/usuarios/{id}/bloqueo", idDe(organizador))
+                        .header("Authorization", "Bearer " + soporte))
+                .andExpect(status().isOk());
+
+        inscribirse(tokenDe(usuarioCon("PARTICIPANTE")), torneo).andExpect(status().isCreated());
+        fichaDelTorneo(torneo).andExpect(jsonPath("$.inscripcionSuspendida").value(false));
+    }
+
+    @Test
+    void cuandoVenceElBloqueoSuTorneoVuelveAInscribirAunqueElOrganizadorNoEntre() throws Exception {
+        String organizador = usuarioCon("ORGANIZADOR");
+        Long torneo = torneoAbierto(organizador);
+        Long id = idDe(organizador);
+        bloquear(tokenDe(usuarioCon("SOPORTE")), id).andExpect(status().isOk());
+        jdbc.update("UPDATE bloqueo SET desde = now() - interval '2 days', hasta = now() - interval '1 day' "
+                + "WHERE usuario_id = ?", id);
+
+        inscribirse(tokenDe(usuarioCon("PARTICIPANTE")), torneo).andExpect(status().isCreated());
+        fichaDelTorneo(torneo).andExpect(jsonPath("$.inscripcionSuspendida").value(false));
+    }
+
     // ---- ayudas
 
     private ResultActions bloquear(String token, Long usuarioId) throws Exception {
@@ -264,6 +345,40 @@ class BloqueoHU703IntegracionTest {
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("motivo", "Incumple las condiciones de uso"))));
+    }
+
+    private Long torneoAbierto(String organizador) {
+        String slug = "hu703-torneo-" + SECUENCIA.incrementAndGet();
+        return jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, slug, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion,
+                                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio,
+                                    estado, publicado_en)
+                VALUES (?, 'Torneo HU-703', ?, 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL',
+                        8, 2, 1000, 50, 10, now() + interval '1 day', now() + interval '7 days',
+                        'INSCRIPCION_ABIERTA', now())
+                RETURNING id
+                """, Long.class, idDe(organizador), slug);
+    }
+
+    private ResultActions inscribirse(String token, Long torneo) throws Exception {
+        return mockMvc.perform(post("/api/v1/torneos/{id}/inscripciones", torneo).header("Authorization", "Bearer " + token));
+    }
+
+    private ResultActions confirmar(String token, Long inscripcion) throws Exception {
+        return mockMvc.perform(put("/api/v1/inscripciones/{id}/confirmar", inscripcion)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reglamentoAceptado\":true}"));
+    }
+
+    private ResultActions fichaDelTorneo(Long torneo) throws Exception {
+        String slug = jdbc.queryForObject("SELECT slug FROM torneo WHERE id = ?", String.class, torneo);
+        return mockMvc.perform(get("/api/v1/torneos/slug/{slug}", slug)).andExpect(status().isOk());
+    }
+
+    private Long idDeLaRespuesta(ResultActions respuesta) throws Exception {
+        return objectMapper.readTree(respuesta.andReturn().getResponse().getContentAsString()).get("id").asLong();
     }
 
     private ResultActions auditoriaDe(Long usuarioId, String accion) throws Exception {

@@ -39,6 +39,23 @@ public class BloqueoService {
                 usuarioId, AlcanceBloqueo.USUARIO);
     }
 
+    /**
+     * Si el usuario está bloqueado ahora: BLOQUEADO y con un bloqueo vigente sin fecha de fin o con la fecha todavía
+     * por llegar. Un bloqueo vencido cuenta como levantado aunque el login todavía no lo haya cerrado, así los torneos
+     * y las rifas de un organizador se reactivan en la fecha sin que tenga que entrar (HU-703).
+     */
+    @Transactional(readOnly = true)
+    public boolean estaBloqueado(Usuario usuario) {
+        if (usuario.getEstado() != EstadoUsuario.BLOQUEADO) {
+            return false;
+        }
+        Instant ahora = Instant.now();
+        return vigente(usuario.getId())
+                .map(Bloqueo::getHasta)
+                .map(hasta -> hasta.isAfter(ahora))
+                .orElse(true);
+    }
+
     /** Registra el bloqueo y pasa el usuario a BLOQUEADO. Con {@code hasta} null es indefinido. */
     @Transactional
     public Bloqueo bloquear(Usuario usuario, String motivo, Instant hasta) {
