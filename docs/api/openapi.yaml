@@ -2445,6 +2445,29 @@ paths:
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
 
+  /api/v1/usuarios/{id}/fair-play:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Reputación]
+      summary: Índice de fair play de un usuario
+      x-jira: PICA-421
+      x-owner: Tomás
+      description: >-
+        HU-802. Con sesión, cualquiera: el valor y el historial de lo que lo movió, el último primero. Fórmula, con los
+        parámetros FAIR_PLAY_* (editables en HU-702): arranca en el inicial (100); cada check-in cumplido suma 1 sin
+        pasar del máximo (100), así que se mantiene o mejora; cada ausencia sin aviso (no hizo check-in y el partido
+        quedó en walkover o sin presentes) resta 10; una sanción (HU-803) resta 5, 15 o 30 según la gravedad; nunca
+        baja de 0. En un equipo, el check-in y la ausencia mueven el del capitán y la sanción, el del sancionado. Se
+        recalcula solo después de cada evento, sobre el valor anterior: un cambio de parámetro rige desde ahí.
+        `actualizadoEn` null si nunca se movió. 404 `USUARIO_NO_ENCONTRADO` si no existe.
+      responses:
+        '200':
+          description: El índice y su historial
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FairPlayDetalle'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/sanciones/mias:
     get:
       tags: [Reputación]
@@ -4261,7 +4284,7 @@ components:
       required: [clave, unidad, valor, descripcion, modificadoEn, modificadoPor]
       properties:
         clave: {$ref: '#/components/schemas/ClaveParametro'}
-        unidad: {type: string, enum: [PORCENTAJE, MINUTOS, PESOS], description: 'PORCENTAJE de 0 a 100; MINUTOS enteros; PESOS con hasta dos decimales'}
+        unidad: {type: string, enum: [PORCENTAJE, MINUTOS, PESOS, PUNTOS], description: 'PORCENTAJE de 0 a 100; MINUTOS enteros; PESOS con hasta dos decimales; PUNTOS enteros de 0 a 1000'}
         valor: {type: number, examples: [10]}
         descripcion: {type: string}
         modificadoEn: {type: string, format: date-time}
@@ -4269,12 +4292,16 @@ components:
     ClaveParametro:
       type: string
       enum: [GASTOS_ADMINISTRATIVOS, GASTOS_ADMINISTRATIVOS_TOPE, MARGEN_CIERRE_INICIO_MIN, CHECKIN_DURACION_MAX_MIN,
-             RETIRO_MINIMO, RETIRO_MAXIMO, CANCELACION_GASTOS_TOPE]
+             RETIRO_MINIMO, RETIRO_MAXIMO, CANCELACION_GASTOS_TOPE, FAIR_PLAY_INICIAL, FAIR_PLAY_MAXIMO,
+             FAIR_PLAY_CHECKIN, FAIR_PLAY_AUSENCIA, FAIR_PLAY_SANCION_LEVE, FAIR_PLAY_SANCION_MEDIA,
+             FAIR_PLAY_SANCION_GRAVE]
       description: >-
         HU-702. GASTOS_ADMINISTRATIVOS (% que paga aparte quien se inscribe o compra) y su tope;
         MARGEN_CIERRE_INICIO_MIN (CE4-5); CHECKIN_DURACION_MAX_MIN (máximo de la ventana de check-in);
         RETIRO_MINIMO y RETIRO_MAXIMO (pesos, para HU-607); CANCELACION_GASTOS_TOPE (% máximo del pozo que el
-        organizador puede retener en gastos al cancelar un torneo, HU-605).
+        organizador puede retener en gastos al cancelar un torneo, HU-605). FAIR_PLAY_* (puntos del índice de fair play,
+        HU-802): el inicial y el máximo (el inicial no lo supera), lo que suma un check-in, lo que resta una ausencia y
+        lo que resta cada gravedad de sanción (leve <= media <= grave).
     PageRegistroAuditoria:
       type: object
       required: [content, page]
@@ -4304,6 +4331,27 @@ components:
       type: string
       enum: [LOGIN, LOGIN_FALLIDO, LOGOUT, ALTA, MODIFICACION, BAJA, BLOQUEO, DESBLOQUEO, PAGO, LAUDO, SORTEO,
              CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO, SANCION]
+    FairPlayDetalle:
+      type: object
+      required: [usuarioId, valor, actualizadoEn, historial]
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        valor: {type: integer, minimum: 0, examples: [85]}
+        actualizadoEn: {type: [string, 'null'], format: date-time, description: 'Null: nunca se movió, tiene el inicial'}
+        historial: {type: array, items: {$ref: '#/components/schemas/MovimientoFairPlay'}}
+    MovimientoFairPlay:
+      type: object
+      required: [tipo, delta, valorResultante, torneoId, torneo, partidoId, sancionId, gravedad, creadoEn]
+      properties:
+        tipo: {type: string, enum: [CHECKIN, AUSENCIA, SANCION]}
+        delta: {type: integer, description: 'Lo que cambió, ya con el máximo y el piso: un check-in en el máximo es 0', examples: [-15]}
+        valorResultante: {type: integer, minimum: 0}
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {type: string, description: Nombre del torneo}
+        partidoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'En el check-in y la ausencia'}
+        sancionId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'En la sanción'}
+        gravedad: {oneOf: [{$ref: '#/components/schemas/Gravedad'}, {type: 'null'}], description: 'En la sanción'}
+        creadoEn: {type: string, format: date-time}
     Gravedad:
       type: string
       enum: [LEVE, MEDIA, GRAVE]
@@ -5209,7 +5257,7 @@ components:
         rol: {$ref: '#/components/schemas/RolEnInscripcion'}
     InscripcionDelTorneo:
       type: object
-      required: [id, estado, creadoEn]
+      required: [id, estado, creadoEn, fairPlay]
       description: >-
         Una inscripción como la ve el organizador en la lista de su torneo (HU-206). La individual lleva `usuario`; la
         de equipo lleva `equipo`, `capitan` y `jugadores`.
@@ -5227,6 +5275,7 @@ components:
           oneOf: [{$ref: '#/components/schemas/UsuarioPublico'}, {type: 'null'}]
           description: Solo en la de equipo
         jugadores: {type: [integer, 'null'], description: 'Solo en la de equipo: cuántos hay en la nómina, el capitán incluido'}
+        fairPlay: {type: integer, minimum: 0, description: 'HU-802: el índice de fair play de quien responde por la inscripción (el jugador o el capitán)', examples: [100]}
     InscripcionEquipoRequest:
       type: object
       description: >-

@@ -14,6 +14,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.domain.MotivoCierre;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDelTorneo;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.service.CierreInscripcion;
+import com.hydra.pica.plataforma_pica.reputacion.service.FairPlayService;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
@@ -40,6 +41,7 @@ public class InscripcionTorneoService {
     private final InscripcionRepository inscripcionRepository;
     private final NominaRepository nominaRepository;
     private final TorneoRepository torneoRepository;
+    private final FairPlayService fairPlayService;
 
     /** Todas menos los borradores, de la más vieja a la más nueva; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
@@ -51,7 +53,10 @@ public class InscripcionTorneoService {
         Map<Long, Long> jugadores = nominaRepository.contarPorInscripcion(
                         pagina.map(Inscripcion::getId).getContent()).stream()
                 .collect(Collectors.toMap(ConteoNomina::getInscripcionId, ConteoNomina::getCantidad));
-        return pagina.map(i -> InscripcionDelTorneo.de(i, jugadores.getOrDefault(i.getId(), 0L).intValue()));
+        Map<Long, Integer> fairPlay = fairPlayService.indices(
+                pagina.getContent().stream().map(i -> i.titular().getId()).collect(Collectors.toSet()));
+        return pagina.map(i -> InscripcionDelTorneo.de(i, jugadores.getOrDefault(i.getId(), 0L).intValue(),
+                fairPlay.get(i.titular().getId())));
     }
 
     /** En cualquier momento mientras la inscripción está abierta, sin mínimo de inscriptos. */

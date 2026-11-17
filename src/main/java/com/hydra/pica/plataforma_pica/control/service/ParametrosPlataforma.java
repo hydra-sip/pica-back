@@ -55,6 +55,15 @@ public class ParametrosPlataforma {
         return valor(ClaveParametro.CANCELACION_GASTOS_TOPE);
     }
 
+    /** Los puntos del índice de fair play (V57, HU-802). */
+    @Transactional(readOnly = true)
+    public int puntos(ClaveParametro clave) {
+        if (clave.unidad() != ClaveParametro.Unidad.PUNTOS) {
+            throw new IllegalArgumentException(clave + " no es un parámetro en puntos");
+        }
+        return valor(clave).intValueExact();
+    }
+
     private BigDecimal valor(ClaveParametro clave) {
         return parametroPlataformaRepository.findById(clave.name())
                 .orElseThrow(() -> new IllegalStateException("Falta el parámetro " + clave + " en la base"))

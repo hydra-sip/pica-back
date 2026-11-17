@@ -9,12 +9,14 @@ import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
-import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.EstadoVentana;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.LadoCheckin;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.VentanaCheckin;
+import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido;
+import com.hydra.pica.plataforma_pica.partido.event.CheckinHecho;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +33,7 @@ public class CheckinService {
     private final JuegaRepository juegaRepository;
     private final VentanasCheckin ventanas;
     private final ResultadoService resultadoService;
+    private final ApplicationEventPublisher eventos;
 
     @Transactional(readOnly = true)
     public CheckinPartido ver(Long usuarioId, Long partidoId) {
@@ -66,6 +69,7 @@ public class CheckinService {
         boolean losDos = lados.stream().allMatch(j -> j.getCheckinEn() != null);
         partido.setEstado(losDos ? EstadoPartido.EN_JUEGO : EstadoPartido.CHECK_IN);
         resultadoService.auditar(partido, usuarioId, ResultadoService.detalle("CHECKIN", mio));
+        eventos.publishEvent(new CheckinHecho(partido.getTorneo().getId(), partidoId, mio.getId().getInscripcionId()));
         return checkin(partido, lados, usuarioId);
     }
 

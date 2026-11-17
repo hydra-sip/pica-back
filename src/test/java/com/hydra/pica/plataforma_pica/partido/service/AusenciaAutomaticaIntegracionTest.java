@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
+import com.hydra.pica.plataforma_pica.partido.event.AusenciaDeclarada;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
@@ -29,8 +30,8 @@ import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
-import com.hydra.pica.plataforma_pica.partido.event.PaseDirecto;
 import com.hydra.pica.plataforma_pica.partido.event.PartidoSinPresentes;
+import com.hydra.pica.plataforma_pica.partido.event.PaseDirecto;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.torneo.dto.CheckinTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
@@ -201,6 +202,21 @@ class AusenciaAutomaticaIntegracionTest {
     }
 
     // --- sin presentes: reprogramar ----------------------------------------------------
+
+    @Test
+    void elAusenteDeUnWalkoverYLosDosSinPresentesVanAlFairPlay() {
+        Long ausente = inscripcion(partido, "VISITANTE");
+        Long otro = escenario.partido(torneo, 1, 2);
+        abrirLaVentana(partido, "LOCAL");
+        abrirLaVentana(otro);
+        cerrarLaVentana();
+
+        assertThat(ausenciaAutomatica.declararVencidas()).isEqualTo(2);
+
+        assertThat(eventos.stream(AusenciaDeclarada.class)).containsExactlyInAnyOrder(
+                new AusenciaDeclarada(torneo, partido, List.of(ausente)),
+                new AusenciaDeclarada(torneo, otro, List.of(inscripcion(otro, "VISITANTE"), inscripcion(otro, "LOCAL"))));
+    }
 
     @Test
     void sinPresentesPorDefectoElPartidoQuedaSinFechaYNoSeVuelveATomar() {

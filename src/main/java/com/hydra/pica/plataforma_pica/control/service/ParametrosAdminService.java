@@ -42,6 +42,7 @@ public class ParametrosAdminService {
     /** El máximo de NUMERIC(12,2). */
     private static final BigDecimal MAXIMO = new BigDecimal("9999999999.99");
     private static final BigDecimal CIEN = BigDecimal.valueOf(100);
+    private static final BigDecimal MIL = BigDecimal.valueOf(1000);
 
     private final ParametroPlataformaRepository parametroPlataformaRepository;
     private final AuditoriaRepository auditoriaRepository;
@@ -85,6 +86,15 @@ public class ParametrosAdminService {
             noSupera(ClaveParametro.RETIRO_MINIMO, ClaveParametro.RETIRO_MAXIMO,
                     "No puede superar el retiro máximo", "No puede ser menor que el retiro mínimo",
                     resultado, pedidos.keySet(), errores);
+            noSupera(ClaveParametro.FAIR_PLAY_INICIAL, ClaveParametro.FAIR_PLAY_MAXIMO,
+                    "No puede superar el índice máximo", "No puede ser menor que el índice inicial",
+                    resultado, pedidos.keySet(), errores);
+            noSupera(ClaveParametro.FAIR_PLAY_SANCION_LEVE, ClaveParametro.FAIR_PLAY_SANCION_MEDIA,
+                    "No puede restar más que una sanción media", "No puede restar menos que una sanción leve",
+                    resultado, pedidos.keySet(), errores);
+            noSupera(ClaveParametro.FAIR_PLAY_SANCION_MEDIA, ClaveParametro.FAIR_PLAY_SANCION_GRAVE,
+                    "No puede restar más que una sanción grave", "No puede restar menos que una sanción media",
+                    resultado, pedidos.keySet(), errores);
         }
         if (!errores.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay parámetros inválidos")
@@ -124,6 +134,13 @@ public class ParametrosAdminService {
                             admiteCero ? "No puede ser negativo" : "Tiene que ser mayor que 0"));
                 } else if (valor.compareTo(MAXIMO) > 0) {
                     errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Es demasiado grande"));
+                }
+            }
+            case PUNTOS -> {
+                if (valor.stripTrailingZeros().scale() > 0) {
+                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.FORMATO_INVALIDO, "Son puntos enteros"));
+                } else if (valor.signum() < 0 || valor.compareTo(MIL) > 0) {
+                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que estar entre 0 y 1000"));
                 }
             }
             case PESOS -> {
