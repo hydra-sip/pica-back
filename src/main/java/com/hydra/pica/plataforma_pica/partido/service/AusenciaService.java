@@ -15,6 +15,7 @@ import com.hydra.pica.plataforma_pica.partido.event.PartidoSinPresentes;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.CriterioSinPresentes;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -36,6 +37,7 @@ public class AusenciaService {
     private final AvanceLlave avanceLlave;
     private final FaseDeGrupos faseDeGrupos;
     private final ResultadoService resultadoService;
+    private final TorneoRepository torneoRepository;
     private final ApplicationEventPublisher eventos;
 
     /**
@@ -93,6 +95,7 @@ public class AusenciaService {
             lados.forEach(j -> j.setEsGanador(false));
             partido.setEstado(EstadoPartido.WALKOVER);
         }
+        torneoRepository.subirVersionBracket(partido.getTorneo().getId());
         Map<String, Object> detalle = new LinkedHashMap<>();
         detalle.put("resultado", "SIN_PRESENTES");
         detalle.put("criterio", criterio.name());

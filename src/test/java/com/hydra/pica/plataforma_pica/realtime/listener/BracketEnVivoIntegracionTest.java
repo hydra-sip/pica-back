@@ -180,6 +180,68 @@ class BracketEnVivoIntegracionTest {
         assertThat(versionActual()).isEqualTo(mensaje.bracket().version());
     }
 
+    // --- el resto de los cambios de la llave -----------------------------------------------
+
+    @Test
+    void cargarUnResultadoYObjetarloSubenLaVersion() {
+        Long local = escenario.jugador(partido, "LOCAL");
+        Long visitante = escenario.jugador(partido, "VISITANTE");
+        long antes = versionActual();
+
+        resultadoService.cargar(local, partido, new ResultadoRequest(2, 0, null, null));
+        long cargado = versionActual();
+        evidenciaService.subir(visitante, partido, JPG, URL);
+        resultadoService.objetar(visitante, partido, new ObjecionRequest("No fue así", 0, 1, null, null));
+
+        assertThat(cargado).isGreaterThan(antes);
+        assertThat(versionActual()).isGreaterThan(cargado);
+    }
+
+    @Test
+    void programarElPartidoYHacerCheckinSubenLaVersion() {
+        torneoService.configurarCheckin(organizador, torneo, new CheckinTorneoRequest(30, 30));
+        long antes = versionActual();
+
+        programacionService.programar(organizador, partido, Instant.now().plus(5, ChronoUnit.MINUTES));
+        long programado = versionActual();
+        checkinService.hacer(escenario.jugador(partido, "LOCAL"), partido);
+
+        assertThat(programado).isGreaterThan(antes);
+        assertThat(versionActual()).isGreaterThan(programado);
+    }
+
+    @Test
+    void unPartidoSinPresentesQueSeReprogramaSubeLaVersion() {
+        vencerLaVentana(partido);
+        long antes = versionActual();
+
+        ausenciaAutomatica.declararVencidas();
+
+        EventoTorneoMessage mensaje = ultimoPublicado();
+        assertThat(mensaje.tipo()).isEqualTo("PARTIDO_SIN_PRESENTES");
+        assertThat(cruce(mensaje.bracket(), 1, 1).fechaProgramada()).isNull();
+        assertThat(mensaje.bracket().version()).isGreaterThan(antes);
+    }
+
+    @Test
+    void volverASortearSubeLaVersion() {
+        long antes = versionActual();
+
+        BracketTorneo sorteado = bracketService.regenerar(organizador, torneo);
+
+        assertThat(sorteado.version()).isGreaterThan(antes);
+        assertThat(versionActual()).isEqualTo(sorteado.version());
+    }
+
+    @Test
+    void configurarElTorneoNoTocaLaVersion() {
+        long antes = versionActual();
+
+        torneoService.configurarCheckin(organizador, torneo, new CheckinTorneoRequest(30, 20, "DESCALIFICAR_AMBOS"));
+
+        assertThat(versionActual()).isEqualTo(antes);
+    }
+
     // --- ayudas -------------------------------------------------------------------------
 
     /** Lo que el commit le haría llegar al listener: los eventos del bracket que todavía no le llegaron, en orden. */

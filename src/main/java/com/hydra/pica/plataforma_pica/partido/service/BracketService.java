@@ -98,6 +98,7 @@ public class BracketService {
         } else {
             sortear(torneo, organizadorId, null);
         }
+        torneoRepository.subirVersionBracket(torneoId);
         return armar(torneo);
     }
 
@@ -125,6 +126,7 @@ public class BracketService {
         juegaRepository.borrarDelTorneo(torneoId);
         partidoRepository.borrarDelTorneo(torneoId);
         sortear(torneo, organizadorId, anterior);
+        torneoRepository.subirVersionBracket(torneoId);
         return armar(torneo);
     }
 
