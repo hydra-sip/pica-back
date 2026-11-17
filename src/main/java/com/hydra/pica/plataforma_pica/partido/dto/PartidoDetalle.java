@@ -16,6 +16,8 @@ import com.hydra.pica.plataforma_pica.partido.domain.Lado;
  * @param miLado          el lado del que es capitán quien consulta, si juega el partido
  * @param objecion        null si nadie lo objetó (HU-302)
  * @param puedoResolver   si quien consulta puede laudar la objeción pendiente: el organizador o un árbitro con permiso
+ * @param puedoSancionar  si quien consulta puede sancionar a sus jugadores (HU-803): el organizador o un árbitro que
+ *                        aceptó
  */
 public record PartidoDetalle(
         Long id,
@@ -38,5 +40,6 @@ public record PartidoDetalle(
         Instant objecionVenceEn,
         Lado miLado,
         ObjecionDetalle objecion,
-        boolean puedoResolver) {
+        boolean puedoResolver,
+        boolean puedoSancionar) {
 }
