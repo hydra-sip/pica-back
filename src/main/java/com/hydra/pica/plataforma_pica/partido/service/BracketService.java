@@ -285,7 +285,8 @@ public class BracketService {
         List<RondaBracket> lista = porRonda.entrySet().stream()
                 .map(e -> new RondaBracket(e.getKey(), RondaBracket.nombre(e.getKey(), rondas), e.getValue()))
                 .toList();
-        return new BracketTorneo(torneo.getId(), torneo.getSemillaBracket(), torneo.getListaHash(), lista);
+        return new BracketTorneo(torneo.getId(), torneo.getSemillaBracket(), torneo.getListaHash(), lista,
+                torneoRepository.versionBracket(torneo.getId()));
     }
 
     static PartidoBracket partidoBracket(Partido partido, List<Juega> lados) {

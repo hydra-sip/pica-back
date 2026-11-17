@@ -59,7 +59,7 @@ class RealtimeEventListenerTest {
         torneo.setNombre("Torneo CS2");
         torneo.setEstado(EstadoTorneo.EN_CURSO);
 
-        bracket = new BracketTorneo(1L, "semilla-test", "hash-test", List.of());
+        bracket = new BracketTorneo(1L, "semilla-test", "hash-test", List.of(), 0L);
     }
 
     @Test

@@ -120,7 +120,7 @@ public class RnfTre01Test {
                         (long) i,
                         1000L + i,
                         false,
-                        new BracketTorneo(101L, "seed-" + i, "hash-" + i, List.of()),
+                        new BracketTorneo(101L, "seed-" + i, "hash-" + i, List.of(), 0L),
                         new BigDecimal("150000.00")
                 );
 
