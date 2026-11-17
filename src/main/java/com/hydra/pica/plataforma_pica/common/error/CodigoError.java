@@ -25,6 +25,9 @@ public enum CodigoError {
     MONTO_NO_COINCIDE,
     TRANSACCION_YA_USADA,
 
+    // Bloquear y desbloquear van solo por /admin/usuarios/{id}/bloqueo, con motivo y auditoría (400, HU-703)
+    BLOQUEO_POR_ENDPOINT_PROPIO,
+
     // Retiros de fondos (400)
     RETIRO_FUERA_DE_TOPES,
 

@@ -328,6 +328,8 @@ paths:
         La persona tiene que existir: se manda `personaId` (la pantalla la busca en
         `GET /admin/personas?q=` y si no está la crea). Nace ACTIVO con el mail verificado.
         Por dentro: `UsuarioService.crear(NuevoUsuario.porAdmin(...))`.
+        400 `BLOQUEO_POR_ENDPOINT_PROPIO` con `estado: BLOQUEADO`: nadie nace bloqueado, se lo bloquea después
+        con `POST /admin/usuarios/{id}/bloqueo` (HU-703, PICA-414).
         403 `SIN_PERMISO` si algún rol tiene permisos que quien llama no tiene (los nombres van en `roles`).
         404 `PERSONA_NO_ENCONTRADA`, `ROL_NO_ENCONTRADO`.
         409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`, `ROL_INACTIVO`.
@@ -358,15 +360,14 @@ paths:
       description: >-
         Se mandan todos los campos. Los roles van por su propio endpoint porque exigen otro permiso.
         Si cambia el `email`, el usuario queda con `emailVerificado: false` en `PENDIENTE_VERIFICACION` y
-        se le manda el mail de verificación al email nuevo (si a la vez se lo bloquea, queda `BLOQUEADO`).
-        Pasarlo a `BLOQUEADO` le revoca los refresh tokens. Para bloquear con motivo y fecha de fin está
-        `POST /admin/usuarios/{id}/bloqueo`; desde acá queda bloqueado sin motivo propio, y volver a `ACTIVO`
-        levanta el bloqueo.
+        se le manda el mail de verificación al email nuevo (si está bloqueado, sigue `BLOQUEADO`).
+        El `estado` se manda como está: bloquear y desbloquear van solo por `POST` y
+        `DELETE /admin/usuarios/{id}/bloqueo`, con permiso, motivo y auditoría. Pedir pasar a `BLOQUEADO` o
+        sacarlo de `BLOQUEADO` es 400 `BLOQUEO_POR_ENDPOINT_PROPIO` (HU-703, PICA-414).
         Un usuario con el mail sin verificar (`PENDIENTE_VERIFICACION`) no se puede pasar a `ACTIVO` a mano:
-        se activa solo cuando verifica. Pasarlo a `BLOQUEADO` sí se puede.
+        se activa solo cuando verifica.
         Un usuario dado de baja no se modifica: 404, primero hay que reactivarlo.
-        403 `USUARIO_PROTEGIDO` (el Admin del sistema), `ACCION_SOBRE_SI_MISMO` (pasarse uno mismo a
-        `BLOQUEADO`; el resto de los datos propios sí se pueden editar).
+        403 `USUARIO_PROTEGIDO` (el Admin del sistema).
         404 `USUARIO_NO_ENCONTRADO`, `PERSONA_NO_ENCONTRADA`.
         409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`,
         `EMAIL_NO_VERIFICADO` (se manda `estado: ACTIVO` y el mail no está verificado; en el login el mismo
@@ -3767,6 +3768,8 @@ components:
         transacción revirtió) · TRANSACCION_SIN_CARGA (no pagó esta carga en el contrato) · MONTO_NO_COINCIDE (pagó
         otro monto) · TRANSACCION_YA_USADA (ya acreditó otra carga) · CARGA_NO_ENCONTRADA 404 · TRANSACCION_PENDIENTE 409 (sin las confirmaciones mínimas; reintentar
         en unos segundos) · CARGA_YA_ACREDITADA 409 (se acreditó con otra transacción) · RED_NO_DISPONIBLE 503 (el nodo de Base Sepolia no respondió; reintentar más tarde).
+        Bloqueo: BLOQUEO_POR_ENDPOINT_PROPIO 400 (el `PUT` o el alta de un usuario que cambiaría su bloqueo; va
+        por `/admin/usuarios/{id}/bloqueo`, HU-703).
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
         DEMASIADOS_INTENTOS 429 (login).
@@ -3856,7 +3859,7 @@ components:
              DEMASIADOS_INTENTOS,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
-             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
+             USUARIO_YA_BLOQUEADO, BLOQUEO_POR_ENDPOINT_PROPIO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
              TORNEO_INCOMPLETO,
              CAMPOS_BLOQUEADOS, COBRO_RECHAZADO, SALDO_INSUFICIENTE, FONDOS_EN_CUSTODIA, CUSTODIA_LIBERADA,
              INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,

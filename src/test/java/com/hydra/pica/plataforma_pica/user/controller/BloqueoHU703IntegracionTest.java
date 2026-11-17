@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -209,6 +210,53 @@ class BloqueoHU703IntegracionTest {
                 .andExpect(jsonPath("$.content[0].detalle.vencido").value(true));
     }
 
+    // ---- un solo camino para el bloqueo: /bloqueo, con permiso, motivo y auditoría
+
+    @Test
+    void editarAUnUsuarioNoLoBloquea() throws Exception {
+        String username = usuarioCon("PARTICIPANTE");
+
+        editar(username, "BLOQUEADO")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("BLOQUEO_POR_ENDPOINT_PROPIO"));
+    }
+
+    @Test
+    void editarAUnBloqueadoNoLoDesbloquea() throws Exception {
+        String username = usuarioCon("PARTICIPANTE");
+        bloquear(tokenDe(usuarioCon("SOPORTE")), idDe(username)).andExpect(status().isOk());
+
+        editar(username, "ACTIVO")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("BLOQUEO_POR_ENDPOINT_PROPIO"));
+    }
+
+    @Test
+    void editarMandandoElMismoEstadoSigueAndando() throws Exception {
+        String username = usuarioCon("PARTICIPANTE");
+        bloquear(tokenDe(usuarioCon("SOPORTE")), idDe(username)).andExpect(status().isOk());
+
+        editar(username, "BLOQUEADO")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("BLOQUEADO"));
+    }
+
+    @Test
+    void elAltaNoAceptaUnUsuarioBloqueado() throws Exception {
+        Persona persona = persona();
+        String username = "hu703alta" + SECUENCIA.incrementAndGet();
+
+        mockMvc.perform(post("/api/v1/admin/usuarios")
+                        .header("Authorization", "Bearer " + tokenDe(usuarioCon("ADMINISTRADOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "username", username, "email", username + "@example.com",
+                                "passwordTemporal", CLAVE, "estado", "BLOQUEADO",
+                                "personaId", persona.getId(), "roles", List.of()))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("BLOQUEO_POR_ENDPOINT_PROPIO"));
+    }
+
     // ---- ayudas
 
     private ResultActions bloquear(String token, Long usuarioId) throws Exception {
@@ -227,13 +275,28 @@ class BloqueoHU703IntegracionTest {
                 .andExpect(status().isOk());
     }
 
-    private String usuarioCon(String rol) {
-        String username = "hu703u" + SECUENCIA.incrementAndGet();
+    private ResultActions editar(String username, String estado) throws Exception {
+        Long id = idDe(username);
+        Long personaId = usuarioRepository.findById(id).orElseThrow().getPersona().getId();
+        return mockMvc.perform(put("/api/v1/admin/usuarios/{id}", id)
+                .header("Authorization", "Bearer " + tokenDe(usuarioCon("ADMINISTRADOR")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                        "username", username, "email", username + "@example.com",
+                        "estado", estado, "personaId", personaId))));
+    }
+
+    private Persona persona() {
         Persona persona = new Persona();
         persona.setNombres("Bloqueo");
         persona.setApellidos("Prueba");
         persona.setEstado(EstadoGeneral.ACTIVO);
-        persona = personaRepository.save(persona);
+        return personaRepository.save(persona);
+    }
+
+    private String usuarioCon(String rol) {
+        String username = "hu703u" + SECUENCIA.incrementAndGet();
+        Persona persona = persona();
         usuarioService.crear(NuevoUsuario.porAdmin(username, username + "@example.com", CLAVE, null, null,
                 persona.getId(), Set.of()));
         // el alta por admin valida los roles contra los permisos de quien la hace: acá no hay nadie
