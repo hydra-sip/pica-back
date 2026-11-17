@@ -1,0 +1,186 @@
+package com.hydra.pica.plataforma_pica.user.controller;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
+import com.hydra.pica.plataforma_pica.user.domain.Persona;
+import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
+import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
+import com.hydra.pica.plataforma_pica.user.service.NuevoUsuario;
+import com.hydra.pica.plataforma_pica.user.service.UsuarioService;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+
+/**
+ * HU-703 de punta a punta: HTTP con tokens reales de cada rol, filtro JWT y Postgres. Cada test usa
+ * sus propios usuarios, así no se pisan entre sí.
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("dev")
+@Import(TestcontainersConfiguration.class)
+class BloqueoHU703IntegracionTest {
+
+    private static final String CLAVE = "Pica2026";
+    private static final AtomicInteger SECUENCIA = new AtomicInteger();
+
+    @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
+    @Autowired private UsuarioService usuarioService;
+    @Autowired private PersonaRepository personaRepository;
+    @Autowired private JdbcTemplate jdbc;
+    @Autowired private UsuarioRepository usuarioRepository;
+
+    // ---- pruebas de aceptación de HU-703
+
+    @Test
+    void soporteBloqueaAUnUsuarioYQuedaBloqueado() throws Exception {
+        String soporte = tokenDe(usuarioCon("SOPORTE"));
+        Long victima = idDe(usuarioCon("PARTICIPANTE"));
+
+        bloquear(soporte, victima)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("BLOQUEADO"));
+    }
+
+    @Test
+    void elAdministradorTambienBloquea() throws Exception {
+        String admin = tokenDe(usuarioCon("ADMINISTRADOR"));
+        Long victima = idDe(usuarioCon("PARTICIPANTE"));
+
+        bloquear(admin, victima).andExpect(status().isOk());
+    }
+
+    @Test
+    void bloquearAUnUsuarioInexistenteDa404() throws Exception {
+        String soporte = tokenDe(usuarioCon("SOPORTE"));
+
+        bloquear(soporte, 987_654_321L)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("USUARIO_NO_ENCONTRADO"));
+    }
+
+    @Test
+    void bloquearAUnoYaBloqueadoDa409() throws Exception {
+        String soporte = tokenDe(usuarioCon("SOPORTE"));
+        Long victima = idDe(usuarioCon("PARTICIPANTE"));
+        bloquear(soporte, victima).andExpect(status().isOk());
+
+        bloquear(soporte, victima)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("USUARIO_YA_BLOQUEADO"));
+    }
+
+    @Test
+    void sinElRolDeSoporteNoSePuedeBloquear() throws Exception {
+        String participante = tokenDe(usuarioCon("PARTICIPANTE"));
+        Long victima = idDe(usuarioCon("PARTICIPANTE"));
+
+        bloquear(participante, victima).andExpect(status().isForbidden());
+    }
+
+    // ---- lo que Soporte puede y no puede hacer en el admin de usuarios
+
+    @Test
+    void soporteVeLaListaDeUsuarios() throws Exception {
+        String soporte = tokenDe(usuarioCon("SOPORTE"));
+
+        mockMvc.perform(get("/api/v1/admin/usuarios").header("Authorization", "Bearer " + soporte))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void soporteDesbloquea() throws Exception {
+        String soporte = tokenDe(usuarioCon("SOPORTE"));
+        Long victima = idDe(usuarioCon("PARTICIPANTE"));
+        bloquear(soporte, victima).andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/v1/admin/usuarios/{id}/bloqueo", victima)
+                        .header("Authorization", "Bearer " + soporte))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("ACTIVO"));
+    }
+
+    @Test
+    void soporteNoReseteaContrasenias() throws Exception {
+        String soporte = tokenDe(usuarioCon("SOPORTE"));
+        Long victima = idDe(usuarioCon("PARTICIPANTE"));
+
+        mockMvc.perform(put("/api/v1/admin/usuarios/{id}/password", victima)
+                        .header("Authorization", "Bearer " + soporte)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("password", "Otra2026x"))))
+                .andExpect(status().isForbidden());
+    }
+
+    // ---- el organizador bloqueado pierde el acceso en el momento
+
+    @Test
+    void elOrganizadorBloqueadoNoPuedePublicarConSuTokenViejo() throws Exception {
+        String organizador = usuarioCon("ORGANIZADOR");
+        String suToken = tokenDe(organizador);
+        bloquear(tokenDe(usuarioCon("SOPORTE")), idDe(organizador)).andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/torneos/{id}/publicar", 1L)
+                        .header("Authorization", "Bearer " + suToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"terminosAceptados\":true}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ---- ayudas
+
+    private ResultActions bloquear(String token, Long usuarioId) throws Exception {
+        return mockMvc.perform(post("/api/v1/admin/usuarios/{id}/bloqueo", usuarioId)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("motivo", "Incumple las condiciones de uso"))));
+    }
+
+    private String usuarioCon(String rol) {
+        String username = "hu703u" + SECUENCIA.incrementAndGet();
+        Persona persona = new Persona();
+        persona.setNombres("Bloqueo");
+        persona.setApellidos("Prueba");
+        persona.setEstado(EstadoGeneral.ACTIVO);
+        persona = personaRepository.save(persona);
+        usuarioService.crear(NuevoUsuario.porAdmin(username, username + "@example.com", CLAVE, null, null,
+                persona.getId(), Set.of()));
+        // el alta por admin valida los roles contra los permisos de quien la hace: acá no hay nadie
+        jdbc.update("INSERT INTO usuario_rol (usuario_id, rol_id) SELECT u.id, r.id FROM usuario u, rol r "
+                + "WHERE u.username = ? AND r.nombre = ?", username, rol);
+        return username;
+    }
+
+    private Long idDe(String username) {
+        return usuarioRepository.findByUsernameIgnoreCase(username).orElseThrow().getId();
+    }
+
+    private String tokenDe(String username) throws Exception {
+        String respuesta = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("identificador", username, "password", CLAVE))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(respuesta).get("accessToken").asText();
+    }
+}
