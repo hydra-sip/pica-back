@@ -10,7 +10,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Cierra la inscripción de los torneos cuya fecha de cierre ya pasó, aunque queden lugares (HU-206, PICA-213). Corre
+ * Cierra la inscripción de los torneos cuya fecha de cierre ya pasó, aunque queden lugares (HU-206, PICA-213); los que
+ * no llegaron al mínimo para jugar se cancelan en vez de cerrarse y no cuentan como cerrados (PICA-447). Corre
  * cada {@code app.torneos.revision-cierres}; se apaga con {@code app.torneos.cierre-automatico=false} (los tests la
  * llaman a mano). Cada torneo va en su propia transacción, con la fila bloqueada: si uno falla, los demás se cierran
  * igual, y si corre en varias réplicas a la vez, cada torneo se cierra una sola vez. Mientras no pasa, crear, confirmar

@@ -13,7 +13,9 @@ import java.util.Map;
 import java.util.Set;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.domain.MotivoCierre;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
+import com.hydra.pica.plataforma_pica.inscripcion.service.CierreInscripcion;
 import com.hydra.pica.plataforma_pica.rifa.service.Drand;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
@@ -56,6 +58,7 @@ public abstract class TorneoConGruposBase {
     @Autowired protected TorneoService torneoService;
     @Autowired protected ArbitrosTorneoService arbitrosService;
     @Autowired protected InscripcionTorneoService inscripcionTorneoService;
+    @Autowired protected CierreInscripcion cierreInscripcion;
     @Autowired protected BracketService bracketService;
     @Autowired protected TorneoRepository torneoRepository;
     @Autowired protected InscripcionRepository inscripcionRepository;
@@ -114,6 +117,17 @@ public abstract class TorneoConGruposBase {
     /** Cierra la inscripción como el organizador: sella la lista y fija la ronda de drand. */
     protected void cerrar() {
         inscripcionTorneoService.cerrar(organizador, torneo);
+        entityManager.flush();
+        entityManager.clear();
+    }
+
+    /**
+     * Cierra la inscripción aunque no llegue al mínimo, como quedaron los torneos cerrados antes de PICA-447: el
+     * organizador ya no puede, así que se cierra sin pasar por su chequeo.
+     */
+    protected void cerrarPorDebajoDelMinimo() {
+        cierreInscripcion.cerrar(torneoRepository.buscarBloqueado(torneo).orElseThrow(), MotivoCierre.MANUAL,
+                organizador);
         entityManager.flush();
         entityManager.clear();
     }

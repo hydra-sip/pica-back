@@ -18,7 +18,19 @@ public final class MinimoInscriptos {
     }
 
     public static int de(Torneo torneo) {
+        if (torneo.getFormato() != Formato.GRUPOS_Y_ELIMINACION) {
+            return ELIMINACION_DIRECTA;
+        }
         return de(torneo.getFormato(), torneo.getCupoMaximo(), ReglasGrupos.de(torneo));
+    }
+
+    /** El de {@link #de(Torneo)}, o null si al torneo (en BORRADOR) le falta el formato o, con grupos, el cupo. */
+    public static Integer siEstaDefinido(Torneo torneo) {
+        if (torneo.getFormato() == null
+                || torneo.getFormato() == Formato.GRUPOS_Y_ELIMINACION && torneo.getCupoMaximo() == null) {
+            return null;
+        }
+        return de(torneo);
     }
 
     /** @param reglas las de los grupos; null en eliminación directa */
