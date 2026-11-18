@@ -14,7 +14,8 @@ import org.springframework.stereotype.Component;
  * {@code app.rifas.revision-cierres}; se apaga con {@code app.rifas.cierre-automatico=false} (los tests la llaman a
  * mano). Cada rifa va en su propia transacción, con la fila bloqueada: si una falla, las demás se cierran igual, y si
  * corre en varias réplicas a la vez, cada rifa se cierra una sola vez. Mientras no pasa, reservar y comprar ya
- * rechazan por la fecha (409 VENTA_CERRADA).
+ * rechazan por la fecha (409 VENTA_CERRADA). Las que vencen sin ningún número vendido se cancelan en vez de cerrarse
+ * (PICA-445) y no cuentan como cerradas.
  */
 @Slf4j
 @Component

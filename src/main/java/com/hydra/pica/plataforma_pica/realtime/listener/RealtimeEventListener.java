@@ -18,6 +18,7 @@ import com.hydra.pica.plataforma_pica.rifa.event.NumerosVendidos;
 import com.hydra.pica.plataforma_pica.rifa.event.FondosReclamoLiberados;
 import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaRegistrado;
 import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaResuelto;
+import com.hydra.pica.plataforma_pica.rifa.event.RifaCancelada;
 import com.hydra.pica.plataforma_pica.rifa.event.RifaSorteada;
 import com.hydra.pica.plataforma_pica.rifa.event.VentaRifaCerrada;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
@@ -237,6 +238,13 @@ public class RealtimeEventListener {
     public void onRifaSorteada(RifaSorteada evento) {
         log.info("Rifa {} sorteada", evento.rifaId());
         avisarEstado(evento.rifaId(), evento.torneoId(), EstadoRifa.SORTEADA);
+    }
+
+    /** PICA-445: la venta terminó sin vendidos y la rifa se canceló sola; quien la mira la ve pasar a CANCELADA. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onRifaCancelada(RifaCancelada evento) {
+        log.info("Rifa {} cancelada: terminó la venta sin números vendidos", evento.rifaId());
+        avisarEstado(evento.rifaId(), evento.torneoId(), EstadoRifa.CANCELADA);
     }
 
     private void avisarEstado(Long rifaId, Long torneoId, EstadoRifa estado) {

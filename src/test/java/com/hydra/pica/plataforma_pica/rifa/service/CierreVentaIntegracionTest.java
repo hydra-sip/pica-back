@@ -154,6 +154,7 @@ class CierreVentaIntegracionTest {
 
     @Test
     void aManoLaVentaTerminaAlCerrarYElSorteoQuedaEnSuFecha() {
+        comprar(comprador, List.of(1));
         RifaDetalle cerrada = cierreVentaService.cerrar(organizador, rifa);
 
         assertThat(cerrada.ventaHasta()).isEqualTo(cerrada.listaSelladaEn());
@@ -162,6 +163,7 @@ class CierreVentaIntegracionTest {
 
     @Test
     void siElSorteoYaPasoAlCerrarPasaAUnPeriodoDeDrandDespuesDelCierre() {
+        comprar(comprador, List.of(1));
         jdbc.update("UPDATE rifa SET venta_desde = now() - interval '3 hours', venta_hasta = now() - interval '2 hours', "
                 + "sorteada_en = now() - interval '1 hour' WHERE id = ?", rifa);
         entityManager.clear();
@@ -177,6 +179,7 @@ class CierreVentaIntegracionTest {
     void conElSorteoAnticipadoElCierreAManoAdelantaElSorteo() {
         Object servicio = AopTestUtils.getTargetObject(cierreVentaService);
         ReflectionTestUtils.setField(servicio, "anticipado", true);
+        comprar(comprador, List.of(1));
         try {
             cierreVentaService.cerrar(organizador, rifa);
             entityManager.flush();
@@ -251,10 +254,54 @@ class CierreVentaIntegracionTest {
     }
 
     @Test
-    void sinVentasTambienSeCierraConLaListaVacia() {
+    void sinVentasNoSeCierraAManoYConservaLasReservas() {
+        ventaRifaService.reservar(comprador, rifa, List.of(8));
+
+        assertThatConflicto(() -> cierreVentaService.cerrar(organizador, rifa), CodigoError.RIFA_SIN_VENTAS);
+
+        entityManager.flush();
+        entityManager.clear();
+        RifaDetalle sigue = rifaService.detalle(organizador, rifa);
+        assertThat(sigue.estado()).isEqualTo(EstadoRifa.EN_VENTA);
+        assertThat(sigue.listaHash()).isNull();
+        assertThat(rifaPublicaService.detalle(rifa).compromisoHash()).isNull();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM numero WHERE rifa_id = ? AND estado = 'RESERVADO'",
+                Long.class, rifa)).isEqualTo(1);
+    }
+
+    @Test
+    void conUnSoloVendidoSeCierraAManoComoSiempre() {
+        VentaRifaResultado compra = comprar(comprador, List.of(8));
+
         RifaDetalle cerrada = cierreVentaService.cerrar(organizador, rifa);
 
-        assertThat(cerrada.listaHash()).isEqualTo(SelloTorneo.sha256(""));
+        assertThat(cerrada.estado()).isEqualTo(EstadoRifa.CERRADA);
+        assertThat(cerrada.listaHash()).isEqualTo(SelloTorneo.sha256("8;" + compra.ticketCodigo() + ";C1"));
+        assertThat(rifaPublicaService.detalle(rifa).compromisoHash()).hasSize(64);
+    }
+
+    // --- sin ventas al vencer la venta (PICA-445) -----------------------------------------------------
+
+    @Test
+    void alLlegarLaFechaSinVentasLaRifaSeCancelaSola() {
+        ventaRifaService.reservar(comprador, rifa, List.of(40));
+        terminarLaVenta(rifa);
+
+        assertThat(cierreAutomaticoRifa.cerrarVencidas()).isZero();
+
+        entityManager.clear();
+        RifaDetalle cancelada = rifaService.detalle(organizador, rifa);
+        assertThat(cancelada.estado()).isEqualTo(EstadoRifa.CANCELADA);
+        assertThat(cancelada.listaHash()).isNull();
+        assertThat(cancelada.listaSelladaEn()).isNull();
+        assertThat(jdbc.queryForObject("SELECT compromiso_hash FROM rifa WHERE id = ?", String.class, rifa)).isNull();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM numero WHERE rifa_id = ? AND estado = 'RESERVADO'",
+                Long.class, rifa)).isZero();
+        assertThat(jdbc.queryForMap("SELECT usuario_id, detalle->>'motivo' AS motivo FROM auditoria "
+                + "WHERE accion = 'CANCELACION' AND entidad = 'RIFA' AND entidad_id = ?", String.valueOf(rifa)))
+                .containsEntry("usuario_id", null).containsEntry("motivo", "SIN_VENTAS");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM auditoria WHERE accion = 'CIERRE_VENTA' "
+                + "AND entidad = 'RIFA' AND entidad_id = ?", Long.class, String.valueOf(rifa))).isZero();
     }
 
     @Test
