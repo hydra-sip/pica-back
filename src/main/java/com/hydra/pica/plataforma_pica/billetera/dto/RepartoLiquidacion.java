@@ -8,7 +8,7 @@ import com.hydra.pica.plataforma_pica.billetera.service.Acreditacion.Rol;
 
 /**
  * Cómo se repartió la custodia de un torneo o una rifa al liquidarse (HU-606, wireframe 64): una línea por
- * acreditación. Mientras no se liquidó, {@code liquidado} es false y no hay líneas.
+ * acreditación; el premio de un equipo trae una por cada integrante que cobra (CR-05). Mientras no se liquidó, {@code liquidado} es false y no hay líneas.
  *
  * @param total lo repartido: la suma de las líneas
  */
@@ -21,7 +21,7 @@ public record RepartoLiquidacion(boolean liquidado, Instant liquidadoEn, BigDeci
     /**
      * @param puesto              el de un premio
      * @param beneficiarioNombre  null en la plataforma
-     * @param equipoNombre        el equipo del capitán que cobra, en un torneo por equipos
+     * @param equipoNombre        el equipo del integrante que cobra, en un torneo por equipos
      */
     public record Linea(Rol rol, Origen origen, Integer puesto, String beneficiarioNombre,
                         String beneficiarioUsername, String equipoNombre, BigDecimal monto, Instant acreditadoEn) {

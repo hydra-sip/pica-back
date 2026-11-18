@@ -5669,7 +5669,7 @@ components:
         puesto: {type: [integer, 'null'], description: El de un premio}
         beneficiarioNombre: {type: [string, 'null'], description: 'Nombres y apellidos; null en la plataforma'}
         beneficiarioUsername: {type: [string, 'null']}
-        equipoNombre: {type: [string, 'null'], description: 'El equipo del capitán que cobra, en un torneo por equipos'}
+        equipoNombre: {type: [string, 'null'], description: 'El equipo del integrante que cobra, en un torneo por equipos (CR-05: el premio de un equipo trae una línea por integrante)'}
         monto: {type: number}
         acreditadoEn: {type: string, format: date-time}
     ComprobantePago:
