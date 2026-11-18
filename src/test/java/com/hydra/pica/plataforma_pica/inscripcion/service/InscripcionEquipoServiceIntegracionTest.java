@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -25,6 +26,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.RepartoIntegrante;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
@@ -1422,6 +1424,205 @@ class InscripcionEquipoServiceIntegracionTest {
         assertThat(confirmada.estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
         assertThat(confirmada.reglamentoAceptadoEn()).isNotNull();
         assertThat(confirmada.nomina()).extracting(UsuarioPublico::id).containsExactlyInAnyOrder(capitan, segundo);
+    }
+
+    // --- reparto del premio (CR-05) -----------------------------------------
+
+    @Test
+    void alCrearLaNominaElRepartoQuedaEnPartesIgualesConElSobranteAlCapitan() {
+        Long a = integranteNuevo("rep_a_eq");
+        Long b = integranteNuevo("rep_b_eq");
+
+        InscripcionDetalle borrador = inscripcionService.crear(capitan, torneo, existente(equipo, a, b));
+
+        assertThat(borrador.reparto()).containsExactlyInAnyOrder(
+                new RepartoIntegrante(capitan, new BigDecimal("33.34")),
+                new RepartoIntegrante(a, new BigDecimal("33.33")),
+                new RepartoIntegrante(b, new BigDecimal("33.33")));
+    }
+
+    @Test
+    void alCambiarLaNominaDelBorradorElRepartoVuelveAPartesIguales() {
+        Long a = integranteNuevo("rep_c_eq");
+        Long b = integranteNuevo("rep_d_eq");
+        InscripcionDetalle borrador = inscripcionService.crear(capitan, torneo, existente(equipo, a, b));
+        inscripcionService.cambiarReparto(capitan, borrador.id(), List.of(new RepartoIntegrante(capitan, new BigDecimal("70")),
+                new RepartoIntegrante(a, new BigDecimal("20")), new RepartoIntegrante(b, new BigDecimal("10"))));
+
+        InscripcionDetalle editado = inscripcionService.editar(capitan, borrador.id(), existente(equipo, a));
+
+        assertThat(editado.reparto()).containsExactlyInAnyOrder(
+                new RepartoIntegrante(capitan, new BigDecimal("50.00")), new RepartoIntegrante(a, new BigDecimal("50.00")));
+    }
+
+    @Test
+    void laInscripcionIndividualNoTieneReparto() {
+        long individual = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, cupo_maximo, cupo_minimo, valor_inscripcion,
+                                    pct_pozo_competidores, pct_premio_rifa, cierre_inscripcion_en, fecha_inicio, estado)
+                VALUES (?, 'Individual', 'https://r', 'Ajedrez', 'ELIMINACION_DIRECTA', 'ONLINE', 'INDIVIDUAL', 8, 2,
+                        1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+
+        assertThat(inscripcionService.crear(capitan, individual, null).reparto()).isNull();
+    }
+
+    @Test
+    void elCapitanCambiaElRepartoAunqueYaPagoYQuedaAuditado() {
+        Long a = integranteNuevo("rep_e_eq");
+        long id = confirmadaConReparto(a, "60.00", "40.00");
+
+        InscripcionDetalle detalle = inscripcionService.cambiarReparto(capitan, id,
+                List.of(new RepartoIntegrante(a, new BigDecimal("25.5")), new RepartoIntegrante(capitan, new BigDecimal("74.5"))));
+
+        assertThat(detalle.reparto()).containsExactlyInAnyOrder(
+                new RepartoIntegrante(capitan, new BigDecimal("74.50")), new RepartoIntegrante(a, new BigDecimal("25.50")));
+        Map<String, Object> entrada = jdbc.queryForMap(
+                "SELECT usuario_id, accion, detalle::text AS detalle FROM auditoria WHERE entidad = 'INSCRIPCION' AND entidad_id = ?",
+                String.valueOf(id));
+        assertThat(entrada).containsEntry("usuario_id", capitan).containsEntry("accion", "MODIFICACION");
+        assertThat(entrada.get("detalle").toString())
+                .contains("\"antes\"").contains("\"despues\"")
+                .contains("\"" + capitan + "\": \"60.00\"").contains("\"" + capitan + "\": \"74.50\"")
+                .contains("\"" + a + "\": \"25.50\"");
+    }
+
+    @Test
+    void unRepartoQueNoCambiaNadaNoDejaEntradaEnLaAuditoria() {
+        Long a = integranteNuevo("rep_f_eq");
+        long id = confirmadaConReparto(a, "60.00", "40.00");
+
+        inscripcionService.cambiarReparto(capitan, id,
+                List.of(new RepartoIntegrante(a, new BigDecimal("40")), new RepartoIntegrante(capitan, new BigDecimal("60"))));
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM auditoria WHERE entidad = 'INSCRIPCION' AND entidad_id = ?",
+                Integer.class, String.valueOf(id))).isZero();
+    }
+
+    @Test
+    void unRepartoInvalidoEsUn400YNoCambiaNada() {
+        Long a = integranteNuevo("rep_g_eq");
+        Long afuera = usuario("rep_afuera_eq").getId();
+        long id = confirmadaConReparto(a, "60.00", "40.00");
+        BigDecimal cuarenta = new BigDecimal("40");
+        BigDecimal sesenta = new BigDecimal("60");
+
+        // la suma no da 100
+        assertError(() -> inscripcionService.cambiarReparto(capitan, id,
+                List.of(new RepartoIntegrante(capitan, sesenta), new RepartoIntegrante(a, new BigDecimal("39")))),
+                HttpStatus.BAD_REQUEST, CodigoError.VALIDACION);
+        // alguien de afuera de la nómina
+        assertError(() -> inscripcionService.cambiarReparto(capitan, id,
+                List.of(new RepartoIntegrante(capitan, sesenta), new RepartoIntegrante(afuera, cuarenta))),
+                HttpStatus.BAD_REQUEST, CodigoError.VALIDACION);
+        // falta un integrante
+        assertError(() -> inscripcionService.cambiarReparto(capitan, id, List.of(new RepartoIntegrante(capitan, new BigDecimal("100")))),
+                HttpStatus.BAD_REQUEST, CodigoError.VALIDACION);
+        // un integrante repetido
+        assertError(() -> inscripcionService.cambiarReparto(capitan, id,
+                List.of(new RepartoIntegrante(capitan, sesenta), new RepartoIntegrante(capitan, cuarenta), new RepartoIntegrante(a, BigDecimal.ZERO))),
+                HttpStatus.BAD_REQUEST, CodigoError.VALIDACION);
+        // más de dos decimales
+        assertError(() -> inscripcionService.cambiarReparto(capitan, id,
+                List.of(new RepartoIntegrante(capitan, new BigDecimal("60.001")), new RepartoIntegrante(a, new BigDecimal("39.999")))),
+                HttpStatus.BAD_REQUEST, CodigoError.VALIDACION);
+        // fuera de rango
+        assertError(() -> inscripcionService.cambiarReparto(capitan, id,
+                List.of(new RepartoIntegrante(capitan, new BigDecimal("110")), new RepartoIntegrante(a, new BigDecimal("-10")))),
+                HttpStatus.BAD_REQUEST, CodigoError.VALIDACION);
+
+        assertThat(jdbc.queryForObject("SELECT pct_premio FROM nomina WHERE inscripcion_id = ? AND usuario_id = ?",
+                BigDecimal.class, id, capitan)).isEqualByComparingTo("60");
+    }
+
+    @Test
+    void unSuplenteConCeroPorCientoEsValido() {
+        Long a = integranteNuevo("rep_h_eq");
+        long id = confirmadaConReparto(a, "60.00", "40.00");
+
+        InscripcionDetalle detalle = inscripcionService.cambiarReparto(capitan, id,
+                List.of(new RepartoIntegrante(capitan, new BigDecimal("100")), new RepartoIntegrante(a, BigDecimal.ZERO)));
+
+        assertThat(detalle.reparto()).contains(new RepartoIntegrante(a, new BigDecimal("0.00")));
+    }
+
+    @Test
+    void soloElCapitanCambiaElReparto() {
+        Long a = integranteNuevo("rep_i_eq");
+        long id = confirmadaConReparto(a, "60.00", "40.00");
+
+        assertError(() -> inscripcionService.cambiarReparto(a, id,
+                List.of(new RepartoIntegrante(capitan, new BigDecimal("10")), new RepartoIntegrante(a, new BigDecimal("90")))),
+                HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+    }
+
+    @Test
+    void conLaInscripcionDelTorneoCerradaElRepartoNoSeCambia() {
+        Long a = integranteNuevo("rep_j_eq");
+        long id = confirmadaConReparto(a, "60.00", "40.00");
+        jdbc.update("UPDATE torneo SET estado = 'INSCRIPCION_CERRADA' WHERE id = ?", torneo);
+
+        assertError(() -> inscripcionService.cambiarReparto(capitan, id,
+                List.of(new RepartoIntegrante(capitan, new BigDecimal("10")), new RepartoIntegrante(a, new BigDecimal("90")))),
+                HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+    }
+
+    @Test
+    void unaInscripcionCanceladaNoCambiaElReparto() {
+        Long a = integranteNuevo("rep_k_eq");
+        long id = confirmadaConReparto(a, "60.00", "40.00");
+        jdbc.update("UPDATE inscripcion SET estado = 'CANCELADA' WHERE id = ?", id);
+
+        assertError(() -> inscripcionService.cambiarReparto(capitan, id,
+                List.of(new RepartoIntegrante(capitan, new BigDecimal("10")), new RepartoIntegrante(a, new BigDecimal("90")))),
+                HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
+    }
+
+    @Test
+    void elQueEntraPorReemplazoHeredaElPorcentajeDelQueSaleYLosDemasConservanElSuyo() {
+        Long sale = integranteNuevo("rep_sale_eq");
+        Long otro = integranteNuevo("rep_otro_eq");
+        Long entra = integranteNuevo("rep_entra_eq");
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNominaConPct(id, capitan, "50.00");
+        enNominaConPct(id, sale, "30.00");
+        enNominaConPct(id, otro, "20.00");
+
+        InscripcionDetalle detalle = inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra));
+
+        assertThat(detalle.reparto()).containsExactlyInAnyOrder(
+                new RepartoIntegrante(capitan, new BigDecimal("50.00")),
+                new RepartoIntegrante(entra, new BigDecimal("30.00")),
+                new RepartoIntegrante(otro, new BigDecimal("20.00")));
+    }
+
+    @Test
+    void enUnaInscripcionSinRepartoElQueEntraTambienQuedaSinPorcentaje() {
+        Long sale = integranteNuevo("rep_sale2_eq");
+        Long entra = integranteNuevo("rep_entra2_eq");
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNomina(id, capitan, equipo);
+        enNomina(id, sale, equipo);
+
+        InscripcionDetalle detalle = inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra));
+
+        assertThat(detalle.reparto()).isNull();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM nomina WHERE inscripcion_id = ? AND pct_premio IS NOT NULL",
+                Integer.class, id)).isZero();
+    }
+
+    private long confirmadaConReparto(Long integrante, String pctCapitan, String pctIntegrante) {
+        long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNominaConPct(id, capitan, pctCapitan);
+        enNominaConPct(id, integrante, pctIntegrante);
+        return id;
+    }
+
+    private void enNominaConPct(long inscripcionId, Long usuarioId, String pct) {
+        jdbc.update("INSERT INTO nomina (inscripcion_id, usuario_id, equipo_id, pct_premio) VALUES (?, ?, ?, ?)",
+                inscripcionId, usuarioId, equipo, new BigDecimal(pct));
     }
 
     // --- escenario ----------------------------------------------------------

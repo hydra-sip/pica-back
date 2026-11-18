@@ -3324,6 +3324,34 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/inscripciones/{id}/reparto:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      tags: [Inscripciones]
+      summary: Cambiar el reparto del premio del equipo
+      x-permiso: INSCRIPCION_GESTIONAR
+      description: >-
+        Solo el capitán, en una inscripción de equipo en BORRADOR, PENDIENTE_PAGO o CONFIRMADA (aunque ya haya pagado)
+        mientras el torneo tenga la inscripción abierta (CR-05). El cuerpo es la lista de `{usuarioId, pct}`: tienen
+        que estar todos los integrantes de la nómina una vez cada uno y nadie más, con `pct` entre 0 y 100 con hasta
+        dos decimales, y la suma exacta 100. Responde la inscripción actualizada. Cada cambio queda en la auditoría
+        (acción `MODIFICACION`, entidad `INSCRIPCION`) con quién lo hizo y el reparto de antes y de después; un PUT
+        que no cambia nada no deja entrada. Al guardar o cambiar la nómina en el borrador el reparto vuelve a partes
+        iguales, con el sobrante del redondeo para el capitán. 400 `VALIDACION` si el reparto no cumple lo anterior
+        o la inscripción es individual. 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si quien llama no es el
+        capitán. 409 `INSCRIPCION_NO_EDITABLE` si no está en un estado editable; `INSCRIPCION_NO_ABIERTA` si el
+        torneo cerró la inscripción.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/RepartoIntegrante'}}}}
+      responses:
+        '200': {description: Inscripción actualizada, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/inscripciones/{id}/reemplazos:
     parameters: [{$ref: '#/components/parameters/id'}]
     post:
@@ -3336,7 +3364,7 @@ paths:
         Solo el capitán, y solo en una inscripción CONFIRMADA de un torneo por equipos cuya inscripción siga
         abierta. Borra de la nómina al usuario indicado por `saleUsuarioId`, suma a la nómina al indicado por
         `entraUsuarioId` y devuelve la inscripción actualizada. El que sale sigue siendo integrante del equipo y el
-        que entra se suma o se reactiva como integrante. No cambia el estado, el pago, la aceptación del reglamento
+        que entra se suma o se reactiva como integrante y hereda el % del premio del que sale (CR-05). No cambia el estado, el pago, la aceptación del reglamento
         ni el cupo. 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si quien llama no es el capitán;
         `USUARIO_NO_ENCONTRADO` si no existe el que entra. 409 `INSCRIPCION_NO_EDITABLE` si no está CONFIRMADA;
         `INSCRIPCION_NO_ABIERTA` si el torneo cerró; `JUGADOR_YA_INSCRIPTO` si el que entra figura en otra
@@ -4531,7 +4559,9 @@ components:
             cerró. Se calcula sobre un texto en UTF-8 con una línea por inscripción CONFIRMADA, ordenadas por id y
             separadas con `\n`, sin salto al final: `<inscripcionId>;U;<usuarioId>` en una individual y
             `<inscripcionId>;E;<equipoId>;<ids>` en una de equipo, con los ids de la nómina (el capitán incluido) de
-            menor a mayor separados por comas. Sin confirmadas el texto es vacío.
+            menor a mayor separados por comas. Si la inscripción tiene reparto del premio (CR-05), cada id lleva su
+            porcentaje con dos decimales, `<usuarioId>:<pct>`, p. ej. `32;E;4;7:40.00,9:20.00,12:40.00`; una sin
+            reparto conserva la forma de antes (`32;E;4;7,9,12`). Sin confirmadas el texto es vacío.
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: string, format: date-time}
         camposBloqueados:
@@ -5311,7 +5341,20 @@ components:
           type: [array, 'null']
           description: Solo en la de equipo; incluye siempre al capitán
           items: {$ref: '#/components/schemas/UsuarioPublico'}
+        reparto:
+          type: [array, 'null']
+          description: >-
+            El % del premio del equipo que le toca a cada integrante de la nómina (CR-05), sumando 100. Lo ven quienes
+            ya ven la inscripción: el capitán, la nómina y el organizador. Null en la individual y en la de equipo
+            que se liquida con todo al capitán.
+          items: {$ref: '#/components/schemas/RepartoIntegrante'}
         rol: {$ref: '#/components/schemas/RolEnInscripcion'}
+    RepartoIntegrante:
+      type: object
+      required: [usuarioId, pct]
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        pct: {type: number, minimum: 0, maximum: 100, multipleOf: 0.01, description: '% del premio del equipo que le toca a ese integrante'}
     ReemplazoRequest:
       type: object
       required: [saleUsuarioId, entraUsuarioId]

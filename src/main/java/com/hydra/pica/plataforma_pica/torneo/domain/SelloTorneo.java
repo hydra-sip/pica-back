@@ -8,6 +8,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 /**
@@ -40,10 +42,13 @@ import java.util.stream.Collectors;
  *
  * <p>El de la lista de inscriptos se fija al cerrar la inscripción (HU-206): una línea por inscripción confirmada,
  * ordenadas por id y separadas con {@code \n}, sin salto al final. La individual lleva el usuario; la de equipo, el
- * equipo y su nómina con el capitán, de menor a mayor. Sin confirmadas, el texto es vacío.
+ * equipo y su nómina con el capitán, de menor a mayor. Con el reparto del premio (CR-05), cada integrante lleva su %
+ * con dos decimales, {@code usuario:pct}; la inscripción que se liquida con todo al capitán (sin reparto) conserva la
+ * forma de antes, solo los usuarios. Sin confirmadas, el texto es vacío.
  * <pre>
  * 31;U;7
- * 32;E;4;7,9,12
+ * 32;E;4;7:40.00,9:20.00,12:40.00
+ * 33;E;5;7,9,12
  * </pre>
  */
 public final class SelloTorneo {
@@ -85,6 +90,16 @@ public final class SelloTorneo {
     public static String lineaDeEquipo(Long inscripcionId, Long equipoId, List<Long> nomina) {
         return inscripcionId + ";E;" + equipoId + ";"
                 + nomina.stream().sorted().map(String::valueOf).collect(Collectors.joining(","));
+    }
+
+    /**
+     * Una línea de la lista de inscriptos: la de una inscripción de equipo con reparto del premio (CR-05), con el %
+     * de cada integrante, {@code usuario:pct}, de menor a mayor usuario.
+     */
+    public static String lineaDeEquipoConReparto(Long inscripcionId, Long equipoId, Map<Long, BigDecimal> reparto) {
+        return inscripcionId + ";E;" + equipoId + ";"
+                + new TreeMap<>(reparto).entrySet().stream().map(e -> e.getKey() + ":" + decimal(e.getValue()))
+                        .collect(Collectors.joining(","));
     }
 
     /** El sello de la lista con las líneas ya en el orden de las inscripciones. */

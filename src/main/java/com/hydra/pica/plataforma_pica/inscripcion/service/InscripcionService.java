@@ -1,12 +1,18 @@
 package com.hydra.pica.plataforma_pica.inscripcion.service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.service.CobroService;
@@ -16,6 +22,9 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
+import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.equipo.domain.Equipo;
 import com.hydra.pica.plataforma_pica.equipo.domain.Nomina;
 import com.hydra.pica.plataforma_pica.equipo.domain.NominaId;
@@ -28,11 +37,13 @@ import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.MotivoCierre;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Reemplazo;
+import com.hydra.pica.plataforma_pica.inscripcion.domain.RepartoPremio;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionResumen;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.RepartoIntegrante;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.ReemplazoRepository;
@@ -70,6 +81,9 @@ public class InscripcionService {
     private static final String UQ_ACTIVA = "uq_inscripcion_activa_torneo_usuario";
     private static final String UQ_EQUIPO = "uq_inscripcion_torneo_equipo";
 
+    private static final List<EstadoInscripcion> REPARTO_EDITABLE =
+            List.of(EstadoInscripcion.BORRADOR, EstadoInscripcion.PENDIENTE_PAGO, EstadoInscripcion.CONFIRMADA);
+
     private static final List<EstadoInscripcion> ACTIVAS =
             List.of(EstadoInscripcion.PENDIENTE_PAGO, EstadoInscripcion.CONFIRMADA);
 
@@ -82,6 +96,7 @@ public class InscripcionService {
     private final UsuarioEquipoRepository usuarioEquipoRepository;
     private final ReemplazoRepository reemplazoRepository;
     private final CierreInscripcion cierreInscripcion;
+    private final AuditoriaRepository auditoriaRepository;
 
     /**
      * Crea el borrador. En un torneo individual se inscribe el usuario y no lleva cuerpo; en uno por equipos
@@ -277,9 +292,13 @@ public class InscripcionService {
         usuarioEquipoRepository.flush();
     }
 
+    // el reparto del premio arranca en partes iguales, con el sobrante al capitán (CR-05)
     private void guardarNomina(Inscripcion inscripcion, Equipo equipo, List<Usuario> jugadores) {
+        Map<Long, BigDecimal> reparto = RepartoPremio.partesIguales(jugadores.stream().map(Usuario::getId).toList(),
+                equipo.getCapitan().getId());
         for (Usuario jugador : jugadores) {
-            nominaRepository.save(new Nomina(jugador.getId(), equipo.getId(), inscripcion.getId()));
+            nominaRepository.save(new Nomina(jugador.getId(), equipo.getId(), inscripcion.getId(),
+                    reparto.get(jugador.getId())));
         }
         nominaRepository.flush();
     }
@@ -287,11 +306,113 @@ public class InscripcionService {
     // los de equipo llevan además el equipo y la nómina; el rol es el de usuarioId
     private InscripcionDetalle detalleDe(Inscripcion inscripcion, Long usuarioId) {
         if (!inscripcion.esDeEquipo()) {
-            return InscripcionDetalle.de(inscripcion, null, usuarioId);
+            return InscripcionDetalle.de(inscripcion, null, null, usuarioId);
         }
         List<UsuarioPublico> nomina = nominaRepository.jugadoresDe(inscripcion.getId()).stream()
                 .map(UsuarioPublico::desde).toList();
-        return InscripcionDetalle.de(inscripcion, nomina, usuarioId);
+        return InscripcionDetalle.de(inscripcion, nomina, repartoDe(inscripcion, nomina), usuarioId);
+    }
+
+    // el % de cada uno, en el orden de la nómina; nulo si la inscripción se liquida con todo al capitán
+    private List<RepartoIntegrante> repartoDe(Inscripcion inscripcion, List<UsuarioPublico> nomina) {
+        Map<Long, BigDecimal> pcts = new HashMap<>();
+        for (Nomina fila : nominaRepository.findAllByIdInscripcionId(inscripcion.getId())) {
+            if (fila.getPctPremio() == null) {
+                return null;
+            }
+            pcts.put(fila.getId().getUsuarioId(), fila.getPctPremio());
+        }
+        return nomina.stream().map(u -> new RepartoIntegrante(u.id(), pcts.get(u.id()))).toList();
+    }
+
+    /**
+     * El capitán cambia el reparto del premio de su equipo (CR-05) mientras la inscripción del torneo siga abierta,
+     * aunque ya esté pagada. Cada cambio queda en la auditoría con el reparto de antes y de después; uno que no cambia
+     * nada no deja entrada. Bloquea la fila del torneo como el reemplazo, así no pisa un cierre simultáneo.
+     */
+    @Transactional
+    public InscripcionDetalle cambiarReparto(Long usuarioId, Long id, List<RepartoIntegrante> pedido) {
+        Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
+                .orElseThrow(() -> noEncontrada(id));
+        Torneo torneo = torneoBloqueado(torneoId);
+        Inscripcion inscripcion = buscar(id);
+        if (!inscripcion.esDeEquipo()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
+                    "La inscripción individual no tiene reparto del premio");
+        }
+        validarTorneoAbierto(torneo);
+        if (!REPARTO_EDITABLE.contains(inscripcion.getEstado())) {
+            throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE, "La inscripción " + id + " está "
+                    + inscripcion.getEstado() + ": el reparto se cambia en BORRADOR, PENDIENTE_PAGO o CONFIRMADA");
+        }
+        List<Nomina> nomina = nominaRepository.findAllByIdInscripcionId(id);
+        Map<Long, BigDecimal> nuevo = validarReparto(pedido, nomina);
+
+        Map<Long, BigDecimal> vigente = new HashMap<>(); // HashMap: admite el % nulo de un reparto viejo
+        nomina.forEach(n -> vigente.put(n.getId().getUsuarioId(), n.getPctPremio()));
+        Map<String, String> antes = repartoComoTexto(vigente);
+        Map<String, String> despues = repartoComoTexto(nuevo);
+        if (!antes.equals(despues)) {
+            nomina.forEach(n -> n.setPctPremio(nuevo.get(n.getId().getUsuarioId())));
+            nominaRepository.flush();
+            auditarReparto(inscripcion, usuarioId, antes, despues);
+        }
+        return detalleDe(inscripcion, usuarioId);
+    }
+
+    // están todos los de la nómina una vez cada uno y nadie más; % entre 0 y 100 con hasta dos decimales; suma 100
+    private Map<Long, BigDecimal> validarReparto(List<RepartoIntegrante> pedido, List<Nomina> nomina) {
+        if (pedido == null || pedido.stream().anyMatch(p -> p == null || p.usuarioId() == null || p.pct() == null)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
+                    "El reparto es una lista de usuarioId y pct, sin faltantes");
+        }
+        Map<Long, BigDecimal> reparto = new HashMap<>();
+        for (RepartoIntegrante parte : pedido) {
+            if (reparto.put(parte.usuarioId(), parte.pct()) != null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
+                        "El usuario " + parte.usuarioId() + " está repetido en el reparto");
+            }
+            if (parte.pct().signum() < 0 || parte.pct().compareTo(RepartoPremio.CIEN) > 0
+                    || parte.pct().stripTrailingZeros().scale() > 2) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
+                        "El % del usuario " + parte.usuarioId() + " tiene que estar entre 0 y 100, con hasta dos decimales");
+            }
+        }
+        Set<Long> integrantes = nomina.stream().map(n -> n.getId().getUsuarioId()).collect(Collectors.toSet());
+        if (!integrantes.equals(reparto.keySet())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
+                    "El reparto tiene que incluir a todos los integrantes de la nómina, una vez cada uno, y a nadie más");
+        }
+        BigDecimal suma = reparto.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (suma.compareTo(RepartoPremio.CIEN) != 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
+                    "El reparto suma " + suma.stripTrailingZeros().toPlainString() + " y tiene que sumar 100");
+        }
+        reparto.replaceAll((usuario, pct) -> pct.setScale(2));
+        return reparto;
+    }
+
+    // usuario → % con dos decimales, ordenado por usuario; un % nulo (reparto viejo) queda como null
+    private static Map<String, String> repartoComoTexto(Map<Long, BigDecimal> reparto) {
+        Map<String, String> texto = new LinkedHashMap<>();
+        new TreeMap<>(reparto).forEach((usuario, pct) ->
+                texto.put(String.valueOf(usuario), pct == null ? null : pct.setScale(2, RoundingMode.HALF_UP).toPlainString()));
+        return texto;
+    }
+
+    private void auditarReparto(Inscripcion inscripcion, Long actorId, Map<String, String> antes,
+            Map<String, String> despues) {
+        Map<String, Object> detalle = new LinkedHashMap<>();
+        detalle.put("campo", "reparto");
+        detalle.put("antes", antes);
+        detalle.put("despues", despues);
+        Auditoria auditoria = new Auditoria();
+        auditoria.setUsuario(usuarioRepository.getReferenceById(actorId));
+        auditoria.setAccion(AccionAuditoria.MODIFICACION);
+        auditoria.setEntidad("INSCRIPCION");
+        auditoria.setEntidadId(String.valueOf(inscripcion.getId()));
+        auditoria.setDetalle(detalle);
+        auditoriaRepository.save(auditoria);
     }
 
     /**
@@ -579,9 +700,12 @@ public class InscripcionService {
 
         Equipo equipo = inscripcion.getEquipo();
         sumarAlEquipo(equipo, List.of(entra));
+        // el que entra hereda el % del que sale (CR-05); si no había reparto, tampoco lo hay
+        BigDecimal pctDelQueSale = nominaRepository.findById(new NominaId(sale.getId(), equipo.getId(), id))
+                .map(Nomina::getPctPremio).orElse(null);
         nominaRepository.deleteById(new NominaId(sale.getId(), equipo.getId(), id));
         nominaRepository.flush();
-        nominaRepository.saveAndFlush(new Nomina(entra.getId(), equipo.getId(), id));
+        nominaRepository.saveAndFlush(new Nomina(entra.getId(), equipo.getId(), id, pctDelQueSale));
         reemplazoRepository.saveAndFlush(new Reemplazo(inscripcion, equipo, sale, entra, inscripcion.titular()));
         return detalleDe(inscripcion, usuarioId);
     }

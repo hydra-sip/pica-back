@@ -205,6 +205,23 @@ class CierreInscripcionIntegracionTest {
     }
 
     @Test
+    void elSelloDeUnEquipoConRepartoLlevaElPorcentajeDeCadaIntegrante() {
+        Long capitan = usuario("cap_sello_rep").getId();
+        Long jugador = usuario("jug_sello_rep").getId();
+        long equipo = equipo("Los Repartidos", capitan);
+        integrante(equipo, jugador);
+        long inscripcion = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNominaConPct(inscripcion, jugador, equipo, "35.50");
+        enNominaConPct(inscripcion, capitan, equipo, "64.50");
+        String menor = capitan < jugador ? capitan + ":64.50" : jugador + ":35.50";
+        String mayor = capitan < jugador ? jugador + ":35.50" : capitan + ":64.50";
+
+        TorneoInformacion cerrado = inscripcionTorneoService.cerrar(organizador, torneo);
+
+        assertThat(cerrado.listaHash()).isEqualTo(sha256(inscripcion + ";E;" + equipo + ";" + menor + "," + mayor));
+    }
+
+    @Test
     void elSelloLlevaSoloLasConfirmadasDeUnTorneoIndividualOrdenadasPorId() {
         long individual = torneo("INDIVIDUAL", 1000);
         Long primero = usuario("ind_sello_1").getId();
@@ -389,6 +406,11 @@ class CierreInscripcionIntegracionTest {
 
     private void enNomina(long inscripcionId, Long usuarioId, long equipoId) {
         jdbc.update("INSERT INTO nomina (inscripcion_id, usuario_id, equipo_id) VALUES (?, ?, ?)", inscripcionId, usuarioId, equipoId);
+    }
+
+    private void enNominaConPct(long inscripcionId, Long usuarioId, long equipoId, String pct) {
+        jdbc.update("INSERT INTO nomina (inscripcion_id, usuario_id, equipo_id, pct_premio) VALUES (?, ?, ?, ?)",
+                inscripcionId, usuarioId, equipoId, new java.math.BigDecimal(pct));
     }
 
     private void assertError(ThrowingCallable accion, HttpStatus status, CodigoError codigo) {
