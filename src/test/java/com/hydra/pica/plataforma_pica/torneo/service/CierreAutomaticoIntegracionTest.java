@@ -32,9 +32,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * La tarea que cierra las inscripciones vencidas (HU-206, PICA-213) contra Postgres, y que cancela las que vencen por
- * debajo del mínimo para jugar (PICA-447). Los tests la llaman a mano: la programación está apagada. Cada test hace
- * rollback al terminar.
+ * La tarea que cierra las inscripciones vencidas (HU-206, PICA-213) contra Postgres. Los tests la llaman a mano: la
+ * programación está apagada. Cada test hace rollback al terminar. También cancela las que vencen por debajo del mínimo
+ * para jugar (PICA-447).
  */
 @SpringBootTest(properties = "app.cobro.modo=saldo")
 @ActiveProfiles("dev")
