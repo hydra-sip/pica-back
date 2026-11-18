@@ -3828,8 +3828,8 @@ components:
         RESERVA_VENCIDA (la reserva se venció o no existe; la lista va en `numeros`) · RIFA_PROPIA (el organizador
         no compra su rifa) · CLAVE_IDEMPOTENCIA_USADA (la clave ya se usó para otra compra) · RIFA_CON_VENTAS
         (la rifa tiene números vendidos: no vuelve a borrador ni se elimina; trae `numerosVendidos`) ·
-        RIFA_CON_RESERVAS (alguien está pagando números de la rifa) · RIFA_SIN_VENTAS (cerrar la venta o sortear una
-        rifa sin ningún número vendido). Reclamo de una rifa (PICA-268):
+        RIFA_SIN_VENTAS (cerrar la venta o sortear una rifa sin ningún número vendido) ·
+        RIFA_CON_RESERVAS (alguien está pagando números de la rifa). Reclamo de una rifa (PICA-268):
         RIFA_NO_SORTEADA (todavía no se sorteó) · PLAZO_RECLAMO_VENCIDO (pasaron las 48 h o ya se liquidó o
         canceló) · RECLAMO_DUPLICADO (el usuario ya tiene un reclamo pendiente en la rifa) · RECLAMO_YA_RESUELTO (el
         reclamo ya fue resuelto y no se reabre ni admite apelación). Sorteo de una rifa
