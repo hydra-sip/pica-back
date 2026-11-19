@@ -1,8 +1,8 @@
 package com.hydra.pica.plataforma_pica.control.domain;
 
 /**
- * Los parámetros de la plataforma que existen (V26, V33, V35, V42 y V57), en el orden en que se muestran en el admin
- * (HU-702, PICA-282). Uno que no está acá no se puede editar.
+ * Los parámetros de la plataforma que existen (V26, V33, V35, V42, V57, V60 y V61), en el orden en que se muestran en
+ * el admin (HU-702, PICA-282). Uno que no está acá no se puede editar.
  */
 public enum ClaveParametro {
 
@@ -20,19 +20,27 @@ public enum ClaveParametro {
     FAIR_PLAY_SANCION_LEVE(Unidad.PUNTOS),
     FAIR_PLAY_SANCION_MEDIA(Unidad.PUNTOS),
     FAIR_PLAY_SANCION_GRAVE(Unidad.PUNTOS),
+    FRAUDE_RIFA_NUMEROS_MAX(Unidad.CANTIDAD),
+    FRAUDE_RIFA_VENTANA_MIN(Unidad.MINUTOS),
+    FRAUDE_CARRUSEL_OPERACIONES_MIN(Unidad.CANTIDAD),
+    FRAUDE_CARRUSEL_VENTANA_MIN(Unidad.MINUTOS),
+    FRAUDE_CANCELACIONES_MIN(Unidad.CANTIDAD),
+    FRAUDE_OBJECIONES_MIN(Unidad.CANTIDAD),
+    FRAUDE_CUENTAS_USUARIOS_MIN(Unidad.CANTIDAD),
     INDICE_ORGANIZADOR_INICIAL(Unidad.PUNTOS),
     INDICE_ORGANIZADOR_CANCELACION(Unidad.PUNTOS),
     INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS(Unidad.PUNTOS);
 
     /**
-     * Cómo se valida y se muestra: un % va de 0 a 100, los minutos son enteros, los pesos llevan centavos y los puntos
-     * del índice de fair play (HU-802) son enteros de 0 a 1000.
+     * Cómo se valida y se muestra: un % va de 0 a 100, los minutos son enteros, los pesos llevan centavos, los puntos
+     * del índice de fair play (HU-802) son enteros de 0 a 1000 y las cantidades (HU-705) son enteros mayores que 0.
      */
     public enum Unidad {
         PORCENTAJE,
         MINUTOS,
         PESOS,
-        PUNTOS
+        PUNTOS,
+        CANTIDAD
     }
 
     private final Unidad unidad;

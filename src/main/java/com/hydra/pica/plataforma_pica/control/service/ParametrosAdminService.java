@@ -147,6 +147,15 @@ public class ParametrosAdminService {
                     errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que estar entre 0 y 1000"));
                 }
             }
+            case CANTIDAD -> {
+                if (valor.stripTrailingZeros().scale() > 0) {
+                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.FORMATO_INVALIDO, "Tiene que ser una cantidad entera"));
+                } else if (valor.signum() <= 0) {
+                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que ser mayor que 0"));
+                } else if (valor.compareTo(MAXIMO) > 0) {
+                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Es demasiado grande"));
+                }
+            }
             case PESOS -> {
                 if (valor.signum() <= 0) {
                     errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que ser mayor que 0"));

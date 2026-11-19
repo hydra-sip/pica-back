@@ -276,6 +276,34 @@ class SorteoRifaIntegracionTest {
                 e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.RIFA_NO_ENCONTRADA));
     }
 
+    // --- sin vendidos (PICA-445) -------------------------------------------------------------------
+
+    @Test
+    void unaRifaCerradaSinVendidosNoSeSorteaAMano() {
+        Long vacia = cerradaSinVendidos();
+
+        assertThatConflicto(() -> sorteoRifaService.sortear(organizador, vacia), CodigoError.RIFA_SIN_VENTAS);
+        // se rechaza antes de pedir la semilla
+        assertThat(jdbc.queryForObject("SELECT semilla FROM rifa WHERE id = ?", String.class, vacia)).isNull();
+        assertThat(rifaService.detalle(organizador, vacia).estado()).isEqualTo(EstadoRifa.CERRADA);
+    }
+
+    @Test
+    void elSorteoAutomaticoCancelaUnaRifaCerradaSinVendidos() {
+        Long vacia = cerradaSinVendidos();
+
+        assertThat(sorteoAutomaticoRifa.sortearLasQueLlegaron()).isZero();
+
+        entityManager.clear();
+        assertThat(rifaService.detalle(organizador, vacia).estado()).isEqualTo(EstadoRifa.CANCELADA);
+        assertThat(jdbc.queryForObject("SELECT semilla FROM rifa WHERE id = ?", String.class, vacia)).isNull();
+        assertThat(jdbc.queryForObject("SELECT detalle->>'motivo' FROM auditoria WHERE accion = 'CANCELACION' "
+                + "AND entidad = 'RIFA' AND entidad_id = ? AND usuario_id IS NULL", String.class, String.valueOf(vacia)))
+                .isEqualTo("SIN_VENTAS");
+        assertThat(rifaPublicaService.listarSorteadas(org.springframework.data.domain.Pageable.ofSize(50)).getContent())
+                .noneMatch(r -> r.id().equals(vacia));
+    }
+
     // --- lo que se ve del sorteo ----------------------------------------------------------------------
 
     @Test
@@ -334,6 +362,22 @@ class SorteoRifaIntegracionTest {
         cierreVentaService.cerrarSiVencio(rifa, Instant.now().minus(90, ChronoUnit.MINUTES));
         entityManager.flush();
         entityManager.clear();
+    }
+
+    /**
+     * Una rifa CERRADA sin ningún vendido, como las que quedaron de antes de PICA-445: sellada con la lista vacía y
+     * con la fecha del sorteo ya pasada. Se arma directo en la base porque el cierre ya no la deja así.
+     */
+    private Long cerradaSinVendidos() {
+        Long vacia = enVenta();
+        String listaHash = SelloTorneo.sha256("");
+        jdbc.update("UPDATE rifa SET venta_desde = now() - interval '3 hours', venta_hasta = now() - interval '2 hours', "
+                + "sorteada_en = now() - interval '1 hour', estado = 'CERRADA', version_sorteo = 2, lista_hash = ?, "
+                + "lista_sellada_en = now() - interval '2 hours', compromiso_hash = ?, "
+                + "compromiso_publicado_en = now() - interval '2 hours' WHERE id = ?",
+                listaHash, SelloTorneo.sha256(listaHash + ":x"), vacia);
+        entityManager.clear();
+        return vacia;
     }
 
     /** Una rifa del 1 al 100 a $500 con dos premios, sin torneo, publicada y con la venta abierta. */

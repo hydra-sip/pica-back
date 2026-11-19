@@ -71,7 +71,7 @@ class BracketControllerTest {
         PartidoBracket bye = new PartidoBracket(1L, 1, 1, EstadoPartido.CONFIRMADO, true,
                 new LadoBracket(3L, "Los Galácticos", null, null, true), null, null, null, "Mario Gómez");
         when(bracketService.generar(ORGANIZADOR, 9L)).thenReturn(new BracketTorneo(9L, "ab".repeat(32), null,
-                List.of(new RondaBracket(1, "Semifinal", List.of(bye)))));
+                List.of(new RondaBracket(1, "Semifinal", List.of(bye))), 0L));
 
         mockMvc.perform(post("/api/v1/torneos/9/bracket"))
                 .andExpect(status().isCreated())
@@ -85,7 +85,7 @@ class BracketControllerTest {
     @Test
     @DisplayName("GET sin sesión responde 200 con el bracket")
     void publico() throws Exception {
-        when(bracketService.ver(9L)).thenReturn(new BracketTorneo(9L, null, null, List.of()));
+        when(bracketService.ver(9L)).thenReturn(new BracketTorneo(9L, null, null, List.of(), 0L));
 
         mockMvc.perform(get("/api/v1/torneos/9/bracket"))
                 .andExpect(status().isOk())

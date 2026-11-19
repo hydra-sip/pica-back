@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.user.service;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.common.config.AdminConfig.AdminProperties;
+import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
@@ -25,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,8 +46,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UsuarioEdicionService {
 
-    static final String MOTIVO_DESDE_EDICION = "Bloqueado desde la edición del usuario, sin motivo cargado";
-
     private final UsuarioRepository usuarioRepository;
     private final PersonaRepository personaRepository;
     private final PasswordEncoder passwordEncoder;
@@ -55,15 +55,19 @@ public class UsuarioEdicionService {
     private final BloqueoService bloqueoService;
 
     /**
-     * Reemplaza username, email, descripción, estado y persona. Si cambia el email el usuario queda
-     * con el mail sin verificar y se publica {@link EmailDeUsuarioCambiado}.
+     * Reemplaza username, email, descripción y persona. El estado se manda igual que está: bloquear y desbloquear
+     * van por {@link #bloquear} y {@link #levantarBloqueo}. Si cambia el email el usuario queda con el mail sin
+     * verificar y se publica {@link EmailDeUsuarioCambiado}.
      */
     @Transactional
     public UsuarioDetalle modificar(Long id, UsuarioUpdateRequest request) {
         Usuario usuario = buscarVivo(id);
         exigirNoProtegido(usuario, "modificar");
-        if (request.estado() == UsuarioUpdateRequest.EstadoEditable.BLOQUEADO) {
-            exigirQueNoSeaElMismo(usuario, "bloquearte");
+        // el estado viaja en el PUT, pero bloquear y desbloquear van por /bloqueo: con permiso, motivo y auditoría
+        boolean pideBloqueado = request.estado() == UsuarioUpdateRequest.EstadoEditable.BLOQUEADO;
+        if (pideBloqueado != (usuario.getEstado() == EstadoUsuario.BLOQUEADO)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.BLOQUEO_POR_ENDPOINT_PROPIO,
+                    "Para bloquear o desbloquear a " + usuario.getUsername() + " usá /admin/usuarios/{id}/bloqueo");
         }
         // el formulario solo puede mandar ACTIVO o BLOQUEADO: a uno con el mail sin verificar no se lo
         // activa a mano, se activa solo cuando verifica
@@ -85,7 +89,6 @@ public class UsuarioEdicionService {
         }
         Persona persona = resolverPersona(usuario, request.personaId());
 
-        EstadoUsuario estadoAnterior = usuario.getEstado();
         usuario.setUsername(request.username());
         usuario.setEmail(request.email());
         usuario.setDescripcion(textoONull(request.descripcion()));
@@ -94,14 +97,6 @@ public class UsuarioEdicionService {
             usuario.setEmailVerificado(false);
         }
         usuario.setEstado(estadoResultante(request.estado(), usuario.isEmailVerificado()));
-        // la tabla bloqueo acompaña al estado: el PUT de siempre bloquea sin motivo propio
-        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO && estadoAnterior != EstadoUsuario.BLOQUEADO) {
-            bloqueoService.bloquear(usuario, MOTIVO_DESDE_EDICION, null);
-        } else if (estadoAnterior == EstadoUsuario.BLOQUEADO && usuario.getEstado() != EstadoUsuario.BLOQUEADO) {
-            EstadoUsuario resultante = usuario.getEstado();
-            bloqueoService.levantar(usuario);
-            usuario.setEstado(resultante);
-        }
 
         try {
             // flush acá para que un choque con los índices únicos (dos pedidos a la vez) salte ahora
@@ -112,9 +107,6 @@ public class UsuarioEdicionService {
 
         if (cambiaEmail) {
             eventos.publishEvent(new EmailDeUsuarioCambiado(usuario.getId(), usuario.getEmail()));
-        }
-        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO && estadoAnterior != EstadoUsuario.BLOQUEADO) {
-            eventos.publishEvent(new SesionesDeUsuarioInvalidadas(usuario.getId()));
         }
         return UsuarioDetalle.desde(usuario, persona, false);
     }

@@ -14,7 +14,8 @@ import org.springframework.stereotype.Component;
  * cada {@code app.torneos.revision-cierres}; se apaga con {@code app.torneos.cierre-automatico=false} (los tests la
  * llaman a mano). Cada torneo va en su propia transacción, con la fila bloqueada: si uno falla, los demás se cierran
  * igual, y si corre en varias réplicas a la vez, cada torneo se cierra una sola vez. Mientras no pasa, crear, confirmar
- * y pagar ya rechazan por la fecha.
+ * y pagar ya rechazan por la fecha. Los que no llegaron al mínimo para jugar se cancelan en vez de cerrarse y no cuentan
+ * como cerrados (PICA-447).
  */
 @Slf4j
 @Component
