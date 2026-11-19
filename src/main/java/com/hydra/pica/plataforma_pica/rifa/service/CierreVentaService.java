@@ -40,6 +40,9 @@ import org.springframework.transaction.annotation.Transactional;
  * cierre; y si {@code fechaSorteo} ya pasó, o se cierra a mano con {@code app.rifas.sorteo-anticipado=true} (solo para
  * la demo), el sorteo pasa a ser un período de drand después del cierre. Así la fecha del sorteo nunca es anterior al
  * cierre y su ronda de drand siempre es posterior al compromiso.
+ *
+ * <p>Sin ningún número vendido no se sella (PICA-445): a mano, 409 RIFA_SIN_VENTAS y la rifa sigue EN_VENTA; al
+ * vencer la venta, la rifa se cancela sola ({@link CancelacionRifaSinVentas}).
  */
 @Service
 @RequiredArgsConstructor
@@ -52,6 +55,7 @@ public class CierreVentaService {
     private final RifaService rifaService;
     private final ApplicationEventPublisher eventos;
     private final Drand drand;
+    private final CancelacionRifaSinVentas cancelacion;
 
     @Value("${app.rifas.sorteo-anticipado:false}")
     private boolean anticipado;
@@ -69,20 +73,27 @@ public class CierreVentaService {
             throw new ConflictoException(CodigoError.RIFA_NO_EDITABLE,
                     "La rifa " + id + " está " + rifa.getEstado() + ": solo se cierra la venta de una EN_VENTA");
         }
+        if (cancelacion.sinVentas(rifa)) {
+            throw CancelacionRifaSinVentas.error(id);
+        }
         sellar(rifa, MotivoCierre.MANUAL, organizadorId, Instant.now());
         return rifaService.detalle(organizadorId, id);
     }
 
     /**
-     * Cierra con el motivo FECHA si la rifa sigue EN_VENTA y la venta ya terminó. Bloquea la fila y vuelve a mirar:
-     * otra réplica o el organizador pudieron cerrarla mientras tanto.
+     * Cierra con el motivo FECHA si la rifa sigue EN_VENTA y la venta ya terminó; si no vendió ningún número, la
+     * cancela. Bloquea la fila y vuelve a mirar: otra réplica o el organizador pudieron cerrarla mientras tanto.
      *
-     * @return si la cerró
+     * @return si la cerró; false también si la canceló
      */
     @Transactional
     public boolean cerrarSiVencio(Long id, Instant ahora) {
         Rifa rifa = rifaRepository.buscarBloqueado(id).orElse(null);
         if (rifa == null || rifa.getEstado() != EstadoRifa.EN_VENTA || rifa.getVentaHasta().isAfter(ahora)) {
+            return false;
+        }
+        if (cancelacion.sinVentas(rifa)) {
+            cancelacion.cancelar(rifa);
             return false;
         }
         sellar(rifa, MotivoCierre.FECHA, null, ahora);
