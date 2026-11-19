@@ -64,6 +64,24 @@ public class ParametrosPlataforma {
         return valor(clave).intValueExact();
     }
 
+    /** Una cantidad entera positiva (V60, HU-705). */
+    @Transactional(readOnly = true)
+    public int cantidad(ClaveParametro clave) {
+        if (clave.unidad() != ClaveParametro.Unidad.CANTIDAD) {
+            throw new IllegalArgumentException(clave + " no es un parámetro de cantidad");
+        }
+        return valor(clave).intValueExact();
+    }
+
+    /** Una duración en minutos (V26/V35/V60). */
+    @Transactional(readOnly = true)
+    public Duration minutos(ClaveParametro clave) {
+        if (clave.unidad() != ClaveParametro.Unidad.MINUTOS) {
+            throw new IllegalArgumentException(clave + " no es un parámetro en minutos");
+        }
+        return Duration.ofMinutes(valor(clave).longValueExact());
+    }
+
     private BigDecimal valor(ClaveParametro clave) {
         return parametroPlataformaRepository.findById(clave.name())
                 .orElseThrow(() -> new IllegalStateException("Falta el parámetro " + clave + " en la base"))

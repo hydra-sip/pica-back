@@ -11,6 +11,7 @@ import com.hydra.pica.plataforma_pica.common.config.JpaAuditingConfig;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.security.SecurityContextCurrentUserProvider;
+import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
@@ -46,7 +47,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
         TestcontainersConfiguration.class,
         AdminConfig.class,
         UsuarioEdicionService.class,
-        BloqueoService.class
+        BloqueoService.class,
+        AuditoriaService.class
 })
 class UsuarioEdicionServiceIntegracionTest {
 

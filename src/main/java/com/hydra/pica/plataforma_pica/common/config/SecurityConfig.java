@@ -84,7 +84,9 @@ public class SecurityConfig {
                                 "/api/v1/rifas/publicas/*/lista-sellada",
                                 "/api/v1/rifas/publicas/*/sorteo",
                                 "/api/v1/pronosticos/partidos",
-                                "/api/v1/pronosticos/ranking")
+                                "/api/v1/pronosticos/ranking",
+                                // perfil público del organizador (HU-806)
+                                "/api/v1/usuarios/*/perfil-organizador")
                         .permitAll()
 
                         .anyRequest().authenticated());

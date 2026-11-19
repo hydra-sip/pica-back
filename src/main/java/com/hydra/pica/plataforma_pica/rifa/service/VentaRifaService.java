@@ -21,6 +21,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Numero;
@@ -76,6 +77,7 @@ public class VentaRifaService {
     private final PozoTorneoService pozoTorneoService;
     private final ApplicationEventPublisher eventos;
     private final RifaProperties rifaProperties;
+    private final BloqueoService bloqueoService;
 
     /** Reemplaza la reserva que el usuario tuviera en la rifa: queda reservado solo lo que eligió ahora. */
     @Transactional
@@ -202,6 +204,11 @@ public class VentaRifaService {
                     "La venta de la rifa " + rifaId + " no está abierta")
                     .con("ventaDesde", rifa.getVentaDesde())
                     .con("ventaHasta", rifa.getVentaHasta());
+        }
+        // HU-703: con el organizador bloqueado la rifa no vende; lo vendido sigue valiendo y no se mueve plata
+        if (bloqueoService.estaBloqueado(rifa.getOrganizador())) {
+            throw new ConflictoException(CodigoError.ORGANIZADOR_BLOQUEADO,
+                    "El organizador de la rifa " + rifaId + " está bloqueado: la venta está suspendida");
         }
         return rifa;
     }

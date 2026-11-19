@@ -21,6 +21,7 @@ import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancelacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoCancelacion;
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoPagoGasto;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.GastoCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
@@ -28,11 +29,14 @@ import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionRealizada;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeLaCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeclarado;
+import com.hydra.pica.plataforma_pica.torneo.dto.GastoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
 import com.hydra.pica.plataforma_pica.torneo.repository.CancelacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.GastoCancelacionRepository;
+import com.hydra.pica.plataforma_pica.torneo.repository.GastoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.torneo.event.CancelacionResuelta;
+import com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -43,6 +47,10 @@ import org.springframework.transaction.annotation.Transactional;
  * El organizador cancela su torneo (HU-605). Sin gastos se aprueba sola: el torneo queda CANCELADO, las inscripciones
  * confirmadas REINTEGRADA, las que no terminaron de pagar CANCELADA, y cada uno recupera todo lo que pagó. Con gastos
  * queda en revisión para soporte (T605-2) y no se toca nada más.
+ *
+ * <p>También lo cancela la tarea programada cuando la inscripción vence por debajo del mínimo para jugar (PICA-447),
+ * con las mismas reglas pero sin gastos declarados ni comprobantes: queda en revisión si el torneo ya tiene gastos
+ * pagados (un honorario depositado o un gasto común con su pago).
  */
 @Service
 @RequiredArgsConstructor
@@ -67,6 +75,7 @@ public class CancelacionTorneoService {
     private final ApplicationEventPublisher eventos;
     private final MovimientoRepository movimientoRepository;
     private final AuditoriaService auditoriaService;
+    private final GastoRepository gastoRepository;
 
     /**
      * Cancela el torneo. Sin gastos se aprueba sola y reintegra todo; con gastos queda CANCELACION_EN_REVISION, guarda
@@ -107,6 +116,51 @@ public class CancelacionTorneoService {
             eventos.publishEvent(new CancelacionResuelta(id));
         }
         return new CancelacionRealizada(cancelacionId, id, estado.name(), totalGastos, pozo, reintegrado);
+    }
+
+    /**
+     * La cancelación sin actor de un torneo cuya inscripción venció sin llegar al mínimo de confirmadas (PICA-447).
+     * Corre dentro de la transacción de quien la llama, con la fila del torneo bloqueada y la inscripción abierta.
+     * Queda en la auditoría con el motivo INSCRIPTOS_INSUFICIENTES, para distinguirla de la del organizador.
+     */
+    void cancelarPorInscriptosInsuficientes(Torneo torneo, long confirmadas, int minimo) {
+        Long id = torneo.getId();
+        EstadoTorneo anterior = torneo.getEstado();
+        boolean automatica = !tieneGastosPagados(id);
+        EstadoCancelacion estado = automatica ? EstadoCancelacion.AUTOMATICA : EstadoCancelacion.EN_REVISION;
+
+        torneo.setMotivoCancelacion("La inscripción cerró con " + confirmadas
+                + " inscripciones confirmadas y hacían falta al menos " + minimo);
+        if (!automatica) {
+            torneo.setEstado(EstadoTorneo.CANCELACION_EN_REVISION);
+        }
+        torneoRepository.saveAndFlush(torneo);
+
+        Cancelacion cancelacion = new Cancelacion();
+        cancelacion.setTorneo(torneo);
+        cancelacion.setEstado(estado);
+        cancelacion = cancelacionRepository.saveAndFlush(cancelacion);
+
+        Map<String, Object> detalle = new LinkedHashMap<>();
+        detalle.put("cancelacionId", cancelacion.getId());
+        detalle.put("estado", estado);
+        detalle.put("motivo", "INSCRIPTOS_INSUFICIENTES");
+        detalle.put("confirmadas", confirmadas);
+        detalle.put("minimo", minimo);
+        auditoriaService.registrar(null, AccionAuditoria.CANCELACION, "TORNEO", id.toString(), detalle);
+
+        if (automatica) {
+            cierreDeCancelacion.cerrar(torneo);
+            eventos.publishEvent(new CancelacionResuelta(id));
+        }
+        eventos.publishEvent(new TorneoEstadoCambiado(id, anterior, torneo.getEstado()));
+    }
+
+    // un honorario depositado o un gasto común con su pago; los previstos sin pagar no cuentan
+    private boolean tieneGastosPagados(Long torneoId) {
+        return gastoRepository.findByTorneoIdOrderByIdGastoIdAsc(torneoId).stream()
+                .map(GastoDetalle::estadoPago)
+                .anyMatch(e -> e == EstadoPagoGasto.EN_CUSTODIA || e == EstadoPagoGasto.PAGADO);
     }
 
     /**
