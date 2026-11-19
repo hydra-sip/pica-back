@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -50,4 +51,16 @@ public interface TorneoRepository extends JpaRepository<Torneo, Long>, JpaSpecif
 
     @EntityGraph(attributePaths = {"organizador", "organizador.persona"})
     Optional<Torneo> findBySlugAndEliminadoEnIsNull(String slug);
+
+    /**
+     * Sube la versión del bracket (HU-809) en la transacción de quien llama, con un UPDATE atómico que toma el lock de
+     * la fila: dos cambios concurrentes de la llave del mismo torneo quedan ordenados. La columna no está en la entidad
+     * para que un Torneo cargado antes no la pise al guardarse.
+     */
+    @Modifying
+    @Query(value = "UPDATE torneo SET bracket_version = bracket_version + 1 WHERE id = :id", nativeQuery = true)
+    void subirVersionBracket(@Param("id") Long id);
+
+    @Query(value = "SELECT bracket_version FROM torneo WHERE id = :id", nativeQuery = true)
+    long versionBracket(@Param("id") Long id);
 }
