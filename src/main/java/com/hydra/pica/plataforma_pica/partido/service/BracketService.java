@@ -38,6 +38,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignado;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
+import com.hydra.pica.plataforma_pica.torneo.domain.MinimoInscriptos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.ArbitroDesignadoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -98,6 +99,7 @@ public class BracketService {
         } else {
             sortear(torneo, organizadorId, null);
         }
+        torneoRepository.subirVersionBracket(torneoId);
         return armar(torneo);
     }
 
@@ -125,6 +127,7 @@ public class BracketService {
         juegaRepository.borrarDelTorneo(torneoId);
         partidoRepository.borrarDelTorneo(torneoId);
         sortear(torneo, organizadorId, anterior);
+        torneoRepository.subirVersionBracket(torneoId);
         return armar(torneo);
     }
 
@@ -142,10 +145,11 @@ public class BracketService {
     private void sortear(Torneo torneo, Long organizadorId, String semillaAnterior) {
         List<Long> inscriptos =
                 inscripcionRepository.idsPorTorneoYEstado(torneo.getId(), EstadoInscripcion.CONFIRMADA);
-        if (inscriptos.size() < 2) {
+        int minimo = MinimoInscriptos.de(torneo);
+        if (inscriptos.size() < minimo) {
             throw new ConflictoException(CodigoError.PARTICIPANTES_INSUFICIENTES,
                     "El torneo " + torneo.getId() + " tiene " + inscriptos.size()
-                            + " inscripciones confirmadas: hacen falta al menos 2");
+                            + " inscripciones confirmadas: hacen falta al menos " + minimo);
         }
         List<Usuario> arbitros = arbitros(torneo.getId());
         if (arbitros.isEmpty()) {
@@ -285,7 +289,8 @@ public class BracketService {
         List<RondaBracket> lista = porRonda.entrySet().stream()
                 .map(e -> new RondaBracket(e.getKey(), RondaBracket.nombre(e.getKey(), rondas), e.getValue()))
                 .toList();
-        return new BracketTorneo(torneo.getId(), torneo.getSemillaBracket(), torneo.getListaHash(), lista);
+        return new BracketTorneo(torneo.getId(), torneo.getSemillaBracket(), torneo.getListaHash(), lista,
+                torneoRepository.versionBracket(torneo.getId()));
     }
 
     static PartidoBracket partidoBracket(Partido partido, List<Juega> lados) {

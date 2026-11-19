@@ -28,6 +28,7 @@ import com.hydra.pica.plataforma_pica.partido.repository.EvidenciaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.ObjecionRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -59,6 +60,7 @@ public class ResultadoService {
     private final Partidos partidos;
     private final PartidoService partidoService;
     private final JuegaRepository juegaRepository;
+    private final TorneoRepository torneoRepository;
     private final AuditoriaRepository auditoriaRepository;
     private final UsuarioRepository usuarioRepository;
     private final PartidoProperties partidoProperties;
@@ -80,6 +82,7 @@ public class ResultadoService {
 
         Instant ahora = Instant.now();
         partido.setEstado(EstadoPartido.RESULTADO_CARGADO);
+        torneoRepository.subirVersionBracket(partido.getTorneo().getId());
         partido.setResultadoCargadoEn(ahora);
         partido.setObjecionVenceEn(ahora.plus(partidoProperties.plazoObjecion()));
         partido.setResultadoCargadoPor(mio.getInscripcion());
@@ -134,6 +137,7 @@ public class ResultadoService {
         objecion.setPenalesVisitante(request.penalesVisitante());
         objecionRepository.save(objecion);
         partido.setEstado(EstadoPartido.OBJETADO);
+        torneoRepository.subirVersionBracket(partido.getTorneo().getId());
 
         Map<String, Object> detalle = detalle("OBJETADO", mio);
         detalle.put("puntajeLocal", request.puntajeLocal());

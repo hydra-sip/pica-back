@@ -192,6 +192,12 @@ class InscripcionPagoConcurrenteIntegracionTest {
                         1000, 50, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
                 RETURNING id
                 """, Long.class, organizador);
+        // las 2 confirmadas que hacen falta para cerrar (PICA-447)
+        Long primero = usuario("j_cierre_conf_1");
+        long ya1 = inscripcion(primero, "CONFIRMADA");
+        Long segundo = usuario("j_cierre_conf_2");
+        long ya2 = inscripcion(segundo, "CONFIRMADA");
+        String confirmadas = ya1 + ";U;" + primero + "\n" + ya2 + ";U;" + segundo;
         Long jugador = usuario("j_cierre_pago");
         long inscripcion = inscripcion(jugador, "PENDIENTE_PAGO");
 
@@ -215,12 +221,12 @@ class InscripcionPagoConcurrenteIntegracionTest {
         }
         String estado = jdbc.queryForObject("SELECT estado FROM inscripcion WHERE id = ?", String.class, inscripcion);
         String sello = jdbc.queryForObject("SELECT lista_hash FROM torneo WHERE id = ?", String.class, torneo);
-        // o pagó antes del cierre y figura en el sello, o llegó después y quedó cancelada con la lista vacía
+        // o pagó antes del cierre y figura en el sello, o llegó después y quedó cancelada fuera de la lista
         if (estado.equals("CONFIRMADA")) {
-            assertThat(sello).isEqualTo(sha256(inscripcion + ";U;" + jugador));
+            assertThat(sello).isEqualTo(sha256(confirmadas + "\n" + inscripcion + ";U;" + jugador));
         } else {
             assertThat(estado).isEqualTo("CANCELADA");
-            assertThat(sello).isEqualTo(sha256(""));
+            assertThat(sello).isEqualTo(sha256(confirmadas));
         }
     }
 

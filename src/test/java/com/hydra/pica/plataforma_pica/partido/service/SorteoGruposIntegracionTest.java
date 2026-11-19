@@ -85,7 +85,7 @@ class SorteoGruposIntegracionTest extends TorneoConGruposBase {
     void cadaGrupoNecesitaUnoMasQueLosQuePasan() {
         // 2 grupos y pasan 2: hacen falta 6
         inscribir(5);
-        cerrar();
+        cerrarPorDebajoDelMinimo();
 
         assertThatThrownBy(() -> bracketService.generar(organizador, torneo))
                 .extracting("codigo").isEqualTo(CodigoError.PARTICIPANTES_INSUFICIENTES);
