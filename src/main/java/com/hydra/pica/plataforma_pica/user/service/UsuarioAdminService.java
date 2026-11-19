@@ -7,6 +7,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hydra.pica.plataforma_pica.common.config.AdminConfig.AdminProperties;
+import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
@@ -26,6 +27,7 @@ import com.hydra.pica.plataforma_pica.user.repository.UsuarioSpecifications;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -109,6 +111,11 @@ public class UsuarioAdminService {
 
     @Transactional
     public UsuarioDetalle crear(UsuarioCreateRequest request) {
+        // nadie nace bloqueado: el bloqueo va por /bloqueo, con permiso, motivo y auditoría (HU-703)
+        if (request.estado() == UsuarioCreateRequest.EstadoAlta.BLOQUEADO) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.BLOQUEO_POR_ENDPOINT_PROPIO,
+                    "Un usuario no se puede crear bloqueado: se lo bloquea después, con motivo");
+        }
         EstadoUsuario estado = request.estado() == null ? null : EstadoUsuario.valueOf(request.estado().name());
         Set<Long> roles = request.roles() == null ? Set.of() : Set.copyOf(request.roles());
 

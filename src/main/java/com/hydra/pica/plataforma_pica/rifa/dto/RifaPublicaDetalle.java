@@ -17,6 +17,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * {@code reparto}: lo recaudado hasta ahora y cuánto va al pozo del torneo y a los premios (HU-405).
  * {@code listaHash} y {@code listaSelladaEn}: el sello de los vendidos al cerrar la venta (HU-407); null hasta entonces.
  * {@code compromisoHash} y {@code compromisoPublicadoEn}: el compromiso del sorteo, publicado con el sello (HU-502).
+ * {@code ventaSuspendida}: la rifa está en venta pero su organizador está bloqueado, así que no se reserva ni se
+ * compra ningún número (HU-703).
  */
 public record RifaPublicaDetalle(
         Long id,
@@ -38,12 +40,13 @@ public record RifaPublicaDetalle(
         String listaHash,
         Instant listaSelladaEn,
         String compromisoHash,
-        Instant compromisoPublicadoEn) {
+        Instant compromisoPublicadoEn,
+        boolean ventaSuspendida) {
 
     public record TorneoDeRifa(Long id, String nombre, String slug) {
     }
 
-    public static RifaPublicaDetalle de(Rifa rifa, List<PremioRifa> premios, long vendidos) {
+    public static RifaPublicaDetalle de(Rifa rifa, List<PremioRifa> premios, long vendidos, boolean ventaSuspendida) {
         Torneo torneo = rifa.getTorneo();
         return new RifaPublicaDetalle(rifa.getId(), rifa.getTitulo(), rifa.getDescripcion(), rifa.getEstado(),
                 torneo == null ? null : new TorneoDeRifa(torneo.getId(), torneo.getNombre(), torneo.getSlug()),
@@ -51,6 +54,6 @@ public record RifaPublicaDetalle(
                 rifa.getPctGastosAdministrativos(), rifa.getMoneda(), rifa.getVentaDesde(), rifa.getVentaHasta(), rifa.getSorteadaEn(),
                 premios.stream().map(PremioRifaDetalle::de).toList(), RepartoRifa.de(rifa, vendidos),
                 rifa.getListaHash(), rifa.getListaSelladaEn(), rifa.getCompromisoHash(),
-                rifa.getCompromisoPublicadoEn());
+                rifa.getCompromisoPublicadoEn(), ventaSuspendida);
     }
 }

@@ -21,6 +21,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * suplentes; en los individuales, los dos son null. {@code reglasGrupos}: las de la fase de grupos (CR-02), selladas;
  * null en eliminación directa. El reglamento puede venir escrito, en PDF o los dos.
  * {@code liquidadoEn} es cuándo se repartió la custodia del torneo terminado (HU-606); null mientras no se liquidó.
+ * {@code inscripcionSuspendida}: la inscripción está abierta pero su organizador está bloqueado, así que no se
+ * empieza, confirma ni paga ninguna (HU-703).
  */
 public record TorneoDetalle(
         Long id,
@@ -54,14 +56,16 @@ public record TorneoDetalle(
         String reglamentoHash,
         OrganizadorResumen organizador,
         Instant publicadoEn,
-        Instant liquidadoEn) {
+        Instant liquidadoEn,
+        boolean inscripcionSuspendida) {
 
     public static TorneoDetalle de(
             Torneo torneo,
             int cupoDisponible,
             BigDecimal pozoEstimado,
             List<PremioDetalle> premios,
-            Instant liquidadoEn) {
+            Instant liquidadoEn,
+            boolean inscripcionSuspendida) {
         return new TorneoDetalle(
                 torneo.getId(),
                 torneo.getSlug(),
@@ -94,6 +98,7 @@ public record TorneoDetalle(
                 torneo.getReglamentoHash(),
                 OrganizadorResumen.de(torneo.getOrganizador()),
                 torneo.getPublicadoEn(),
-                liquidadoEn);
+                liquidadoEn,
+                inscripcionSuspendida);
     }
 }

@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.equipo.domain.Equipo;
 import com.hydra.pica.plataforma_pica.equipo.domain.Nomina;
 import com.hydra.pica.plataforma_pica.equipo.domain.NominaId;
@@ -82,6 +83,7 @@ public class InscripcionService {
     private final UsuarioEquipoRepository usuarioEquipoRepository;
     private final ReemplazoRepository reemplazoRepository;
     private final CierreInscripcion cierreInscripcion;
+    private final BloqueoService bloqueoService;
 
     /**
      * Crea el borrador. En un torneo individual se inscribe el usuario y no lleva cuerpo; en uno por equipos
@@ -95,6 +97,7 @@ public class InscripcionService {
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + usuarioId));
         validarUsuario(usuario);
         validarTorneoAbierto(torneo);
+        validarOrganizadorNoBloqueado(torneo);
         validarQueNoOrganiza(torneo, usuarioId);
         // no hay un índice que asegure un borrador por usuario (en uno de equipo el capitán está en el equipo y
         // no en la inscripción), así que dos pedidos simultáneos se serializan por la fila del torneo
@@ -350,6 +353,7 @@ public class InscripcionService {
         }
         validarUsuario(inscripcion.titular());
         validarTorneoAbierto(torneo);
+        validarOrganizadorNoBloqueado(torneo);
         if (inscripcion.esDeEquipo()) {
             validarNomina(inscripcion, torneo);
         } else if (inscripcionRepository.existsByTorneoIdAndUsuarioIdAndEstadoIn(torneoId, usuarioId, ACTIVAS)) {
@@ -472,6 +476,7 @@ public class InscripcionService {
         }
         validarUsuario(usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + usuarioId)));
+        validarOrganizadorNoBloqueado(torneo);
         validarCupo(torneo);
         BigDecimal gastos = GastosAdministrativos.monto(torneo.getValorInscripcion(), torneo.getPctGastosAdministrativos());
         BigDecimal total = torneo.getValorInscripcion().add(gastos);
@@ -634,6 +639,17 @@ public class InscripcionService {
         if (torneo.getEstado() != EstadoTorneo.INSCRIPCION_ABIERTA || !torneo.getCierreInscripcionEn().isAfter(Instant.now())) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
                     "El torneo " + torneo.getId() + " no tiene la inscripción abierta");
+        }
+    }
+
+    /**
+     * Mientras su organizador está bloqueado, el torneo no suma inscripciones: no se empieza, no se confirma ni se
+     * paga ninguna. Las que ya existían quedan como están y no se mueve plata (HU-703).
+     */
+    private void validarOrganizadorNoBloqueado(Torneo torneo) {
+        if (bloqueoService.estaBloqueado(torneo.getOrganizador())) {
+            throw new ConflictoException(CodigoError.ORGANIZADOR_BLOQUEADO,
+                    "El organizador del torneo " + torneo.getId() + " está bloqueado: la inscripción está suspendida");
         }
     }
 
