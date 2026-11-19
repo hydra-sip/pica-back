@@ -30,7 +30,33 @@ public record TorneoResumen(
         BigDecimal pozoEstimado,
         Instant cierreInscripcionEn,
         Instant fechaInicio,
-        Instant fechaFin) {
+        Instant fechaFin,
+        OrganizadorResumen organizador) {
+
+    public TorneoResumen(
+            Long id,
+            String slug,
+            String nombre,
+            String descripcion,
+            String disciplina,
+            Formato formato,
+            Modalidad modalidad,
+            TipoParticipante tipoParticipante,
+            String sede,
+            EstadoTorneo estado,
+            Integer cupoMaximo,
+            Integer cupoDisponible,
+            BigDecimal valorInscripcion,
+            String moneda,
+            BigDecimal gastosAdministrativos,
+            BigDecimal pozoEstimado,
+            Instant cierreInscripcionEn,
+            Instant fechaInicio,
+            Instant fechaFin) {
+        this(id, slug, nombre, descripcion, disciplina, formato, modalidad, tipoParticipante, sede, estado,
+                cupoMaximo, cupoDisponible, valorInscripcion, moneda, gastosAdministrativos, pozoEstimado,
+                cierreInscripcionEn, fechaInicio, fechaFin, null);
+    }
 
     public static TorneoResumen de(Torneo torneo, int cupoDisponible, BigDecimal pozoEstimado) {
         return new TorneoResumen(
@@ -52,6 +78,7 @@ public record TorneoResumen(
                 pozoEstimado,
                 torneo.getCierreInscripcionEn(),
                 torneo.getFechaInicio(),
-                torneo.getFechaFin());
+                torneo.getFechaFin(),
+                OrganizadorResumen.de(torneo.getOrganizador()));
     }
 }

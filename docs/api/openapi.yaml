@@ -2468,6 +2468,26 @@ paths:
               schema: {$ref: '#/components/schemas/FairPlayDetalle'}
         '404': {$ref: '#/components/responses/Error'}
 
+  /api/v1/usuarios/{id}/perfil-organizador:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Reputación]
+      summary: Perfil público del organizador
+      x-jira: PICA-429
+      x-owner: Salvador
+      security: []
+      description: >-
+        HU-806. Público (sin login obligatorio): identidad visible (sin datos privados), contadores de torneos
+        organizados (publicados), finalizados y cancelados, índice del organizador con historial y torneos próximos
+        vigentes. 404 `USUARIO_NO_ENCONTRADO` si no existe.
+      responses:
+        '200':
+          description: Perfil público del organizador
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PerfilOrganizador'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/sanciones/mias:
     get:
       tags: [Reputación]
@@ -4352,6 +4372,31 @@ components:
         sancionId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'En la sanción'}
         gravedad: {oneOf: [{$ref: '#/components/schemas/Gravedad'}, {type: 'null'}], description: 'En la sanción'}
         creadoEn: {type: string, format: date-time}
+    PerfilOrganizador:
+      type: object
+      required: [id, username, nombreCompleto, torneosOrganizados, torneosFinalizados, torneosCancelados, indice, historialIndice, torneosProximos]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        nombreCompleto: {type: string}
+        avatar: {type: [string, 'null']}
+        torneosOrganizados: {type: integer, minimum: 0}
+        torneosFinalizados: {type: integer, minimum: 0}
+        torneosCancelados: {type: integer, minimum: 0}
+        indice: {type: integer, minimum: 0, examples: [100]}
+        indiceActualizadoEn: {type: [string, 'null'], format: date-time, description: 'Null: nunca tuvo cancelaciones, conserva el inicial'}
+        historialIndice: {type: array, items: {$ref: '#/components/schemas/MovimientoIndiceOrganizador'}}
+        torneosProximos: {type: array, items: {$ref: '#/components/schemas/TorneoResumen'}}
+    MovimientoIndiceOrganizador:
+      type: object
+      required: [torneoId, torneo, conGastos, delta, valorResultante, creadoEn]
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {type: string}
+        conGastos: {type: boolean}
+        delta: {type: integer, examples: [-15]}
+        valorResultante: {type: integer, minimum: 0}
+        creadoEn: {type: string, format: date-time}
     Gravedad:
       type: string
       enum: [LEVE, MEDIA, GRAVE]
@@ -5788,6 +5833,7 @@ components:
         cierreInscripcionEn: {type: string, format: date-time}
         fechaInicio: {type: string, format: date-time}
         fechaFin: {type: [string, 'null'], format: date-time}
+        organizador: {oneOf: [{$ref: '#/components/schemas/OrganizadorResumen'}, {type: 'null'}]}
     TorneoDetalle:
       type: object
       required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoMinimo, cupoDisponible, valorInscripcion, moneda, gastosAdministrativos, totalAPagar, pozoEstimado, premios, cierreInscripcionEn, fechaInicio, publicadoEn]

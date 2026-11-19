@@ -19,7 +19,10 @@ public enum ClaveParametro {
     FAIR_PLAY_AUSENCIA(Unidad.PUNTOS),
     FAIR_PLAY_SANCION_LEVE(Unidad.PUNTOS),
     FAIR_PLAY_SANCION_MEDIA(Unidad.PUNTOS),
-    FAIR_PLAY_SANCION_GRAVE(Unidad.PUNTOS);
+    FAIR_PLAY_SANCION_GRAVE(Unidad.PUNTOS),
+    INDICE_ORGANIZADOR_INICIAL(Unidad.PUNTOS),
+    INDICE_ORGANIZADOR_CANCELACION(Unidad.PUNTOS),
+    INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS(Unidad.PUNTOS);
 
     /**
      * Cómo se valida y se muestra: un % va de 0 a 100, los minutos son enteros, los pesos llevan centavos y los puntos

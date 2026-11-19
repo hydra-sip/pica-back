@@ -59,6 +59,17 @@ public final class TorneoSpecifications {
         return (root, query, cb) -> cb.equal(root.get("modalidad"), modalidad);
     }
 
+    public static Specification<Torneo> conOrganizador(Long organizadorId) {
+        return (root, query, cb) -> cb.equal(root.get("organizador").get("id"), organizadorId);
+    }
+
+    public static Specification<Torneo> vigente() {
+        return (root, query, cb) -> root.get("estado").in(
+                EstadoTorneo.INSCRIPCION_ABIERTA,
+                EstadoTorneo.INSCRIPCION_CERRADA,
+                EstadoTorneo.EN_CURSO);
+    }
+
     /**
      * Orden por defecto: primero los que todavía no empezaron, del más cercano al más lejano, y después los ya
      * empezados. Un sort explícito del Pageable lo reemplaza. No filtra nada; el conteo de la página no lleva orden.

@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
 import jakarta.persistence.LockModeType;
@@ -50,4 +51,18 @@ public interface TorneoRepository extends JpaRepository<Torneo, Long>, JpaSpecif
 
     @EntityGraph(attributePaths = {"organizador", "organizador.persona"})
     Optional<Torneo> findBySlugAndEliminadoEnIsNull(String slug);
+
+    /** Torneos publicados del organizador (excluye borradores y eliminados). */
+    @Query("""
+            select count(t) from Torneo t
+            where t.organizador.id = :organizadorId and t.eliminadoEn is null
+            and t.estado <> com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo.BORRADOR""")
+    long contarPublicadosDelOrganizador(@Param("organizadorId") Long organizadorId);
+
+    /** Torneos del organizador en un estado puntual (ej. FINALIZADO o CANCELADO). */
+    @Query("""
+            select count(t) from Torneo t
+            where t.organizador.id = :organizadorId and t.eliminadoEn is null
+            and t.estado = :estado""")
+    long contarDelOrganizadorConEstado(@Param("organizadorId") Long organizadorId, @Param("estado") EstadoTorneo estado);
 }
