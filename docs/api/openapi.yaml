@@ -1913,7 +1913,9 @@ paths:
         dice `camposBloqueados` del torneo: nunca la disciplina, si es individual o por equipos ni el reglamento; con
         la inscripción cerrada, tampoco el cierre ni el cupo máximo (HU-206: el cierre es definitivo); y con al menos una inscripción paga, solo el nombre, la descripción y
         el cupo máximo. Se rechaza solo lo que cambia: 409 `CAMPOS_BLOQUEADOS` con la lista en `campos`. Publicado,
-        "no puede ser anterior a hoy" se mira solo en las fechas que cambian, no se puede vaciar lo que pidió la
+        "no puede ser anterior a hoy" se mira solo en las fechas que cambian (y nunca con
+        `app.torneos.sin-validar-fechas`, el ambiente de prueba de PICA-448, que sigue exigiendo el orden entre las
+        fechas y el margen), no se puede vaciar lo que pidió la
         publicación (400 `REQUERIDO`) y el cupo máximo no baja de los inscriptos (pendientes de pago y confirmados;
         400 `RANGO_INVALIDO`). Un campo que no es de estos pasos (por ejemplo `valorInscripcion`) es 400
         `VALOR_INVALIDO` en ese campo: la parte económica se carga en el paso 3, solo en BORRADOR. 409
@@ -2627,8 +2629,9 @@ paths:
         o EN_CURSO y el partido PROGRAMADO, aunque todavía falte el rival (si no, 409 `PARTIDO_NO_PROGRAMABLE`: con un
         check-in hecho la fecha queda fija). Se puede reprogramar, pero no sacarle la fecha. 400 `VALIDACION` en
         `fechaProgramada`: `REQUERIDO` si no viene y `RANGO_INVALIDO` si es pasada, anterior a `fechaInicio` o
-        posterior a `fechaFin` del torneo. Queda en la auditoría (MODIFICACION, entidad PARTIDO) y en el historial del
-        partido como PROGRAMADO.
+        posterior a `fechaFin` del torneo (con `app.torneos.sin-validar-fechas`, solo para el ambiente de prueba,
+        cualquier fecha). Queda en la auditoría (MODIFICACION, entidad PARTIDO) y en el historial del partido como
+        PROGRAMADO.
       requestBody:
         required: true
         content:
@@ -3885,7 +3888,7 @@ components:
     Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS, AUDITORIA]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), AUDITORIA_VER de V49 (PICA-345), TORNEO_ADMINISTRAR de V50 (PICA-342), USUARIO_BLOQUEAR de V58 (PICA-414; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO) y ALERTA_FRAUDE_REVISAR de V60 (PICA-416; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), AUDITORIA_VER de V49 (PICA-345), TORNEO_ADMINISTRAR de V50 (PICA-342), USUARIO_BLOQUEAR de V58 (PICA-414; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO) y ALERTA_FRAUDE_REVISAR de V60 (PICA-416; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO). V62 (PICA-412) le suma AUDITORIA_VER a SOPORTE. Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
@@ -5189,7 +5192,7 @@ components:
         paso 2 incompleto (cupos y, por equipos, tamaño y nómina máxima). ECONOMIA: sin valor de inscripción.
         SIN_PREMIOS: no hay premios por puesto. PREMIOS_NO_SUMAN_100: la suma va en `sumaPremios`.
         POZO_NETO_NO_POSITIVO: con el cupo mínimo, los gastos previstos se comen el pozo de competidores.
-        CIERRE_VENCIDO: el cierre de la inscripción ya pasó.
+        CIERRE_VENCIDO: el cierre de la inscripción ya pasó (no se pide con `app.torneos.sin-validar-fechas`).
       enum: [INFORMACION, CUPOS, ECONOMIA, SIN_PREMIOS, PREMIOS_NO_SUMAN_100, POZO_NETO_NO_POSITIVO, CIERRE_VENCIDO]
     EconomiaTorneoRequest:
       type: object
@@ -5315,7 +5318,7 @@ components:
         disciplinas: {type: array, items: {type: string}, description: 'Las de los torneos del organizador, para el filtro'}
     OpcionesTorneo:
       type: object
-      required: [disciplinas, formatos, modalidades, cupoMaximo, pctGastosAdministrativos, margenCierreInicioMin, checkinDuracionMaxMin, canchas]
+      required: [disciplinas, formatos, modalidades, cupoMaximo, pctGastosAdministrativos, margenCierreInicioMin, checkinDuracionMaxMin, canchas, sinValidarFechas]
       properties:
         disciplinas:
           type: array
@@ -5345,6 +5348,11 @@ components:
         margenCierreInicioMin: {type: integer, minimum: 0, description: 'Minutos que tienen que pasar como mínimo entre el cierre de la inscripción y el inicio; lo fija la plataforma', examples: [60]}
         checkinDuracionMaxMin: {type: integer, minimum: 1, description: 'Minutos que puede durar como máximo la ventana de check-in; lo fija la plataforma (HU-702)', examples: [60]}
         canchas: {type: array, items: {type: string}, description: Las que ya existen en la `sede` pedida}
+        sinValidarFechas:
+          type: boolean
+          description: >-
+            El ambiente de prueba (`app.torneos.sin-validar-fechas`, PICA-448): el torneo se crea, edita y publica con
+            fechas pasadas y los partidos se programan en cualquier fecha. El orden entre las fechas se exige igual.
     # --- rifas ---------------------------------------------------------------
     EstadoRifa: {type: string, enum: [BORRADOR, EN_VENTA, CERRADA, SORTEADA, EN_REVISION, LIQUIDADA, CANCELADA]}
     PremioRifaRequest:
