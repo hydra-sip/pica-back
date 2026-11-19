@@ -2,6 +2,9 @@ package com.hydra.pica.plataforma_pica.equipo.domain;
 
 import com.hydra.pica.plataforma_pica.common.domain.AuditableEntity;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
+import java.math.BigDecimal;
+
+import jakarta.persistence.Column;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -12,6 +15,7 @@ import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * Un integrante del equipo que juega un torneo, por inscripción. Las FK compuestas de la base aseguran que es
@@ -35,7 +39,17 @@ public class Nomina extends AuditableEntity {
     @JoinColumn(name = "usuario_id", insertable = false, updatable = false)
     private Usuario usuario;
 
+    /** El % del premio del equipo que le toca a este integrante (CR-05); nulo: la inscripción se liquida con todo al capitán. */
+    @Setter
+    @Column(name = "pct_premio", precision = 5, scale = 2)
+    private BigDecimal pctPremio;
+
     public Nomina(Long usuarioId, Long equipoId, Long inscripcionId) {
         this.id = new NominaId(usuarioId, equipoId, inscripcionId);
+    }
+
+    public Nomina(Long usuarioId, Long equipoId, Long inscripcionId, BigDecimal pctPremio) {
+        this(usuarioId, equipoId, inscripcionId);
+        this.pctPremio = pctPremio;
     }
 }

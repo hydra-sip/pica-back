@@ -12,6 +12,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionResumen;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.RepartoIntegrante;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
 import org.springframework.data.domain.Page;
@@ -95,6 +96,13 @@ public class InscripcionController {
     @PreAuthorize("hasAuthority('INSCRIPCION_GESTIONAR')")
     public InscripcionDetalle reemplazar(@PathVariable Long id, @Valid @RequestBody ReemplazoRequest request) {
         return inscripcionService.reemplazar(usuarioActual(), id, request);
+    }
+
+    /** El capitán cambia el reparto del premio de su equipo (CR-05); el cuerpo es la lista de {usuarioId, pct}. */
+    @PutMapping("/inscripciones/{id}/reparto")
+    @PreAuthorize("hasAuthority('INSCRIPCION_GESTIONAR')")
+    public InscripcionDetalle repartir(@PathVariable Long id, @RequestBody List<RepartoIntegrante> request) {
+        return inscripcionService.cambiarReparto(usuarioActual(), id, request);
     }
 
     @GetMapping("/inscripciones/{id}/reemplazos")

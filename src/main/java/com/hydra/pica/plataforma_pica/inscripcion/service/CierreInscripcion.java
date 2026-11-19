@@ -1,13 +1,16 @@
 package com.hydra.pica.plataforma_pica.inscripcion.service;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
+import com.hydra.pica.plataforma_pica.equipo.domain.Nomina;
 import com.hydra.pica.plataforma_pica.equipo.repository.NominaRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
@@ -83,10 +86,16 @@ public class CierreInscripcion {
         if (!inscripcion.esDeEquipo()) {
             return SelloTorneo.lineaIndividual(inscripcion.getId(), inscripcion.getUsuario().getId());
         }
-        List<Long> nomina = nominaRepository.findAllByIdInscripcionId(inscripcion.getId()).stream()
-                .map(n -> n.getId().getUsuarioId())
-                .toList();
-        return SelloTorneo.lineaDeEquipo(inscripcion.getId(), inscripcion.getEquipo().getId(), nomina);
+        List<Nomina> nomina = nominaRepository.findAllByIdInscripcionId(inscripcion.getId());
+        Long equipoId = inscripcion.getEquipo().getId();
+        // sin reparto (CR-05) la línea conserva la forma de antes, así los sellos ya fijados se recalculan igual
+        if (nomina.stream().anyMatch(n -> n.getPctPremio() == null)) {
+            return SelloTorneo.lineaDeEquipo(inscripcion.getId(), equipoId,
+                    nomina.stream().map(n -> n.getId().getUsuarioId()).toList());
+        }
+        Map<Long, BigDecimal> reparto = new HashMap<>();
+        nomina.forEach(n -> reparto.put(n.getId().getUsuarioId(), n.getPctPremio()));
+        return SelloTorneo.lineaDeEquipoConReparto(inscripcion.getId(), equipoId, reparto);
     }
 
     private void auditar(Torneo torneo, MotivoCierre motivo, Long actorId, int canceladas) {

@@ -24,16 +24,22 @@ public record InscripcionDetalle(
         Instant modificadoEn,
         EquipoInscripto equipo,
         List<UsuarioPublico> nomina,
+        List<RepartoIntegrante> reparto,
         RolEnInscripcion rol) {
 
-    /** {@code nomina}: los jugadores de la inscripción, solo en las de equipo (en la individual, nulo). */
-    public static InscripcionDetalle de(Inscripcion inscripcion, List<UsuarioPublico> nomina, Long usuarioId) {
+    /**
+     * {@code nomina}: los jugadores de la inscripción, solo en las de equipo (en la individual, nulo).
+     * {@code reparto}: el % del premio de cada uno (CR-05); nulo en la individual y en la de equipo que se liquida con
+     * todo al capitán.
+     */
+    public static InscripcionDetalle de(Inscripcion inscripcion, List<UsuarioPublico> nomina,
+            List<RepartoIntegrante> reparto, Long usuarioId) {
         Equipo equipo = inscripcion.getEquipo();
         return new InscripcionDetalle(inscripcion.getId(), inscripcion.getTorneo().getId(),
                 TorneoDeInscripcion.de(inscripcion.getTorneo()),
                 inscripcion.getUsuario() == null ? null : inscripcion.getUsuario().getId(), inscripcion.getEstado(),
                 inscripcion.getReglamentoAceptadoEn(), inscripcion.getCreadoEn(), inscripcion.getModificadoEn(),
-                EquipoInscripto.de(equipo), nomina, RolEnInscripcion.de(inscripcion, usuarioId));
+                EquipoInscripto.de(equipo), nomina, reparto, RolEnInscripcion.de(inscripcion, usuarioId));
     }
 
     /** {@code capitanId}: para marcar al capitán en la nómina, mire quien mire (HU-209). */
