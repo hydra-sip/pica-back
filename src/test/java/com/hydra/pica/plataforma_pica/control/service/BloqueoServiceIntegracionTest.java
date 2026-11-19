@@ -98,11 +98,12 @@ class BloqueoServiceIntegracionTest {
                 assertThat(registro.getUsuario().getId()).isEqualTo(soporte.getId()));
         assertThat(registros.get(0).getDetalle())
                 .isEqualTo(Map.of("motivo", "Insultos en el chat", "hasta", hasta.toString()));
-        assertThat(registros.get(1).getDetalle()).isEmpty();
+        assertThat(registros.get(1).getDetalle())
+                .isEqualTo(Map.of("motivo", "Insultos en el chat", "vencido", false));
     }
 
     @Test
-    @DisplayName("sin fecha de fin el detalle trae solo el motivo, y el desbloqueo al vencer queda como Sistema")
+    @DisplayName("sin fecha de fin el detalle dice indefinido, y el desbloqueo al vencer queda como Sistema")
     void sinFechaDeFinYDesbloqueoAutomatico() {
         Usuario indefinido = usuario("bloqueo.auditado.indef", true);
         Usuario vencido = usuario("bloqueo.auditado.vencido", true);
@@ -114,10 +115,11 @@ class BloqueoServiceIntegracionTest {
         entityManager.clear();
 
         assertThat(auditoriaDe(indefinido)).singleElement()
-                .satisfies(registro -> assertThat(registro.getDetalle()).isEqualTo(Map.of("motivo", "Motivo")));
+                .satisfies(registro -> assertThat(registro.getDetalle()).isEqualTo(Map.of("motivo", "Motivo", "hasta", "indefinido")));
         assertThat(auditoriaDe(vencido)).singleElement().satisfies(registro -> {
             assertThat(registro.getAccion()).isEqualTo(AccionAuditoria.DESBLOQUEO);
             assertThat(registro.getUsuario()).isNull();
+            assertThat(registro.getDetalle()).containsEntry("vencido", true);
         });
     }
 

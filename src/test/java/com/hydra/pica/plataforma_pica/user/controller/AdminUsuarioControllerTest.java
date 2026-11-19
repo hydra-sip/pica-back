@@ -588,7 +588,7 @@ class AdminUsuarioControllerTest {
     // --- bloqueo con motivo (HU-703) ------------------------------------------------
 
     @Test
-    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @WithMockUser(authorities = "USUARIO_BLOQUEAR")
     @DisplayName("POST /admin/usuarios/{id}/bloqueo con motivo y fecha de fin responde 200 con el usuario")
     void bloquearResponde200() throws Exception {
         Instant hasta = Instant.parse("2099-01-01T00:00:00Z");
@@ -601,7 +601,7 @@ class AdminUsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @WithMockUser(authorities = "USUARIO_BLOQUEAR")
     @DisplayName("POST /admin/usuarios/{id}/bloqueo sin motivo o con la fecha de fin pasada responde 400")
     void bloquearInvalidoResponde400() throws Exception {
         mockMvc.perform(post("/api/v1/admin/usuarios/3/bloqueo").contentType(MediaType.APPLICATION_JSON)
@@ -617,7 +617,7 @@ class AdminUsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @WithMockUser(authorities = "USUARIO_BLOQUEAR")
     @DisplayName("POST /admin/usuarios/{id}/bloqueo a uno ya bloqueado responde 409 USUARIO_YA_BLOQUEADO")
     void bloquearYaBloqueadoResponde409() throws Exception {
         when(usuarioEdicionService.bloquear(eq(3L), any(), any()))
@@ -631,7 +631,7 @@ class AdminUsuarioControllerTest {
 
     @Test
     @WithMockUser(authorities = "USUARIO_VER")
-    @DisplayName("Bloquear y levantar el bloqueo sin USUARIO_EDITAR responden 403 SIN_PERMISO")
+    @DisplayName("Bloquear y levantar el bloqueo sin USUARIO_BLOQUEAR responden 403 SIN_PERMISO")
     void bloqueoSinPermisoResponde403() throws Exception {
         mockMvc.perform(post("/api/v1/admin/usuarios/3/bloqueo").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"motivo\": \"Motivo\"}"))
@@ -644,7 +644,7 @@ class AdminUsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(authorities = "USUARIO_EDITAR")
+    @WithMockUser(authorities = "USUARIO_BLOQUEAR")
     @DisplayName("DELETE /admin/usuarios/{id}/bloqueo responde 200 con el usuario")
     void levantarBloqueoResponde200() throws Exception {
         when(usuarioEdicionService.levantarBloqueo(3L)).thenReturn(detalleDe(3L));

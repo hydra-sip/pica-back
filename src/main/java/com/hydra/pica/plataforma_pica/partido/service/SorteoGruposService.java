@@ -26,6 +26,7 @@ import com.hydra.pica.plataforma_pica.partido.repository.GrupoRepository;
 import com.hydra.pica.plataforma_pica.rifa.service.Drand;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
+import com.hydra.pica.plataforma_pica.torneo.domain.MinimoInscriptos;
 import com.hydra.pica.plataforma_pica.torneo.domain.ReglasGrupos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -44,7 +45,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <li>La semilla es el valor de la ronda de drand fijada al sellar la lista: hasta que sale, 409
  * SEMILLA_NO_DISPONIBLE (son unos segundos). Se guarda con su firma.</li>
  * <li>Los grupos son los del cupo máximo ({@code cupoMaximo / tamanioGrupo}); si no se llenó, quedan desparejos, y
- * cada uno necesita al menos uno más que los que pasan (409 PARTICIPANTES_INSUFICIENTES).</li>
+ * cada uno necesita al menos uno más que los que pasan ({@link MinimoInscriptos}, 409
+ * PARTICIPANTES_INSUFICIENTES).</li>
  * <li>No se vuelve a sortear: con la misma lista y la misma ronda saldría lo mismo.</li>
  * </ul>
  */
@@ -76,7 +78,7 @@ public class SorteoGruposService {
         int grupos = reglas.grupos(torneo.getCupoMaximo());
         List<Long> inscriptos =
                 inscripcionRepository.idsPorTorneoYEstado(torneo.getId(), EstadoInscripcion.CONFIRMADA);
-        int necesarios = grupos * (reglas.clasificanPorGrupo() + 1);
+        int necesarios = MinimoInscriptos.de(torneo);
         if (inscriptos.size() < necesarios) {
             throw new ConflictoException(CodigoError.PARTICIPANTES_INSUFICIENTES,
                     "El torneo " + torneo.getId() + " tiene " + inscriptos.size() + " inscripciones confirmadas: con "

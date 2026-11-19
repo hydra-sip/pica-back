@@ -21,8 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Bloqueos de usuario con motivo y fecha de fin opcional (HU-703, CE3-3). El estado BLOQUEADO del
  * usuario sigue siendo lo que corta el login; la fila de {@code bloqueo} dice por qué y hasta cuándo.
- * Quien llama guarda el usuario y cierra sus sesiones. Cada bloqueo y desbloqueo queda en el libro de auditoría
- * (PICA-452) con quien lo hizo; el que levanta el login al vencer la fecha de fin queda como Sistema.
+ * Quien llama guarda el usuario y cierra sus sesiones. Cada bloqueo y desbloqueo queda en el libro de auditoría a
+ * nombre de quien hace el pedido; el que vence en el login, a nombre del sistema (HU-703).
  */
 @Service
 @RequiredArgsConstructor
@@ -39,6 +39,23 @@ public class BloqueoService {
                 usuarioId, AlcanceBloqueo.USUARIO);
     }
 
+    /**
+     * Si el usuario está bloqueado ahora: BLOQUEADO y con un bloqueo vigente sin fecha de fin o con la fecha todavía
+     * por llegar. Un bloqueo vencido cuenta como levantado aunque el login todavía no lo haya cerrado, así los torneos
+     * y las rifas de un organizador se reactivan en la fecha sin que tenga que entrar (HU-703).
+     */
+    @Transactional(readOnly = true)
+    public boolean estaBloqueado(Usuario usuario) {
+        if (usuario.getEstado() != EstadoUsuario.BLOQUEADO) {
+            return false;
+        }
+        Instant ahora = Instant.now();
+        return vigente(usuario.getId())
+                .map(Bloqueo::getHasta)
+                .map(hasta -> hasta.isAfter(ahora))
+                .orElse(true);
+    }
+
     /** Registra el bloqueo y pasa el usuario a BLOQUEADO. Con {@code hasta} null es indefinido. */
     @Transactional
     public Bloqueo bloquear(Usuario usuario, String motivo, Instant hasta) {
@@ -48,24 +65,30 @@ public class BloqueoService {
         bloqueo.setMotivo(motivo.strip());
         bloqueo.setHasta(hasta);
         usuario.setEstado(EstadoUsuario.BLOQUEADO);
-        bloqueo = bloqueoRepository.save(bloqueo);
+        Bloqueo guardado = bloqueoRepository.save(bloqueo);
 
         Map<String, Object> detalle = new LinkedHashMap<>();
-        detalle.put("motivo", bloqueo.getMotivo());
-        if (hasta != null) {
-            detalle.put("hasta", hasta.toString());
-        }
-        registrar(AccionAuditoria.BLOQUEO, usuario, detalle);
-        return bloqueo;
+        detalle.put("motivo", guardado.getMotivo());
+        detalle.put("hasta", hasta == null ? "indefinido" : hasta.toString());
+        auditar(AccionAuditoria.BLOQUEO, usuario, detalle);
+        return guardado;
     }
 
     /** Cierra los bloqueos abiertos y devuelve al usuario al estado que le toca por su email. */
     @Transactional
     public void levantar(Usuario usuario) {
+        levantar(usuario, false);
+    }
+
+    private void levantar(Usuario usuario, boolean vencido) {
+        Map<String, Object> detalle = new LinkedHashMap<>();
+        vigente(usuario.getId()).ifPresent(b -> detalle.put("motivo", b.getMotivo()));
+        detalle.put("vencido", vencido);
+
         String por = auditor.getCurrentAuditor().orElse(AuditConstants.SISTEMA);
         bloqueoRepository.levantarAbiertos(usuario.getId(), AlcanceBloqueo.USUARIO, Instant.now(), por);
         usuario.setEstado(usuario.isEmailVerificado() ? EstadoUsuario.ACTIVO : EstadoUsuario.PENDIENTE_VERIFICACION);
-        registrar(AccionAuditoria.DESBLOQUEO, usuario, Map.of());
+        auditar(AccionAuditoria.DESBLOQUEO, usuario, detalle);
     }
 
     /** Lo llama el login: si la fecha de fin ya pasó, levanta el bloqueo y devuelve true. */
@@ -77,12 +100,13 @@ public class BloqueoService {
                 .filter(hasta -> !hasta.isAfter(ahora))
                 .isPresent();
         if (vencido) {
-            levantar(usuario);
+            levantar(usuario, true);
         }
         return vencido;
     }
 
-    private void registrar(AccionAuditoria accion, Usuario usuario, Map<String, Object> detalle) {
+    // en el login no hay nadie autenticado: el registro queda sin usuario, que el libro muestra como el sistema
+    private void auditar(AccionAuditoria accion, Usuario usuario, Map<String, Object> detalle) {
         auditoriaService.registrar(currentUserProvider.getCurrentUserId().orElse(null), accion, "USUARIO",
                 usuario.getId().toString(), detalle);
     }
