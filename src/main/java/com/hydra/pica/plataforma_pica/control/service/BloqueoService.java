@@ -1,9 +1,13 @@
 package com.hydra.pica.plataforma_pica.control.service;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.common.audit.AuditConstants;
+import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.AlcanceBloqueo;
 import com.hydra.pica.plataforma_pica.control.domain.Bloqueo;
 import com.hydra.pica.plataforma_pica.control.repository.BloqueoRepository;
@@ -17,7 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Bloqueos de usuario con motivo y fecha de fin opcional (HU-703, CE3-3). El estado BLOQUEADO del
  * usuario sigue siendo lo que corta el login; la fila de {@code bloqueo} dice por qué y hasta cuándo.
- * Quien llama guarda el usuario y cierra sus sesiones.
+ * Quien llama guarda el usuario y cierra sus sesiones. Cada bloqueo y desbloqueo queda en el libro de auditoría
+ * (PICA-452) con quien lo hizo; el que levanta el login al vencer la fecha de fin queda como Sistema.
  */
 @Service
 @RequiredArgsConstructor
@@ -25,6 +30,8 @@ public class BloqueoService {
 
     private final BloqueoRepository bloqueoRepository;
     private final AuditorAware<String> auditor;
+    private final AuditoriaService auditoriaService;
+    private final CurrentUserProvider currentUserProvider;
 
     @Transactional(readOnly = true)
     public Optional<Bloqueo> vigente(Long usuarioId) {
@@ -41,7 +48,15 @@ public class BloqueoService {
         bloqueo.setMotivo(motivo.strip());
         bloqueo.setHasta(hasta);
         usuario.setEstado(EstadoUsuario.BLOQUEADO);
-        return bloqueoRepository.save(bloqueo);
+        bloqueo = bloqueoRepository.save(bloqueo);
+
+        Map<String, Object> detalle = new LinkedHashMap<>();
+        detalle.put("motivo", bloqueo.getMotivo());
+        if (hasta != null) {
+            detalle.put("hasta", hasta.toString());
+        }
+        registrar(AccionAuditoria.BLOQUEO, usuario, detalle);
+        return bloqueo;
     }
 
     /** Cierra los bloqueos abiertos y devuelve al usuario al estado que le toca por su email. */
@@ -50,6 +65,7 @@ public class BloqueoService {
         String por = auditor.getCurrentAuditor().orElse(AuditConstants.SISTEMA);
         bloqueoRepository.levantarAbiertos(usuario.getId(), AlcanceBloqueo.USUARIO, Instant.now(), por);
         usuario.setEstado(usuario.isEmailVerificado() ? EstadoUsuario.ACTIVO : EstadoUsuario.PENDIENTE_VERIFICACION);
+        registrar(AccionAuditoria.DESBLOQUEO, usuario, Map.of());
     }
 
     /** Lo llama el login: si la fecha de fin ya pasó, levanta el bloqueo y devuelve true. */
@@ -64,5 +80,10 @@ public class BloqueoService {
             levantar(usuario);
         }
         return vencido;
+    }
+
+    private void registrar(AccionAuditoria accion, Usuario usuario, Map<String, Object> detalle) {
+        auditoriaService.registrar(currentUserProvider.getCurrentUserId().orElse(null), accion, "USUARIO",
+                usuario.getId().toString(), detalle);
     }
 }
