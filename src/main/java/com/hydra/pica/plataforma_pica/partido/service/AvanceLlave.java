@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -33,7 +34,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <li>Si era la final, el torneo pasa a FINALIZADO y cada inscripción queda con su puesto: el campeón 1, el finalista
  * 2, y el que perdió en la ronda r de n, 2^(n - r) + 1. Sin partido por el tercer puesto, los dos semifinalistas
  * quedan 3.</li>
- * <li>Publica {@link ResultadoConfirmado} para los pronósticos y el tiempo real.</li>
+ * <li>Sube la versión del bracket (HU-809) y publica {@link ResultadoConfirmado} para los pronósticos y el tiempo
+ * real.</li>
  * <li>Un partido de la fase de grupos o de un desempate (CR-02) lo cierra {@link FaseDeGrupos}.</li>
  * <li>Si el partido hermano terminó sin ganador (HU-309), el ganador gana el partido siguiente sin jugar
  * ({@link #paseDirecto}).</li>
@@ -58,6 +60,7 @@ public class AvanceLlave {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void confirmar(Partido partido, List<Juega> lados, EstadoPartido estado) {
+        torneoRepository.subirVersionBracket(partido.getTorneo().getId());
         if (partido.getFase() == FasePartido.GRUPOS) {
             faseDeGrupos.confirmar(partido, lados, estado);
             return;
@@ -137,6 +140,7 @@ public class AvanceLlave {
 
     private void finalizar(Torneo torneo, int rondas) {
         Torneo bloqueado = torneoRepository.buscarBloqueado(torneo.getId()).orElseThrow();
+        EstadoTorneo estadoAnterior = bloqueado.getEstado();
         bloqueado.setEstado(EstadoTorneo.FINALIZADO);
         for (Juega lado : juegaRepository.delTorneo(torneo.getId())) {
             if (lado.getPartido().getFase() != FasePartido.ELIMINACION) {
@@ -149,5 +153,6 @@ public class AvanceLlave {
                 lado.getInscripcion().setPosicion(1);
             }
         }
+        eventos.publishEvent(new TorneoEstadoCambiado(torneo.getId(), estadoAnterior, EstadoTorneo.FINALIZADO));
     }
 }

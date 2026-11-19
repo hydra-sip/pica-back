@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +35,7 @@ public class ProgramacionService {
     private final PartidoService partidoService;
     private final ResultadoService resultadoService;
     private final TorneoProperties torneoProperties;
+    private final TorneoRepository torneoRepository;
 
     @Transactional
     public PartidoDetalle programar(Long usuarioId, Long partidoId, Instant fechaProgramada) {
@@ -50,6 +52,7 @@ public class ProgramacionService {
         }
         validar(fechaProgramada, partido.getTorneo(), torneoProperties.sinValidarFechas());
         partido.setFechaProgramada(fechaProgramada);
+        torneoRepository.subirVersionBracket(partido.getTorneo().getId());
 
         Map<String, Object> detalle = new LinkedHashMap<>();
         detalle.put("resultado", "PROGRAMADO");

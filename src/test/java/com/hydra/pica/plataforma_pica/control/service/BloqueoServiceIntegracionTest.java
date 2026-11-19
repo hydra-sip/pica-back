@@ -36,7 +36,8 @@ import org.springframework.context.annotation.Import;
         JpaAuditingConfig.class,
         SecurityContextCurrentUserProvider.class,
         TestcontainersConfiguration.class,
-        BloqueoService.class
+        BloqueoService.class,
+        AuditoriaService.class
 })
 class BloqueoServiceIntegracionTest {
 

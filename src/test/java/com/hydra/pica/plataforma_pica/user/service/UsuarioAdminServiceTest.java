@@ -63,10 +63,10 @@ class UsuarioAdminServiceTest {
     @DisplayName("El alta arma NuevoUsuario.porAdmin con lo que vino en el request")
     void crearMapeaElRequestAlAltaPorAdmin() {
         Persona persona = persona("Ana", "Gomez");
-        when(usuarioService.crear(any())).thenReturn(usuario("nuevo", EstadoUsuario.BLOQUEADO, persona));
+        when(usuarioService.crear(any())).thenReturn(usuario("nuevo", EstadoUsuario.ACTIVO, persona));
 
         UsuarioDetalle detalle = servicio.crear(new UsuarioCreateRequest(
-                "nuevo", "nuevo@example.com", "Password1", "una nota", EstadoAlta.BLOQUEADO, 10L, List.of(3L, 4L)));
+                "nuevo", "nuevo@example.com", "Password1", "una nota", EstadoAlta.ACTIVO, 10L, List.of(3L, 4L)));
 
         ArgumentCaptor<NuevoUsuario> captor = ArgumentCaptor.forClass(NuevoUsuario.class);
         org.mockito.Mockito.verify(usuarioService).crear(captor.capture());
@@ -76,7 +76,7 @@ class UsuarioAdminServiceTest {
         assertThat(nuevo.email()).isEqualTo("nuevo@example.com");
         assertThat(nuevo.password()).isEqualTo("Password1");
         assertThat(nuevo.descripcion()).isEqualTo("una nota");
-        assertThat(nuevo.estadoInicial()).isEqualTo(EstadoUsuario.BLOQUEADO);
+        assertThat(nuevo.estadoInicial()).isEqualTo(EstadoUsuario.ACTIVO);
         assertThat(nuevo.emailVerificado()).isTrue();
         assertThat(nuevo.personaId()).isEqualTo(10L);
         assertThat(nuevo.rolIds()).isEqualTo(Set.of(3L, 4L));

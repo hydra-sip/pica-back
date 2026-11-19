@@ -39,7 +39,10 @@ class DescripcionesAuditoria {
                     FROM billetera b LEFT JOIN usuario u ON u.id = b.usuario_id WHERE b.id IN (:ids)""",
             "CARGA_CRIPTO", """
                     SELECT CAST(c.id AS TEXT), '@' || u.username
-                    FROM carga_cripto c JOIN usuario u ON u.id = c.usuario_id WHERE c.id IN (:ids)""");
+                    FROM carga_cripto c JOIN usuario u ON u.id = c.usuario_id WHERE c.id IN (:ids)""",
+            "ALERTA_FRAUDE", """
+                    SELECT CAST(a.id AS TEXT), a.regla || ' – @' || u.username
+                    FROM alerta_fraude a JOIN usuario u ON u.id = a.usuario_id WHERE a.id IN (:ids)""");
 
     private static final String PARAMETROS =
             "SELECT clave, descripcion FROM parametro_plataforma WHERE clave IN (:ids)";
