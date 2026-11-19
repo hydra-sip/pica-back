@@ -51,6 +51,7 @@ tags:
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
   - {name: Admin – Parámetros, description: 'Parámetros de la plataforma (gastos administrativos, plazos y retiros). HU-702, Tomás.'}
   - {name: Admin – Reclamos, description: 'Reclamos sobre el resultado de rifas y su resolución definitiva. HU-706, Salvador.'}
+  - {name: Admin – Alertas de fraude, description: 'Detección y revisión de alertas de conductas fraudulentas. HU-705, Salvador.'}
   - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
   - {name: Torneos, description: 'Asistente de crear torneo del organizador logueado (HU-201, PICA-38; HU-601, PICA-55), Tomás. Catálogo y ficha públicos (HU-208), Salvador.'}
   - {name: Equipos, description: 'Equipos del capitán para elegir al inscribirse. HU-204 (PICA-234), Mateo.'}
@@ -987,6 +988,78 @@ paths:
         - {name: id, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
       responses:
         '200': {description: Fondos liberados, content: {application/json: {schema: {$ref: '#/components/schemas/ReclamoAdminDetalle'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/admin/alertas-fraude:
+    get:
+      tags: [Admin – Alertas de fraude]
+      summary: Listar alertas de fraude
+      x-jira: PICA-416
+      x-owner: Salvador
+      x-permiso: ALERTA_FRAUDE_REVISAR
+      description: >-
+        HU-705 (T705-1). Lista paginada de alertas de fraude ordenadas con `PENDIENTE` primero y luego las más
+        recientes (`creadaEn` descendente). Todos los filtros son opcionales y se combinan. Acepta `torneoId`/`torneo`,
+        `rifaId`/`rifa` y `usuarioId`/`usuario`.
+      parameters:
+        - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoAlertaFraude'}}
+        - {name: regla, in: query, schema: {$ref: '#/components/schemas/ReglaFraude'}}
+        - {name: torneoId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: rifaId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: usuarioId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: desde, in: query, schema: {type: string, format: date-time}}
+        - {name: hasta, in: query, schema: {type: string, format: date-time}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página de alertas de fraude, content: {application/json: {schema: {$ref: '#/components/schemas/PageAlertaFraudeDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/alertas-fraude/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Admin – Alertas de fraude]
+      summary: Ver detalle de una alerta de fraude
+      x-jira: PICA-416
+      x-owner: Salvador
+      x-permiso: ALERTA_FRAUDE_REVISAR
+      description: >-
+        HU-705 (T705-1). Devuelve el detalle completo de la alerta incluyendo `datos` JSON, el usuario involucrado
+        y el torneo o rifa asociado. 404 `ALERTA_FRAUDE_NO_ENCONTRADA` si no existe.
+      responses:
+        '200': {description: Detalle de la alerta, content: {application/json: {schema: {$ref: '#/components/schemas/AlertaFraudeDetalle'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/alertas-fraude/{id}/revisar:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Admin – Alertas de fraude]
+      summary: Marcar una alerta de fraude como revisada
+      x-jira: PICA-416
+      x-owner: Salvador
+      x-permiso: ALERTA_FRAUDE_REVISAR
+      description: >-
+        HU-705 (T705-1). Marca la alerta como `REVISADA` exigiendo `nota` obligatoria no vacía (hasta 1000
+        caracteres), guarda `revisadaPor` y `revisadaEn` y registra la revisión en `auditoria` (`MODIFICACION` sobre
+        `ALERTA_FRAUDE`).
+        400 `VALIDACION` si falta `nota` o supera el máximo.
+        404 `ALERTA_FRAUDE_NO_ENCONTRADA` si no existe.
+        409 `ALERTA_FRAUDE_YA_REVISADA` si ya fue revisada.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RevisarAlertaFraudeRequest'}
+      responses:
+        '200': {description: Alerta marcada como revisada, content: {application/json: {schema: {$ref: '#/components/schemas/AlertaFraudeDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
@@ -3764,12 +3837,12 @@ components:
     Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS, AUDITORIA]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), AUDITORIA_VER de V49 (PICA-345) TORNEO_ADMINISTRAR de V50 (PICA-342) y USUARIO_BLOQUEAR de V58 (PICA-414; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), AUDITORIA_VER de V49 (PICA-345), TORNEO_ADMINISTRAR de V50 (PICA-342), USUARIO_BLOQUEAR de V58 (PICA-414; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO) y ALERTA_FRAUDE_REVISAR de V60 (PICA-416; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO). Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
              RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR,
-             CANCELACION_REVISAR, RECLAMO_RESOLVER, AUDITORIA_VER, TORNEO_ADMINISTRAR, USUARIO_BLOQUEAR]
+             CANCELACION_REVISAR, RECLAMO_RESOLVER, AUDITORIA_VER, TORNEO_ADMINISTRAR, USUARIO_BLOQUEAR, ALERTA_FRAUDE_REVISAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -3855,6 +3928,7 @@ components:
         PICA-337): RETIRO_FUERA_DE_TOPES 400 (el monto está fuera del rango mínimo y máximo) · CUENTA_NO_VALIDADA 409
         (solo se puede solicitar retiros a una cuenta bancaria validada).
         Sanciones (HU-803, PICA-423): JUGADOR_NO_PARTICIPA 409 (el jugador no está en una inscripción confirmada del torneo).
+        Alertas de fraude (HU-705, PICA-416): ALERTA_FRAUDE_NO_ENCONTRADA 404 · ALERTA_FRAUDE_YA_REVISADA 409.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
@@ -3871,7 +3945,7 @@ components:
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
              OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO, CARGA_NO_ENCONTRADA,
-              CUENTA_BANCARIA_NO_ENCONTRADA, RECLAMO_NO_ENCONTRADO,
+              CUENTA_BANCARIA_NO_ENCONTRADA, RECLAMO_NO_ENCONTRADO, ALERTA_FRAUDE_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
@@ -3893,7 +3967,7 @@ components:
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS, RIFA_SIN_VENTAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, SORTEO_ANTICIPADO, RECLAMO_DUPLICADO,
-             RECLAMO_YA_RESUELTO, RECLAMO_NO_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA,
+             RECLAMO_YA_RESUELTO, RECLAMO_NO_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA, ALERTA_FRAUDE_YA_REVISADA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR, BILLETERA_BLOQUEADA]
 
@@ -4305,7 +4379,7 @@ components:
       required: [clave, unidad, valor, descripcion, modificadoEn, modificadoPor]
       properties:
         clave: {$ref: '#/components/schemas/ClaveParametro'}
-        unidad: {type: string, enum: [PORCENTAJE, MINUTOS, PESOS, PUNTOS], description: 'PORCENTAJE de 0 a 100; MINUTOS enteros; PESOS con hasta dos decimales; PUNTOS enteros de 0 a 1000'}
+        unidad: {type: string, enum: [PORCENTAJE, MINUTOS, PESOS, PUNTOS, CANTIDAD], description: 'PORCENTAJE de 0 a 100; MINUTOS enteros; PESOS con hasta dos decimales; PUNTOS enteros de 0 a 1000; CANTIDAD enteros mayores que 0'}
         valor: {type: number, examples: [10]}
         descripcion: {type: string}
         modificadoEn: {type: string, format: date-time}
@@ -4315,14 +4389,68 @@ components:
       enum: [GASTOS_ADMINISTRATIVOS, GASTOS_ADMINISTRATIVOS_TOPE, MARGEN_CIERRE_INICIO_MIN, CHECKIN_DURACION_MAX_MIN,
              RETIRO_MINIMO, RETIRO_MAXIMO, CANCELACION_GASTOS_TOPE, FAIR_PLAY_INICIAL, FAIR_PLAY_MAXIMO,
              FAIR_PLAY_CHECKIN, FAIR_PLAY_AUSENCIA, FAIR_PLAY_SANCION_LEVE, FAIR_PLAY_SANCION_MEDIA,
-             FAIR_PLAY_SANCION_GRAVE]
+             FAIR_PLAY_SANCION_GRAVE, FRAUDE_RIFA_NUMEROS_MAX, FRAUDE_RIFA_VENTANA_MIN,
+             FRAUDE_CARRUSEL_OPERACIONES_MIN, FRAUDE_CARRUSEL_VENTANA_MIN, FRAUDE_CANCELACIONES_MIN,
+             FRAUDE_OBJECIONES_MIN, FRAUDE_CUENTAS_USUARIOS_MIN]
       description: >-
         HU-702. GASTOS_ADMINISTRATIVOS (% que paga aparte quien se inscribe o compra) y su tope;
         MARGEN_CIERRE_INICIO_MIN (CE4-5); CHECKIN_DURACION_MAX_MIN (máximo de la ventana de check-in);
         RETIRO_MINIMO y RETIRO_MAXIMO (pesos, para HU-607); CANCELACION_GASTOS_TOPE (% máximo del pozo que el
         organizador puede retener en gastos al cancelar un torneo, HU-605). FAIR_PLAY_* (puntos del índice de fair play,
         HU-802): el inicial y el máximo (el inicial no lo supera), lo que suma un check-in, lo que resta una ausencia y
-        lo que resta cada gravedad de sanción (leve <= media <= grave).
+        lo que resta cada gravedad de sanción (leve <= media <= grave). FRAUDE_* (umbrales y ventanas de las reglas de
+        detección de fraude, HU-705).
+    PageAlertaFraudeDetalle:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/AlertaFraudeDetalle'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    AlertaFraudeDetalle:
+      type: object
+      required: [id, regla, estado, motivo, datos, torneo, rifa, usuario, nota, revisadaPor, revisadaEn, creadaEn]
+      description: Una alerta de fraude del panel de soporte/admin (HU-705, PICA-416).
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        regla: {$ref: '#/components/schemas/ReglaFraude'}
+        estado: {$ref: '#/components/schemas/EstadoAlertaFraude'}
+        motivo: {type: string}
+        datos: {type: object, additionalProperties: true}
+        torneo: {oneOf: [{$ref: '#/components/schemas/TorneoAlertaResumen'}, {type: 'null'}]}
+        rifa: {oneOf: [{$ref: '#/components/schemas/RifaAlertaResumen'}, {type: 'null'}]}
+        usuario: {$ref: '#/components/schemas/UsuarioAlertaResumen'}
+        nota: {type: [string, 'null']}
+        revisadaPor: {type: [string, 'null']}
+        revisadaEn: {type: [string, 'null'], format: date-time}
+        creadaEn: {type: string, format: date-time}
+    TorneoAlertaResumen:
+      type: object
+      required: [id, nombre]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string}
+    RifaAlertaResumen:
+      type: object
+      required: [id, titulo]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        titulo: {type: string}
+    UsuarioAlertaResumen:
+      type: object
+      required: [id, username, email]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        email: {type: string, format: email}
+    RevisarAlertaFraudeRequest:
+      type: object
+      required: [nota]
+      properties:
+        nota: {type: string, minLength: 1, maxLength: 1000, examples: ['Se verificó la operación con el usuario; sin indicios adicionales.']}
+    ReglaFraude:
+      type: string
+      enum: [COMPRA_MASIVA_RIFA, CARRUSEL_CARGA_RETIRO, CANCELACIONES_REITERADAS, OBJECIONES_ABUSIVAS, CUENTAS_COMPARTIDAS]
+    EstadoAlertaFraude:
+      type: string
+      enum: [PENDIENTE, REVISADA]
     PageRegistroAuditoria:
       type: object
       required: [content, page]
@@ -4337,7 +4465,7 @@ components:
         usuarioId: {type: [integer, 'null'], format: int64, description: 'Null en lo que hace el sistema (liquidaciones, cierres por fecha) y en el login fallido de un usuario que no existe'}
         username: {type: [string, 'null']}
         accion: {$ref: '#/components/schemas/AccionAuditoria'}
-        entidad: {type: [string, 'null'], description: 'Sobre qué fue: TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO', examples: [TORNEO]}
+        entidad: {type: [string, 'null'], description: 'Sobre qué fue: TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO, ALERTA_FRAUDE', examples: [TORNEO]}
         entidadId: {type: [string, 'null'], description: 'El id de la entidad, o la clave si es un PARAMETRO', examples: ['42']}
         descripcion:
           type: [string, 'null']

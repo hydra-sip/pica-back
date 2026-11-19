@@ -108,7 +108,7 @@ class UsuarioServiceIntegracionTest {
             "PERSONA_VER", "PERSONA_CREAR", "PERSONA_EDITAR", "PERSONA_ELIMINAR", "ROL_VER", "ROL_ASIGNAR",
             "RIFA_GESTIONAR", "INSCRIPCION_GESTIONAR", "TORNEO_GESTIONAR", "RIFA_ADMINISTRAR",
             "PARAMETRO_ADMINISTRAR", "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "TORNEO_ADMINISTRAR",
-            "USUARIO_BLOQUEAR"})
+            "USUARIO_BLOQUEAR", "ALERTA_FRAUDE_REVISAR"})
     void altaPorAdminConPersonaExistenteYRolesPorId() {
         Persona persona = personaRepository.saveAndFlush(persona("40111222"));
         Long organizador = rolRepository.findByNombre("ORGANIZADOR").orElseThrow().getId();
@@ -135,7 +135,7 @@ class UsuarioServiceIntegracionTest {
             "PERSONA_VER", "PERSONA_CREAR", "PERSONA_EDITAR", "PERSONA_ELIMINAR", "ROL_VER", "ROL_ASIGNAR",
             "RIFA_GESTIONAR", "INSCRIPCION_GESTIONAR", "TORNEO_GESTIONAR", "RIFA_ADMINISTRAR",
             "PARAMETRO_ADMINISTRAR", "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "TORNEO_ADMINISTRAR",
-            "USUARIO_BLOQUEAR"})
+            "USUARIO_BLOQUEAR", "ALERTA_FRAUDE_REVISAR"})
     void altaPorAdminNoDaRolesConPermisosQueQuienLlamaNoTiene() {
         Persona persona = personaRepository.saveAndFlush(persona("40111222"));
         Long superUsuario = rolRepository.findByNombre("SUPER_USUARIO").orElseThrow().getId();

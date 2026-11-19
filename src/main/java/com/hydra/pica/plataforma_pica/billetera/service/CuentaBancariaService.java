@@ -11,6 +11,7 @@ import com.hydra.pica.plataforma_pica.billetera.domain.EstadoValidacion;
 import com.hydra.pica.plataforma_pica.billetera.domain.TipoCuenta;
 import com.hydra.pica.plataforma_pica.billetera.dto.CrearCuentaBancariaRequest;
 import com.hydra.pica.plataforma_pica.billetera.dto.CuentaBancariaResponse;
+import com.hydra.pica.plataforma_pica.billetera.event.CuentaBancariaRegistrada;
 import com.hydra.pica.plataforma_pica.billetera.repository.CuentaBancariaRepository;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -22,7 +23,8 @@ import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -34,7 +36,6 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Gestión de cuentas bancarias y virtuales con validación simulada contra documento (HU-607, PICA-336).
  */
 @Service
-@RequiredArgsConstructor
 public class CuentaBancariaService {
 
     public static final String MENSAJE_TITULAR_NO_COINCIDE =
@@ -44,6 +45,29 @@ public class CuentaBancariaService {
     private final UsuarioRepository usuarioRepository;
     private final AuditoriaService auditoriaService;
     private final PlatformTransactionManager transactionManager;
+    private final ApplicationEventPublisher eventos;
+
+    public CuentaBancariaService(
+            CuentaBancariaRepository cuentaBancariaRepository,
+            UsuarioRepository usuarioRepository,
+            AuditoriaService auditoriaService,
+            PlatformTransactionManager transactionManager) {
+        this(cuentaBancariaRepository, usuarioRepository, auditoriaService, transactionManager, null);
+    }
+
+    @Autowired
+    public CuentaBancariaService(
+            CuentaBancariaRepository cuentaBancariaRepository,
+            UsuarioRepository usuarioRepository,
+            AuditoriaService auditoriaService,
+            PlatformTransactionManager transactionManager,
+            ApplicationEventPublisher eventos) {
+        this.cuentaBancariaRepository = cuentaBancariaRepository;
+        this.usuarioRepository = usuarioRepository;
+        this.auditoriaService = auditoriaService;
+        this.transactionManager = transactionManager;
+        this.eventos = eventos;
+    }
 
     @Transactional(readOnly = true)
     public List<CuentaBancariaResponse> listar(Long usuarioId) {
@@ -103,6 +127,8 @@ public class CuentaBancariaService {
                 Map.of("tipo", guardada.getTipo().name(), "valor", guardada.getValor(),
                         "estado", EstadoValidacion.VALIDADA.name(), "titular", guardada.getTitular()));
 
+        publicarRegistro(guardada, usuarioId);
+
         return CuentaBancariaResponse.de(guardada);
     }
 
@@ -146,7 +172,16 @@ public class CuentaBancariaService {
                     guardada != null && guardada.getId() != null ? String.valueOf(guardada.getId()) : "sin-id",
                     Map.of("tipo", request.tipo().name(), "valor", valorLimpio,
                             "estado", EstadoValidacion.RECHAZADA.name(), "motivo", "CUENTA_TITULAR_NO_COINCIDE"));
+
+            publicarRegistro(guardada, usuario.getId());
         });
+    }
+
+    private void publicarRegistro(CuentaBancaria guardada, Long usuarioId) {
+        if (eventos != null && guardada != null) {
+            eventos.publishEvent(new CuentaBancariaRegistrada(
+                    guardada.getId(), usuarioId, guardada.getTipo(), guardada.getValor()));
+        }
     }
 
     private static void validarFormato(CrearCuentaBancariaRequest request) {
