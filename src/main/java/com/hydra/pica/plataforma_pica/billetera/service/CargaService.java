@@ -11,6 +11,7 @@ import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
+import com.hydra.pica.plataforma_pica.billetera.event.MovimientoBilleteraRegistrado;
 import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
@@ -25,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -45,6 +47,7 @@ public class CargaService {
     private final MovimientoRepository movimientoRepository;
     private final UsuarioRepository usuarioRepository;
     private final AuditoriaService auditoriaService;
+    private final ApplicationEventPublisher eventos;
 
     /**
      * Acredita un monto en la billetera del usuario especificado de forma idempotente.
@@ -132,6 +135,11 @@ public class CargaService {
         detalleAuditoria.put("saldoResultante", nuevoSaldo);
         detalleAuditoria.put("movimientoId", movimiento.getId());
         auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, "BILLETERA", billetera.getId().toString(), detalleAuditoria);
+
+        if (eventos != null) {
+            eventos.publishEvent(new MovimientoBilleteraRegistrado(
+                    movimiento.getId(), usuarioId, TipoMovimiento.CARGA, montoAcreditado));
+        }
 
         log.info("Carga acreditada con éxito para usuario {}: {} {}, nuevo saldo: {}, referencia: {}",
                 usuarioId, montoAcreditado, movimiento.getMoneda(), nuevoSaldo, referencia);
