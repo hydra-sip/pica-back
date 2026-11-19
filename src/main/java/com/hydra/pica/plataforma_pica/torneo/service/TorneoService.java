@@ -88,7 +88,8 @@ public class TorneoService {
         return new OpcionesTorneo(CatalogoTorneo.DISCIPLINAS, CatalogoTorneo.FORMATOS, List.of(Modalidad.values()),
                 torneoProperties.cupoMaximo(), parametrosPlataforma.gastosAdministrativos(),
                 parametrosPlataforma.margenCierreInicio().toMinutes(),
-                parametrosPlataforma.checkinDuracionMaxima().toMinutes(), canchas);
+                parametrosPlataforma.checkinDuracionMaxima().toMinutes(), canchas,
+                torneoProperties.sinValidarFechas());
     }
 
     @Transactional(readOnly = true)
@@ -349,18 +350,20 @@ public class TorneoService {
                 .toList());
     }
 
+    /** Con {@code app.torneos.sin-validar-fechas} (PICA-448) pueden ser pasadas; el orden se exige igual. */
     private void validarFechas(InformacionTorneoRequest request, Collection<String> cambiados,
             List<ErrorCampo> errores) {
         Instant ahora = Instant.now();
+        boolean futuras = !torneoProperties.sinValidarFechas();
         Instant inicio = request.fechaInicio();
-        if (inicio != null && cambiados.contains("fechaInicio") && !inicio.isAfter(ahora)) {
+        if (futuras && inicio != null && cambiados.contains("fechaInicio") && !inicio.isAfter(ahora)) {
             errores.add(fechas("fechaInicio", "No puede ser anterior a hoy"));
         }
         if (inicio != null && request.fechaFin() != null && request.fechaFin().isBefore(inicio)) {
             errores.add(fechas("fechaFin", "No puede ser anterior a la fecha de inicio"));
         }
         Instant cierre = request.cierreInscripcionEn();
-        if (cierre != null && cambiados.contains("cierreInscripcionEn") && !cierre.isAfter(ahora)) {
+        if (futuras && cierre != null && cambiados.contains("cierreInscripcionEn") && !cierre.isAfter(ahora)) {
             errores.add(fechas("cierreInscripcionEn", "No puede ser anterior a hoy"));
         } else if (cierre != null && inicio != null && cierre.isAfter(inicio)) {
             errores.add(fechas("cierreInscripcionEn", "La inscripción tiene que cerrar antes del inicio"));

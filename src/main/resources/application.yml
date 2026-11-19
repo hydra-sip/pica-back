@@ -105,6 +105,7 @@ app:
     cupo-maximo: ${APP_TORNEOS_CUPO_MAXIMO:64}   # tope de participantes por torneo (HU-201)
     cierre-automatico: ${APP_TORNEOS_CIERRE_AUTOMATICO:true}   # cerrar las inscripciones vencidas (HU-206)
     revision-cierres: ${APP_TORNEOS_REVISION_CIERRES:60s}   # cada cuánto se buscan
+    sin-validar-fechas: ${APP_TORNEOS_SIN_VALIDAR_FECHAS:false}   # solo para la demo: fechas pasadas al crear, editar y publicar un torneo y al programar partidos (PICA-448)
   partidos:
     plazo-objecion: ${APP_PARTIDOS_PLAZO_OBJECION:15m}   # para aceptar u objetar un resultado cargado (HU-301)
     tolerancia-checkin: ${APP_PARTIDOS_TOLERANCIA_CHECKIN:2m}   # margen en cada extremo de la ventana de check-in (HU-308)

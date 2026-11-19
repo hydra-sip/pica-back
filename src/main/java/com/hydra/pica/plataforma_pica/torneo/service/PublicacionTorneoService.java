@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import com.hydra.pica.plataforma_pica.common.config.TorneoConfig.TorneoProperties;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
@@ -50,6 +51,7 @@ public class PublicacionTorneoService {
     private final PremioRepository premioRepository;
     private final GastoRepository gastoRepository;
     private final ParametrosPlataforma parametrosPlataforma;
+    private final TorneoProperties torneoProperties;
 
     /** Si le falta algo, 409 TORNEO_INCOMPLETO con todo lo que falta en {@code faltantes}; no se publica nada. */
     @Transactional
@@ -58,7 +60,7 @@ public class PublicacionTorneoService {
         List<Premio> premios = premioRepository.findByTorneoIdOrderByIdPuestoAsc(id);
         List<Gasto> gastos = gastoRepository.findByTorneoIdOrderByIdGastoIdAsc(id);
         Instant ahora = Instant.now();
-        validar(torneo, premios, gastos, ahora);
+        validar(torneo, premios, gastos, ahora, torneoProperties.sinValidarFechas());
 
         // el % queda fijo desde acá: un cambio del parámetro ya no lo toca
         torneo.setPctGastosAdministrativos(parametrosPlataforma.gastosAdministrativos());
@@ -73,11 +75,13 @@ public class PublicacionTorneoService {
         return torneosPropios.informacion(torneoRepository.saveAndFlush(torneo));
     }
 
-    private static void validar(Torneo torneo, List<Premio> premios, List<Gasto> gastos, Instant ahora) {
+    /** @param sinValidarFechas el ambiente de prueba (PICA-448): se publica aunque el cierre ya haya pasado */
+    private static void validar(Torneo torneo, List<Premio> premios, List<Gasto> gastos, Instant ahora,
+            boolean sinValidarFechas) {
         List<FaltanteTorneo> faltantes = new ArrayList<>();
         if (!AsistenteTorneo.datosGeneralesCompletos(torneo)) {
             faltantes.add(FaltanteTorneo.INFORMACION);
-        } else if (!torneo.getCierreInscripcionEn().isAfter(ahora)) {
+        } else if (!sinValidarFechas && !torneo.getCierreInscripcionEn().isAfter(ahora)) {
             faltantes.add(FaltanteTorneo.CIERRE_VENCIDO);
         }
         if (!AsistenteTorneo.cuposCompletos(torneo)) {
