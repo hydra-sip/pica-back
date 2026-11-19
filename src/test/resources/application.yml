@@ -24,6 +24,8 @@ app:
     modo: simulado
   liquidacion:
     automatica: false
+  fraude:
+    deteccion-automatica: false
   rifas:
     cierre-automatico: false
     sorteo-automatico: false

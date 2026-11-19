@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
 import jakarta.persistence.LockModeType;
@@ -11,6 +12,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -50,4 +52,30 @@ public interface TorneoRepository extends JpaRepository<Torneo, Long>, JpaSpecif
 
     @EntityGraph(attributePaths = {"organizador", "organizador.persona"})
     Optional<Torneo> findBySlugAndEliminadoEnIsNull(String slug);
+
+    /** Torneos publicados del organizador (excluye borradores y eliminados). */
+    @Query("""
+            select count(t) from Torneo t
+            where t.organizador.id = :organizadorId and t.eliminadoEn is null
+            and t.estado <> com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo.BORRADOR""")
+    long contarPublicadosDelOrganizador(@Param("organizadorId") Long organizadorId);
+
+    /** Torneos del organizador en un estado puntual (ej. FINALIZADO o CANCELADO). */
+    @Query("""
+            select count(t) from Torneo t
+            where t.organizador.id = :organizadorId and t.eliminadoEn is null
+            and t.estado = :estado""")
+    long contarDelOrganizadorConEstado(@Param("organizadorId") Long organizadorId, @Param("estado") EstadoTorneo estado);
+
+    /**
+     * Sube la versión del bracket (HU-809) en la transacción de quien llama, con un UPDATE atómico que toma el lock de
+     * la fila: dos cambios concurrentes de la llave del mismo torneo quedan ordenados. La columna no está en la entidad
+     * para que un Torneo cargado antes no la pise al guardarse.
+     */
+    @Modifying
+    @Query(value = "UPDATE torneo SET bracket_version = bracket_version + 1 WHERE id = :id", nativeQuery = true)
+    void subirVersionBracket(@Param("id") Long id);
+
+    @Query(value = "SELECT bracket_version FROM torneo WHERE id = :id", nativeQuery = true)
+    long versionBracket(@Param("id") Long id);
 }

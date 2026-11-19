@@ -51,6 +51,7 @@ tags:
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
   - {name: Admin – Parámetros, description: 'Parámetros de la plataforma (gastos administrativos, plazos y retiros). HU-702, Tomás.'}
   - {name: Admin – Reclamos, description: 'Reclamos sobre el resultado de rifas y su resolución definitiva. HU-706, Salvador.'}
+  - {name: Admin – Alertas de fraude, description: 'Detección y revisión de alertas de conductas fraudulentas. HU-705, Salvador.'}
   - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
   - {name: Torneos, description: 'Asistente de crear torneo del organizador logueado (HU-201, PICA-38; HU-601, PICA-55), Tomás. Catálogo y ficha públicos (HU-208), Salvador.'}
   - {name: Equipos, description: 'Equipos del capitán para elegir al inscribirse. HU-204 (PICA-234), Mateo.'}
@@ -328,6 +329,8 @@ paths:
         La persona tiene que existir: se manda `personaId` (la pantalla la busca en
         `GET /admin/personas?q=` y si no está la crea). Nace ACTIVO con el mail verificado.
         Por dentro: `UsuarioService.crear(NuevoUsuario.porAdmin(...))`.
+        400 `BLOQUEO_POR_ENDPOINT_PROPIO` con `estado: BLOQUEADO`: nadie nace bloqueado, se lo bloquea después
+        con `POST /admin/usuarios/{id}/bloqueo` (HU-703, PICA-414).
         403 `SIN_PERMISO` si algún rol tiene permisos que quien llama no tiene (los nombres van en `roles`).
         404 `PERSONA_NO_ENCONTRADA`, `ROL_NO_ENCONTRADO`.
         409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`, `ROL_INACTIVO`.
@@ -358,15 +361,14 @@ paths:
       description: >-
         Se mandan todos los campos. Los roles van por su propio endpoint porque exigen otro permiso.
         Si cambia el `email`, el usuario queda con `emailVerificado: false` en `PENDIENTE_VERIFICACION` y
-        se le manda el mail de verificación al email nuevo (si a la vez se lo bloquea, queda `BLOQUEADO`).
-        Pasarlo a `BLOQUEADO` le revoca los refresh tokens. Para bloquear con motivo y fecha de fin está
-        `POST /admin/usuarios/{id}/bloqueo`; desde acá queda bloqueado sin motivo propio, y volver a `ACTIVO`
-        levanta el bloqueo.
+        se le manda el mail de verificación al email nuevo (si está bloqueado, sigue `BLOQUEADO`).
+        El `estado` se manda como está: bloquear y desbloquear van solo por `POST` y
+        `DELETE /admin/usuarios/{id}/bloqueo`, con permiso, motivo y auditoría. Pedir pasar a `BLOQUEADO` o
+        sacarlo de `BLOQUEADO` es 400 `BLOQUEO_POR_ENDPOINT_PROPIO` (HU-703, PICA-414).
         Un usuario con el mail sin verificar (`PENDIENTE_VERIFICACION`) no se puede pasar a `ACTIVO` a mano:
-        se activa solo cuando verifica. Pasarlo a `BLOQUEADO` sí se puede.
+        se activa solo cuando verifica.
         Un usuario dado de baja no se modifica: 404, primero hay que reactivarlo.
-        403 `USUARIO_PROTEGIDO` (el Admin del sistema), `ACCION_SOBRE_SI_MISMO` (pasarse uno mismo a
-        `BLOQUEADO`; el resto de los datos propios sí se pueden editar).
+        403 `USUARIO_PROTEGIDO` (el Admin del sistema).
         404 `USUARIO_NO_ENCONTRADO`, `PERSONA_NO_ENCONTRADA`.
         409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`,
         `EMAIL_NO_VERIFICADO` (se manda `estado: ACTIVO` y el mail no está verificado; en el login el mismo
@@ -430,7 +432,7 @@ paths:
     post:
       tags: [Admin – Usuarios]
       summary: Bloquear con motivo
-      x-jira: PICA-230
+      x-jira: PICA-230, PICA-414
       x-owner: Tomás
       x-permiso: USUARIO_BLOQUEAR
       description: >-
@@ -450,7 +452,7 @@ paths:
     delete:
       tags: [Admin – Usuarios]
       summary: Levantar el bloqueo
-      x-jira: PICA-230
+      x-jira: PICA-230, PICA-414
       x-owner: Tomás
       x-permiso: USUARIO_BLOQUEAR
       description: >-
@@ -991,6 +993,78 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/admin/alertas-fraude:
+    get:
+      tags: [Admin – Alertas de fraude]
+      summary: Listar alertas de fraude
+      x-jira: PICA-416
+      x-owner: Salvador
+      x-permiso: ALERTA_FRAUDE_REVISAR
+      description: >-
+        HU-705 (T705-1). Lista paginada de alertas de fraude ordenadas con `PENDIENTE` primero y luego las más
+        recientes (`creadaEn` descendente). Todos los filtros son opcionales y se combinan. Acepta `torneoId`/`torneo`,
+        `rifaId`/`rifa` y `usuarioId`/`usuario`.
+      parameters:
+        - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoAlertaFraude'}}
+        - {name: regla, in: query, schema: {$ref: '#/components/schemas/ReglaFraude'}}
+        - {name: torneoId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: rifaId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: usuarioId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: desde, in: query, schema: {type: string, format: date-time}}
+        - {name: hasta, in: query, schema: {type: string, format: date-time}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página de alertas de fraude, content: {application/json: {schema: {$ref: '#/components/schemas/PageAlertaFraudeDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/alertas-fraude/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Admin – Alertas de fraude]
+      summary: Ver detalle de una alerta de fraude
+      x-jira: PICA-416
+      x-owner: Salvador
+      x-permiso: ALERTA_FRAUDE_REVISAR
+      description: >-
+        HU-705 (T705-1). Devuelve el detalle completo de la alerta incluyendo `datos` JSON, el usuario involucrado
+        y el torneo o rifa asociado. 404 `ALERTA_FRAUDE_NO_ENCONTRADA` si no existe.
+      responses:
+        '200': {description: Detalle de la alerta, content: {application/json: {schema: {$ref: '#/components/schemas/AlertaFraudeDetalle'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/alertas-fraude/{id}/revisar:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Admin – Alertas de fraude]
+      summary: Marcar una alerta de fraude como revisada
+      x-jira: PICA-416
+      x-owner: Salvador
+      x-permiso: ALERTA_FRAUDE_REVISAR
+      description: >-
+        HU-705 (T705-1). Marca la alerta como `REVISADA` exigiendo `nota` obligatoria no vacía (hasta 1000
+        caracteres), guarda `revisadaPor` y `revisadaEn` y registra la revisión en `auditoria` (`MODIFICACION` sobre
+        `ALERTA_FRAUDE`).
+        400 `VALIDACION` si falta `nota` o supera el máximo.
+        404 `ALERTA_FRAUDE_NO_ENCONTRADA` si no existe.
+        409 `ALERTA_FRAUDE_YA_REVISADA` si ya fue revisada.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RevisarAlertaFraudeRequest'}
+      responses:
+        '200': {description: Alerta marcada como revisada, content: {application/json: {schema: {$ref: '#/components/schemas/AlertaFraudeDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   # --- Rifas -------------------------------------------------------------------
   # Todas exigen RIFA_GESTIONAR (ORGANIZADOR, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO. La rifa de otro
   # organizador da 404 RIFA_NO_ENCONTRADA, como si no existiera.
@@ -1154,7 +1228,10 @@ paths:
         vendidos: `listaHash` es el SHA-256 de una línea por número vendido, de menor a mayor, con `número;código del
         ticket`, separadas con `\n` (ver `SelloRifa`), y `listaSelladaEn` la fecha del sellado. El cierre es
         definitivo: después, reservar, comprar, volver a borrador o eliminar responden 409 `LISTA_SELLADA`. 409
-        `RIFA_NO_EDITABLE` si no está EN_VENTA y `LISTA_SELLADA` si ya se cerró. Queda en la auditoría
+        `RIFA_NO_EDITABLE` si no está EN_VENTA, `LISTA_SELLADA` si ya se cerró y `RIFA_SIN_VENTAS` si no vendió
+        ningún número (la rifa sigue EN_VENTA y conserva sus reservas; si la venta vence así, la tarea programada la
+        cancela: pasa a CANCELADA, se borran las reservas y queda en la auditoría como `CANCELACION` con el motivo
+        `SIN_VENTAS`, sin sello ni compromiso). Queda en la auditoría
         (`CIERRE_VENTA`, con el motivo MANUAL o FECHA). Con el sello se publica el compromiso del sorteo (HU-502):
         `compromisoHash` = SHA-256 de `listaHash:fechaSorteo` y `compromisoPublicadoEn`, antes de que exista la semilla.
         Antes del compromiso se acomodan las fechas (PICA-264): a mano, `ventaHasta` pasa a ser el cierre; y si
@@ -1180,7 +1257,8 @@ paths:
         los vendidos por el SHA-256 de `semilla:número`, de menor a mayor, y el primero gana el premio del puesto 1,
         el segundo el del 2, y así; los premios que sobran quedan sin ganador. La rifa pasa a SORTEADA y queda en la
         auditoría (`SORTEO`, con la semilla, el compromiso y los ganadores). 409 `RIFA_NO_EDITABLE` si no está
-        CERRADA y `SORTEO_ANTICIPADO` antes de `fechaSorteo`. La semilla es el `randomness` de drand en la ronda
+        CERRADA, `SORTEO_ANTICIPADO` antes de `fechaSorteo` y `RIFA_SIN_VENTAS` si no tiene números vendidos (antes
+        de pedir la semilla); la tarea programada cancela esas rifas en vez de sortearlas. La semilla es el `randomness` de drand en la ronda
         vigente en `fechaSorteo` (HU-503); se controla que sea el SHA-256 de la firma.
       responses:
         '200': {$ref: '#/components/responses/Rifa'}
@@ -1307,7 +1385,8 @@ paths:
         administrativos que la rifa fijó al publicar. 400 `VALIDACION` con `RANGO_INVALIDO` en `numeros` si alguno
         está fuera del rango, y `VALOR_INVALIDO` si hay repetidos. 404 `RIFA_NO_ENCONTRADA`. 409 `VENTA_CERRADA`
         fuera de la ventana de venta, `LISTA_SELLADA` con la venta ya cerrada (HU-407), `RIFA_PROPIA` si es el
-        organizador y `NUMERO_NO_DISPONIBLE` (con `numeros`)
+        organizador, `ORGANIZADOR_BLOQUEADO` si el organizador está bloqueado (HU-703) y `NUMERO_NO_DISPONIBLE`
+        (con `numeros`)
         si alguno está vendido o reservado por otro; dos pedidos a la vez por el mismo número reservan uno solo.
       requestBody:
         required: true
@@ -1340,7 +1419,8 @@ paths:
         como la inscripción; el ticket también guarda el monto y los gastos por separado), emite el ticket y los números pasan a VENDIDO. Publica la venta en
         `/topic/rifas/{id}` y, con torneo, `/topic/torneos/{id}`. Idempotente: con la misma clave devuelve el mismo
         ticket sin volver a cobrar. 400 `VALIDACION` con `REQUERIDO` en `Idempotency-Key` sin la clave. 409
-        `VENTA_CERRADA`, `LISTA_SELLADA`, `RIFA_PROPIA`, `NUMERO_NO_DISPONIBLE` si alguno ya no es suyo, `RESERVA_VENCIDA` (con
+        `VENTA_CERRADA`, `LISTA_SELLADA`, `RIFA_PROPIA`, `ORGANIZADOR_BLOQUEADO` (HU-703: no se cobra nada),
+        `NUMERO_NO_DISPONIBLE` si alguno ya no es suyo, `RESERVA_VENCIDA` (con
         `numeros`) si la reserva venció o no existe, `CLAVE_IDEMPOTENCIA_USADA` si la clave es de otra compra y
         `SALDO_INSUFICIENTE` (con `faltante`) si el disponible no alcanza para los números más los gastos (HU-603): los
         números siguen reservados a su nombre hasta que venza la reserva, así que después de cargar saldo se compran
@@ -2468,6 +2548,26 @@ paths:
               schema: {$ref: '#/components/schemas/FairPlayDetalle'}
         '404': {$ref: '#/components/responses/Error'}
 
+  /api/v1/usuarios/{id}/perfil-organizador:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Reputación]
+      summary: Perfil público del organizador
+      x-jira: PICA-429
+      x-owner: Salvador
+      security: []
+      description: >-
+        HU-806. Público (sin login obligatorio): identidad visible (sin datos privados), contadores de torneos
+        organizados (publicados), finalizados y cancelados, índice del organizador con historial y torneos próximos
+        vigentes. 404 `USUARIO_NO_ENCONTRADO` si no existe.
+      responses:
+        '200':
+          description: Perfil público del organizador
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PerfilOrganizador'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/sanciones/mias:
     get:
       tags: [Reputación]
@@ -3079,9 +3179,15 @@ paths:
       x-owner: Mateo
       description: >-
         HU-206. Sin cuerpo. Solo el organizador del torneo, en cualquier momento mientras la inscripción está abierta,
-        aunque no se haya llegado al cupo mínimo ni haya confirmadas. La inscripción también se cierra sola: cuando la
-        última confirmación completa el cupo (al pagar, o al confirmar en un torneo gratis) y cuando llega la fecha de
-        cierre, con una tarea programada. En los tres casos pasa lo mismo, bloqueando la fila del torneo: el torneo
+        con las inscripciones confirmadas que hacen falta para jugar (`inscriptosMinimos` de `TorneoInformacion`,
+        PICA-447): 2 en eliminación directa y, con grupos, `cupoMaximo / tamanioGrupo` grupos por `clasificanPorGrupo
+        + 1`; por debajo, 409 `PARTICIPANTES_INSUFICIENTES` con cuántas hay y cuántas faltan (antes, HU-206 dejaba
+        cerrar sin mínimo). La inscripción también se cierra sola: cuando la última confirmación completa el cupo (al
+        pagar, o al confirmar en un torneo gratis; con el cupo lleno siempre se llega al mínimo) y cuando llega la fecha
+        de cierre, con una tarea programada. Si la fecha llega por debajo del mínimo, la tarea no cierra: cancela el
+        torneo con las reglas de `POST /torneos/{id}/cancelacion` sin gastos declarados (CANCELADO y reintegro total;
+        CANCELACION_EN_REVISION si el torneo ya tiene gastos pagados) y queda en la auditoría como CANCELACION sin
+        usuario y con el motivo `INSCRIPTOS_INSUFICIENTES`. En los tres cierres pasa lo mismo, bloqueando la fila del torneo: el torneo
         pasa a INSCRIPCION_CERRADA; los borradores y las pendientes de pago pasan a CANCELADA (no se cobró nada); se
         sella la lista de confirmadas en `listaHash` (ver `TorneoInformacion`) con la fecha y hora en
         `inscripcionCerradaEn`; y queda en la auditoría (CIERRE_INSCRIPCION) con el motivo (CUPO, FECHA o MANUAL) y
@@ -3090,7 +3196,8 @@ paths:
         `INSCRIPCION_NO_ABIERTA` (pagar lo chequea antes que el estado, porque la pendiente ya quedó cancelada), y
         editar o confirmar un borrador cancelado, `INSCRIPCION_NO_EDITABLE`. 404
         `TORNEO_NO_ENCONTRADO` si no existe, está dado de baja o quien llama no es el organizador. 409
-        `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA.
+        `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA y `PARTICIPANTES_INSUFICIENTES` por
+        debajo del mínimo.
       parameters: [{$ref: '#/components/parameters/id'}]
       responses:
         '200': {$ref: '#/components/responses/TorneoInformacion'}
@@ -3126,6 +3233,7 @@ paths:
         404 `TORNEO_NO_ENCONTRADO` si el torneo no existe o está dado de baja; `EQUIPO_NO_ENCONTRADO` si el
         equipo no existe, está dado de baja o no es del capitán; `USUARIO_NO_ENCONTRADO` si un jugador no existe.
         409 `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA o ya pasó la fecha de cierre;
+        `ORGANIZADOR_BLOQUEADO` si el organizador del torneo está bloqueado (HU-703);
         `USUARIO_NO_ACTIVO` si el capitán o un jugador no está activo; `INSCRIPCION_DUPLICADA` si ya tiene un
         borrador o una inscripción activa en el torneo (individual), o si ya tiene un borrador de cualquiera de
         sus equipos o el equipo ya tiene una inscripción en el torneo (de equipo); `JUGADOR_YA_INSCRIPTO` si un
@@ -3277,7 +3385,7 @@ paths:
         404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador);
         `TORNEO_NO_ENCONTRADO` si el torneo fue dado de baja.
         409 `INSCRIPCION_NO_EDITABLE` si no está en BORRADOR; `REGLAMENTO_NO_ACEPTADO`; `INSCRIPCION_NO_ABIERTA`;
-        `USUARIO_NO_ACTIVO` (el capitán o un jugador de la nómina); `INSCRIPCION_DUPLICADA` (también si otra
+        `ORGANIZADOR_BLOQUEADO` (HU-703); `USUARIO_NO_ACTIVO` (el capitán o un jugador de la nómina); `INSCRIPCION_DUPLICADA` (también si otra
         confirmación del mismo usuario gana la carrera); `NOMINA_INVALIDA` si la nómina tiene menos jugadores que
         el tamaño de equipo o más que el máximo de nómina, o no incluye al capitán; `JUGADOR_YA_INSCRIPTO` si un
         jugador de la nómina figura en otra inscripción activa del torneo; `CUPO_COMPLETO` si las inscripciones
@@ -3413,7 +3521,8 @@ paths:
         404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario; `TORNEO_NO_ENCONTRADO` si el
         torneo fue dado de baja.
         409 `INSCRIPCION_NO_EDITABLE` si no está en PENDIENTE_PAGO (ni CONFIRMADA); `INSCRIPCION_NO_ABIERTA` si el
-        torneo ya no tiene la inscripción abierta; `USUARIO_NO_ACTIVO`; `CUPO_COMPLETO`; `SALDO_INSUFICIENTE` (con
+        torneo ya no tiene la inscripción abierta; `USUARIO_NO_ACTIVO`; `ORGANIZADOR_BLOQUEADO` (HU-703: no se cobra
+        nada y la inscripción sigue en PENDIENTE_PAGO); `CUPO_COMPLETO`; `SALDO_INSUFICIENTE` (con
         `faltante`) si el disponible no alcanza para el valor más los gastos: no se cobra nada y la inscripción sigue
         en PENDIENTE_PAGO, sin ocupar lugar; `COBRO_RECHAZADO` si el pago no se aprobó (por ejemplo, con la billetera
         bloqueada) y no se cobró nada.
@@ -3748,13 +3857,12 @@ components:
     Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS, AUDITORIA]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), AUDITORIA_VER de V49 (PICA-345), TORNEO_ADMINISTRAR de V50 (PICA-342) y USUARIO_BLOQUEAR de V58 (PICA-412; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO; V58 también le da USUARIO_VER y AUDITORIA_VER a SOPORTE). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), AUDITORIA_VER de V49 (PICA-345), TORNEO_ADMINISTRAR de V50 (PICA-342), USUARIO_BLOQUEAR de V58 (PICA-414; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO) y ALERTA_FRAUDE_REVISAR de V60 (PICA-416; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO). V62 (PICA-412) le suma AUDITORIA_VER a SOPORTE. Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
              RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR,
-             CANCELACION_REVISAR, RECLAMO_RESOLVER, AUDITORIA_VER, TORNEO_ADMINISTRAR,
-             USUARIO_BLOQUEAR]
+             CANCELACION_REVISAR, RECLAMO_RESOLVER, AUDITORIA_VER, TORNEO_ADMINISTRAR, USUARIO_BLOQUEAR, ALERTA_FRAUDE_REVISAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -3768,6 +3876,8 @@ components:
         transacción revirtió) · TRANSACCION_SIN_CARGA (no pagó esta carga en el contrato) · MONTO_NO_COINCIDE (pagó
         otro monto) · TRANSACCION_YA_USADA (ya acreditó otra carga) · CARGA_NO_ENCONTRADA 404 · TRANSACCION_PENDIENTE 409 (sin las confirmaciones mínimas; reintentar
         en unos segundos) · CARGA_YA_ACREDITADA 409 (se acreditó con otra transacción) · RED_NO_DISPONIBLE 503 (el nodo de Base Sepolia no respondió; reintentar más tarde).
+        Bloqueo: BLOQUEO_POR_ENDPOINT_PROPIO 400 (el `PUT` o el alta de un usuario que cambiaría su bloqueo; va
+        por `/admin/usuarios/{id}/bloqueo`, HU-703).
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
         DEMASIADOS_INTENTOS 429 (login).
@@ -3790,7 +3900,8 @@ components:
         en un torneo: "El evento debe estar cerrado y validado oficialmente para liberar la custodia"; en una rifa,
         sorteada, con el plazo de reclamo vencido y sin reclamos pendientes, HU-606) ·
         CUSTODIA_LIBERADA (la custodia ya se liquidó o reintegró, también si se liquida dos veces; trae `estado`) ·
-        INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
+        INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) ·
+        ORGANIZADOR_BLOQUEADO (el organizador del torneo o de la rifa está bloqueado: no se inscribe, confirma, paga, reserva ni compra; HU-703) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
         JUGADOR_YA_INSCRIPTO (figura en otra inscripción activa del torneo, como capitán o en la nómina; cuál va en `jugador`) ·
@@ -3806,7 +3917,8 @@ components:
         HONORARIO_NO_DEDUCIBLE (un honorario con un comprobante externo) · HONORARIO_YA_DEPOSITADO (ya hay un
         depósito; también al modificar o borrar ese gasto) · HONORARIO_SIN_DEPOSITAR (retirar sin depósito) ·
         GASTO_YA_PAGADO (el gasto común ya tiene comprobante) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
-        PARTICIPANTES_INSUFICIENTES (menos de 2 inscripciones confirmadas) · BRACKET_YA_GENERADO (se puede regenerar) ·
+        PARTICIPANTES_INSUFICIENTES (menos inscripciones confirmadas que `inscriptosMinimos`: al cerrar la inscripción,
+        al generar el bracket o al sortear los grupos) · BRACKET_YA_GENERADO (se puede regenerar) ·
         SIN_ARBITROS (cada partido necesita un árbitro que haya aceptado la designación) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
         regenera) · SEMILLA_NO_DISPONIBLE (la ronda de drand del sorteo de grupos todavía no salió) ·
         GRUPOS_YA_SORTEADOS (los grupos no se vuelven a sortear) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
@@ -3825,6 +3937,7 @@ components:
         RESERVA_VENCIDA (la reserva se venció o no existe; la lista va en `numeros`) · RIFA_PROPIA (el organizador
         no compra su rifa) · CLAVE_IDEMPOTENCIA_USADA (la clave ya se usó para otra compra) · RIFA_CON_VENTAS
         (la rifa tiene números vendidos: no vuelve a borrador ni se elimina; trae `numerosVendidos`) ·
+        RIFA_SIN_VENTAS (cerrar la venta o sortear una rifa sin ningún número vendido) ·
         RIFA_CON_RESERVAS (alguien está pagando números de la rifa). Reclamo de una rifa (PICA-268):
         RIFA_NO_SORTEADA (todavía no se sorteó) · PLAZO_RECLAMO_VENCIDO (pasaron las 48 h o ya se liquidó o
         canceló) · RECLAMO_DUPLICADO (el usuario ya tiene un reclamo pendiente en la rifa) · RECLAMO_YA_RESUELTO (el
@@ -3835,6 +3948,7 @@ components:
         PICA-337): RETIRO_FUERA_DE_TOPES 400 (el monto está fuera del rango mínimo y máximo) · CUENTA_NO_VALIDADA 409
         (solo se puede solicitar retiros a una cuenta bancaria validada).
         Sanciones (HU-803, PICA-423): JUGADOR_NO_PARTICIPA 409 (el jugador no está en una inscripción confirmada del torneo).
+        Alertas de fraude (HU-705, PICA-416): ALERTA_FRAUDE_NO_ENCONTRADA 404 · ALERTA_FRAUDE_YA_REVISADA 409.
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
@@ -3851,16 +3965,16 @@ components:
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
              OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO, CARGA_NO_ENCONTRADA,
-              CUENTA_BANCARIA_NO_ENCONTRADA, RECLAMO_NO_ENCONTRADO,
+              CUENTA_BANCARIA_NO_ENCONTRADA, RECLAMO_NO_ENCONTRADO, ALERTA_FRAUDE_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
-             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
+             USUARIO_YA_BLOQUEADO, BLOQUEO_POR_ENDPOINT_PROPIO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
              TORNEO_INCOMPLETO,
              CAMPOS_BLOQUEADOS, COBRO_RECHAZADO, SALDO_INSUFICIENTE, FONDOS_EN_CUSTODIA, CUSTODIA_LIBERADA,
-             INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
+             INSCRIPCION_NO_ABIERTA, ORGANIZADOR_BLOQUEADO, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
              ARBITRO_NO_HABILITADO, DESIGNACION_YA_RESPONDIDA, COMPROMISO_NO_ACEPTADO, IDENTIDAD_NO_VERIFICADA,
@@ -3871,9 +3985,9 @@ components:
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
              PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, JUGADOR_NO_PARTICIPA, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
-             RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
+             RIFA_CON_VENTAS, RIFA_CON_RESERVAS, RIFA_SIN_VENTAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, SORTEO_ANTICIPADO, RECLAMO_DUPLICADO,
-             RECLAMO_YA_RESUELTO, RECLAMO_NO_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA,
+             RECLAMO_YA_RESUELTO, RECLAMO_NO_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA, ALERTA_FRAUDE_YA_REVISADA,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR, BILLETERA_BLOQUEADA]
 
@@ -4285,7 +4399,7 @@ components:
       required: [clave, unidad, valor, descripcion, modificadoEn, modificadoPor]
       properties:
         clave: {$ref: '#/components/schemas/ClaveParametro'}
-        unidad: {type: string, enum: [PORCENTAJE, MINUTOS, PESOS, PUNTOS], description: 'PORCENTAJE de 0 a 100; MINUTOS enteros; PESOS con hasta dos decimales; PUNTOS enteros de 0 a 1000'}
+        unidad: {type: string, enum: [PORCENTAJE, MINUTOS, PESOS, PUNTOS, CANTIDAD], description: 'PORCENTAJE de 0 a 100; MINUTOS enteros; PESOS con hasta dos decimales; PUNTOS enteros de 0 a 1000; CANTIDAD enteros mayores que 0'}
         valor: {type: number, examples: [10]}
         descripcion: {type: string}
         modificadoEn: {type: string, format: date-time}
@@ -4295,14 +4409,68 @@ components:
       enum: [GASTOS_ADMINISTRATIVOS, GASTOS_ADMINISTRATIVOS_TOPE, MARGEN_CIERRE_INICIO_MIN, CHECKIN_DURACION_MAX_MIN,
              RETIRO_MINIMO, RETIRO_MAXIMO, CANCELACION_GASTOS_TOPE, FAIR_PLAY_INICIAL, FAIR_PLAY_MAXIMO,
              FAIR_PLAY_CHECKIN, FAIR_PLAY_AUSENCIA, FAIR_PLAY_SANCION_LEVE, FAIR_PLAY_SANCION_MEDIA,
-             FAIR_PLAY_SANCION_GRAVE]
+             FAIR_PLAY_SANCION_GRAVE, FRAUDE_RIFA_NUMEROS_MAX, FRAUDE_RIFA_VENTANA_MIN,
+             FRAUDE_CARRUSEL_OPERACIONES_MIN, FRAUDE_CARRUSEL_VENTANA_MIN, FRAUDE_CANCELACIONES_MIN,
+             FRAUDE_OBJECIONES_MIN, FRAUDE_CUENTAS_USUARIOS_MIN]
       description: >-
         HU-702. GASTOS_ADMINISTRATIVOS (% que paga aparte quien se inscribe o compra) y su tope;
         MARGEN_CIERRE_INICIO_MIN (CE4-5); CHECKIN_DURACION_MAX_MIN (máximo de la ventana de check-in);
         RETIRO_MINIMO y RETIRO_MAXIMO (pesos, para HU-607); CANCELACION_GASTOS_TOPE (% máximo del pozo que el
         organizador puede retener en gastos al cancelar un torneo, HU-605). FAIR_PLAY_* (puntos del índice de fair play,
         HU-802): el inicial y el máximo (el inicial no lo supera), lo que suma un check-in, lo que resta una ausencia y
-        lo que resta cada gravedad de sanción (leve <= media <= grave).
+        lo que resta cada gravedad de sanción (leve <= media <= grave). FRAUDE_* (umbrales y ventanas de las reglas de
+        detección de fraude, HU-705).
+    PageAlertaFraudeDetalle:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/AlertaFraudeDetalle'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    AlertaFraudeDetalle:
+      type: object
+      required: [id, regla, estado, motivo, datos, torneo, rifa, usuario, nota, revisadaPor, revisadaEn, creadaEn]
+      description: Una alerta de fraude del panel de soporte/admin (HU-705, PICA-416).
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        regla: {$ref: '#/components/schemas/ReglaFraude'}
+        estado: {$ref: '#/components/schemas/EstadoAlertaFraude'}
+        motivo: {type: string}
+        datos: {type: object, additionalProperties: true}
+        torneo: {oneOf: [{$ref: '#/components/schemas/TorneoAlertaResumen'}, {type: 'null'}]}
+        rifa: {oneOf: [{$ref: '#/components/schemas/RifaAlertaResumen'}, {type: 'null'}]}
+        usuario: {$ref: '#/components/schemas/UsuarioAlertaResumen'}
+        nota: {type: [string, 'null']}
+        revisadaPor: {type: [string, 'null']}
+        revisadaEn: {type: [string, 'null'], format: date-time}
+        creadaEn: {type: string, format: date-time}
+    TorneoAlertaResumen:
+      type: object
+      required: [id, nombre]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string}
+    RifaAlertaResumen:
+      type: object
+      required: [id, titulo]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        titulo: {type: string}
+    UsuarioAlertaResumen:
+      type: object
+      required: [id, username, email]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        email: {type: string, format: email}
+    RevisarAlertaFraudeRequest:
+      type: object
+      required: [nota]
+      properties:
+        nota: {type: string, minLength: 1, maxLength: 1000, examples: ['Se verificó la operación con el usuario; sin indicios adicionales.']}
+    ReglaFraude:
+      type: string
+      enum: [COMPRA_MASIVA_RIFA, CARRUSEL_CARGA_RETIRO, CANCELACIONES_REITERADAS, OBJECIONES_ABUSIVAS, CUENTAS_COMPARTIDAS]
+    EstadoAlertaFraude:
+      type: string
+      enum: [PENDIENTE, REVISADA]
     PageRegistroAuditoria:
       type: object
       required: [content, page]
@@ -4317,7 +4485,7 @@ components:
         usuarioId: {type: [integer, 'null'], format: int64, description: 'Null en lo que hace el sistema (liquidaciones, cierres por fecha) y en el login fallido de un usuario que no existe'}
         username: {type: [string, 'null']}
         accion: {$ref: '#/components/schemas/AccionAuditoria'}
-        entidad: {type: [string, 'null'], description: 'Sobre qué fue: TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO', examples: [TORNEO]}
+        entidad: {type: [string, 'null'], description: 'Sobre qué fue: TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO, ALERTA_FRAUDE', examples: [TORNEO]}
         entidadId: {type: [string, 'null'], description: 'El id de la entidad, o la clave si es un PARAMETRO', examples: ['42']}
         descripcion:
           type: [string, 'null']
@@ -4352,6 +4520,31 @@ components:
         partidoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'En el check-in y la ausencia'}
         sancionId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'En la sanción'}
         gravedad: {oneOf: [{$ref: '#/components/schemas/Gravedad'}, {type: 'null'}], description: 'En la sanción'}
+        creadoEn: {type: string, format: date-time}
+    PerfilOrganizador:
+      type: object
+      required: [id, username, nombreCompleto, torneosOrganizados, torneosFinalizados, torneosCancelados, indice, historialIndice, torneosProximos]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        nombreCompleto: {type: string}
+        avatar: {type: [string, 'null']}
+        torneosOrganizados: {type: integer, minimum: 0}
+        torneosFinalizados: {type: integer, minimum: 0}
+        torneosCancelados: {type: integer, minimum: 0}
+        indice: {type: integer, minimum: 0, examples: [100]}
+        indiceActualizadoEn: {type: [string, 'null'], format: date-time, description: 'Null: nunca tuvo cancelaciones, conserva el inicial'}
+        historialIndice: {type: array, items: {$ref: '#/components/schemas/MovimientoIndiceOrganizador'}}
+        torneosProximos: {type: array, items: {$ref: '#/components/schemas/TorneoResumen'}}
+    MovimientoIndiceOrganizador:
+      type: object
+      required: [torneoId, torneo, conGastos, delta, valorResultante, creadoEn]
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {type: string}
+        conGastos: {type: boolean}
+        delta: {type: integer, examples: [-15]}
+        valorResultante: {type: integer, minimum: 0}
         creadoEn: {type: string, format: date-time}
     Gravedad:
       type: string
@@ -4541,6 +4734,12 @@ components:
           description: >-
             Los campos de InformacionTorneoRequest que ya no se pueden cambiar (HU-202). Vacío en BORRADOR; en curso,
             finalizado o cancelado, todos. Publicado, siempre `formato` y `reglasGrupos` (quedan sellados, CR-02).
+        inscriptosMinimos:
+          type: [integer, 'null']
+          description: >-
+            Las inscripciones confirmadas que hacen falta para cerrar la inscripción y jugar (PICA-447): 2 en
+            eliminación directa; con grupos, `cupoMaximo / tamanioGrupo` grupos por `clasificanPorGrupo + 1`. Null en
+            un BORRADOR sin formato o, con grupos, sin cupo máximo.
     PermisoArbitro:
       type: string
       enum: [CARGAR_RESULTADOS, RESOLVER_OBJECIONES]
@@ -4691,7 +4890,7 @@ components:
                     nombre: {type: string}
     BracketTorneo:
       type: object
-      required: [torneoId, rondas]
+      required: [torneoId, rondas, version]
       description: >-
         Las rondas de la primera a la final. Sin generar, `rondas` vacío y `semilla` null. Con fase de grupos (CR-02)
         es solo la llave: se crea vacía al empezar y se llena con los que pasan; `semilla` es la del sorteo de grupos.
@@ -4700,6 +4899,13 @@ components:
         semilla: {type: [string, 'null'], description: 'Con la que se sorteó: 64 caracteres hexadecimales'}
         listaHash: {type: [string, 'null'], description: SHA-256 de la lista de inscriptos, sellada al cerrar la inscripción}
         rondas: {type: array, items: {$ref: '#/components/schemas/RondaBracket'}}
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            La versión del bracket (HU-809): sube con cada cambio de la llave. La misma viaja en el tópico del torneo;
+            un bracket con versión menor que el que ya se muestra es más viejo y se descarta.
     RondaBracket:
       type: object
       required: [numero, nombre, partidos]
@@ -5403,7 +5609,7 @@ components:
         fechaSorteo: {type: string, format: date-time}
     RifaPublicaDetalle:
       type: object
-      required: [id, titulo, estado, pctDestinadoTorneo, numeroDesde, numeroHasta, precioNumero, moneda, premios, reparto]
+      required: [id, titulo, estado, pctDestinadoTorneo, numeroDesde, numeroHasta, precioNumero, moneda, premios, reparto, ventaSuspendida]
       description: >-
         Una rifa como la ve quien compra (PICA-221), sin datos del organizador ni de los compradores. `reparto` es lo
         recaudado hasta ahora y cuánto va al pozo del torneo y a los premios (HU-405).
@@ -5435,6 +5641,7 @@ components:
         listaSelladaEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se cerró la venta y se selló la lista; null antes'}
         compromisoHash: {type: [string, 'null'], description: 'Compromiso del sorteo (HU-502): SHA-256 de `listaHash:fechaSorteo`, con la fecha en ISO-8601 UTC como la devuelve la API; null antes del cierre'}
         compromisoPublicadoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se publicó el compromiso, con el sello; siempre antes de obtener la semilla'}
+        ventaSuspendida: {type: boolean, description: 'La rifa está en venta pero el organizador está bloqueado: no se reserva ni se compra (HU-703, PICA-414)'}
     VentaRifaRequest:
       type: object
       required: [numeros]
@@ -5789,9 +5996,10 @@ components:
         cierreInscripcionEn: {type: string, format: date-time}
         fechaInicio: {type: string, format: date-time}
         fechaFin: {type: [string, 'null'], format: date-time}
+        organizador: {oneOf: [{$ref: '#/components/schemas/OrganizadorResumen'}, {type: 'null'}]}
     TorneoDetalle:
       type: object
-      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoMinimo, cupoDisponible, valorInscripcion, moneda, gastosAdministrativos, totalAPagar, pozoEstimado, premios, cierreInscripcionEn, fechaInicio, publicadoEn]
+      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoMinimo, cupoDisponible, valorInscripcion, moneda, gastosAdministrativos, totalAPagar, pozoEstimado, premios, cierreInscripcionEn, fechaInicio, publicadoEn, inscripcionSuspendida]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         slug: {type: string}
@@ -5825,6 +6033,7 @@ components:
         organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
         publicadoEn: {type: [string, 'null'], format: date-time}
         liquidadoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se repartió la custodia del torneo terminado (HU-606, PICA-329); null mientras no se liquidó'}
+        inscripcionSuspendida: {type: boolean, description: 'La inscripción está abierta pero el organizador está bloqueado: no se empieza, confirma ni paga ninguna (HU-703, PICA-414)'}
 
     PronosticoDetalle:
       type: object

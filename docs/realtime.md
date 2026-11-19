@@ -74,6 +74,7 @@ Notifica eventos que alteran el desarrollo de un torneo (bracket, estado y pozo 
     "torneoId": 101,
     "seedOriginal": "abc123seed",
     "hashIntegridad": "f0a1b2c3...",
+    "version": 7,
     "partidos": [
       {
         "id": 15,
@@ -97,6 +98,18 @@ Notifica eventos que alteran el desarrollo de un torneo (bracket, estado y pozo 
 - `ESTADO_CAMBIADO`: Cambió el estado del torneo (ej. `INSCRIPCION_CERRADA` $\to$ `EN_CURSO` $\to$ `FINALIZADO`).
 - `POZO_ACTUALIZADO`: Se incrementó el pozo del torneo tras la venta de números de una rifa asociada.
 - `SYNC`: Snapshot completo enviado a un cliente que se reconecta.
+
+#### Versión del bracket (HU-809)
+
+El bracket trae `version`, un número por torneo que sube en la misma transacción de cada cambio de la llave: el sorteo y el re-sorteo, la programación de un partido, el check-in, la carga de un resultado, la objeción, la confirmación (aceptación, plazo vencido, laudo, walkover y pase directo) y el partido sin presentes. Los cambios de estado del torneo y del pozo no la suben. La misma versión viaja en el GET `/torneos/{id}/bracket`, en este tópico y en la sincronización al suscribirse.
+
+Sirve para que el cliente se quede con el bracket más nuevo aunque los mensajes lleguen desordenados (dos confirmaciones casi simultáneas del mismo torneo) y para detectar que se perdió alguno:
+
+- versión menor que la que ya muestra: el mensaje es viejo y se descarta;
+- versión mayor en uno: se aplica;
+- salto de más de uno: se aplica, porque trae el bracket completo, y además se vuelve a pedir el bracket por GET.
+
+Varios mensajes del mismo commit (un partido sin presentes que termina en un pase directo) pueden llegar con la misma versión y el mismo bracket.
 
 ---
 

@@ -95,6 +95,10 @@ public class ParametrosAdminService {
             noSupera(ClaveParametro.FAIR_PLAY_SANCION_MEDIA, ClaveParametro.FAIR_PLAY_SANCION_GRAVE,
                     "No puede restar más que una sanción grave", "No puede restar menos que una sanción media",
                     resultado, pedidos.keySet(), errores);
+            noSupera(ClaveParametro.INDICE_ORGANIZADOR_CANCELACION, ClaveParametro.INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS,
+                    "No puede restar más que una cancelación con gastos",
+                    "No puede restar menos que una cancelación sin gastos",
+                    resultado, pedidos.keySet(), errores);
         }
         if (!errores.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay parámetros inválidos")
@@ -141,6 +145,15 @@ public class ParametrosAdminService {
                     errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.FORMATO_INVALIDO, "Son puntos enteros"));
                 } else if (valor.signum() < 0 || valor.compareTo(MIL) > 0) {
                     errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que estar entre 0 y 1000"));
+                }
+            }
+            case CANTIDAD -> {
+                if (valor.stripTrailingZeros().scale() > 0) {
+                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.FORMATO_INVALIDO, "Tiene que ser una cantidad entera"));
+                } else if (valor.signum() <= 0) {
+                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que ser mayor que 0"));
+                } else if (valor.compareTo(MAXIMO) > 0) {
+                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Es demasiado grande"));
                 }
             }
             case PESOS -> {

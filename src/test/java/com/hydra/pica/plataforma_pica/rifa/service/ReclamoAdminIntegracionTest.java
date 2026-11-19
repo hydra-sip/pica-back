@@ -126,8 +126,9 @@ class ReclamoAdminIntegracionTest {
                     .contains("RECLAMO_RESOLVER");
         }
         assertThat(permisoRepository.findCodigosByUsuarioId(soporte.getId()))
-                .containsExactlyInAnyOrder("CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "USUARIO_VER",
-                        "USUARIO_BLOQUEAR");
+                .containsExactlyInAnyOrder(
+                        "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "USUARIO_VER", "USUARIO_BLOQUEAR",
+                        "ALERTA_FRAUDE_REVISAR");
     }
 
     @Test

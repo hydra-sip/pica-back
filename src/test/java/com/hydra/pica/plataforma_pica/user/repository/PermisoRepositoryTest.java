@@ -52,20 +52,21 @@ class PermisoRepositoryTest {
                         "PERSONA_VER", "PERSONA_CREAR", "PERSONA_EDITAR", "PERSONA_ELIMINAR",
                         "ROL_VER", "ROL_CREAR", "ROL_EDITAR", "ROL_ELIMINAR", "ROL_ASIGNAR",
                         "RIFA_GESTIONAR", "INSCRIPCION_GESTIONAR", "TORNEO_GESTIONAR", "RIFA_ADMINISTRAR",
-                        "PARAMETRO_ADMINISTRAR", "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "TORNEO_ADMINISTRAR", "USUARIO_BLOQUEAR");
+                        "PARAMETRO_ADMINISTRAR", "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "TORNEO_ADMINISTRAR",
+                        "USUARIO_BLOQUEAR", "ALERTA_FRAUDE_REVISAR");
         assertThat(permisoRepository.findByCodigo("ROL_ASIGNAR")).get()
                 .extracting(Permiso::getModulo).isEqualTo(Modulo.ROLES);
     }
 
     @Test
     void superUsuarioTieneTodoYAdministradorTodoMenosElCatalogoDeRoles() {
-        assertThat(rolRepository.findByNombre("SUPER_USUARIO").orElseThrow().getPermisos()).hasSize(23);
+        assertThat(rolRepository.findByNombre("SUPER_USUARIO").orElseThrow().getPermisos()).hasSize(24);
 
         assertThat(rolRepository.findByNombre("ADMINISTRADOR").orElseThrow().getPermisos())
                 .extracting(Permiso::getCodigo)
-                .hasSize(20)
+                .hasSize(21)
                 .contains("ROL_VER", "ROL_ASIGNAR", "PARAMETRO_ADMINISTRAR", "CANCELACION_REVISAR", "RECLAMO_RESOLVER",
-                        "AUDITORIA_VER", "TORNEO_ADMINISTRAR", "USUARIO_BLOQUEAR")
+                        "AUDITORIA_VER", "TORNEO_ADMINISTRAR", "USUARIO_BLOQUEAR", "ALERTA_FRAUDE_REVISAR")
                 .doesNotContain("ROL_CREAR", "ROL_EDITAR", "ROL_ELIMINAR");
     }
 
@@ -101,7 +102,7 @@ class PermisoRepositoryTest {
         Usuario usuario = usuarioCon("ADMINISTRADOR", "ARBITRO");
 
         assertThat(permisoRepository.findCodigosByUsuarioId(usuario.getId()))
-                .hasSize(20)
+                .hasSize(21)
                 .contains("USUARIO_VER", "PERSONA_ELIMINAR", "ROL_ASIGNAR")
                 .doesNotContain("ROL_EDITAR");
         assertThat(permisoRepository.findCodigosByUsuarioId(usuarioCon("PARTICIPANTE").getId()))
@@ -137,9 +138,9 @@ class PermisoRepositoryTest {
         soporte.getPermisos().add(permisoRepository.findByCodigo("PERSONA_VER").orElseThrow());
         rolRepository.saveAndFlush(soporte);
         entityManager.clear();
-        assertThat(permisoRepository.findCodigosByUsuarioId(usuario.getId()))
-                .containsExactlyInAnyOrder("CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "USUARIO_VER",
-                        "USUARIO_BLOQUEAR", "PERSONA_VER");
+        assertThat(permisoRepository.findCodigosByUsuarioId(usuario.getId())).containsExactlyInAnyOrder(
+                "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "USUARIO_VER", "USUARIO_BLOQUEAR",
+                "ALERTA_FRAUDE_REVISAR", "PERSONA_VER");
 
         soporte = rolRepository.findByNombre("SOPORTE").orElseThrow();
         soporte.setEliminadoEn(Instant.now());

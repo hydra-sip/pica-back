@@ -54,7 +54,7 @@ class RealtimeWebSocketControllerTest {
         torneo.setEstado(EstadoTorneo.EN_CURSO);
         ReflectionTestUtils.setField(torneo, "id", 1L);
 
-        bracket = new BracketTorneo(1L, "semilla", "hash", List.of());
+        bracket = new BracketTorneo(1L, "semilla", "hash", List.of(), 0L);
 
         rifa = new Rifa();
         rifa.setTitulo("Rifa Aniversario");

@@ -51,11 +51,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class RolServiceIntegracionTest {
 
+    private static final String[] PERMISOS_SOPORTE = {
+            "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "USUARIO_VER", "USUARIO_BLOQUEAR",
+            "ALERTA_FRAUDE_REVISAR"};
+
     private static final FiltroRoles SIN_FILTRO = new FiltroRoles(null, null, null);
     private static final PageRequest PRIMERA_PAGINA = PageRequest.of(0, 20, Sort.by("id"));
-    // los del seed: V43, V47 y V58 (HU-701)
-    private static final String[] PERMISOS_SOPORTE = {
-            "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "USUARIO_VER", "USUARIO_BLOQUEAR"};
 
     @Autowired private RolService rolService;
     @Autowired private PermisoService permisoService;
@@ -156,7 +157,7 @@ class RolServiceIntegracionTest {
                 "PERSONA_VER", "PERSONA_CREAR", "PERSONA_EDITAR", "PERSONA_ELIMINAR",
                 "ROL_VER", "ROL_ASIGNAR", "RIFA_GESTIONAR", "INSCRIPCION_GESTIONAR", "TORNEO_GESTIONAR",
                 "RIFA_ADMINISTRAR", "PARAMETRO_ADMINISTRAR", "CANCELACION_REVISAR", "RECLAMO_RESOLVER",
-                "AUDITORIA_VER", "TORNEO_ADMINISTRAR", "USUARIO_BLOQUEAR");
+                "AUDITORIA_VER", "TORNEO_ADMINISTRAR", "USUARIO_BLOQUEAR", "ALERTA_FRAUDE_REVISAR");
         assertThat(administrador.creadoEn()).isNotNull();
         assertThat(administrador.eliminado()).isFalse();
         assertThat(administrador.eliminadoEn()).isNull();
@@ -291,7 +292,7 @@ class RolServiceIntegracionTest {
     void laBajaLeSacaLosPermisosASusUsuariosYReactivarSeLosDevuelve() {
         Usuario usuario = usuarioCon("admin2", "ADMINISTRADOR");
         Long id = idDe("ADMINISTRADOR");
-        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(20);
+        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(21);
 
         rolService.eliminar(id);
         entityManager.flush();
@@ -303,7 +304,7 @@ class RolServiceIntegracionTest {
         entityManager.clear();
         assertThat(reactivado.eliminado()).isFalse();
         assertThat(reactivado.cantidadUsuarios()).isEqualTo(1L);
-        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(20);
+        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(21);
         assertThat(nombres(SIN_FILTRO)).contains("ADMINISTRADOR");
     }
 
@@ -444,7 +445,7 @@ class RolServiceIntegracionTest {
         assertThat(catalogo.get(2).permisos()).extracting(ModuloPermisos.Item::codigo)
                 .containsExactly("ROL_VER", "ROL_CREAR", "ROL_EDITAR", "ROL_ELIMINAR", "ROL_ASIGNAR");
         assertThat(catalogo).flatExtracting(ModuloPermisos::permisos)
-                .hasSize(23)
+                .hasSize(24)
                 .allSatisfy(item -> assertThat(item.descripcion()).isNotBlank());
     }
 

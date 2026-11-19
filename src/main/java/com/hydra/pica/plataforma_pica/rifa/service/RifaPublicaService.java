@@ -12,6 +12,7 @@ import com.hydra.pica.plataforma_pica.common.config.RifaConfig.RifaProperties;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.Numero;
 import com.hydra.pica.plataforma_pica.rifa.domain.SelloRifa;
@@ -54,6 +55,7 @@ public class RifaPublicaService {
     private final NumeroRepository numeroRepository;
     private final RifaProperties rifaProperties;
     private final Drand drand;
+    private final BloqueoService bloqueoService;
 
     /**
      * En venta y con la venta sin terminar, también las que todavía no empezaron. Primero las que cierran antes; el
@@ -70,8 +72,10 @@ public class RifaPublicaService {
     @Transactional(readOnly = true)
     public RifaPublicaDetalle detalle(Long id) {
         Rifa rifa = buscarPublica(id);
+        boolean ventaSuspendida = rifa.getEstado() == EstadoRifa.EN_VENTA
+                && bloqueoService.estaBloqueado(rifa.getOrganizador());
         return RifaPublicaDetalle.de(rifa, premioRifaRepository.buscarPorRifa(rifa.getId()),
-                numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO));
+                numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO), ventaSuspendida);
     }
 
     @Transactional(readOnly = true)
