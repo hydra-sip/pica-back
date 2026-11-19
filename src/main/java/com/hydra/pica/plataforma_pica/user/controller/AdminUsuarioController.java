@@ -115,13 +115,13 @@ public class AdminUsuarioController {
     }
 
     @PostMapping("/{id}/bloqueo")
-    @PreAuthorize("hasAuthority('USUARIO_EDITAR')")
+    @PreAuthorize("hasAuthority('USUARIO_BLOQUEAR')")
     public UsuarioDetalle bloquear(@PathVariable Long id, @Valid @RequestBody BloqueoRequest request) {
         return usuarioEdicionService.bloquear(id, request.motivo(), request.hasta());
     }
 
     @DeleteMapping("/{id}/bloqueo")
-    @PreAuthorize("hasAuthority('USUARIO_EDITAR')")
+    @PreAuthorize("hasAuthority('USUARIO_BLOQUEAR')")
     public UsuarioDetalle levantarBloqueo(@PathVariable Long id) {
         return usuarioEdicionService.levantarBloqueo(id);
     }

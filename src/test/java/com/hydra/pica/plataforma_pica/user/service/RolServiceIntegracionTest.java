@@ -53,6 +53,9 @@ class RolServiceIntegracionTest {
 
     private static final FiltroRoles SIN_FILTRO = new FiltroRoles(null, null, null);
     private static final PageRequest PRIMERA_PAGINA = PageRequest.of(0, 20, Sort.by("id"));
+    // los del seed: V43, V47 y V58 (HU-701)
+    private static final String[] PERMISOS_SOPORTE = {
+            "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "USUARIO_VER", "USUARIO_BLOQUEAR"};
 
     @Autowired private RolService rolService;
     @Autowired private PermisoService permisoService;
@@ -153,7 +156,7 @@ class RolServiceIntegracionTest {
                 "PERSONA_VER", "PERSONA_CREAR", "PERSONA_EDITAR", "PERSONA_ELIMINAR",
                 "ROL_VER", "ROL_ASIGNAR", "RIFA_GESTIONAR", "INSCRIPCION_GESTIONAR", "TORNEO_GESTIONAR",
                 "RIFA_ADMINISTRAR", "PARAMETRO_ADMINISTRAR", "CANCELACION_REVISAR", "RECLAMO_RESOLVER",
-                "AUDITORIA_VER", "TORNEO_ADMINISTRAR");
+                "AUDITORIA_VER", "TORNEO_ADMINISTRAR", "USUARIO_BLOQUEAR");
         assertThat(administrador.creadoEn()).isNotNull();
         assertThat(administrador.eliminado()).isFalse();
         assertThat(administrador.eliminadoEn()).isNull();
@@ -288,7 +291,7 @@ class RolServiceIntegracionTest {
     void laBajaLeSacaLosPermisosASusUsuariosYReactivarSeLosDevuelve() {
         Usuario usuario = usuarioCon("admin2", "ADMINISTRADOR");
         Long id = idDe("ADMINISTRADOR");
-        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(19);
+        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(20);
 
         rolService.eliminar(id);
         entityManager.flush();
@@ -300,7 +303,7 @@ class RolServiceIntegracionTest {
         entityManager.clear();
         assertThat(reactivado.eliminado()).isFalse();
         assertThat(reactivado.cantidadUsuarios()).isEqualTo(1L);
-        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(19);
+        assertThat(permisoService.permisosDe(usuario.getId())).hasSize(20);
         assertThat(nombres(SIN_FILTRO)).contains("ADMINISTRADOR");
     }
 
@@ -344,7 +347,7 @@ class RolServiceIntegracionTest {
         Usuario usuario = usuarioCon("soporte1", "SOPORTE");
         Long id = idDe("SOPORTE");
         assertThat(permisoService.permisosDe(usuario.getId()))
-                .containsExactlyInAnyOrder("CANCELACION_REVISAR", "RECLAMO_RESOLVER");
+                .containsExactlyInAnyOrder(PERMISOS_SOPORTE);
 
         RolDetalle soporte = rolService.reemplazarPermisos(id, List.of("PERSONA_VER", "USUARIO_VER"));
         entityManager.clear();
@@ -384,7 +387,7 @@ class RolServiceIntegracionTest {
 
         entityManager.clear();
         assertThat(rolService.detalle(id).permisos())
-                .containsExactlyInAnyOrder("CANCELACION_REVISAR", "RECLAMO_RESOLVER");
+                .containsExactlyInAnyOrder(PERMISOS_SOPORTE);
     }
 
     @Test
@@ -441,7 +444,7 @@ class RolServiceIntegracionTest {
         assertThat(catalogo.get(2).permisos()).extracting(ModuloPermisos.Item::codigo)
                 .containsExactly("ROL_VER", "ROL_CREAR", "ROL_EDITAR", "ROL_ELIMINAR", "ROL_ASIGNAR");
         assertThat(catalogo).flatExtracting(ModuloPermisos::permisos)
-                .hasSize(22)
+                .hasSize(23)
                 .allSatisfy(item -> assertThat(item.descripcion()).isNotBlank());
     }
 
