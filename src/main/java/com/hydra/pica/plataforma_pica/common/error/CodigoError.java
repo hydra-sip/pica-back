@@ -25,6 +25,9 @@ public enum CodigoError {
     MONTO_NO_COINCIDE,
     TRANSACCION_YA_USADA,
 
+    // Bloquear y desbloquear van solo por /admin/usuarios/{id}/bloqueo, con motivo y auditoría (400, HU-703)
+    BLOQUEO_POR_ENDPOINT_PROPIO,
+
     // Retiros de fondos (400)
     RETIRO_FUERA_DE_TOPES,
 
@@ -49,6 +52,7 @@ public enum CodigoError {
     CARGA_NO_ENCONTRADA,
     CUENTA_BANCARIA_NO_ENCONTRADA,
     RECLAMO_NO_ENCONTRADO,
+    ALERTA_FRAUDE_NO_ENCONTRADA,
 
     // Auth
     CREDENCIALES_INVALIDAS,
@@ -73,6 +77,7 @@ public enum CodigoError {
     ROL_INACTIVO,
     USUARIO_NO_ACTIVO,
     USUARIO_YA_BLOQUEADO,
+    ORGANIZADOR_BLOQUEADO,
     RIFA_NO_EDITABLE,
     RIFA_INCOMPLETA,
     TORNEO_NO_ADMITE_RIFA,
@@ -136,6 +141,7 @@ public enum CodigoError {
     CARGA_YA_ACREDITADA,
     RIFA_CON_VENTAS,
     RIFA_CON_RESERVAS,
+    RIFA_SIN_VENTAS,
     PRONOSTICO_FUERA_DE_VENTANA,
     PLAZO_RECLAMO_VENCIDO,
     RIFA_NO_SORTEADA,
@@ -146,6 +152,7 @@ public enum CodigoError {
     CUENTA_BANCARIA_DUPLICADA,
     CUENTA_TITULAR_NO_COINCIDE,
     CUENTA_NO_VALIDADA,
+    ALERTA_FRAUDE_YA_REVISADA,
 
     // Protecciones (403)
     USUARIO_PROTEGIDO,

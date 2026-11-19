@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionReposito
 import com.hydra.pica.plataforma_pica.inscripcion.service.CierreInscripcion;
 import com.hydra.pica.plataforma_pica.reputacion.service.FairPlayService;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.MinimoInscriptos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -42,6 +43,7 @@ public class InscripcionTorneoService {
     private final NominaRepository nominaRepository;
     private final TorneoRepository torneoRepository;
     private final FairPlayService fairPlayService;
+    private final CancelacionTorneoService cancelacionTorneoService;
 
     /** Todas menos los borradores, de la más vieja a la más nueva; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
@@ -59,7 +61,11 @@ public class InscripcionTorneoService {
                 fairPlay.get(i.titular().getId())));
     }
 
-    /** En cualquier momento mientras la inscripción está abierta, sin mínimo de inscriptos. */
+    /**
+     * En cualquier momento mientras la inscripción está abierta, con las inscripciones confirmadas que hacen falta para
+     * jugar ({@link MinimoInscriptos}, PICA-447); si no, 409 PARTICIPANTES_INSUFICIENTES. HU-206 lo pedía sin mínimo,
+     * pero un torneo cerrado por debajo después no puede generar el bracket ni sortear los grupos.
+     */
     @Transactional
     public TorneoInformacion cerrar(Long organizadorId, Long id) {
         Torneo torneo = torneosPropios.buscarBloqueado(organizadorId, id);
@@ -67,15 +73,23 @@ public class InscripcionTorneoService {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
                     "El torneo " + id + " está " + torneo.getEstado() + ": solo se cierra con la inscripción abierta");
         }
+        long confirmadas = confirmadas(torneo);
+        int minimo = MinimoInscriptos.de(torneo);
+        if (confirmadas < minimo) {
+            throw new ConflictoException(CodigoError.PARTICIPANTES_INSUFICIENTES,
+                    "El torneo " + id + " tiene " + confirmadas + " inscripciones confirmadas: para cerrar la "
+                            + "inscripción hacen falta al menos " + minimo + " (faltan " + (minimo - confirmadas) + ")");
+        }
         cierreInscripcion.cerrar(torneo, MotivoCierre.MANUAL, organizadorId);
         return torneosPropios.informacion(torneo);
     }
 
     /**
-     * Cierra con el motivo FECHA si el torneo sigue con la inscripción abierta y la fecha vencida. Bloquea la fila y
-     * vuelve a mirar: otra réplica, el organizador o el último pago pudieron cerrarla mientras tanto.
+     * Cierra con el motivo FECHA si el torneo sigue con la inscripción abierta y la fecha vencida; si no llegó al mínimo
+     * para jugar ({@link MinimoInscriptos}), lo cancela con las reglas de HU-605 (PICA-447). Bloquea la fila y vuelve a
+     * mirar: otra réplica, el organizador o el último pago pudieron cerrarla mientras tanto.
      *
-     * @return si la cerró
+     * @return si la cerró; false también si lo canceló
      */
     @Transactional
     public boolean cerrarSiVencio(Long id, Instant ahora) {
@@ -84,7 +98,17 @@ public class InscripcionTorneoService {
                 || torneo.getCierreInscripcionEn().isAfter(ahora)) {
             return false;
         }
+        long confirmadas = confirmadas(torneo);
+        int minimo = MinimoInscriptos.de(torneo);
+        if (confirmadas < minimo) {
+            cancelacionTorneoService.cancelarPorInscriptosInsuficientes(torneo, confirmadas, minimo);
+            return false;
+        }
         cierreInscripcion.cerrar(torneo, MotivoCierre.FECHA, null);
         return true;
+    }
+
+    private long confirmadas(Torneo torneo) {
+        return inscripcionRepository.countByTorneoIdAndEstado(torneo.getId(), EstadoInscripcion.CONFIRMADA);
     }
 }

@@ -9,8 +9,10 @@ import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,6 +27,7 @@ class CierreDeCancelacion {
     private final InscripcionRepository inscripcionRepository;
     private final TorneoRepository torneoRepository;
     private final Reintegrador reintegrador;
+    private final ApplicationEventPublisher eventos;
 
     /** @return lo que se devolvió a las billeteras */
     BigDecimal cerrar(Torneo torneo) {
@@ -35,6 +38,7 @@ class CierreDeCancelacion {
     BigDecimal cerrar(Torneo torneo, Reintegrador.Retencion retencion) {
         Long torneoId = torneo.getId();
         String nombre = torneo.getNombre();
+        EstadoTorneo estadoAnterior = torneo.getEstado();
         torneo.setEstado(EstadoTorneo.CANCELADO);
         for (Inscripcion inscripcion : inscripcionRepository.findByTorneoIdAndEstadoInOrderByIdAsc(torneoId,
                 Set.of(EstadoInscripcion.BORRADOR, EstadoInscripcion.PENDIENTE_PAGO, EstadoInscripcion.CONFIRMADA))) {
@@ -42,6 +46,8 @@ class CierreDeCancelacion {
                     ? EstadoInscripcion.REINTEGRADA : EstadoInscripcion.CANCELADA);
         }
         torneoRepository.saveAndFlush(torneo);
-        return reintegrador.reintegrarTorneo(torneoId, nombre, retencion);
+        BigDecimal reintegrado = reintegrador.reintegrarTorneo(torneoId, nombre, retencion);
+        eventos.publishEvent(new TorneoEstadoCambiado(torneoId, estadoAnterior, EstadoTorneo.CANCELADO));
+        return reintegrado;
     }
 }

@@ -11,6 +11,7 @@ import com.hydra.pica.plataforma_pica.billetera.domain.EstadoCustodia;
 import com.hydra.pica.plataforma_pica.billetera.repository.CustodiaRepository;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.ConteoInscripciones;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
@@ -27,6 +28,7 @@ import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoSpecifications;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -46,18 +48,21 @@ public class TorneoPublicoService {
     private final PremioRepository premioRepository;
     private final GastoRepository gastoRepository;
     private final CustodiaRepository custodiaRepository;
+    private final BloqueoService bloqueoService;
 
     public TorneoPublicoService(
             TorneoRepository torneoRepository,
             InscripcionRepository inscripcionRepository,
             PremioRepository premioRepository,
             GastoRepository gastoRepository,
-            CustodiaRepository custodiaRepository) {
+            CustodiaRepository custodiaRepository,
+            BloqueoService bloqueoService) {
         this.torneoRepository = torneoRepository;
         this.inscripcionRepository = inscripcionRepository;
         this.premioRepository = premioRepository;
         this.gastoRepository = gastoRepository;
         this.custodiaRepository = custodiaRepository;
+        this.bloqueoService = bloqueoService;
     }
 
     public Page<TorneoResumen> listarPublicos(
@@ -75,7 +80,21 @@ public class TorneoPublicoService {
             return Page.empty(pageable);
         }
 
-        List<Long> torneoIds = pagina.getContent().stream().map(Torneo::getId).toList();
+        return new PageImpl<>(resumenesDe(pagina.getContent()), pageable, pagina.getTotalElements());
+    }
+
+    /** Torneos públicos vigentes del organizador, ordenados con los próximos a empezar primero (HU-806). */
+    public List<TorneoResumen> proximosDelOrganizador(Long organizadorId) {
+        Specification<Torneo> spec = Specification.where(TorneoSpecifications.noEliminado())
+                .and(TorneoSpecifications.conOrganizador(organizadorId))
+                .and(TorneoSpecifications.vigente())
+                .and(TorneoSpecifications.proximosPrimero());
+        List<Torneo> torneos = torneoRepository.findAll(spec, PageRequest.of(0, 20)).getContent();
+        return torneos.isEmpty() ? List.of() : resumenesDe(torneos);
+    }
+
+    private List<TorneoResumen> resumenesDe(List<Torneo> torneos) {
+        List<Long> torneoIds = torneos.stream().map(Torneo::getId).toList();
 
         Map<Long, Long> confirmadasPorTorneo = inscripcionRepository
                 .contarPorTorneoIdInYEstado(torneoIds, EstadoInscripcion.CONFIRMADA)
@@ -85,14 +104,12 @@ public class TorneoPublicoService {
         Map<Long, BigDecimal> gastosPorTorneo = gastoRepository.totalesPorTorneo(torneoIds).stream()
                 .collect(Collectors.toMap(GastosPorTorneo::getTorneoId, GastosPorTorneo::getTotal));
 
-        List<TorneoResumen> resumenes = pagina.getContent().stream().map(torneo -> {
+        return torneos.stream().map(torneo -> {
             long confirmadas = confirmadasPorTorneo.getOrDefault(torneo.getId(), 0L);
             int cupoDisponible = Math.max(0, torneo.getCupoMaximo() - (int) confirmadas);
             CuentasTorneo cuentas = cuentas(torneo, gastosPorTorneo.getOrDefault(torneo.getId(), BigDecimal.ZERO));
             return TorneoResumen.de(torneo, cupoDisponible, cuentas.pozoNeto());
         }).toList();
-
-        return new PageImpl<>(resumenes, pageable, pagina.getTotalElements());
     }
 
     public TorneoDetalle detallePublico(String slug) {
@@ -116,7 +133,9 @@ public class TorneoPublicoService {
                 .filter(c -> c.getEstado() == EstadoCustodia.LIBERADA)
                 .map(Custodia::getLiberadaEn)
                 .orElse(null);
-        return TorneoDetalle.de(torneo, cupoDisponible, cuentas.pozoNeto(), premios, liquidadoEn);
+        boolean inscripcionSuspendida = torneo.getEstado() == EstadoTorneo.INSCRIPCION_ABIERTA
+                && bloqueoService.estaBloqueado(torneo.getOrganizador());
+        return TorneoDetalle.de(torneo, cupoDisponible, cuentas.pozoNeto(), premios, liquidadoEn, inscripcionSuspendida);
     }
 
     /** Con el cupo completo, como el resumen del paso 3. */

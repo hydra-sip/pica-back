@@ -88,18 +88,17 @@ class UsuarioEdicionServiceTest {
         when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
 
         UsuarioDetalle detalle = servicio.modificar(ID, pedido("juan.perez", "JUAN@example.com", "  una nota ",
-                EstadoEditable.BLOQUEADO, PERSONA_ID));
+                EstadoEditable.ACTIVO, PERSONA_ID));
 
         assertThat(usuario.getUsername()).isEqualTo("juan.perez");
         assertThat(usuario.getEmail()).isEqualTo("JUAN@example.com");
         assertThat(usuario.getDescripcion()).isEqualTo("una nota");
-        assertThat(usuario.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
+        assertThat(usuario.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
         assertThat(usuario.isEmailVerificado()).isTrue();
         assertThat(detalle.username()).isEqualTo("juan.perez");
         verify(usuarioRepository, never()).existsByEmailIncluyendoEliminados(anyString());
-        // bloquearlo cierra sus sesiones; el email no cambió, así que no hay mail de verificación
-        verify(eventos).publishEvent(new SesionesDeUsuarioInvalidadas(ID));
-        verifyNoMoreInteractions(eventos);
+        // el email no cambió, así que no hay mail de verificación
+        verifyNoInteractions(eventos);
     }
 
     @Test
@@ -122,9 +121,10 @@ class UsuarioEdicionServiceTest {
     }
 
     @Test
-    @DisplayName("modificar: cambiar el email y bloquear a la vez deja BLOQUEADO, sin verificar, y cierra sus sesiones")
-    void cambiarElEmailYBloquear() {
+    @DisplayName("modificar: a un bloqueado se le puede cambiar el email: sigue BLOQUEADO, sin verificar")
+    void cambiarElEmailDeUnBloqueado() {
         Usuario usuario = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        usuario.setEstado(EstadoUsuario.BLOQUEADO);
         when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
         when(usuarioRepository.existsByEmailIncluyendoEliminados("nuevo@example.com")).thenReturn(false);
 
@@ -133,7 +133,7 @@ class UsuarioEdicionServiceTest {
         assertThat(usuario.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
         assertThat(usuario.isEmailVerificado()).isFalse();
         verify(eventos).publishEvent(new EmailDeUsuarioCambiado(ID, "nuevo@example.com"));
-        verify(eventos).publishEvent(new SesionesDeUsuarioInvalidadas(ID));
+        verifyNoMoreInteractions(eventos);
     }
 
     @Test
@@ -154,8 +154,7 @@ class UsuarioEdicionServiceTest {
                 .extracting("codigo").isEqualTo(CodigoError.EMAIL_NO_VERIFICADO);
         assertThatThrownBy(() -> servicio.modificar(4L, pedido("ana", "ana@example.com", null,
                 EstadoEditable.ACTIVO, PERSONA_ID)))
-                .isInstanceOf(ConflictoException.class)
-                .extracting("codigo").isEqualTo(CodigoError.EMAIL_NO_VERIFICADO);
+                .extracting("codigo").isEqualTo(CodigoError.BLOQUEO_POR_ENDPOINT_PROPIO);
 
         assertThat(pendiente.getEstado()).isEqualTo(EstadoUsuario.PENDIENTE_VERIFICACION);
         assertThat(pendiente.getDescripcion()).isNull();
@@ -165,32 +164,39 @@ class UsuarioEdicionServiceTest {
     }
 
     @Test
-    @DisplayName("modificar: a un usuario con el mail sin verificar sí se lo puede bloquear")
-    void pendienteSePuedeBloquear() {
-        Usuario pendiente = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
-        pendiente.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
-        pendiente.setEmailVerificado(false);
-        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(pendiente));
+    @DisplayName("modificar: pasar a BLOQUEADO o sacarlo de BLOQUEADO es 400 BLOQUEO_POR_ENDPOINT_PROPIO y no cambia nada")
+    void elPutNoCambiaElBloqueo() {
+        Usuario activo = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
+        Usuario bloqueado = usuario(4L, "ana", "ana@example.com", persona(PERSONA_ID));
+        bloqueado.setEstado(EstadoUsuario.BLOQUEADO);
+        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(activo));
+        when(usuarioRepository.findById(4L)).thenReturn(Optional.of(bloqueado));
 
-        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.BLOQUEADO, PERSONA_ID));
+        assertThatThrownBy(() -> servicio.modificar(ID, pedido("juan", "juan@example.com", null,
+                EstadoEditable.BLOQUEADO, PERSONA_ID)))
+                .extracting("codigo").isEqualTo(CodigoError.BLOQUEO_POR_ENDPOINT_PROPIO);
+        assertThatThrownBy(() -> servicio.modificar(4L, pedido("ana", "ana@example.com", null,
+                EstadoEditable.ACTIVO, PERSONA_ID)))
+                .extracting("codigo").isEqualTo(CodigoError.BLOQUEO_POR_ENDPOINT_PROPIO);
 
-        assertThat(pendiente.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
-        verify(eventos).publishEvent(new SesionesDeUsuarioInvalidadas(ID));
+        assertThat(activo.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
+        assertThat(bloqueado.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
+        verify(usuarioRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(eventos, bloqueoService);
     }
 
     @Test
-    @DisplayName("modificar: desbloquear a uno con el mail verificado lo deja ACTIVO; bloquear a uno ya bloqueado no cierra sesiones de nuevo")
-    void desbloquearYBloquearDeNuevo() {
+    @DisplayName("modificar: a un bloqueado que manda BLOQUEADO se le editan los datos y sigue bloqueado, sin cerrar sesiones de nuevo")
+    void editarAUnBloqueado() {
         Usuario bloqueado = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
         bloqueado.setEstado(EstadoUsuario.BLOQUEADO);
         when(usuarioRepository.findById(ID)).thenReturn(Optional.of(bloqueado));
 
-        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.BLOQUEADO, PERSONA_ID));
-        verifyNoInteractions(eventos);
+        servicio.modificar(ID, pedido("juan", "juan@example.com", "nota", EstadoEditable.BLOQUEADO, PERSONA_ID));
 
-        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.ACTIVO, PERSONA_ID));
-        assertThat(bloqueado.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
-        verifyNoInteractions(eventos);
+        assertThat(bloqueado.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
+        assertThat(bloqueado.getDescripcion()).isEqualTo("nota");
+        verifyNoInteractions(eventos, bloqueoService);
     }
 
     @Test
@@ -304,7 +310,7 @@ class UsuarioEdicionServiceTest {
         when(usuarioRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> servicio.modificar(1L, pedido("otro", "otro@example.com", null,
-                EstadoEditable.BLOQUEADO, PERSONA_ID)))
+                EstadoEditable.ACTIVO, PERSONA_ID)))
                 .isInstanceOf(ProhibidoException.class)
                 .extracting("codigo").isEqualTo(CodigoError.USUARIO_PROTEGIDO);
         assertThatThrownBy(() -> servicio.modificar(99L, pedido("otro", "otro@example.com", null,
@@ -445,23 +451,6 @@ class UsuarioEdicionServiceTest {
     }
 
     @Test
-    @DisplayName("modificar: bloquearse a uno mismo es 403 ACCION_SOBRE_SI_MISMO y no cambia nada")
-    void noSePuedeBloquearASiMismo() {
-        Usuario yo = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
-        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(yo));
-        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ID));
-
-        assertThatThrownBy(() -> servicio.modificar(ID, pedido("otro.nombre", "juan@example.com", null,
-                EstadoEditable.BLOQUEADO, PERSONA_ID)))
-                .isInstanceOf(ProhibidoException.class)
-                .extracting("codigo").isEqualTo(CodigoError.ACCION_SOBRE_SI_MISMO);
-        assertThat(yo.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
-        assertThat(yo.getUsername()).isEqualTo("juan");
-        verify(usuarioRepository, never()).saveAndFlush(any());
-        verifyNoInteractions(eventos);
-    }
-
-    @Test
     @DisplayName("modificar: editar los propios datos sin bloquearse sigue permitido")
     void sePuedeEditarASiMismoSinBloquearse() {
         Usuario yo = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
@@ -498,7 +487,11 @@ class UsuarioEdicionServiceTest {
         when(usuarioRepository.findById(ID)).thenReturn(Optional.of(aBloquear));
         when(passwordEncoder.encode("Temporal1")).thenReturn("$2a$12$nuevo");
 
-        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.BLOQUEADO, PERSONA_ID));
+        when(bloqueoService.bloquear(aBloquear, "Agresión al árbitro", null)).thenAnswer(invocacion -> {
+            aBloquear.setEstado(EstadoUsuario.BLOQUEADO);
+            return new Bloqueo();
+        });
+        servicio.bloquear(ID, "Agresión al árbitro", null);
         servicio.resetearPassword(ID, "Temporal1");
 
         assertThat(aBloquear.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
@@ -598,20 +591,6 @@ class UsuarioEdicionServiceTest {
         verify(bloqueoService).levantar(bloqueado);
         verify(bloqueoService, never()).levantar(activo);
         assertThat(detalle.estado()).isEqualTo(EstadoUsuario.ACTIVO);
-    }
-
-    @Test
-    @DisplayName("modificar: pasar a BLOQUEADO registra un bloqueo sin motivo propio; volver a ACTIVO lo levanta")
-    void modificarAcompanaLaTablaDeBloqueos() {
-        Usuario usuario = usuario(ID, "juan", "juan@example.com", persona(PERSONA_ID));
-        when(usuarioRepository.findById(ID)).thenReturn(Optional.of(usuario));
-
-        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.BLOQUEADO, PERSONA_ID));
-        verify(bloqueoService).bloquear(usuario, UsuarioEdicionService.MOTIVO_DESDE_EDICION, null);
-
-        servicio.modificar(ID, pedido("juan", "juan@example.com", null, EstadoEditable.ACTIVO, PERSONA_ID));
-        verify(bloqueoService).levantar(usuario);
-        assertThat(usuario.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
     }
 
     private static UsuarioUpdateRequest pedido(String username, String email, String descripcion,

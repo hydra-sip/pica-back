@@ -14,6 +14,7 @@ import com.hydra.pica.plataforma_pica.billetera.domain.EstadoValidacion;
 import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.dto.LimitesRetiroResponse;
+import com.hydra.pica.plataforma_pica.billetera.event.MovimientoBilleteraRegistrado;
 import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.CuentaBancariaRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
@@ -29,6 +30,7 @@ import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +54,7 @@ public class RetiroService {
     private final UsuarioRepository usuarioRepository;
     private final ParametrosPlataforma parametrosPlataforma;
     private final AuditoriaService auditoriaService;
+    private final ApplicationEventPublisher eventos;
 
     public LimitesRetiroResponse obtenerLimites() {
         return new LimitesRetiroResponse(
@@ -153,6 +156,11 @@ public class RetiroService {
                 "retiro",
                 String.valueOf(guardado.getId()),
                 detalleAuditoria);
+
+        if (eventos != null) {
+            eventos.publishEvent(new MovimientoBilleteraRegistrado(
+                    guardado.getId(), usuarioId, TipoMovimiento.RETIRO, montoEscalado));
+        }
 
         log.info("Retiro solicitado por usuario {}: monto {}, cuenta {}, saldo restante {}",
                 usuarioId, montoEscalado, cuenta.getId(), nuevoSaldoDisponible);
