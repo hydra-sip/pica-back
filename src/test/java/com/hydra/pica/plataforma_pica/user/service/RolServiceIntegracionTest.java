@@ -51,6 +51,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class RolServiceIntegracionTest {
 
+    private static final String[] PERMISOS_SOPORTE = {
+            "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "USUARIO_VER", "USUARIO_BLOQUEAR",
+            "ALERTA_FRAUDE_REVISAR"};
+
     private static final FiltroRoles SIN_FILTRO = new FiltroRoles(null, null, null);
     private static final PageRequest PRIMERA_PAGINA = PageRequest.of(0, 20, Sort.by("id"));
 
@@ -344,9 +348,7 @@ class RolServiceIntegracionTest {
         Usuario usuario = usuarioCon("soporte1", "SOPORTE");
         Long id = idDe("SOPORTE");
         assertThat(permisoService.permisosDe(usuario.getId()))
-                .containsExactlyInAnyOrder(
-                        "USUARIO_VER", "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "USUARIO_BLOQUEAR",
-                        "ALERTA_FRAUDE_REVISAR");
+                .containsExactlyInAnyOrder(PERMISOS_SOPORTE);
 
         RolDetalle soporte = rolService.reemplazarPermisos(id, List.of("PERSONA_VER", "USUARIO_VER"));
         entityManager.clear();
@@ -386,9 +388,7 @@ class RolServiceIntegracionTest {
 
         entityManager.clear();
         assertThat(rolService.detalle(id).permisos())
-                .containsExactlyInAnyOrder(
-                        "USUARIO_VER", "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "USUARIO_BLOQUEAR",
-                        "ALERTA_FRAUDE_REVISAR");
+                .containsExactlyInAnyOrder(PERMISOS_SOPORTE);
     }
 
     @Test

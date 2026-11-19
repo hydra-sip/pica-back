@@ -139,7 +139,7 @@ class PermisoRepositoryTest {
         rolRepository.saveAndFlush(soporte);
         entityManager.clear();
         assertThat(permisoRepository.findCodigosByUsuarioId(usuario.getId())).containsExactlyInAnyOrder(
-                "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "USUARIO_VER", "USUARIO_BLOQUEAR",
+                "CANCELACION_REVISAR", "RECLAMO_RESOLVER", "AUDITORIA_VER", "USUARIO_VER", "USUARIO_BLOQUEAR",
                 "ALERTA_FRAUDE_REVISAR", "PERSONA_VER");
 
         soporte = rolRepository.findByNombre("SOPORTE").orElseThrow();

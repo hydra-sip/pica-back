@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.hydra.pica.plataforma_pica.common.config.TorneoConfig.TorneoProperties;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
@@ -33,6 +34,7 @@ public class ProgramacionService {
     private final Partidos partidos;
     private final PartidoService partidoService;
     private final ResultadoService resultadoService;
+    private final TorneoProperties torneoProperties;
     private final TorneoRepository torneoRepository;
 
     @Transactional
@@ -48,7 +50,7 @@ public class ProgramacionService {
             throw new ConflictoException(CodigoError.PARTIDO_NO_PROGRAMABLE, "El partido " + partidoId + " está "
                     + partido.getEstado() + " en un torneo " + torneo + ": solo se programa uno PROGRAMADO");
         }
-        validar(fechaProgramada, partido.getTorneo());
+        validar(fechaProgramada, partido.getTorneo(), torneoProperties.sinValidarFechas());
         partido.setFechaProgramada(fechaProgramada);
         torneoRepository.subirVersionBracket(partido.getTorneo().getId());
 
@@ -59,11 +61,16 @@ public class ProgramacionService {
         return partidoService.detalle(partido, usuarioId);
     }
 
-    /** Futura y dentro de las fechas del torneo; sin fecha no se programa (no se desprograma). */
-    private static void validar(Instant fecha, Torneo torneo) {
+    /**
+     * Futura y dentro de las fechas del torneo; sin fecha no se programa (no se desprograma). Con
+     * {@code app.torneos.sin-validar-fechas} (PICA-448), cualquier fecha.
+     */
+    private static void validar(Instant fecha, Torneo torneo, boolean sinValidarFechas) {
         List<ErrorCampo> errores = new ArrayList<>();
         if (fecha == null) {
             errores.add(new ErrorCampo(CAMPO, ErrorCampo.Codigo.REQUERIDO, "Falta la fecha del partido"));
+        } else if (sinValidarFechas) {
+            return;
         } else if (fecha.isBefore(Instant.now())) {
             errores.add(new ErrorCampo(CAMPO, ErrorCampo.Codigo.RANGO_INVALIDO, "No puede ser pasada"));
         } else if (torneo.getFechaInicio() != null && fecha.isBefore(torneo.getFechaInicio())) {
