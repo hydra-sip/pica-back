@@ -5,12 +5,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.JpaAuditingConfig;
 import com.hydra.pica.plataforma_pica.common.security.SecurityContextCurrentUserProvider;
+import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.AlcanceBloqueo;
+import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Bloqueo;
+import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.control.repository.BloqueoRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
@@ -19,12 +24,15 @@ import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Bloqueos con motivo y fecha de fin (HU-703) contra Postgres real: el update que levanta los
@@ -43,6 +51,7 @@ class BloqueoServiceIntegracionTest {
 
     private final BloqueoService servicio;
     private final BloqueoRepository bloqueoRepository;
+    private final AuditoriaRepository auditoriaRepository;
     private final PersonaRepository personaRepository;
     private final UsuarioRepository usuarioRepository;
     private final EntityManager entityManager;
@@ -51,14 +60,67 @@ class BloqueoServiceIntegracionTest {
     BloqueoServiceIntegracionTest(
             BloqueoService servicio,
             BloqueoRepository bloqueoRepository,
+            AuditoriaRepository auditoriaRepository,
             PersonaRepository personaRepository,
             UsuarioRepository usuarioRepository,
             EntityManager entityManager) {
         this.servicio = servicio;
         this.bloqueoRepository = bloqueoRepository;
+        this.auditoriaRepository = auditoriaRepository;
         this.personaRepository = personaRepository;
         this.usuarioRepository = usuarioRepository;
         this.entityManager = entityManager;
+    }
+
+    @AfterEach
+    void sinSesion() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("bloquear y levantar quedan en la auditoría con quien lo hizo, el motivo y la fecha de fin")
+    void bloquearYLevantarQuedanEnLaAuditoria() {
+        Usuario soporte = usuario("bloqueo.soporte", true);
+        Usuario usuario = usuario("bloqueo.auditado", true);
+        Instant hasta = Instant.now().plus(Duration.ofDays(7)).truncatedTo(ChronoUnit.SECONDS);
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken(soporte.getId().toString(), null, "USUARIO_BLOQUEAR"));
+
+        servicio.bloquear(usuario, "  Insultos en el chat  ", hasta);
+        servicio.levantar(usuario);
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Auditoria> registros = auditoriaDe(usuario);
+        assertThat(registros).extracting(Auditoria::getAccion)
+                .containsExactly(AccionAuditoria.BLOQUEO, AccionAuditoria.DESBLOQUEO);
+        assertThat(registros).allSatisfy(registro ->
+                assertThat(registro.getUsuario().getId()).isEqualTo(soporte.getId()));
+        assertThat(registros.get(0).getDetalle())
+                .isEqualTo(Map.of("motivo", "Insultos en el chat", "hasta", hasta.toString()));
+        assertThat(registros.get(1).getDetalle())
+                .isEqualTo(Map.of("motivo", "Insultos en el chat", "vencido", false));
+    }
+
+    @Test
+    @DisplayName("sin fecha de fin el detalle dice indefinido, y el desbloqueo al vencer queda como Sistema")
+    void sinFechaDeFinYDesbloqueoAutomatico() {
+        Usuario indefinido = usuario("bloqueo.auditado.indef", true);
+        Usuario vencido = usuario("bloqueo.auditado.vencido", true);
+        bloqueoVencido(vencido);
+
+        servicio.bloquear(indefinido, "Motivo", null);
+        servicio.levantarSiVencio(vencido);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(auditoriaDe(indefinido)).singleElement()
+                .satisfies(registro -> assertThat(registro.getDetalle()).isEqualTo(Map.of("motivo", "Motivo", "hasta", "indefinido")));
+        assertThat(auditoriaDe(vencido)).singleElement().satisfies(registro -> {
+            assertThat(registro.getAccion()).isEqualTo(AccionAuditoria.DESBLOQUEO);
+            assertThat(registro.getUsuario()).isNull();
+            assertThat(registro.getDetalle()).containsEntry("vencido", true);
+        });
     }
 
     @Test
@@ -122,6 +184,11 @@ class BloqueoServiceIntegracionTest {
         assertThat(vencido.getEstado()).isEqualTo(EstadoUsuario.ACTIVO);
         assertThat(vigente.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
         assertThat(indefinido.getEstado()).isEqualTo(EstadoUsuario.BLOQUEADO);
+    }
+
+    private List<Auditoria> auditoriaDe(Usuario usuario) {
+        return auditoriaRepository.findByEntidadAndEntidadIdInOrderByCreadoEnAscIdAsc(
+                "USUARIO", List.of(usuario.getId().toString()));
     }
 
     // La API no acepta un hasta pasado (@Future): se arma desde y hasta en el pasado a mano
