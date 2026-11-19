@@ -15,6 +15,8 @@ import com.hydra.pica.plataforma_pica.billetera.dto.RepartoLiquidacion;
 import com.hydra.pica.plataforma_pica.billetera.service.LiquidacionRifaService.LiquidacionRifa;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.RepartoIntegrante;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
@@ -224,6 +226,59 @@ class LiquidacionRifaIntegracionTest {
                 BigDecimal.class, "liq-r" + rifa + "-%")).isEqualByComparingTo("1650.00");
     }
 
+    // --- el aporte al pozo, repartido entre los integrantes del equipo (CR-05) ----------------------
+
+    @Test
+    void conLaRifaLiquidadaAntesQueElTorneoElAporteSeRepartePorIntegranteAlLiquidarElTorneo() {
+        long torneo = torneoDeEquipoConReparto();
+        conTorneo(torneo);
+        sortear(3, 1);
+        liquidacionRifaService.liquidarRifa(rifa);
+        finalizarTorneoDeEquipo(torneo);
+
+        liquidacionService.liquidarTorneo(torneo);
+
+        assertRepartoDelEquipo(torneo);
+    }
+
+    @Test
+    void conLaRifaLiquidadaDespuesDelTorneoElAporteSeRepartePorIntegranteAlLiquidarLaRifa() {
+        long torneo = torneoDeEquipoConReparto();
+        conTorneo(torneo);
+        finalizarTorneoDeEquipo(torneo);
+        liquidacionService.liquidarTorneo(torneo);
+        sortear(3, 1);
+
+        liquidacionRifaService.liquidarRifa(rifa);
+
+        assertRepartoDelEquipo(torneo);
+    }
+
+    // el pozo del torneo es 1000 y la rifa aporta 300: con 40/20/20/20 son 520, 260, 260 y 260
+    private void assertRepartoDelEquipo(long torneo) {
+        entityManager.flush();
+        long inscripcion = jdbc.queryForObject("SELECT id FROM inscripcion WHERE torneo_id = ?", Long.class, torneo);
+        String[] pct = {"40", "20", "20", "20"};
+        String[] pozo = {"400.00", "200.00", "200.00", "200.00"};
+        String[] aporte = {"120.00", "60.00", "60.00", "60.00"};
+        for (int i = 0; i < 4; i++) {
+            assertThat(jdbc.queryForObject("SELECT monto FROM movimiento WHERE referencia_externa = ?", BigDecimal.class,
+                    "liq-t" + torneo + "-premio-" + inscripcion + "-u" + equipo[i])).isEqualByComparingTo(pozo[i]);
+            Map<String, Object> movimiento = jdbc.queryForMap(
+                    "SELECT monto, descripcion, tipo FROM movimiento WHERE referencia_externa = ?",
+                    "liq-r" + rifa + "-aporte-premio-" + inscripcion + "-u" + equipo[i]);
+            assertThat((BigDecimal) movimiento.get("monto")).isEqualByComparingTo(aporte[i]);
+            assertThat(movimiento).containsEntry("tipo", "PREMIO")
+                    .containsEntry("descripcion", "Tu parte (" + pct[i] + " %) de lo que aporta la rifa Rifa a liquidar"
+                            + " al premio del 1.º puesto en Torneo con rifa, equipo Los de la Rifa");
+        }
+        // el aporte se repartió entero y la custodia de la rifa quedó liberada
+        assertThat(jdbc.queryForObject("SELECT sum(monto) FROM movimiento WHERE referencia_externa LIKE ?",
+                BigDecimal.class, "liq-r" + rifa + "-aporte-premio-%")).isEqualByComparingTo("300.00");
+        assertThat(jdbc.queryForObject("SELECT estado FROM custodia WHERE rifa_id = ?", String.class, rifa))
+                .isEqualTo("LIBERADA");
+    }
+
     @Test
     void conDosRifasEnElTorneoElPozoSumaLosDosAportesYLaLiquidacionPagaAmbos() {
         long torneo = torneoConDosJugadores();
@@ -345,6 +400,42 @@ class LiquidacionRifaIntegracionTest {
         }
         entityManager.flush();
         return torneo;
+    }
+
+    private Long[] equipo = new Long[4];
+
+    /** Un torneo por equipos con un equipo de cuatro que pagó y repartió 40/20/20/20: el pozo es 1000 y va entero al 1.º. */
+    private long torneoDeEquipoConReparto() {
+        long torneo = jdbc.queryForObject("""
+                INSERT INTO torneo (organizador_id, nombre, reglamento_url, disciplina, formato, modalidad,
+                                    tipo_participante, tamanio_equipo, nomina_maxima, cupo_maximo, cupo_minimo,
+                                    valor_inscripcion, pct_gastos_administrativos, cierre_inscripcion_en, fecha_inicio,
+                                    estado)
+                VALUES (?, 'Torneo con rifa', 'https://r', 'Futbol', 'ELIMINACION_DIRECTA', 'PRESENCIAL', 'EQUIPO', 2, 4,
+                        8, 2, 1000, 10, now() + interval '1 day', now() + interval '7 days', 'INSCRIPCION_ABIERTA')
+                RETURNING id
+                """, Long.class, organizador);
+        jdbc.update("INSERT INTO premio (torneo_id, puesto, pct) VALUES (?, 1, 100)", torneo);
+        for (int i = 0; i < 4; i++) {
+            equipo[i] = usuario("eq" + i + "_liq_rifa");
+        }
+        saldo(equipo[0], "10000.00");
+        long inscripcion = inscripcionService.crear(equipo[0], torneo, new InscripcionEquipoRequest(null,
+                "Los de la Rifa", List.of(equipo[1], equipo[2], equipo[3]))).id();
+        inscripcionService.confirmar(equipo[0], inscripcion, true);
+        inscripcionService.pagar(equipo[0], inscripcion);
+        inscripcionService.cambiarReparto(equipo[0], inscripcion, List.of(
+                new RepartoIntegrante(equipo[0], new BigDecimal("40")), new RepartoIntegrante(equipo[1], new BigDecimal("20")),
+                new RepartoIntegrante(equipo[2], new BigDecimal("20")), new RepartoIntegrante(equipo[3], new BigDecimal("20"))));
+        entityManager.flush();
+        return torneo;
+    }
+
+    private void finalizarTorneoDeEquipo(long torneo) {
+        entityManager.flush();
+        jdbc.update("UPDATE inscripcion SET posicion = 1 WHERE torneo_id = ?", torneo);
+        jdbc.update("UPDATE torneo SET estado = 'FINALIZADO' WHERE id = ?", torneo);
+        entityManager.clear();
     }
 
     private void terminar(long torneo) {

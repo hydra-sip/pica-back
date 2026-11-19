@@ -90,7 +90,7 @@ public class RepartoLiquidacionService {
         return new RepartoLiquidacion(liquidado, liquidadoEn, total, MONEDA, lineas);
     }
 
-    /** Lo que dice su referencia: liq-t{id}-… (con -honorario-{gastoId} para un árbitro, HU-604), liq-r{id}-premio-{puesto} o liq-r{id}-aporte-…. */
+    /** Lo que dice su referencia: liq-t{id}-… (con -honorario-{gastoId} para un árbitro, HU-604), liq-r{id}-premio-{puesto} o liq-r{id}-aporte-…. El premio de un equipo trae una referencia por integrante (…-premio-{inscripción}-u{usuario}): una línea cada uno, con su equipo. */
     private static Linea linea(Movimiento movimiento) {
         String referencia = movimiento.getReferenciaExterna();
         Usuario usuario = movimiento.getBilletera().getUsuario();
