@@ -1,8 +1,8 @@
 package com.hydra.pica.plataforma_pica.control.domain;
 
 /**
- * Los parámetros de la plataforma que existen (V26, V33, V35, V42, V57 y V60), en el orden en que se muestran en el
- * admin (HU-702, PICA-282). Uno que no está acá no se puede editar.
+ * Los parámetros de la plataforma que existen (V26, V33, V35, V42, V57, V60 y V61), en el orden en que se muestran en
+ * el admin (HU-702, PICA-282). Uno que no está acá no se puede editar.
  */
 public enum ClaveParametro {
 
@@ -26,7 +26,10 @@ public enum ClaveParametro {
     FRAUDE_CARRUSEL_VENTANA_MIN(Unidad.MINUTOS),
     FRAUDE_CANCELACIONES_MIN(Unidad.CANTIDAD),
     FRAUDE_OBJECIONES_MIN(Unidad.CANTIDAD),
-    FRAUDE_CUENTAS_USUARIOS_MIN(Unidad.CANTIDAD);
+    FRAUDE_CUENTAS_USUARIOS_MIN(Unidad.CANTIDAD),
+    INDICE_ORGANIZADOR_INICIAL(Unidad.PUNTOS),
+    INDICE_ORGANIZADOR_CANCELACION(Unidad.PUNTOS),
+    INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS(Unidad.PUNTOS);
 
     /**
      * Cómo se valida y se muestra: un % va de 0 a 100, los minutos son enteros, los pesos llevan centavos, los puntos

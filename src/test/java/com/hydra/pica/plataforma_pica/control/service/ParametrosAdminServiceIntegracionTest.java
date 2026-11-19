@@ -90,7 +90,10 @@ class ParametrosAdminServiceIntegracionTest {
                         tuple(ClaveParametro.FRAUDE_CARRUSEL_VENTANA_MIN, "60"),
                         tuple(ClaveParametro.FRAUDE_CANCELACIONES_MIN, "2"),
                         tuple(ClaveParametro.FRAUDE_OBJECIONES_MIN, "3"),
-                        tuple(ClaveParametro.FRAUDE_CUENTAS_USUARIOS_MIN, "2"));
+                        tuple(ClaveParametro.FRAUDE_CUENTAS_USUARIOS_MIN, "2"),
+                        tuple(ClaveParametro.INDICE_ORGANIZADOR_INICIAL, "100"),
+                        tuple(ClaveParametro.INDICE_ORGANIZADOR_CANCELACION, "15"),
+                        tuple(ClaveParametro.INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS, "30"));
         assertThat(parametrosAdminService.listar())
                 .allSatisfy(p -> {
                     assertThat(p.descripcion()).isNotBlank();
@@ -174,6 +177,12 @@ class ParametrosAdminServiceIntegracionTest {
         assertErrores(Map.of("FAIR_PLAY_SANCION_LEVE", BigDecimal.valueOf(20)),
                 new ErrorCampo("FAIR_PLAY_SANCION_LEVE", ErrorCampo.Codigo.RANGO_INVALIDO,
                         "No puede restar más que una sanción media"));
+        assertErrores(Map.of("INDICE_ORGANIZADOR_CANCELACION", BigDecimal.valueOf(40)),
+                new ErrorCampo("INDICE_ORGANIZADOR_CANCELACION", ErrorCampo.Codigo.RANGO_INVALIDO,
+                        "No puede restar más que una cancelación con gastos"));
+        assertErrores(Map.of("INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS", BigDecimal.valueOf(10)),
+                new ErrorCampo("INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS", ErrorCampo.Codigo.RANGO_INVALIDO,
+                        "No puede restar menos que una cancelación sin gastos"));
     }
 
     @Test

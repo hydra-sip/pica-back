@@ -16,6 +16,7 @@ import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -139,6 +140,7 @@ public class AvanceLlave {
 
     private void finalizar(Torneo torneo, int rondas) {
         Torneo bloqueado = torneoRepository.buscarBloqueado(torneo.getId()).orElseThrow();
+        EstadoTorneo estadoAnterior = bloqueado.getEstado();
         bloqueado.setEstado(EstadoTorneo.FINALIZADO);
         for (Juega lado : juegaRepository.delTorneo(torneo.getId())) {
             if (lado.getPartido().getFase() != FasePartido.ELIMINACION) {
@@ -151,5 +153,6 @@ public class AvanceLlave {
                 lado.getInscripcion().setPosicion(1);
             }
         }
+        eventos.publishEvent(new TorneoEstadoCambiado(torneo.getId(), estadoAnterior, EstadoTorneo.FINALIZADO));
     }
 }

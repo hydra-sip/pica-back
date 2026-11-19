@@ -95,6 +95,10 @@ public class ParametrosAdminService {
             noSupera(ClaveParametro.FAIR_PLAY_SANCION_MEDIA, ClaveParametro.FAIR_PLAY_SANCION_GRAVE,
                     "No puede restar más que una sanción grave", "No puede restar menos que una sanción media",
                     resultado, pedidos.keySet(), errores);
+            noSupera(ClaveParametro.INDICE_ORGANIZADOR_CANCELACION, ClaveParametro.INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS,
+                    "No puede restar más que una cancelación con gastos",
+                    "No puede restar menos que una cancelación sin gastos",
+                    resultado, pedidos.keySet(), errores);
         }
         if (!errores.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay parámetros inválidos")
