@@ -24,8 +24,10 @@ El backend expone un endpoint WebSocket STOMP sobre SockJS:
   - Soporta clientes WebSocket nativos y fallback SockJS.
   - Orígenes CORS habilitados según `app.cors.allowed-origins` (`http://localhost:5173`, `http://localhost:3000`, etc.).
   - Acceso público configurado en `SecurityConfig` para permitir el handshake inicial.
-- **Broker de mensajería:** Prefijo `/topic`
+- **Broker de mensajería:** Prefijos `/topic` (públicos) y `/queue` (de cada usuario, se piden por `/user`, ver 3.3)
   - In-memory broker (`SimpleBroker`) de Spring Framework para distribución pub/sub concurrente y de ultra baja latencia.
+- **Autenticación (HU-808):** opcional, en el frame `CONNECT` con `Authorization: Bearer <accessToken>`. Sin token la
+  conexión sigue sirviendo para los `/topic/**` públicos; la cola de notificaciones pide token (ver 3.3).
 - **Prefijo de aplicación (destino entrante):** `/app`
   - Enrutamiento hacia métodos `@MessageMapping` y `@SubscribeMapping` de controladores Spring.
 
@@ -135,6 +137,46 @@ Notifica ventas de números de una rifa y su acumulado actual.
 - `NUMEROS_VENDIDOS`: Compra confirmada de uno o más números.
 - `ESTADO_CAMBIADO`: Cambio de estado de la rifa (ej. `EN_VENTA` $\to$ `SORTEADA`).
 - `SYNC`: Snapshot de la rifa tras suscripción o reconexión.
+
+---
+
+### 3.3. Cola de notificaciones del usuario: `/user/queue/notificaciones` (HU-808)
+
+Cada aviso del centro de notificaciones (rival asignado, check-in abierto, cruce iniciado, reclamo resuelto) le llega
+en vivo al usuario al que va dirigido, además de guardarse (GET `/me/notificaciones`) y salir por correo. Lo publica
+`NotificacionService` con `RealtimeNotifier.publicarUsuario`, después del commit del evento y en otro hilo.
+
+#### Cómo suscribirse
+1. Conectarse a `/ws` mandando el access token en el `CONNECT`:
+   ```js
+   new Client({ brokerURL, connectHeaders: { Authorization: `Bearer ${accessToken}` } })
+   ```
+   El token se valida como en HTTP (firma, vencimiento y versión de sesión). Si no vale, el servidor responde `ERROR`
+   y cierra la conexión: el front renueva el token y vuelve a conectar.
+2. Suscribirse a `/user/queue/notificaciones`. Spring la resuelve a una cola de esa sesión; cada mensaje llega solo a
+   las sesiones del usuario destinatario (si tiene la web abierta en dos pestañas, a las dos).
+
+#### Reglas
+- Sin token, suscribirse a `/user/**` responde `ERROR` y cierra la conexión.
+- Suscribirse directo a `/queue/**` (el nombre ya resuelto de la cola de una sesión) se rechaza siempre.
+- El token se mira al conectar: si vence con la conexión abierta, la cola sigue llegando hasta que se reconecta.
+
+#### Payload (`Notificacion`, el mismo schema del contrato):
+```json
+{
+  "id": 81,
+  "tipo": "CHECKIN_ABIERTO",
+  "titulo": "Se abrió el check-in de tu cruce",
+  "cuerpo": "Confirmá tu presencia antes de las 18:30.",
+  "enlace": "/torneos/copa-primavera",
+  "datos": { "torneoId": 101, "partidoId": 15 },
+  "leidaEn": null,
+  "creadaEn": "2026-11-20T21:00:00Z"
+}
+```
+
+Si el cliente estaba desconectado cuando salió el aviso, no se reenvía por WebSocket: al reconectar pide
+GET `/me/notificaciones` (o `soloNoLeidas=true&size=1` para el contador).
 
 ---
 
