@@ -26,13 +26,16 @@ public class NotificacionController {
     private final NotificacionService notificacionService;
     private final CurrentUserProvider currentUserProvider;
 
-    /** La campana pide {@code soloNoLeidas=true&size=1} y usa {@code page.totalElements} como contador. */
+    /**
+     * Sin {@code leida}, todas; {@code leida=false}, las que faltan leer; {@code leida=true}, las leídas. La campana
+     * pide {@code leida=false&size=1} y usa {@code page.totalElements} como contador.
+     */
     @GetMapping
     public PaginaResponse<NotificacionDetalle> listar(
-            @RequestParam(required = false, defaultValue = "false") boolean soloNoLeidas,
+            @RequestParam(required = false) Boolean leida,
             @RequestParam(required = false, defaultValue = "0") @Min(0) int page,
             @RequestParam(required = false, defaultValue = "20") @Min(1) @Max(100) int size) {
-        return PaginaResponse.desde(notificacionService.listar(usuarioActual(), soloNoLeidas, page, size));
+        return PaginaResponse.desde(notificacionService.listar(usuarioActual(), leida, page, size));
     }
 
     @PostMapping("/{id}/leida")

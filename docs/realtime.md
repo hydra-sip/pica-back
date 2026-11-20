@@ -176,7 +176,7 @@ en vivo al usuario al que va dirigido, además de guardarse (GET `/me/notificaci
 ```
 
 Si el cliente estaba desconectado cuando salió el aviso, no se reenvía por WebSocket: al reconectar pide
-GET `/me/notificaciones` (o `soloNoLeidas=true&size=1` para el contador).
+GET `/me/notificaciones` (o `leida=false&size=1` para el contador).
 
 ---
 

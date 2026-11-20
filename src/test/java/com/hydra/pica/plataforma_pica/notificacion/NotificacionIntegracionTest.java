@@ -109,9 +109,25 @@ class NotificacionIntegracionTest {
 
         pedir(get("/api/v1/me/notificaciones"), ana)
                 .andExpect(jsonPath("$.content[*].titulo").value(Matchers.contains("Segunda", "Primera")));
-        pedir(get("/api/v1/me/notificaciones").param("soloNoLeidas", "true").param("size", "1"), ana)
+        pedir(get("/api/v1/me/notificaciones").param("leida", "false").param("size", "1"), ana)
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.page.totalElements").value(2));
+    }
+
+    @Test
+    @DisplayName("el filtro leida separa las no leídas de las leídas; sin él vienen todas")
+    void filtrarPorLeida() throws Exception {
+        Usuario ana = usuario();
+        notificar(ana, "Leída");
+        pedir(post("/api/v1/me/notificaciones/" + idDeLaUltima(ana) + "/leida"), ana).andExpect(status().isNoContent());
+        notificar(ana, "Sin leer");
+
+        pedir(get("/api/v1/me/notificaciones").param("leida", "false"), ana)
+                .andExpect(jsonPath("$.content[*].titulo").value(Matchers.contains("Sin leer")));
+        pedir(get("/api/v1/me/notificaciones").param("leida", "true"), ana)
+                .andExpect(jsonPath("$.content[*].titulo").value(Matchers.contains("Leída")));
+        pedir(get("/api/v1/me/notificaciones"), ana)
+                .andExpect(jsonPath("$.content[*].titulo").value(Matchers.contains("Sin leer", "Leída")));
     }
 
     @Test
@@ -129,7 +145,7 @@ class NotificacionIntegracionTest {
         // dos veces da lo mismo
         pedir(post("/api/v1/me/notificaciones/" + id + "/leida"), ana).andExpect(status().isNoContent());
 
-        pedir(get("/api/v1/me/notificaciones").param("soloNoLeidas", "true"), ana)
+        pedir(get("/api/v1/me/notificaciones").param("leida", "false"), ana)
                 .andExpect(jsonPath("$.page.totalElements").value(0));
         pedir(get("/api/v1/me/notificaciones"), ana)
                 .andExpect(jsonPath("$.content[0].leidaEn").exists());
@@ -146,9 +162,9 @@ class NotificacionIntegracionTest {
 
         pedir(post("/api/v1/me/notificaciones/leidas"), ana).andExpect(status().isNoContent());
 
-        pedir(get("/api/v1/me/notificaciones").param("soloNoLeidas", "true"), ana)
+        pedir(get("/api/v1/me/notificaciones").param("leida", "false"), ana)
                 .andExpect(jsonPath("$.page.totalElements").value(0));
-        pedir(get("/api/v1/me/notificaciones").param("soloNoLeidas", "true"), beto)
+        pedir(get("/api/v1/me/notificaciones").param("leida", "false"), beto)
                 .andExpect(jsonPath("$.page.totalElements").value(1));
     }
 
