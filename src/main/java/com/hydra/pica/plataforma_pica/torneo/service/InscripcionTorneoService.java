@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -14,6 +15,8 @@ import com.hydra.pica.plataforma_pica.inscripcion.domain.MotivoCierre;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDelTorneo;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.service.CierreInscripcion;
+import com.hydra.pica.plataforma_pica.reputacion.dto.Reputacion;
+import com.hydra.pica.plataforma_pica.reputacion.service.CalificacionService;
 import com.hydra.pica.plataforma_pica.reputacion.service.FairPlayService;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.MinimoInscriptos;
@@ -43,6 +46,7 @@ public class InscripcionTorneoService {
     private final NominaRepository nominaRepository;
     private final TorneoRepository torneoRepository;
     private final FairPlayService fairPlayService;
+    private final CalificacionService calificacionService;
     private final CancelacionTorneoService cancelacionTorneoService;
 
     /** Todas menos los borradores, de la más vieja a la más nueva; el orden no se elige desde afuera. */
@@ -55,10 +59,13 @@ public class InscripcionTorneoService {
         Map<Long, Long> jugadores = nominaRepository.contarPorInscripcion(
                         pagina.map(Inscripcion::getId).getContent()).stream()
                 .collect(Collectors.toMap(ConteoNomina::getInscripcionId, ConteoNomina::getCantidad));
-        Map<Long, Integer> fairPlay = fairPlayService.indices(
-                pagina.getContent().stream().map(i -> i.titular().getId()).collect(Collectors.toSet()));
+        Set<Long> titulares = pagina.getContent().stream().map(i -> i.titular().getId()).collect(Collectors.toSet());
+        Map<Long, Integer> fairPlay = fairPlayService.indices(titulares);
+        Map<Long, Reputacion> reputacion = calificacionService.reputaciones(titulares);
+        Set<Long> noConfiables = calificacionService.noConfiables(titulares);
         return pagina.map(i -> InscripcionDelTorneo.de(i, jugadores.getOrDefault(i.getId(), 0L).intValue(),
-                fairPlay.get(i.titular().getId())));
+                fairPlay.get(i.titular().getId()), reputacion.get(i.titular().getId()),
+                noConfiables.contains(i.titular().getId())));
     }
 
     /**
