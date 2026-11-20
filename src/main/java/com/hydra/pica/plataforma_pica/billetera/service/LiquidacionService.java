@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 import com.hydra.pica.plataforma_pica.billetera.domain.Custodia;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoCustodia;
 import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
+import com.hydra.pica.plataforma_pica.billetera.event.TorneoLiquidado;
 import com.hydra.pica.plataforma_pica.billetera.repository.CustodiaRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.billetera.service.Acreditacion.Rol;
@@ -37,6 +38,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.GastoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.PremioRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -74,12 +76,14 @@ public class LiquidacionService {
     private final MovimientoRepository movimientoRepository;
     private final Acreditador acreditador;
     private final NominaRepository nominaRepository;
+    private final ApplicationEventPublisher eventos;
 
     public LiquidacionService(TorneoRepository torneoRepository, InscripcionRepository inscripcionRepository,
                               PremioRepository premioRepository, GastoRepository gastoRepository,
                               RifaRepository rifaRepository, CustodiaRepository custodiaRepository,
                               CustodiaService custodiaService, MovimientoRepository movimientoRepository,
-                              Acreditador acreditador, NominaRepository nominaRepository) {
+                              Acreditador acreditador, NominaRepository nominaRepository,
+                              ApplicationEventPublisher eventos) {
         this.torneoRepository = torneoRepository;
         this.inscripcionRepository = inscripcionRepository;
         this.premioRepository = premioRepository;
@@ -90,6 +94,7 @@ public class LiquidacionService {
         this.movimientoRepository = movimientoRepository;
         this.acreditador = acreditador;
         this.nominaRepository = nominaRepository;
+        this.eventos = eventos;
     }
 
     public record LiquidacionTorneo(Long torneoId, Long custodiaId, BigDecimal retenido,
@@ -161,6 +166,7 @@ public class LiquidacionService {
         rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneoId).stream()
                 .filter(rifa -> rifa.getEstado() == EstadoRifa.LIQUIDADA)
                 .forEach(rifa -> pagarAporteDeLaRifa(rifa.getId()));
+        eventos.publishEvent(new TorneoLiquidado(torneoId, custodiaId));
         return new LiquidacionTorneo(torneoId, custodiaId, retenido.total(), acreditaciones);
     }
 
