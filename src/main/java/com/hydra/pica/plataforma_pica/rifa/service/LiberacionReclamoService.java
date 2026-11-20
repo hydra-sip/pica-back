@@ -142,7 +142,12 @@ public class LiberacionReclamoService {
                 "SIN_FRAUDE", EstadoRifa.LIQUIDADA, montoAcreditado, "LIQUIDACION_GANADORES",
                 destinatarios, ejecutor.getUsername(), liquidacion.aportePendiente(), liquidacion.aporteAlTorneo());
 
-        eventPublisher.publishEvent(new FondosReclamoLiberados(reclamoId, rifaId, torneoId, EstadoRifa.LIQUIDADA));
+        Map<Long, BigDecimal> acreditados = new LinkedHashMap<>();
+        liquidacion.acreditaciones().stream()
+                .filter(a -> a.usuarioId() != null)
+                .forEach(a -> acreditados.merge(a.usuarioId(), a.monto(), BigDecimal::add));
+        eventPublisher.publishEvent(new FondosReclamoLiberados(reclamoId, rifaId, torneoId, EstadoRifa.LIQUIDADA,
+                acreditados));
         return detalleActualizado(reclamoId);
     }
 
@@ -173,7 +178,10 @@ public class LiberacionReclamoService {
                 "FRAUDE_CONFIRMADO", EstadoRifa.CANCELADA, reintegro.totalDevuelto(),
                 "REINTEGRO_COMPRADORES", destinatarios, ejecutor.getUsername(), false, BigDecimal.ZERO, reclamanteId);
 
-        eventPublisher.publishEvent(new FondosReclamoLiberados(reclamoId, rifaId, torneoId, EstadoRifa.CANCELADA));
+        Map<Long, BigDecimal> acreditados = new LinkedHashMap<>();
+        reintegro.destinatarios().forEach(d -> acreditados.merge(d.usuarioId(), d.monto(), BigDecimal::add));
+        eventPublisher.publishEvent(new FondosReclamoLiberados(reclamoId, rifaId, torneoId, EstadoRifa.CANCELADA,
+                acreditados));
         return detalleActualizado(reclamoId);
     }
 

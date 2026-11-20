@@ -89,6 +89,22 @@ public interface PartidoRepository extends JpaRepository<Partido, Long> {
             order by p.fecha_programada, p.id""", nativeQuery = true)
     List<Long> conCheckinPorAvisar(@Param("ahora") Instant ahora, @Param("desde") Instant desde);
 
+    /**
+     * Como {@link #conCheckinPorAvisar} pero para notificar a los dos lados (HU-808): en todos los torneos en curso con
+     * check-in, tengan o no Discord, y con su propia marca ({@code checkin_notificado_para}).
+     */
+    @Query(value = """
+            select p.id from partido p join torneo t on t.id = p.torneo_id
+            where t.estado = 'EN_CURSO' and t.checkin_min_antes is not null
+              and p.estado in ('PROGRAMADO', 'CHECK_IN') and p.fecha_programada is not null
+              and (select count(*) from juega j where j.partido_id = p.id) = 2
+              and p.fecha_programada - t.checkin_min_antes * interval '1 minute' <= :ahora
+              and p.fecha_programada - t.checkin_min_antes * interval '1 minute' > :desde
+              and p.fecha_programada - (t.checkin_min_antes - t.checkin_duracion_min) * interval '1 minute' > :ahora
+              and p.checkin_notificado_para is distinct from p.fecha_programada - t.checkin_min_antes * interval '1 minute'
+            order by p.fecha_programada, p.id""", nativeQuery = true)
+    List<Long> conCheckinPorNotificar(@Param("ahora") Instant ahora, @Param("desde") Instant desde);
+
     /** Cuántas rondas tiene el bracket (la llave): con eso se nombra cada una ("Final", "Semifinal"...). */
     @Query("select coalesce(max(p.ronda), 0) from Partido p where p.torneo.id = :torneoId "
             + "and p.fase = com.hydra.pica.plataforma_pica.partido.domain.FasePartido.ELIMINACION")
