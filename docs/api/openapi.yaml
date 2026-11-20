@@ -4583,7 +4583,7 @@ components:
     AccionAuditoria:
       type: string
       enum: [LOGIN, LOGIN_FALLIDO, LOGOUT, ALTA, MODIFICACION, BAJA, BLOQUEO, DESBLOQUEO, PAGO, LAUDO, SORTEO,
-             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO, SANCION]
+             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO, SANCION, CALIFICACION]
     FairPlayDetalle:
       type: object
       required: [usuarioId, valor, actualizadoEn, historial]
