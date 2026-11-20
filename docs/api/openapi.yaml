@@ -59,6 +59,7 @@ tags:
   - {name: Torneos, description: 'Catálogo público y detalle de torneos. HU-208, Tomás.'}
   - {name: Partidos, description: 'Resultado y evidencia de cada partido. HU-301 (PICA-23), Tomás.'}
   - {name: Reputación, description: 'Sanciones a jugadores (HU-803, PICA-64) e índice de fair play (HU-802, PICA-58), Tomás.'}
+  - {name: Notificaciones, description: 'Centro de notificaciones del usuario logueado, también por WebSocket en /user/queue/notificaciones (ver docs/realtime.md). HU-808 (PICA-431), Laura.'}
 
 security:
   - bearerAuth: []
@@ -275,6 +276,53 @@ paths:
       responses:
         '204': {description: 'Cambiada, volver a iniciar sesión'}
         '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/me/notificaciones:
+    get:
+      tags: [Notificaciones]
+      summary: Mis notificaciones
+      x-jira: PICA-431
+      x-owner: Laura
+      description: >-
+        HU-808. Las del usuario logueado, de la más nueva a la más vieja; el orden no se elige. Sin `leida`, todas; con
+        `leida=false`, las que no marcó como leídas; con `leida=true`, las leídas. La campana pide `leida=false&size=1`
+        y usa `page.totalElements` como contador. Cada una llega además en vivo por WebSocket a
+        `/user/queue/notificaciones` (mismo schema) y por correo.
+      parameters:
+        - {name: leida, in: query, description: 'Sin el parámetro, todas', schema: {type: boolean}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200':
+          description: Una página de notificaciones
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PageNotificacion'}
+        '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/me/notificaciones/{id}/leida:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Notificaciones]
+      summary: Marcar una notificación como leída
+      x-jira: PICA-431
+      x-owner: Laura
+      description: >-
+        Idempotente: si ya estaba leída no cambia la fecha. La de otro usuario da 404 `NOTIFICACION_NO_ENCONTRADA`,
+        igual que una que no existe.
+      responses:
+        '204': {description: Leída}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/me/notificaciones/leidas:
+    post:
+      tags: [Notificaciones]
+      summary: Marcar todas como leídas
+      x-jira: PICA-431
+      x-owner: Laura
+      description: Marca como leídas todas las del usuario que faltaban leer. Sin ninguna, no hace nada.
+      responses:
+        '204': {description: Todas leídas}
 
   # --- Usuarios ----------------------------------------------------------------
 
@@ -4033,6 +4081,7 @@ components:
         Calificaciones (HU-805, PICA-427): TORNEO_NO_TERMINADO 409 (el torneo no está finalizado ni cancelado) ·
         JUGADOR_YA_CALIFICADO 409 (el jugador ya tiene calificación en ese torneo).
         Alertas de fraude (HU-705, PICA-416): ALERTA_FRAUDE_NO_ENCONTRADA 404 · ALERTA_FRAUDE_YA_REVISADA 409.
+        Notificaciones (HU-808, PICA-431): NOTIFICACION_NO_ENCONTRADA 404 (no existe o es de otro usuario).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
@@ -4049,7 +4098,7 @@ components:
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
              OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO, CARGA_NO_ENCONTRADA,
-              CUENTA_BANCARIA_NO_ENCONTRADA, RECLAMO_NO_ENCONTRADO, ALERTA_FRAUDE_NO_ENCONTRADA,
+              CUENTA_BANCARIA_NO_ENCONTRADA, RECLAMO_NO_ENCONTRADO, ALERTA_FRAUDE_NO_ENCONTRADA, NOTIFICACION_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
@@ -4555,6 +4604,29 @@ components:
     EstadoAlertaFraude:
       type: string
       enum: [PENDIENTE, REVISADA]
+    TipoNotificacion:
+      type: string
+      description: Los eventos de HU-808 que le llegan a un usuario.
+      enum: [RIVAL_ASIGNADO, CHECKIN_ABIERTO, CRUCE_INICIADO, RECLAMO_RESUELTO]
+    Notificacion:
+      type: object
+      required: [id, tipo, titulo, cuerpo, enlace, datos, leidaEn, creadaEn]
+      description: >-
+        Un aviso del centro de notificaciones (PICA-431). Es lo que devuelve GET /me/notificaciones y lo que llega por
+        WebSocket a /user/queue/notificaciones.
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        tipo: {$ref: '#/components/schemas/TipoNotificacion'}
+        titulo: {type: string, maxLength: 200}
+        cuerpo: {type: string, description: El mismo texto que el correo, sin el enlace}
+        enlace: {type: string, nullable: true, maxLength: 255, description: 'Ruta del front sin dominio, ej. /torneos/copa-primavera'}
+        datos: {type: object, additionalProperties: true, description: 'Lo propio de cada tipo (ids del partido, del torneo, de la rifa...); vacío si no hay'}
+        leidaEn: {type: string, format: date-time, nullable: true}
+        creadaEn: {type: string, format: date-time}
+    PageNotificacion:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/Notificacion'}}, page: {$ref: '#/components/schemas/PageInfo'}}
     PageRegistroAuditoria:
       type: object
       required: [content, page]
