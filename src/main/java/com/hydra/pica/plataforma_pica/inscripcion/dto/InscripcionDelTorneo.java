@@ -5,6 +5,7 @@ import java.time.Instant;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle.EquipoInscripto;
+import com.hydra.pica.plataforma_pica.reputacion.dto.Reputacion;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 
 /**
@@ -14,6 +15,8 @@ import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
  *
  * @param jugadores en la de equipo, los de la nómina con el capitán incluido; null en la individual
  * @param fairPlay el índice de fair play de quien responde por la inscripción: el jugador o el capitán (HU-802)
+ * @param reputacion el puntaje de reputación de esa misma persona: el promedio de las calificaciones (HU-805)
+ * @param noConfiable si algún organizador la marcó como no confiable (HU-805)
  */
 public record InscripcionDelTorneo(
         Long id,
@@ -23,15 +26,19 @@ public record InscripcionDelTorneo(
         EquipoInscripto equipo,
         UsuarioPublico capitan,
         Integer jugadores,
-        int fairPlay) {
+        int fairPlay,
+        Reputacion reputacion,
+        boolean noConfiable) {
 
-    public static InscripcionDelTorneo de(Inscripcion inscripcion, int jugadores, int fairPlay) {
+    public static InscripcionDelTorneo de(Inscripcion inscripcion, int jugadores, int fairPlay, Reputacion reputacion,
+            boolean noConfiable) {
         if (!inscripcion.esDeEquipo()) {
             return new InscripcionDelTorneo(inscripcion.getId(), inscripcion.getEstado(), inscripcion.getCreadoEn(),
-                    UsuarioPublico.desde(inscripcion.getUsuario()), null, null, null, fairPlay);
+                    UsuarioPublico.desde(inscripcion.getUsuario()), null, null, null, fairPlay, reputacion,
+                    noConfiable);
         }
         return new InscripcionDelTorneo(inscripcion.getId(), inscripcion.getEstado(), inscripcion.getCreadoEn(), null,
                 EquipoInscripto.de(inscripcion.getEquipo()), UsuarioPublico.desde(inscripcion.titular()), jugadores,
-                fairPlay);
+                fairPlay, reputacion, noConfiable);
     }
 }

@@ -17,5 +17,6 @@ public enum AccionAuditoria {
     LIQUIDACION,
     CANCELACION,
     REINTEGRO,
-    SANCION
+    SANCION,
+    CALIFICACION
 }

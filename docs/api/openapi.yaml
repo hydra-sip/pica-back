@@ -2575,6 +2575,57 @@ paths:
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
 
+  /api/v1/torneos/{id}/calificaciones:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Reputación]
+      summary: Calificar a un jugador del torneo terminado
+      x-jira: PICA-427
+      x-owner: Laura
+      description: >-
+        HU-805. Solo el organizador del torneo (si no, 403 `SIN_PERMISO`) y con el torneo FINALIZADO o CANCELADO (si
+        no, 409 `TORNEO_NO_TERMINADO`). El jugador tiene que haber estado en una inscripción CONFIRMADA: la suya o la
+        nómina de un equipo (si no, 409 `JUGADOR_NO_PARTICIPA`). Una sola vez por jugador y torneo (si no, 409
+        `JUGADOR_YA_CALIFICADO`). Puntaje de 1 a 5 y comentario opcional; sin puntaje o fuera de rango, 400
+        `VALIDACION`. Con `noConfiable`, todos los organizadores ven la marca al revisar las inscripciones de sus torneos;
+        no bloquea al jugador. El puntaje entra en su reputación (`InscripcionDelTorneo.reputacion`). Queda en la
+        auditoría (`CALIFICACION`, entidad TORNEO). 404 `TORNEO_NO_ENCONTRADO` si no existe o está en BORRADOR.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CalificacionRequest'}
+      responses:
+        '201':
+          description: La calificación registrada
+          headers:
+            Location: {schema: {type: string}, description: 'Los jugadores calificables del torneo'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CalificacionDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+    get:
+      tags: [Reputación]
+      summary: Jugadores para calificar
+      x-jira: PICA-427
+      x-owner: Laura
+      description: >-
+        HU-805. Los jugadores de las inscripciones CONFIRMADAS del torneo terminado, ordenados por inscripción, con su
+        calificación si ya la tienen (null si no). Mismos errores que calificar: 403 `SIN_PERMISO`, 404
+        `TORNEO_NO_ENCONTRADO` y 409 `TORNEO_NO_TERMINADO`.
+      responses:
+        '200':
+          description: Los jugadores
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/JugadorCalificable'}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+
   /api/v1/usuarios/{id}/fair-play:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -4027,6 +4078,8 @@ components:
         PICA-337): RETIRO_FUERA_DE_TOPES 400 (el monto está fuera del rango mínimo y máximo) · CUENTA_NO_VALIDADA 409
         (solo se puede solicitar retiros a una cuenta bancaria validada).
         Sanciones (HU-803, PICA-423): JUGADOR_NO_PARTICIPA 409 (el jugador no está en una inscripción confirmada del torneo).
+        Calificaciones (HU-805, PICA-427): TORNEO_NO_TERMINADO 409 (el torneo no está finalizado ni cancelado) ·
+        JUGADOR_YA_CALIFICADO 409 (el jugador ya tiene calificación en ese torneo).
         Alertas de fraude (HU-705, PICA-416): ALERTA_FRAUDE_NO_ENCONTRADA 404 · ALERTA_FRAUDE_YA_REVISADA 409.
         Notificaciones (HU-808, PICA-431): NOTIFICACION_NO_ENCONTRADA 404 (no existe o es de otro usuario).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
@@ -4067,7 +4120,7 @@ components:
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
              RIFA_CON_VENTAS, RIFA_CON_RESERVAS, RIFA_SIN_VENTAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, SORTEO_ANTICIPADO, RECLAMO_DUPLICADO,
-             RECLAMO_YA_RESUELTO, RECLAMO_NO_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA, ALERTA_FRAUDE_YA_REVISADA,
+             RECLAMO_YA_RESUELTO, RECLAMO_NO_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA, ALERTA_FRAUDE_YA_REVISADA, TORNEO_NO_TERMINADO, JUGADOR_YA_CALIFICADO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR, BILLETERA_BLOQUEADA]
 
@@ -4602,7 +4655,7 @@ components:
     AccionAuditoria:
       type: string
       enum: [LOGIN, LOGIN_FALLIDO, LOGOUT, ALTA, MODIFICACION, BAJA, BLOQUEO, DESBLOQUEO, PAGO, LAUDO, SORTEO,
-             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO, SANCION]
+             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO, SANCION, CALIFICACION]
     FairPlayDetalle:
       type: object
       required: [usuarioId, valor, actualizadoEn, historial]
@@ -4685,6 +4738,47 @@ components:
         aplicadaPor: {$ref: '#/components/schemas/UsuarioPublico', description: El organizador o el árbitro}
         aplicadaEn: {type: string, format: date-time}
         anuladaEn: {type: [string, 'null'], format: date-time, description: 'Null: vigente. Por ahora no hay cómo anularla'}
+    CalificacionRequest:
+      type: object
+      required: [usuarioId, puntaje]
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        puntaje: {type: integer, minimum: 1, maximum: 5}
+        comentario: {type: [string, 'null'], maxLength: 1000, examples: [Puntual y respetuoso con los rivales]}
+        noConfiable: {type: boolean, default: false, description: 'La marca la ven todos los organizadores en las inscripciones; no bloquea'}
+    CalificacionDetalle:
+      type: object
+      required: [id, torneoId, torneo, jugador, organizador, puntaje, comentario, noConfiable, creadaEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {type: string, description: Nombre del torneo}
+        jugador: {$ref: '#/components/schemas/UsuarioPublico'}
+        organizador: {$ref: '#/components/schemas/UsuarioPublico'}
+        puntaje: {type: integer, minimum: 1, maximum: 5}
+        comentario: {type: [string, 'null']}
+        noConfiable: {type: boolean}
+        creadaEn: {type: string, format: date-time}
+    JugadorCalificable:
+      type: object
+      description: >-
+        HU-805. Un jugador del torneo terminado: el de una inscripción individual confirmada o uno de la nómina de un
+        equipo confirmado, con su calificación si ya la tiene.
+      required: [inscripcionId, jugador, calificacion]
+      properties:
+        inscripcionId: {$ref: '#/components/schemas/Id'}
+        equipo: {type: [string, 'null'], description: 'Nombre del equipo; null si la inscripción es individual'}
+        jugador: {$ref: '#/components/schemas/UsuarioPublico'}
+        calificacion:
+          oneOf: [{$ref: '#/components/schemas/CalificacionDetalle'}, {type: 'null'}]
+          description: Null mientras no lo califique
+    Reputacion:
+      type: object
+      description: 'HU-805: el promedio de las calificaciones que recibió de los organizadores, aparte del fair play'
+      required: [promedio, cantidad]
+      properties:
+        promedio: {type: [number, 'null'], minimum: 1, maximum: 5, description: 'Null sin calificaciones', examples: [4.5]}
+        cantidad: {type: integer, minimum: 0, examples: [2]}
     ActualizarParametrosRequest:
       type: object
       required: [valores]
@@ -5574,7 +5668,7 @@ components:
         rol: {$ref: '#/components/schemas/RolEnInscripcion'}
     InscripcionDelTorneo:
       type: object
-      required: [id, estado, creadoEn, fairPlay]
+      required: [id, estado, creadoEn, fairPlay, reputacion, noConfiable]
       description: >-
         Una inscripción como la ve el organizador en la lista de su torneo (HU-206). La individual lleva `usuario`; la
         de equipo lleva `equipo`, `capitan` y `jugadores`.
@@ -5593,6 +5687,8 @@ components:
           description: Solo en la de equipo
         jugadores: {type: [integer, 'null'], description: 'Solo en la de equipo: cuántos hay en la nómina, el capitán incluido'}
         fairPlay: {type: integer, minimum: 0, description: 'HU-802: el índice de fair play de quien responde por la inscripción (el jugador o el capitán)', examples: [100]}
+        reputacion: {$ref: '#/components/schemas/Reputacion', description: 'HU-805: de la misma persona que el fair play'}
+        noConfiable: {type: boolean, description: 'HU-805: si algún organizador lo marcó como no confiable'}
     InscripcionEquipoRequest:
       type: object
       description: >-
