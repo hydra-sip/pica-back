@@ -19,7 +19,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Centro de notificaciones (HU-808, T808-1). Cada aviso queda guardado para el usuario, le llega por WebSocket a
@@ -35,6 +38,7 @@ public class NotificacionService {
     private final RealtimeNotifier realtimeNotifier;
     private final EmailService emailService;
     private final Executor executor;
+    private final TransactionTemplate nueva;
     private final String webUrl;
 
     public NotificacionService(
@@ -43,12 +47,17 @@ public class NotificacionService {
             RealtimeNotifier realtimeNotifier,
             EmailService emailService,
             @Qualifier("notificacionExecutor") Executor executor,
+            PlatformTransactionManager transacciones,
             @Value("${app.web-url:http://localhost:5173}") String webUrl) {
         this.notificacionRepository = notificacionRepository;
         this.usuarioRepository = usuarioRepository;
         this.realtimeNotifier = realtimeNotifier;
         this.emailService = emailService;
         this.executor = executor;
+        // en un listener AFTER_COMMIT la transacción del evento sigue atada al hilo aunque ya hizo commit: sin una
+        // nueva, el insert se sumaría a esa y no se guardaría nunca (pasa con el executor sincrónico de los tests)
+        this.nueva = new TransactionTemplate(transacciones);
+        this.nueva.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.webUrl = webUrl;
     }
 
@@ -67,7 +76,8 @@ public class NotificacionService {
         notificacion.setCuerpo(cuerpo);
         notificacion.setEnlace(enlace);
         notificacion.setDatos(datos);
-        NotificacionDetalle detalle = NotificacionDetalle.desde(notificacionRepository.save(notificacion));
+        NotificacionDetalle detalle = nueva.execute(estado ->
+                NotificacionDetalle.desde(notificacionRepository.save(notificacion)));
 
         // primero la web, que es lo que se mide en los 5 segundos; el correo puede tardar
         try {
