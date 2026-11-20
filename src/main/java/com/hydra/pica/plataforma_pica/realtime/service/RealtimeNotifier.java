@@ -8,7 +8,8 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * Publicador WebSocket para los topics /topic/torneos/{id} y /topic/rifas/{id} (HU-305, T305-1).
+ * Publicador WebSocket para los topics /topic/torneos/{id} y /topic/rifas/{id} (HU-305, T305-1) y para la cola de
+ * notificaciones de cada usuario, /user/queue/notificaciones (HU-808).
  */
 @Service
 @RequiredArgsConstructor
@@ -27,5 +28,11 @@ public class RealtimeNotifier {
         String destino = "/topic/rifas/" + rifaId;
         log.debug("Publicando evento en {}: {}", destino, mensaje);
         messagingTemplate.convertAndSend(destino, mensaje);
+    }
+
+    /** Llega solo a las sesiones de ese usuario: el nombre del principal de la sesión STOMP es su id. */
+    public void publicarUsuario(Long usuarioId, Object mensaje) {
+        log.debug("Publicando notificación al usuario {}: {}", usuarioId, mensaje);
+        messagingTemplate.convertAndSendToUser(usuarioId.toString(), "/queue/notificaciones", mensaje);
     }
 }

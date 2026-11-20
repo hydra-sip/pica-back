@@ -34,6 +34,9 @@ app:
     sincronico: true
     espera-base: 0s
     aviso-checkin: false   # los tests llaman a AvisoCheckinDiscord a mano
+  # Las notificaciones (HU-808) también, para ver la fila, el correo y el mensaje sin esperar
+  notificaciones:
+    sincronico: true
   cors:
     allowed-origins:
       - http://localhost:3000
