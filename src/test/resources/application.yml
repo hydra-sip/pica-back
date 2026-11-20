@@ -37,6 +37,7 @@ app:
   # Las notificaciones (HU-808) también, para ver la fila, el correo y el mensaje sin esperar
   notificaciones:
     sincronico: true
+    aviso-checkin: false   # los tests llaman a AvisoCheckinAbierto a mano
   cors:
     allowed-origins:
       - http://localhost:3000

@@ -221,6 +221,8 @@ class LiberacionReclamoServiceTest {
         ArgumentCaptor<FondosReclamoLiberados> eventCaptor = ArgumentCaptor.forClass(FondosReclamoLiberados.class);
         verify(eventPublisher).publishEvent(eventCaptor.capture());
         assertThat(eventCaptor.getValue().rifaEstadoFinal()).isEqualTo(EstadoRifa.LIQUIDADA);
+        // la plataforma no tiene usuario: no se le avisa (HU-808)
+        assertThat(eventCaptor.getValue().acreditados()).containsExactly(Map.entry(88L, new BigDecimal("1000.00")));
     }
 
     @Test
@@ -259,7 +261,8 @@ class LiberacionReclamoServiceTest {
                 .containsEntry("reclamanteId", 42L)
                 .containsEntry("ejecutadoPor", "soporte_ana");
 
-        verify(eventPublisher).publishEvent(new FondosReclamoLiberados(1L, 10L, 30L, EstadoRifa.CANCELADA));
+        verify(eventPublisher).publishEvent(new FondosReclamoLiberados(1L, 10L, 30L, EstadoRifa.CANCELADA,
+                Map.of(42L, new BigDecimal("550.00"), 43L, new BigDecimal("550.00"))));
     }
 
     @Test
