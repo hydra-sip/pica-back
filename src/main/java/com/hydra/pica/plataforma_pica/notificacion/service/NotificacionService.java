@@ -95,13 +95,20 @@ public class NotificacionService {
         });
     }
 
-    /** Las del usuario, de la más nueva a la más vieja; con {@code soloNoLeidas}, las que faltan leer. */
+    /** Las del usuario, de la más nueva a la más vieja. Sin {@code leida}, todas; si no, solo las leídas o las otras. */
     @Transactional(readOnly = true)
-    public Page<NotificacionDetalle> listar(Long usuarioId, boolean soloNoLeidas, int page, int size) {
+    public Page<NotificacionDetalle> listar(Long usuarioId, Boolean leida, int page, int size) {
         PageRequest pagina = PageRequest.of(page, size);
-        Page<Notificacion> notificaciones = soloNoLeidas
-                ? notificacionRepository.findByUsuarioIdAndLeidaEnIsNullOrderByCreadaEnDescIdDesc(usuarioId, pagina)
-                : notificacionRepository.findByUsuarioIdOrderByCreadaEnDescIdDesc(usuarioId, pagina);
+        Page<Notificacion> notificaciones;
+        if (leida == null) {
+            notificaciones = notificacionRepository.findByUsuarioIdOrderByCreadaEnDescIdDesc(usuarioId, pagina);
+        } else if (leida) {
+            notificaciones = notificacionRepository.findByUsuarioIdAndLeidaEnIsNotNullOrderByCreadaEnDescIdDesc(
+                    usuarioId, pagina);
+        } else {
+            notificaciones = notificacionRepository.findByUsuarioIdAndLeidaEnIsNullOrderByCreadaEnDescIdDesc(
+                    usuarioId, pagina);
+        }
         return notificaciones.map(NotificacionDetalle::desde);
     }
 

@@ -284,11 +284,12 @@ paths:
       x-jira: PICA-431
       x-owner: Laura
       description: >-
-        HU-808. Las del usuario logueado, de la más nueva a la más vieja; el orden no se elige. Con `soloNoLeidas=true`,
-        solo las que no marcó como leídas. La campana pide `soloNoLeidas=true&size=1` y usa `page.totalElements` como
-        contador. Cada una llega además en vivo por WebSocket a `/user/queue/notificaciones` (mismo schema) y por correo.
+        HU-808. Las del usuario logueado, de la más nueva a la más vieja; el orden no se elige. Sin `leida`, todas; con
+        `leida=false`, las que no marcó como leídas; con `leida=true`, las leídas. La campana pide `leida=false&size=1`
+        y usa `page.totalElements` como contador. Cada una llega además en vivo por WebSocket a
+        `/user/queue/notificaciones` (mismo schema) y por correo.
       parameters:
-        - {name: soloNoLeidas, in: query, schema: {type: boolean, default: false}}
+        - {name: leida, in: query, description: 'Sin el parámetro, todas', schema: {type: boolean}}
         - {$ref: '#/components/parameters/page'}
         - {$ref: '#/components/parameters/size'}
       responses:
