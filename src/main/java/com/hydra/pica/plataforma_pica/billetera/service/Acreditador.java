@@ -34,8 +34,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 public class Acreditador {
 
-    private static final int DESCRIPCION_MAX_LENGTH = 255;
-
     private final BilleteraRepository billeteraRepository;
     private final MovimientoRepository movimientoRepository;
     private final TorneoRepository torneoRepository;
@@ -166,7 +164,7 @@ public class Acreditador {
         movimiento.setSaldoResultante(billetera.getSaldoDisponible());
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(acreditacion.referencia());
-        movimiento.setDescripcion(truncar(acreditacion.descripcion(), DESCRIPCION_MAX_LENGTH));
+        movimiento.setDescripcion(Movimiento.truncarDescripcion(acreditacion.descripcion()));
         return movimiento;
     }
 
@@ -176,9 +174,5 @@ public class Acreditador {
             case HONORARIO -> TipoMovimiento.HONORARIO;
             default -> TipoMovimiento.LIQUIDACION;
         };
-    }
-
-    private static String truncar(String texto, int longitudMaxima) {
-        return texto.length() > longitudMaxima ? texto.substring(0, longitudMaxima) : texto;
     }
 }
