@@ -96,7 +96,7 @@ public class LiberacionReclamoService {
                     "El reclamo " + reclamoId + " debe estar resuelto antes de liberar los fondos")
                     .con("estado", reclamo.getEstado());
         }
-        if (rifa.getEstado() == EstadoRifa.LIQUIDADA || rifa.getEstado() == EstadoRifa.CANCELADA) {
+        if (rifa.getEstado().esTerminal()) {
             throw new ConflictoException(CodigoError.CUSTODIA_LIBERADA,
                     "La custodia de la rifa " + rifaId + " ya fue liberada")
                     .con("estado", estadoCustodiaDe(rifa));

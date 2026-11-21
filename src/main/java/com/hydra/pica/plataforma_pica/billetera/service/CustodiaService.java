@@ -213,7 +213,7 @@ public class CustodiaService {
 
     /** Liquidada, cancelada o sorteada con el plazo de reclamo vencido; con un reclamo abierto está EN_REVISION. */
     private static boolean terminada(Rifa rifa, Instant ahora) {
-        if (rifa.getEstado() == EstadoRifa.LIQUIDADA || rifa.getEstado() == EstadoRifa.CANCELADA) {
+        if (rifa.getEstado().esTerminal()) {
             return true;
         }
         Instant plazo = ReclamoRifaService.plazoReclamo(rifa);
