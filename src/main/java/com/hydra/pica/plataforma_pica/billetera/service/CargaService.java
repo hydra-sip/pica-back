@@ -17,13 +17,13 @@ import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
+import com.hydra.pica.plataforma_pica.common.error.NombreDeConstraint;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -186,15 +186,8 @@ public class CargaService {
     }
 
     private static boolean esViolacionReferenciaUnica(DataIntegrityViolationException e) {
-        Throwable causa = e;
-        while (causa != null && !(causa instanceof ConstraintViolationException)) {
-            causa = causa.getCause();
-        }
-        if (causa instanceof ConstraintViolationException cve) {
-            String nombre = cve.getConstraintName();
-            if (nombre != null && nombre.equalsIgnoreCase("uq_movimiento_referencia_externa")) {
-                return true;
-            }
+        if ("uq_movimiento_referencia_externa".equalsIgnoreCase(NombreDeConstraint.de(e))) {
+            return true;
         }
         String msg = e.getMessage();
         return msg != null && msg.contains("uq_movimiento_referencia_externa");
