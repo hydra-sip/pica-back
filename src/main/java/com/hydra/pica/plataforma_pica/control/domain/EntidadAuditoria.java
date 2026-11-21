@@ -12,6 +12,7 @@ public enum EntidadAuditoria {
     CARGA_CRIPTO,
     CUENTA_BANCARIA,
     RETIRO,
+    RETIRO_CRIPTO,
     USUARIO,
     PARAMETRO,
     RECLAMO_RIFA,

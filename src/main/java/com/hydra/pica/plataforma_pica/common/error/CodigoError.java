@@ -17,6 +17,7 @@ public enum CodigoError {
     ERROR_INTERNO,
     ALMACENAMIENTO_NO_DISPONIBLE,
     RED_NO_DISPONIBLE,
+    RETIROS_CRIPTO_NO_DISPONIBLES,
 
     // Carga con cripto (400): la transacción no paga la carga (HU-609)
     TRANSACCION_INEXISTENTE,
@@ -30,6 +31,8 @@ public enum CodigoError {
 
     // Retiros de fondos (400)
     RETIRO_FUERA_DE_TOPES,
+    // Retiro a la wallet (400): la transacción no cobra el retiro (HU-610)
+    TRANSACCION_SIN_RETIRO,
 
     // 404
     USUARIO_NO_ENCONTRADO,
@@ -50,6 +53,7 @@ public enum CodigoError {
     TICKET_NO_ENCONTRADO,
     COMPROBANTE_NO_ENCONTRADO,
     CARGA_NO_ENCONTRADA,
+    RETIRO_NO_ENCONTRADO,
     CUENTA_BANCARIA_NO_ENCONTRADA,
     RECLAMO_NO_ENCONTRADO,
     ALERTA_FRAUDE_NO_ENCONTRADA,
@@ -140,6 +144,8 @@ public enum CodigoError {
     CLAVE_IDEMPOTENCIA_USADA,
     TRANSACCION_PENDIENTE,
     CARGA_YA_ACREDITADA,
+    RETIRO_YA_COBRADO,
+    RETIRO_VENCIDO,
     RIFA_CON_VENTAS,
     RIFA_CON_RESERVAS,
     RIFA_SIN_VENTAS,

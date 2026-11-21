@@ -75,18 +75,7 @@ public class RetiroService {
         }
 
         // 1. Validar topes mínimo y máximo de la plataforma
-        BigDecimal minimo = parametrosPlataforma.retiroMinimo();
-        BigDecimal maximo = parametrosPlataforma.retiroMaximo();
-        BigDecimal montoEscalado = monto.setScale(2, RoundingMode.HALF_UP);
-
-        if (montoEscalado.compareTo(minimo) < 0 || montoEscalado.compareTo(maximo) > 0) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.RETIRO_FUERA_DE_TOPES,
-                    "El monto a retirar debe estar entre $" + minimo.stripTrailingZeros().toPlainString()
-                            + " y $" + maximo.stripTrailingZeros().toPlainString())
-                    .con("minimo", minimo)
-                    .con("maximo", maximo)
-                    .con("monto", montoEscalado);
-        }
+        BigDecimal montoEscalado = validarTopes(monto);
 
         // 2. Validar que la cuenta pertenezca al usuario y esté VALIDADA
         CuentaBancaria cuenta = cuentaBancariaRepository.findByIdAndUsuarioId(cuentaId, usuarioId)
@@ -99,7 +88,47 @@ public class RetiroService {
                     "Solo se puede solicitar retiros a una cuenta bancaria validada");
         }
 
-        // 3. Bloqueo pesimista de la billetera (SELECT ... FOR UPDATE)
+        Map<String, Object> detalleAuditoria = new LinkedHashMap<>();
+        detalleAuditoria.put("cuentaId", cuenta.getId());
+        detalleAuditoria.put("tipoCuenta", cuenta.getTipo().name());
+        detalleAuditoria.put("valorCuenta", cuenta.getValor());
+        Movimiento guardado = descontar(usuarioId, montoEscalado, "sim-retiro-" + UUID.randomUUID(),
+                "Retiro a " + cuenta.getTipo() + " " + cuenta.getValor(), detalleAuditoria);
+
+        log.info("Retiro solicitado por usuario {}: monto {}, cuenta {}, saldo restante {}",
+                usuarioId, montoEscalado, cuenta.getId(), guardado.getSaldoResultante());
+
+        return guardado;
+    }
+
+    /**
+     * Valida el monto contra los topes de la plataforma (HU-702) y lo devuelve con 2 decimales. Lo usan el retiro a una
+     * cuenta y el retiro a la wallet (HU-610).
+     */
+    public BigDecimal validarTopes(BigDecimal monto) {
+        BigDecimal minimo = parametrosPlataforma.retiroMinimo();
+        BigDecimal maximo = parametrosPlataforma.retiroMaximo();
+        BigDecimal montoEscalado = monto.setScale(2, RoundingMode.HALF_UP);
+
+        if (montoEscalado.compareTo(minimo) < 0 || montoEscalado.compareTo(maximo) > 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.RETIRO_FUERA_DE_TOPES,
+                    "El monto a retirar debe estar entre $" + minimo.stripTrailingZeros().toPlainString()
+                            + " y $" + maximo.stripTrailingZeros().toPlainString())
+                    .con("minimo", minimo)
+                    .con("maximo", maximo)
+                    .con("monto", montoEscalado);
+        }
+        return montoEscalado;
+    }
+
+    /**
+     * Descuenta {@code monto} del disponible con la billetera bloqueada y registra el movimiento RETIRO PENDIENTE, con
+     * su auditoría y el evento para la detección de fraude. Lo usan el retiro a una cuenta y el retiro a la wallet
+     * (HU-610). Tiene que correr dentro de una transacción.
+     */
+    public Movimiento descontar(Long usuarioId, BigDecimal monto, String referencia, String descripcion,
+                                Map<String, Object> detalle) {
+        // Bloqueo pesimista de la billetera (SELECT ... FOR UPDATE)
         Billetera billetera = billeteraRepository.findConBloqueoPorUsuarioId(usuarioId)
                 .orElseGet(() -> {
                     Billetera nueva = new Billetera();
@@ -117,38 +146,35 @@ public class RetiroService {
             throw new ProhibidoException(CodigoError.BILLETERA_BLOQUEADA, "La billetera se encuentra bloqueada");
         }
 
-        // 4. Validar saldo disponible
-        if (montoEscalado.compareTo(billetera.getSaldoDisponible()) > 0) {
+        // Validar saldo disponible
+        if (monto.compareTo(billetera.getSaldoDisponible()) > 0) {
             throw new ConflictoException(CodigoError.SALDO_INSUFICIENTE, MENSAJE_SALDO_INSUFICIENTE)
                     .con("saldoDisponible", billetera.getSaldoDisponible())
                     .con("saldoRetenido", billetera.getSaldoRetenido())
-                    .con("montoSolicitado", montoEscalado);
+                    .con("montoSolicitado", monto);
         }
 
-        // 5. Deducir saldo disponible
-        BigDecimal nuevoSaldoDisponible = billetera.getSaldoDisponible().subtract(montoEscalado);
+        // Deducir saldo disponible
+        BigDecimal nuevoSaldoDisponible = billetera.getSaldoDisponible().subtract(monto);
         billetera.setSaldoDisponible(nuevoSaldoDisponible);
         billeteraRepository.save(billetera);
 
-        // 6. Registrar movimiento RETIRO en estado PENDIENTE
-        String referencia = "sim-retiro-" + UUID.randomUUID();
+        // Registrar movimiento RETIRO en estado PENDIENTE
         Movimiento movimiento = new Movimiento();
         movimiento.setBilletera(billetera);
         movimiento.setTipo(TipoMovimiento.RETIRO);
-        movimiento.setMonto(montoEscalado);
+        movimiento.setMonto(monto);
         movimiento.setMoneda(billetera.getMoneda() != null ? billetera.getMoneda() : "ARS");
         movimiento.setSaldoResultante(nuevoSaldoDisponible);
         movimiento.setEstado(EstadoMovimiento.PENDIENTE);
         movimiento.setReferenciaExterna(referencia);
-        movimiento.setDescripcion("Retiro a " + cuenta.getTipo() + " " + cuenta.getValor());
+        movimiento.setDescripcion(descripcion);
         Movimiento guardado = movimientoRepository.saveAndFlush(movimiento);
 
-        // 7. Auditoría
+        // Auditoría
         Map<String, Object> detalleAuditoria = new LinkedHashMap<>();
-        detalleAuditoria.put("monto", montoEscalado);
-        detalleAuditoria.put("cuentaId", cuenta.getId());
-        detalleAuditoria.put("tipoCuenta", cuenta.getTipo().name());
-        detalleAuditoria.put("valorCuenta", cuenta.getValor());
+        detalleAuditoria.put("monto", monto);
+        detalleAuditoria.putAll(detalle);
         detalleAuditoria.put("saldoResultante", nuevoSaldoDisponible);
         detalleAuditoria.put("referencia", referencia);
         detalleAuditoria.put("estado", EstadoMovimiento.PENDIENTE.name());
@@ -162,12 +188,8 @@ public class RetiroService {
 
         if (eventos != null) {
             eventos.publishEvent(new MovimientoBilleteraRegistrado(
-                    guardado.getId(), usuarioId, TipoMovimiento.RETIRO, montoEscalado));
+                    guardado.getId(), usuarioId, TipoMovimiento.RETIRO, monto));
         }
-
-        log.info("Retiro solicitado por usuario {}: monto {}, cuenta {}, saldo restante {}",
-                usuarioId, montoEscalado, cuenta.getId(), nuevoSaldoDisponible);
-
         return guardado;
     }
 
