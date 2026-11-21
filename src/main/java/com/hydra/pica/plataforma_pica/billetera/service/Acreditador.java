@@ -33,6 +33,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 public class Acreditador {
 
+    private static final int DESCRIPCION_MAX_LENGTH = 255;
+
     private final BilleteraRepository billeteraRepository;
     private final MovimientoRepository movimientoRepository;
     private final TorneoRepository torneoRepository;
@@ -98,18 +100,13 @@ public class Acreditador {
         if (acreditacion.inscripcionId() != null) {
             movimiento.setInscripcion(inscripcionRepository.getReferenceById(acreditacion.inscripcionId()));
         }
-        movimiento.setTipo(switch (acreditacion.rol()) {
-            case PREMIO -> TipoMovimiento.PREMIO;
-            case HONORARIO -> TipoMovimiento.HONORARIO;
-            default -> TipoMovimiento.LIQUIDACION;
-        });
+        movimiento.setTipo(tipoMovimiento(acreditacion.rol()));
         movimiento.setMonto(acreditacion.monto());
         movimiento.setMoneda(billetera.getMoneda());
         movimiento.setSaldoResultante(billetera.getSaldoDisponible());
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(acreditacion.referencia());
-        String descripcion = acreditacion.descripcion();
-        movimiento.setDescripcion(descripcion.length() > 255 ? descripcion.substring(0, 255) : descripcion);
+        movimiento.setDescripcion(truncar(acreditacion.descripcion(), DESCRIPCION_MAX_LENGTH));
         Movimiento guardado = movimientoRepository.save(movimiento);
 
         Map<String, Object> detalle = new LinkedHashMap<>();
@@ -158,6 +155,18 @@ public class Acreditador {
         billetera.setSaldoDisponible(billetera.getSaldoDisponible().add(monto));
         billetera.setGananciaAcumulada(billetera.getGananciaAcumulada().add(monto));
         billeteraRepository.save(billetera);
+    }
+
+    private static TipoMovimiento tipoMovimiento(Rol rol) {
+        return switch (rol) {
+            case PREMIO -> TipoMovimiento.PREMIO;
+            case HONORARIO -> TipoMovimiento.HONORARIO;
+            default -> TipoMovimiento.LIQUIDACION;
+        };
+    }
+
+    private static String truncar(String texto, int longitudMaxima) {
+        return texto.length() > longitudMaxima ? texto.substring(0, longitudMaxima) : texto;
     }
 
     private Billetera bloqueada(Long usuarioId) {
