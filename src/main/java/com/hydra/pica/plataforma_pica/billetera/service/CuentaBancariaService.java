@@ -43,11 +43,7 @@ public class CuentaBancariaService {
     public static final String MENSAJE_TITULAR_NO_COINCIDE =
             "La cuenta destino debe estar a nombre del titular verificado en la plataforma";
 
-    private static final int ALIAS_LONGITUD_MINIMA = 6;
-    private static final int ALIAS_LONGITUD_MAXIMA = 20;
-    private static final int CBU_CVU_DIGITOS = 22;
     private static final int CUIT_CUIL_DIGITOS = 11;
-    private static final Pattern PATRON_ALIAS = Pattern.compile("^[a-zA-Z0-9.-]+$");
     private static final Pattern PATRON_NO_DIGITOS = Pattern.compile("\\D");
 
     private final CuentaBancariaRepository cuentaBancariaRepository;
@@ -222,30 +218,7 @@ public class CuentaBancariaService {
         if (tipo == null) {
             return;
         }
-        String valor = valorRecibido.strip();
-        switch (tipo) {
-            case CBU, CVU -> validarCbuOCvu(tipo, valor, errores);
-            case ALIAS -> validarAlias(valor, errores);
-        }
-    }
-
-    private static void validarCbuOCvu(TipoCuenta tipo, String valor, List<ErrorCampo> errores) {
-        if (!ValidadorCbuCvu.esValido(valor)) {
-            errores.add(new ErrorCampo("valor", ErrorCampo.Codigo.FORMATO_INVALIDO,
-                    "El " + tipo + " debe tener " + CBU_CVU_DIGITOS + " dígitos válidos con su dígito verificador"));
-        }
-    }
-
-    private static void validarAlias(String valor, List<ErrorCampo> errores) {
-        if (valor.length() < ALIAS_LONGITUD_MINIMA || valor.length() > ALIAS_LONGITUD_MAXIMA) {
-            errores.add(new ErrorCampo("valor", ErrorCampo.Codigo.LONGITUD,
-                    "El alias debe tener entre " + ALIAS_LONGITUD_MINIMA + " y " + ALIAS_LONGITUD_MAXIMA + " caracteres"));
-            return;
-        }
-        if (!PATRON_ALIAS.matcher(valor).matches()) {
-            errores.add(new ErrorCampo("valor", ErrorCampo.Codigo.FORMATO_INVALIDO,
-                    "El alias solo puede contener letras, números, puntos y guiones"));
-        }
+        tipo.validarValor(valorRecibido.strip()).ifPresent(errores::add);
     }
 
     private static void validarCuitCuil(String cuitCuil, List<ErrorCampo> errores) {
