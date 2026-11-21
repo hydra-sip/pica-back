@@ -85,9 +85,7 @@ public class Acreditador {
 
     private void acreditar(Evento evento, Acreditacion acreditacion) {
         Billetera billetera = resolverBilletera(acreditacion);
-        billetera.setSaldoDisponible(billetera.getSaldoDisponible().add(acreditacion.monto()));
-        billetera.setGananciaAcumulada(billetera.getGananciaAcumulada().add(acreditacion.monto()));
-        billeteraRepository.save(billetera);
+        acreditarSaldo(billetera, acreditacion.monto());
 
         Movimiento movimiento = new Movimiento();
         movimiento.setBilletera(billetera);
@@ -154,6 +152,12 @@ public class Acreditador {
                 ? billeteraRepository.findPlataformaConBloqueo()
                         .orElseThrow(() -> new IllegalStateException("Falta la billetera de la plataforma (V40)"))
                 : bloqueada(acreditacion.usuarioId());
+    }
+
+    private void acreditarSaldo(Billetera billetera, BigDecimal monto) {
+        billetera.setSaldoDisponible(billetera.getSaldoDisponible().add(monto));
+        billetera.setGananciaAcumulada(billetera.getGananciaAcumulada().add(monto));
+        billeteraRepository.save(billetera);
     }
 
     private Billetera bloqueada(Long usuarioId) {
