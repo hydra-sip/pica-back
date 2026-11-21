@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.CrucesLlave;
@@ -231,7 +232,7 @@ public class FaseDeGrupos {
     private void auditar(Torneo torneo, Map<String, Object> detalle) {
         Auditoria auditoria = new Auditoria();
         auditoria.setAccion(AccionAuditoria.SORTEO);
-        auditoria.setEntidad("TORNEO");
+        auditoria.setEntidad(EntidadAuditoria.TORNEO.name());
         auditoria.setEntidadId(String.valueOf(torneo.getId()));
         auditoria.setDetalle(detalle);
         auditoriaRepository.save(auditoria);

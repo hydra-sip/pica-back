@@ -12,6 +12,7 @@ import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.AlertaFraude;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.EstadoAlertaFraude;
 import com.hydra.pica.plataforma_pica.control.domain.ReglaFraude;
 import com.hydra.pica.plataforma_pica.control.dto.AlertaFraudeDetalle;
@@ -37,7 +38,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class AlertaFraudeAdminService {
 
     private static final int NOTA_MAXIMA = 1000;
-    private static final String ENTIDAD_AUDITORIA = "ALERTA_FRAUDE";
     // PENDIENTE ('P') ordena antes que REVISADA ('R'), y dentro de cada estado las más recientes primero.
     private static final Sort ORDEN_ADMIN = Sort.by(
             Sort.Order.asc("estado"),
@@ -110,7 +110,7 @@ public class AlertaFraudeAdminService {
             detalleAuditoria.put("rifaId", alerta.getRifa().getId());
         }
         detalleAuditoria.put("nota", nota);
-        auditoriaService.registrar(revisorId, AccionAuditoria.MODIFICACION, ENTIDAD_AUDITORIA,
+        auditoriaService.registrar(revisorId, AccionAuditoria.MODIFICACION, EntidadAuditoria.ALERTA_FRAUDE,
                 String.valueOf(alerta.getId()), detalleAuditoria);
 
         return AlertaFraudeDetalle.de(alerta);

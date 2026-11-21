@@ -7,6 +7,7 @@ import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
+import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
@@ -125,12 +126,12 @@ public class PerfilService {
                         "El usuario de la sesión ya no existe"));
         // el token puede seguir vigente aunque el estado haya cambiado desde que se emitió: mismos
         // códigos que el login
-        switch (usuario.getEstado()) {
-            case BLOQUEADO -> throw new ApiException(HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO,
-                    "El usuario está bloqueado");
-            case PENDIENTE_VERIFICACION -> throw new ApiException(HttpStatus.FORBIDDEN,
-                    CodigoError.EMAIL_NO_VERIFICADO, "El email todavía no fue verificado");
-            case ACTIVO -> { }
+        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO) {
+            throw new ApiException(HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO, "El usuario está bloqueado");
+        }
+        if (usuario.getEstado() == EstadoUsuario.PENDIENTE_VERIFICACION) {
+            throw new ApiException(HttpStatus.FORBIDDEN, CodigoError.EMAIL_NO_VERIFICADO,
+                    "El email todavía no fue verificado");
         }
         return usuario;
     }

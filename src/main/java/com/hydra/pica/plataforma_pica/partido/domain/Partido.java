@@ -86,6 +86,10 @@ public class Partido extends AuditableEntity {
     @Column(name = "checkin_avisado_para")
     private Instant checkinAvisadoPara;
 
+    /** La apertura de la ventana de check-in que ya se notificó a los dos lados (HU-808); aparte de la de Discord. */
+    @Column(name = "checkin_notificado_para")
+    private Instant checkinNotificadoPara;
+
     /** La parte que cargó el resultado (V22); la otra es la que lo acepta u objeta. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "resultado_cargado_por")

@@ -9,6 +9,7 @@ import java.util.HashMap;
 
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.equipo.domain.Nomina;
 import com.hydra.pica.plataforma_pica.equipo.repository.NominaRepository;
@@ -110,7 +111,7 @@ public class CierreInscripcion {
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(actorId == null ? null : usuarioRepository.getReferenceById(actorId));
         auditoria.setAccion(AccionAuditoria.CIERRE_INSCRIPCION);
-        auditoria.setEntidad("TORNEO");
+        auditoria.setEntidad(EntidadAuditoria.TORNEO.name());
         auditoria.setEntidadId(String.valueOf(torneo.getId()));
         auditoria.setDetalle(detalle);
         auditoriaRepository.save(auditoria);

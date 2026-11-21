@@ -12,6 +12,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
@@ -40,8 +41,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Slf4j
 public class ReclamoAdminService {
-
-    private static final String ENTIDAD_AUDITORIA = "RECLAMO_RIFA";
 
     private final ReclamoRifaRepository reclamoRifaRepository;
     private final RifaRepository rifaRepository;
@@ -112,7 +111,7 @@ public class ReclamoAdminService {
         detalleAuditoria.put("estado", nuevoEstado.name());
         detalleAuditoria.put("resolucion", resolucionLimpia);
         detalleAuditoria.put("rifaEstadoFinal", rifa.getEstado().name());
-        auditoriaService.registrar(resolutorId, AccionAuditoria.LAUDO, ENTIDAD_AUDITORIA,
+        auditoriaService.registrar(resolutorId, AccionAuditoria.LAUDO, EntidadAuditoria.RECLAMO_RIFA,
                 String.valueOf(reclamoId), detalleAuditoria);
 
         log.info("Reclamo {} de la rifa {} resuelto con decisión {} ({}). Estado actual de rifa: {}",

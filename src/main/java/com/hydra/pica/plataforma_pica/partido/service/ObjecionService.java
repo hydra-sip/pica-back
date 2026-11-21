@@ -10,6 +10,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.Decision;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
@@ -42,7 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ObjecionService {
 
     /** Como la registra {@link ResultadoService#auditar}. */
-    private static final String ENTIDAD = "PARTIDO";
+    private static final String ENTIDAD = EntidadAuditoria.PARTIDO.name();
     private static final String CARGADO = "CARGADO";
 
     /** Las pendientes de la más vieja a la más nueva; después las laudadas, de la más reciente a la más vieja. */
