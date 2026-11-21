@@ -114,8 +114,7 @@ public class Acreditador {
         movimiento.setSaldoResultante(billetera.getSaldoDisponible());
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(acreditacion.referencia());
-        String descripcion = acreditacion.descripcion();
-        movimiento.setDescripcion(descripcion.length() > 255 ? descripcion.substring(0, 255) : descripcion);
+        movimiento.setDescripcion(Movimiento.truncarDescripcion(acreditacion.descripcion()));
         Movimiento guardado = movimientoRepository.save(movimiento);
 
         Map<String, Object> detalle = new LinkedHashMap<>();

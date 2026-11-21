@@ -36,6 +36,8 @@ import org.hibernate.type.SqlTypes;
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Movimiento extends AuditableEntity {
 
+    public static final int DESCRIPCION_MAX = 255;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
@@ -86,6 +88,14 @@ public class Movimiento extends AuditableEntity {
     @Column(name = "referencia_externa", length = 100)
     private String referenciaExterna;
 
-    @Column(name = "descripcion", length = 255)
+    @Column(name = "descripcion", length = DESCRIPCION_MAX)
     private String descripcion;
+
+    /** Recorta el texto al límite de la columna {@code descripcion} ({@value #DESCRIPCION_MAX} caracteres). */
+    public static String truncarDescripcion(String texto) {
+        if (texto == null || texto.length() <= DESCRIPCION_MAX) {
+            return texto;
+        }
+        return texto.substring(0, DESCRIPCION_MAX);
+    }
 }
