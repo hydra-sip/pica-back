@@ -23,6 +23,7 @@ import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.ReclamoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.DecisionReclamo;
 import com.hydra.pica.plataforma_pica.rifa.dto.ReclamoAdminDetalle;
 import com.hydra.pica.plataforma_pica.rifa.event.FondosReclamoLiberados;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
@@ -138,7 +139,7 @@ public class LiberacionReclamoService {
         }
 
         registrarAuditoria(ejecutor.getId(), AccionAuditoria.LIQUIDACION, reclamoId, rifaId, rifaTitulo, torneoId,
-                "SIN_FRAUDE", EstadoRifa.LIQUIDADA, montoAcreditado, "LIQUIDACION_GANADORES",
+                DecisionReclamo.SIN_FRAUDE, EstadoRifa.LIQUIDADA, montoAcreditado, "LIQUIDACION_GANADORES",
                 destinatarios, ejecutor.getUsername(), liquidacion.aportePendiente(), liquidacion.aporteAlTorneo());
 
         Map<Long, BigDecimal> acreditados = new LinkedHashMap<>();
@@ -174,7 +175,7 @@ public class LiberacionReclamoService {
                 .toList();
 
         registrarAuditoria(ejecutor.getId(), AccionAuditoria.REINTEGRO, reclamoId, rifaId, rifaTitulo, torneoId,
-                "FRAUDE_CONFIRMADO", EstadoRifa.CANCELADA, reintegro.totalDevuelto(),
+                DecisionReclamo.FRAUDE_CONFIRMADO, EstadoRifa.CANCELADA, reintegro.totalDevuelto(),
                 "REINTEGRO_COMPRADORES", destinatarios, ejecutor.getUsername(), false, BigDecimal.ZERO, reclamanteId);
 
         Map<Long, BigDecimal> acreditados = new LinkedHashMap<>();
@@ -201,7 +202,7 @@ public class LiberacionReclamoService {
             Long rifaId,
             String rifaTitulo,
             Long torneoId,
-            String resolucion,
+            DecisionReclamo resolucion,
             EstadoRifa rifaEstadoFinal,
             BigDecimal monto,
             String destino,
@@ -218,7 +219,7 @@ public class LiberacionReclamoService {
         if (torneoId != null) {
             detalle.put("torneoId", torneoId);
         }
-        detalle.put("resolucion", resolucion);
+        detalle.put("resolucion", resolucion.name());
         detalle.put("rifaEstadoFinal", rifaEstadoFinal.name());
         detalle.put("monto", monto);
         detalle.put("destino", destino);

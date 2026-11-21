@@ -34,6 +34,7 @@ import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.ReclamoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.DecisionReclamo;
 import com.hydra.pica.plataforma_pica.rifa.dto.ReclamoAdminDetalle;
 import com.hydra.pica.plataforma_pica.rifa.event.FondosReclamoLiberados;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
@@ -215,6 +216,7 @@ class LiberacionReclamoServiceTest {
         assertThat(auditCaptor.getValue())
                 .containsEntry("rifaId", 10L)
                 .containsEntry("torneoId", 30L)
+                .containsEntry("resolucion", DecisionReclamo.SIN_FRAUDE.name())
                 .containsEntry("monto", new BigDecimal("1100.00"))
                 .containsEntry("destino", "LIQUIDACION_GANADORES")
                 .containsEntry("ejecutadoPor", "soporte_ana");
@@ -257,6 +259,7 @@ class LiberacionReclamoServiceTest {
         assertThat(auditCaptor.getValue())
                 .containsEntry("rifaId", 10L)
                 .containsEntry("torneoId", 30L)
+                .containsEntry("resolucion", DecisionReclamo.FRAUDE_CONFIRMADO.name())
                 .containsEntry("monto", new BigDecimal("1100.00"))
                 .containsEntry("destino", "REINTEGRO_COMPRADORES")
                 .containsEntry("reclamanteId", 42L)
