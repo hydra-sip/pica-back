@@ -91,6 +91,10 @@ public class Acreditador {
 
         Movimiento guardado = movimientoRepository.save(crearMovimiento(evento, acreditacion, billetera));
 
+        publicarAuditoria(evento, detalleDeAuditoria(evento, acreditacion, guardado));
+    }
+
+    private Map<String, Object> detalleDeAuditoria(Evento evento, Acreditacion acreditacion, Movimiento movimiento) {
         Map<String, Object> detalle = new LinkedHashMap<>();
         detalle.put("tipo", switch (acreditacion.rol()) {
             case PREMIO -> "LIQUIDACION_PREMIO";
@@ -98,7 +102,7 @@ public class Acreditador {
             default -> "LIQUIDACION_" + evento.entidad();
         });
         detalle.put("rol", acreditacion.rol());
-        detalle.put("movimientoId", guardado.getId());
+        detalle.put("movimientoId", movimiento.getId());
         detalle.put("usuarioId", acreditacion.usuarioId());
         detalle.put("monto", acreditacion.monto());
         if (acreditacion.puesto() != null) {
@@ -107,6 +111,10 @@ public class Acreditador {
         if (acreditacion.inscripcionId() != null) {
             detalle.put("inscripcionId", acreditacion.inscripcionId());
         }
+        return detalle;
+    }
+
+    private void publicarAuditoria(Evento evento, Map<String, Object> detalle) {
         auditoriaService.registrar(null, AccionAuditoria.LIQUIDACION, evento.entidad(), evento.entidadId().toString(),
                 detalle);
     }
