@@ -101,7 +101,11 @@ class LiquidacionConGruposIntegracionTest extends TorneoConGruposBase {
         BigDecimal premios = jdbc.queryForObject("""
                 SELECT coalesce(sum(m.monto), 0) FROM movimiento m WHERE m.torneo_id = ? AND m.tipo = 'PREMIO'""",
                 BigDecimal.class, torneo);
-        assertThat(premios).isPositive();
+        // 8 inscripciones de $ 1.000: el pozo de $ 8.000 se reparte entero, 70 % al campeón y 30 % al segundo
+        assertThat(premios).isEqualByComparingTo("8000.00");
+        assertThat(jdbc.queryForObject("""
+                SELECT sum(m.monto) FROM movimiento m WHERE m.inscripcion_id = ? AND m.tipo = 'PREMIO'""",
+                BigDecimal.class, campeon)).isEqualByComparingTo("5600.00");
         Long cobraron = jdbc.queryForObject("""
                 SELECT count(DISTINCT m.inscripcion_id) FROM movimiento m WHERE m.torneo_id = ? AND m.tipo = 'PREMIO'""",
                 Long.class, torneo);

@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -51,23 +53,15 @@ class MigracionFaseDeGruposTest {
                 .hasMessageContaining("ck_torneo_reglas_grupos");
     }
 
-    @Test
-    void enEliminacionDirectaNoHayReglasDeGrupos() {
-        assertThatThrownBy(() -> torneo("ELIMINACION_DIRECTA", 4, 2, 3, 1))
-                .isInstanceOf(DataAccessException.class)
-                .hasMessageContaining("ck_torneo_reglas_grupos");
-    }
-
-    @Test
-    void empatarDaMenosQueGanar() {
-        assertThatThrownBy(() -> torneo("GRUPOS_Y_ELIMINACION", 4, 2, 3, 3))
-                .isInstanceOf(DataAccessException.class)
-                .hasMessageContaining("ck_torneo_reglas_grupos");
-    }
-
-    @Test
-    void pasanMenosQueLosDelGrupo() {
-        assertThatThrownBy(() -> torneo("GRUPOS_Y_ELIMINACION", 4, 4, 3, 1))
+    @ParameterizedTest(name = "{0}")
+    @CsvSource({
+            "en eliminación directa no hay reglas de grupos, ELIMINACION_DIRECTA, 4, 2, 3, 1",
+            "empatar da menos que ganar, GRUPOS_Y_ELIMINACION, 4, 2, 3, 3",
+            "pasan menos que los del grupo, GRUPOS_Y_ELIMINACION, 4, 4, 3, 1"
+    })
+    void reglasDeGruposInvalidasLasRechazaElCheck(String regla, String formato, int tamanio, int clasifican,
+                                                   int victoria, int empate) {
+        assertThatThrownBy(() -> torneo(formato, tamanio, clasifican, victoria, empate))
                 .isInstanceOf(DataAccessException.class)
                 .hasMessageContaining("ck_torneo_reglas_grupos");
     }

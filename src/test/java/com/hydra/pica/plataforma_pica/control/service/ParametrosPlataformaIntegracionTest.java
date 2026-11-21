@@ -9,6 +9,8 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -36,17 +38,16 @@ class ParametrosPlataformaIntegracionTest {
         assertThat(parametrosPlataforma.margenCierreInicio()).isEqualTo(Duration.ofHours(1));
     }
 
-    @Test
-    void elMargenSonMinutosEnteros() {
-        assertThatThrownBy(() -> jdbc.update(
-                "UPDATE parametro_plataforma SET valor = 1.5 WHERE clave = 'MARGEN_CIERRE_INICIO_MIN'"))
-                .isInstanceOf(DataIntegrityViolationException.class);
-    }
-
-    @Test
-    void elMargenNoPuedeSerNegativo() {
-        assertThatThrownBy(() -> jdbc.update(
-                "UPDATE parametro_plataforma SET valor = -1 WHERE clave = 'MARGEN_CIERRE_INICIO_MIN'"))
+    // Los CHECK de la base: el margen son minutos enteros y no negativos, y el porcentaje va de 0 a 100
+    @ParameterizedTest(name = "{0} = {1} no entra")
+    @CsvSource({
+            "MARGEN_CIERRE_INICIO_MIN, 1.5",
+            "MARGEN_CIERRE_INICIO_MIN, -1",
+            "GASTOS_ADMINISTRATIVOS, 101",
+            "GASTOS_ADMINISTRATIVOS, -0.01"
+    })
+    void unValorFueraDeRangoLoRechazaLaBase(String clave, BigDecimal valor) {
+        assertThatThrownBy(() -> jdbc.update("UPDATE parametro_plataforma SET valor = ? WHERE clave = ?", valor, clave))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -55,13 +56,6 @@ class ParametrosPlataformaIntegracionTest {
         jdbc.update("UPDATE parametro_plataforma SET valor = 7.5 WHERE clave = 'GASTOS_ADMINISTRATIVOS'");
 
         assertThat(parametrosPlataforma.gastosAdministrativos()).isEqualByComparingTo("7.5");
-    }
-
-    @Test
-    void elPorcentajeNoPuedeQuedarFueraDe0A100() {
-        assertThatThrownBy(() -> jdbc.update(
-                "UPDATE parametro_plataforma SET valor = 101 WHERE clave = 'GASTOS_ADMINISTRATIVOS'"))
-                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
