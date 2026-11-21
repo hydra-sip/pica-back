@@ -26,6 +26,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
@@ -187,7 +188,7 @@ public class RetiroCriptoService {
         detalle.put("montoWei", retiro.getMontoWei().toString());
         detalle.put("hash", hash);
         detalle.put("estado", EstadoRetiroCripto.COBRADO.name());
-        auditoriaService.registrar(retiro.getUsuario().getId(), AccionAuditoria.MODIFICACION, "retiro",
+        auditoriaService.registrar(retiro.getUsuario().getId(), AccionAuditoria.MODIFICACION, EntidadAuditoria.RETIRO,
                 String.valueOf(movimiento.getId()), detalle);
         return retiro;
     }
@@ -211,7 +212,7 @@ public class RetiroCriptoService {
         detalle.put("venceEn", retiro.getVenceEn().toString());
         detalle.put("saldoDisponible", billetera.getSaldoDisponible());
         detalle.put("estado", EstadoRetiroCripto.DEVUELTO.name());
-        auditoriaService.registrar(usuarioId, AccionAuditoria.MODIFICACION, "retiro",
+        auditoriaService.registrar(usuarioId, AccionAuditoria.MODIFICACION, EntidadAuditoria.RETIRO,
                 String.valueOf(retiro.getMovimiento().getId()), detalle);
         log.info("Retiro a la wallet {} vencido sin cobrar: se devolvieron {} al usuario {}",
                 retiro.getReferencia(), retiro.getMontoPesos(), usuarioId);
@@ -250,7 +251,7 @@ public class RetiroCriptoService {
         detalle.put("motivo", motivo);
         detalle.put("estado", "RECHAZADA");
         auditoriaService.registrarEnTransaccionNueva(retiro.getUsuario().getId(), AccionAuditoria.MODIFICACION,
-                "RETIRO_CRIPTO", retiro.getId().toString(), detalle);
+                EntidadAuditoria.RETIRO_CRIPTO, retiro.getId().toString(), detalle);
         return new ApiException(HttpStatus.BAD_REQUEST, codigo, motivo);
     }
 
