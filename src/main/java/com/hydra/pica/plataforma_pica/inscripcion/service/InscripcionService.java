@@ -53,6 +53,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.GastosAdministrativos;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
+import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
@@ -747,13 +748,16 @@ public class InscripcionService {
     }
 
     private void validarUsuario(Usuario usuario) {
-        switch (usuario.getEstado()) {
-            case ACTIVO -> { }
-            case BLOQUEADO -> throw new ProhibidoException(CodigoError.USUARIO_BLOQUEADO,
-                    "El usuario " + usuario.getId() + " está bloqueado");
-            default -> throw new ConflictoException(CodigoError.USUARIO_NO_ACTIVO,
-                    "El usuario " + usuario.getId() + " no está activo");
+        if (usuario.getEstado() == EstadoUsuario.ACTIVO) {
+            return;
         }
+        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO) {
+            throw new ProhibidoException(CodigoError.USUARIO_BLOQUEADO,
+                    "El usuario " + usuario.getId() + " está bloqueado");
+        }
+        // pendiente de verificación, o cualquier estado que se agregue después
+        throw new ConflictoException(CodigoError.USUARIO_NO_ACTIVO,
+                "El usuario " + usuario.getId() + " no está activo");
     }
 
     private void validarTorneoAbierto(Torneo torneo) {
