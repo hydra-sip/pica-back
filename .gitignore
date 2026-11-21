@@ -42,3 +42,6 @@ build/
 
 ### Contexto ###
 contexto.md
+
+# Resultado de la prueba de carga (carga/pica.js)
+carga/resultado.json

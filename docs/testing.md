@@ -10,14 +10,14 @@ En el back, la integración pesa más que en la pirámide de manual: casi lo mis
 
 | Nivel | Repo | Herramienta | Tests | Tiempo en el CI |
 |---|---|---|---|---|
-| E2E (sistema levantado) | pica-web | Playwright | 17 | ~3 min, en paralelo con Vitest |
+| E2E (sistema levantado) | pica-web | Playwright (y axe para accesibilidad) | 22 | ~3 min, en paralelo con Vitest |
 | Integración (con base real) | pica-back | Spring Boot Test + Testcontainers (Postgres 16) | 1.287 en 104 clases | ~7 min, los tres niveles del back juntos |
 | Controllers (HTTP, sin base) | pica-back | `@WebMvcTest` + MockMvc | 393 en 45 clases | |
 | Unitarios | pica-back | JUnit 5 + Mockito + AssertJ | 370 en 57 clases | |
 | Componentes y páginas | pica-web | Vitest + Testing Library + MSW | 500 en 65 archivos | ~3 min, con el lint y el build |
 | Contrato inteligente | pica-contracts | Foundry (unitarios, fuzz, invariantes e integración) | 31 | ~2 min, con cobertura y Slither |
 
-Cantidades al 20/11/2026, contadas como las corre cada herramienta (un `@ParameterizedTest` cuenta un caso por fila): back 2.050 casos en 206 clases (`./mvnw verify`), front 500 en 65 archivos (`npm test`) y 17 E2E (`npm run e2e`). En el back, las 104 clases de integración son la mitad: es donde está la plata y el SQL nativo, que no tiene sentido probar sin la base.
+Cantidades al 20/11/2026, contadas como las corre cada herramienta (un `@ParameterizedTest` cuenta un caso por fila): back 2.050 casos en 206 clases (`./mvnw verify`), front 500 en 65 archivos (`npm test`) y 22 E2E (`npm run e2e`: 17 de flujos y 5 de accesibilidad). En el back, las 104 clases de integración son la mitad: es donde está la plata y el SQL nativo, que no tiene sentido probar sin la base.
 
 ## Qué se usa en cada nivel y por qué
 
@@ -77,6 +77,46 @@ npx playwright show-report             # el reporte, con capturas y trazas de lo
 forge test -vvv
 forge coverage --report summary --no-match-coverage '^(test|script)/'
 ```
+
+## No funcionales: carga y accesibilidad (PICA-441)
+
+### Carga con k6
+`carga/pica.js` mide los tres caminos con más tráfico, con usuarios virtuales en paralelo:
+- **Catálogo público**: 20 usuarios pidiendo la primera página durante 30 s.
+- **Inscripción a un torneo**: 60 jugadores distintos, de a 10 a la vez. Cada uno crea el borrador, confirma y paga con saldo.
+- **Compra de números de una rifa**: 60 compras de a 10 a la vez. Cada una reserva un número distinto y lo paga.
+
+Los umbrales son p95 menor a 500 ms en cada escenario y menos del 1 % de errores. Se corre contra un ambiente local o de prueba, nunca contra producción, porque crea usuarios y carga saldo:
+
+```bash
+# con el back de pica-web/e2e/docker-compose.yml levantado (npm run e2e:back)
+docker run --rm --network host -u "$(id -u)" -v "$PWD/carga:/carga" grafana/k6:1.8.1 run \
+  --summary-export /carga/resultado.json /carga/pica.js
+```
+
+Resultado del 20/11/2026, con la API y Postgres en Docker en una notebook:
+
+| Escenario | Pedidos | p95 | Máximo | Umbral |
+|---|---|---|---|---|
+| Catálogo | ~97.700 en 30 s | 12 ms | 119 ms | cumple |
+| Inscripción (alta, confirmación y pago) | 180 | 93 ms | 120 ms | cumple |
+| Compra de rifa (reserva y pago) | 120 | 117 ms | 174 ms | cumple |
+| Errores | 0 de 98.227 | | | cumple (< 1 %) |
+
+Los 60 pagos de inscripción y las 60 compras se hicieron en paralelo, sin errores ni dobles cobros. Es un ambiente local: sirve para encontrar cuellos de botella (ninguno) y comparar versiones, no como número de producción, que depende de Railway y Supabase.
+
+### Accesibilidad con axe
+`pica-web/e2e/tests/accesibilidad.spec.ts` pasa [axe](https://github.com/dequelabs/axe-core) (WCAG 2.1 A y AA) por el login, el catálogo, la ficha de un torneo, el portal de verificación y la billetera, y falla si encuentra una violación seria o crítica. Corre en el CI con los demás E2E y adjunta al reporte todo lo que encontró.
+
+- **Corregido**: el filtro de estado del catálogo era un `select` sin etiqueta (crítico: un lector de pantalla no dice para qué es). Ahora tiene `aria-label="Estado del torneo"`.
+- **Pendiente, el contraste de color (serio)**: los colores del tema no llegan al 4,5:1 de AA sobre fondo blanco:
+  - el verde de los badges (`#10b981`, 2,4:1);
+  - el botón esmeralda con texto blanco (2,5:1);
+  - el amarillo del aviso de perfil incompleto (`#f59e0b`, 2,1:1);
+  - el celeste de los badges (`#0284c7`, 3,8:1);
+  - el gris de los textos secundarios (`#8796a6`, 3,0:1).
+
+  Se arregla oscureciendo esos tokens en el CSS, así que queda excluido del test (`REGLAS_PENDIENTES`) hasta que se cambien. Cualquier otra violación seria hace fallar el CI.
 
 ## Cómo se arma un test
 
