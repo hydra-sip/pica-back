@@ -40,6 +40,17 @@ public class LectorDeCadena {
     /** Los 4 bytes del selector de {@code cobrado(bytes32)}. */
     private static final String SELECTOR_COBRADO = Hash.sha3String("cobrado(bytes32)").substring(0, 10);
 
+    private static final int TOPICS_DE_EVENTO = 3;
+    private static final int INDICE_TOPIC_EVENTO = 0;
+    private static final int INDICE_TOPIC_REFERENCIA = 1;
+    private static final int INDICE_TOPIC_DIRECCION = 2;
+    /** Un topic EVM es "0x" + 64 dígitos hex; la address de 20 bytes empieza en el índice 26. */
+    private static final int OFFSET_DIRECCION_EN_TOPIC = 26;
+    private static final String STATUS_TRANSACCION_EXITOSA = "0x1";
+    private static final String PREFIJO_HEX = "0x";
+    private static final int LONGITUD_PREFIJO_HEX = PREFIJO_HEX.length();
+    private static final int BASE_HEXADECIMAL = 16;
+
     private static final Logger log = LoggerFactory.getLogger(LectorDeCadena.class);
 
     private final RestClient http;
@@ -104,17 +115,17 @@ public class LectorDeCadena {
         for (JsonNode evento : recibo.path("logs")) {
             JsonNode topics = evento.path("topics");
             // los dos eventos tienen la misma forma: referencia y dirección indexadas, y el monto en data
-            if (topics.size() != 3) {
+            if (topics.size() != TOPICS_DE_EVENTO) {
                 continue;
             }
-            String topic = topics.get(0).asText();
+            String topic = topics.get(INDICE_TOPIC_EVENTO).asText();
             boolean esCarga = TOPIC_CARGA_REGISTRADA.equalsIgnoreCase(topic);
             if (!esCarga && !TOPIC_RETIRO_COBRADO.equalsIgnoreCase(topic)) {
                 continue;
             }
             String contrato = minuscula(evento.path("address").asText());
-            String referencia = minuscula(topics.get(1).asText());
-            String direccion = "0x" + minuscula(topics.get(2).asText()).substring(26);
+            String referencia = minuscula(topics.get(INDICE_TOPIC_REFERENCIA).asText());
+            String direccion = direccionDesdeTopic(topics.get(INDICE_TOPIC_DIRECCION).asText());
             BigInteger monto = cantidad(evento.path("data").asText());
             if (esCarga) {
                 cargas.add(new CargaRegistrada(contrato, referencia, direccion, monto));
@@ -122,14 +133,14 @@ public class LectorDeCadena {
                 retiros.add(new RetiroCobrado(contrato, referencia, direccion, monto));
             }
         }
-        return new Transaccion.Minada("0x1".equals(recibo.path("status").asText()),
+        return new Transaccion.Minada(STATUS_TRANSACCION_EXITOSA.equals(recibo.path("status").asText()),
                 cantidad(recibo.path("blockNumber").asText()).longValueExact(), List.copyOf(cargas),
                 List.copyOf(retiros));
     }
 
     /** Lo que dice {@code cobrado(referencia)} de PasarelaRetiros en el último bloque. */
     public boolean retiroCobrado(String contrato, String referencia) {
-        String datos = SELECTOR_COBRADO + minuscula(referencia).substring(2);
+        String datos = SELECTOR_COBRADO + minuscula(referencia).substring(LONGITUD_PREFIJO_HEX);
         String resultado = llamar("eth_call", Map.of("to", contrato, "data", datos), "latest").asText();
         return cantidad(resultado).signum() != 0;
     }
@@ -164,7 +175,11 @@ public class LectorDeCadena {
 
     // los números del JSON-RPC van en hex con 0x
     private static BigInteger cantidad(String hex) {
-        return new BigInteger(hex.substring(2), 16);
+        return new BigInteger(hex.substring(LONGITUD_PREFIJO_HEX), BASE_HEXADECIMAL);
+    }
+
+    private static String direccionDesdeTopic(String topic) {
+        return PREFIJO_HEX + minuscula(topic).substring(OFFSET_DIRECCION_EN_TOPIC);
     }
 
     private static String minuscula(String hex) {
