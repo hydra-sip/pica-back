@@ -14,6 +14,7 @@ import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.billetera.service.Acreditacion.Rol;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
@@ -59,19 +60,19 @@ public class Acreditador {
     }
 
     /** Qué se liquida: el torneo o la rifa del movimiento, y dónde queda en la auditoría. */
-    public record Evento(Long torneoId, Long rifaId, String entidad, Long entidadId) {
+    public record Evento(Long torneoId, Long rifaId, EntidadAuditoria entidad, Long entidadId) {
 
         static Evento torneo(Long torneoId) {
-            return new Evento(torneoId, null, "TORNEO", torneoId);
+            return new Evento(torneoId, null, EntidadAuditoria.TORNEO, torneoId);
         }
 
         static Evento rifa(Long rifaId) {
-            return new Evento(null, rifaId, "RIFA", rifaId);
+            return new Evento(null, rifaId, EntidadAuditoria.RIFA, rifaId);
         }
 
         /** Lo que una rifa aporta al pozo de su torneo: movimiento de los dos, auditoría de la rifa. */
         static Evento aporte(Long torneoId, Long rifaId) {
-            return new Evento(torneoId, rifaId, "RIFA", rifaId);
+            return new Evento(torneoId, rifaId, EntidadAuditoria.RIFA, rifaId);
         }
     }
 
@@ -121,7 +122,7 @@ public class Acreditador {
         detalle.put("tipo", switch (acreditacion.rol()) {
             case PREMIO -> "LIQUIDACION_PREMIO";
             case HONORARIO -> "LIQUIDACION_HONORARIO";
-            default -> "LIQUIDACION_" + evento.entidad();
+            default -> "LIQUIDACION_" + evento.entidad().name();
         });
         detalle.put("rol", acreditacion.rol());
         detalle.put("movimientoId", guardado.getId());

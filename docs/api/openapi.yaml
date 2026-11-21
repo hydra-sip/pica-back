@@ -1859,6 +1859,116 @@ paths:
         '409':
           $ref: '#/components/responses/Conflicto'
 
+  /api/v1/billetera/retiros/cripto:
+    post:
+      tags: [Billetera]
+      summary: Pedir un retiro de saldo a la wallet
+      x-jira: PICA-455
+      x-owner: Tomás
+      description: >-
+        Retiro del saldo disponible a una wallet, en ETH de Base Sepolia, con el contrato PasarelaRetiros (HU-610).
+        Valida los mismos topes que el retiro a una cuenta (400 `RETIRO_FUERA_DE_TOPES`) y el saldo (409
+        `SALDO_INSUFICIENTE`; 403 `BILLETERA_BLOQUEADA`), descuenta el monto con un movimiento RETIRO PENDIENTE
+        («Retiro a la wallet 0x1234…abcd») y devuelve el permiso firmado por el back (EIP-712): la referencia, los
+        wei (cotización fija de testnet), el vencimiento y la firma. El usuario lo cobra llamando a
+        `cobrar(referencia, montoWei, vence, firma)` desde la wallet `destino`: el contrato solo le paga a esa
+        wallet. Si el permiso vence sin cobrarse (1 hora), el saldo vuelve solo a la billetera y el movimiento queda
+        RECHAZADO. 400 `VALIDACION` si `destino` no es una dirección 0x de 40 caracteres hex o es la dirección cero.
+        503 `RETIROS_CRIPTO_NO_DISPONIBLES` si el back no tiene configurado el contrato o la clave del firmante.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitarRetiroCripto'
+      responses:
+        '201':
+          description: Saldo descontado y permiso firmado, pendiente de cobro
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetiroCripto'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+        '503':
+          $ref: '#/components/responses/Error'
+    get:
+      tags: [Billetera]
+      summary: Mis retiros a la wallet pendientes de cobro
+      x-jira: PICA-455
+      x-owner: Tomás
+      description: >-
+        Los permisos del usuario autenticado que todavía no se cobraron ni se devolvieron, del más nuevo al más
+        viejo, con todo lo necesario para cobrarlos. Sirve para retomar un retiro si se cerró la pestaña antes de
+        cobrarlo.
+      responses:
+        '200':
+          description: Retiros pendientes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RetiroCripto'
+        '401':
+          $ref: '#/components/responses/Error'
+
+  /api/v1/billetera/retiros/cripto/{referencia}/confirmar:
+    post:
+      tags: [Billetera]
+      summary: Confirmar el cobro de un retiro a la wallet con el hash de la transacción
+      x-jira: PICA-455
+      x-owner: Tomás
+      description: >-
+        Lee la transacción en Base Sepolia y, si cobró este retiro, lo pasa a COBRADO: el movimiento RETIRO queda
+        CONFIRMADO con el hash como `referenciaExterna` (y su `enlaceExplorador`). Para confirmarse, la transacción
+        tiene que ser exitosa y tener un `RetiroCobrado` emitido por PasarelaRetiros con esta referencia, la wallet
+        `destino` y exactamente `montoWei`. 404 `RETIRO_NO_ENCONTRADO` si la referencia no existe o es de otro
+        usuario. 400 `VALIDACION` si el hash no es 0x y 64 caracteres hex. Si la transacción no lo cobró, 400 y el
+        rechazo queda en auditoría; el retiro sigue pendiente: `TRANSACCION_FALLIDA` (revirtió) ·
+        `TRANSACCION_SIN_RETIRO` (no tiene el evento con esta referencia, esta wallet y este monto) ·
+        `TRANSACCION_INEXISTENTE` · `TRANSACCION_YA_USADA` (ya confirmó otro retiro). 409 `TRANSACCION_PENDIENTE` sin
+        las confirmaciones mínimas: reintentar en unos segundos. 409 `RETIRO_VENCIDO` si el permiso venció y el saldo
+        ya volvió a la billetera. 503 `RED_NO_DISPONIBLE` si el nodo no respondió.
+        Es idempotente: con el mismo hash devuelve 200 sin consultar la red, y con otro hash es 409
+        `RETIRO_YA_COBRADO`.
+      parameters:
+        - name: referencia
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[0-9a-fA-F]{64}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmarCargaCripto'
+      responses:
+        '200':
+          description: Retiro cobrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetiroCripto'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+        '503':
+          $ref: '#/components/responses/Error'
+
   # --- Equipos -----------------------------------------------------------------
 
 
@@ -4077,6 +4187,10 @@ components:
         ("La cuenta destino debe estar a nombre del titular verificado en la plataforma"). Retiro de fondos (HU-607,
         PICA-337): RETIRO_FUERA_DE_TOPES 400 (el monto está fuera del rango mínimo y máximo) · CUENTA_NO_VALIDADA 409
         (solo se puede solicitar retiros a una cuenta bancaria validada).
+        Retiro a la wallet (HU-610, PICA-455): TRANSACCION_SIN_RETIRO 400 (la transacción no cobró ese retiro con esa
+        wallet y ese monto) · RETIRO_NO_ENCONTRADO 404 · RETIRO_YA_COBRADO 409 (se cobró con otra transacción) ·
+        RETIRO_VENCIDO 409 (venció y el saldo volvió a la billetera) · RETIROS_CRIPTO_NO_DISPONIBLES 503 (el back no
+        tiene el contrato o la clave del firmante).
         Sanciones (HU-803, PICA-423): JUGADOR_NO_PARTICIPA 409 (el jugador no está en una inscripción confirmada del torneo).
         Calificaciones (HU-805, PICA-427): TORNEO_NO_TERMINADO 409 (el torneo no está finalizado ni cancelado) ·
         JUGADOR_YA_CALIFICADO 409 (el jugador ya tiene calificación en ese torneo).
@@ -4094,6 +4208,7 @@ components:
              ALMACENAMIENTO_NO_DISPONIBLE,
              RED_NO_DISPONIBLE, TRANSACCION_INEXISTENTE, TRANSACCION_FALLIDA, TRANSACCION_SIN_CARGA, MONTO_NO_COINCIDE,
              TRANSACCION_YA_USADA, TRANSACCION_PENDIENTE, CARGA_YA_ACREDITADA,
+             RETIROS_CRIPTO_NO_DISPONIBLES, TRANSACCION_SIN_RETIRO, RETIRO_NO_ENCONTRADO, RETIRO_YA_COBRADO, RETIRO_VENCIDO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
@@ -6628,6 +6743,82 @@ components:
           type: string
           description: CUIT o CUIL del titular (11 dígitos).
           example: '20-12345678-9'
+
+    SolicitarRetiroCripto:
+      type: object
+      required: [monto, destino]
+      properties:
+        monto:
+          type: number
+          format: double
+          minimum: 0.01
+          description: >-
+            Monto a retirar en ARS. Debe respetar los topes mínimo y máximo parametrizados en la plataforma
+            (400 RETIRO_FUERA_DE_TOPES si no los cumple).
+          example: 10000.00
+        destino:
+          type: string
+          pattern: '^0x(?!0{40})[0-9a-fA-F]{40}$'
+          description: La wallet que va a cobrar el retiro. Se guarda en minúscula; solo ella puede cobrarlo.
+          example: '0x262DFbfA37436e5B99A53377e633509D1a9B301A'
+
+    RetiroCripto:
+      type: object
+      required: [referencia, contrato, chainId, destino, montoPesos, montoWei, vence, venceEn, firma, estado]
+      properties:
+        referencia:
+          type: string
+          pattern: '^0x[0-9a-f]{64}$'
+          description: El bytes32 del permiso. Al azar y único.
+          example: '0x5d21dd9f5a6ddcd83ba7be317d447dfd70f0dd0ff1a4c7c050cecac6232588c5'
+        contrato:
+          type: string
+          description: La dirección de PasarelaRetiros.
+          example: '0x00000000000000000000000000000000000ca5a5'
+        chainId:
+          type: integer
+          description: La red del contrato (84532 es Base Sepolia).
+          example: 84532
+        destino:
+          type: string
+          description: La wallet que puede cobrarlo, en minúscula.
+          example: '0x262dfbfa37436e5b99a53377e633509d1a9b301a'
+        montoPesos:
+          type: number
+          format: double
+          description: Los pesos que se descontaron del saldo.
+          example: 10000.00
+        montoWei:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+          description: "Los wei que paga el contrato. Va como texto, para usar con `BigInt(montoWei)`."
+          example: '100000000000000'
+        vence:
+          type: integer
+          format: int64
+          description: El vencimiento en segundos desde 1970, tal como se le pasa a `cobrar`.
+          example: 1800000000
+        venceEn:
+          type: string
+          format: date-time
+          description: El mismo vencimiento, para mostrarlo.
+        firma:
+          type: string
+          pattern: '^0x[0-9a-f]{130}$'
+          description: La firma EIP-712 del back (r, s y v), tal como se le pasa a `cobrar`.
+        estado:
+          type: string
+          enum: [PENDIENTE, COBRADO, DEVUELTO]
+        hash:
+          type: string
+          nullable: true
+          description: >-
+            La transacción que lo cobró, cuando el usuario la confirmó. Un retiro que la devolución automática encontró
+            cobrado en el contrato queda COBRADO sin hash.
+        enlaceExplorador:
+          type: string
+          nullable: true
+          description: La transacción en BaseScan, si hay hash.
 
     SolicitarRetiroRequest:
       type: object

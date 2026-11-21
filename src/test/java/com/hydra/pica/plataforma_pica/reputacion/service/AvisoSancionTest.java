@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.reputacion.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -45,7 +46,10 @@ class AvisoSancionTest {
         when(repositorio.conTodo(7L)).thenReturn(Optional.of(sancion()));
         doThrow(new IllegalStateException("smtp caído")).when(email).enviarAviso(anyString(), anyString(), any());
 
-        aviso.alAplicar(new SancionAplicada(7L, 9L, 3L, Gravedad.GRAVE));
+        // el aviso corre después del commit: un SMTP caído no puede propagarse ni deshacer la sanción
+        assertThatCode(() -> aviso.alAplicar(new SancionAplicada(7L, 9L, 3L, Gravedad.GRAVE)))
+                .doesNotThrowAnyException();
+        verify(email).enviarAviso(eq("juan@pica.test"), anyString(), any());
     }
 
     @Test

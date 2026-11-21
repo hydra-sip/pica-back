@@ -19,6 +19,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
@@ -122,7 +123,7 @@ public class CuentaBancariaService {
         auditoriaService.registrar(
                 usuarioId,
                 AccionAuditoria.ALTA,
-                "cuenta_bancaria",
+                EntidadAuditoria.CUENTA_BANCARIA,
                 String.valueOf(guardada.getId()),
                 Map.of("tipo", guardada.getTipo().name(), "valor", guardada.getValor(),
                         "estado", EstadoValidacion.VALIDADA.name(), "titular", guardada.getTitular()));
@@ -144,7 +145,7 @@ public class CuentaBancariaService {
         auditoriaService.registrar(
                 usuarioId,
                 AccionAuditoria.BAJA,
-                "cuenta_bancaria",
+                EntidadAuditoria.CUENTA_BANCARIA,
                 String.valueOf(cuenta.getId()),
                 Map.of("tipo", cuenta.getTipo().name(), "valor", cuenta.getValor()));
     }
@@ -168,7 +169,7 @@ public class CuentaBancariaService {
             auditoriaService.registrar(
                     usuario.getId(),
                     AccionAuditoria.ALTA,
-                    "cuenta_bancaria",
+                    EntidadAuditoria.CUENTA_BANCARIA,
                     guardada != null && guardada.getId() != null ? String.valueOf(guardada.getId()) : "sin-id",
                     Map.of("tipo", request.tipo().name(), "valor", valorLimpio,
                             "estado", EstadoValidacion.RECHAZADA.name(), "motivo", "CUENTA_TITULAR_NO_COINCIDE"));

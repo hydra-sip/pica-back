@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -22,25 +23,27 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 class DescripcionesAuditoria {
 
+    private static final String ENTIDAD_PARAMETRO = EntidadAuditoria.PARAMETRO.name();
+
     /** Por entidad, la consulta que devuelve (id, descripción) para los ids de {@code :ids}. */
     private static final Map<String, String> CONSULTAS = Map.of(
-            "TORNEO", "SELECT CAST(id AS TEXT), nombre FROM torneo WHERE id IN (:ids)",
-            "PARTIDO", """
+            EntidadAuditoria.TORNEO.name(), "SELECT CAST(id AS TEXT), nombre FROM torneo WHERE id IN (:ids)",
+            EntidadAuditoria.PARTIDO.name(), """
                     SELECT CAST(p.id AS TEXT), 'Ronda ' || p.ronda || ' – ' || t.nombre
                     FROM partido p JOIN torneo t ON t.id = p.torneo_id WHERE p.id IN (:ids)""",
-            "RIFA", "SELECT CAST(id AS TEXT), titulo FROM rifa WHERE id IN (:ids)",
-            "CUSTODIA", """
+            EntidadAuditoria.RIFA.name(), "SELECT CAST(id AS TEXT), titulo FROM rifa WHERE id IN (:ids)",
+            EntidadAuditoria.CUSTODIA.name(), """
                     SELECT CAST(c.id AS TEXT), COALESCE('Torneo: ' || t.nombre, 'Rifa: ' || r.titulo)
                     FROM custodia c LEFT JOIN torneo t ON t.id = c.torneo_id LEFT JOIN rifa r ON r.id = c.rifa_id
                     WHERE c.id IN (:ids)""",
-            "USUARIO", "SELECT CAST(id AS TEXT), '@' || username FROM usuario WHERE id IN (:ids)",
-            "BILLETERA", """
+            EntidadAuditoria.USUARIO.name(), "SELECT CAST(id AS TEXT), '@' || username FROM usuario WHERE id IN (:ids)",
+            EntidadAuditoria.BILLETERA.name(), """
                     SELECT CAST(b.id AS TEXT), COALESCE('@' || u.username, 'Plataforma')
                     FROM billetera b LEFT JOIN usuario u ON u.id = b.usuario_id WHERE b.id IN (:ids)""",
-            "CARGA_CRIPTO", """
+            EntidadAuditoria.CARGA_CRIPTO.name(), """
                     SELECT CAST(c.id AS TEXT), '@' || u.username
                     FROM carga_cripto c JOIN usuario u ON u.id = c.usuario_id WHERE c.id IN (:ids)""",
-            "ALERTA_FRAUDE", """
+            EntidadAuditoria.ALERTA_FRAUDE.name(), """
                     SELECT CAST(a.id AS TEXT), a.regla || ' – @' || u.username
                     FROM alerta_fraude a JOIN usuario u ON u.id = a.usuario_id WHERE a.id IN (:ids)""");
 
@@ -58,11 +61,11 @@ class DescripcionesAuditoria {
 
         Map<String, String> descripciones = new HashMap<>();
         idsPorEntidad.forEach((entidad, ids) -> {
-            String consulta = "PARAMETRO".equals(entidad) ? PARAMETROS : CONSULTAS.get(entidad);
+            String consulta = ENTIDAD_PARAMETRO.equals(entidad) ? PARAMETROS : CONSULTAS.get(entidad);
             if (consulta == null) {
                 return;
             }
-            Collection<?> parametro = "PARAMETRO".equals(entidad) ? ids : numericos(ids);
+            Collection<?> parametro = ENTIDAD_PARAMETRO.equals(entidad) ? ids : numericos(ids);
             if (parametro.isEmpty()) {
                 return;
             }

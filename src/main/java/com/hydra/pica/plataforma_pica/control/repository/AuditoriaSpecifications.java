@@ -5,6 +5,7 @@ import java.time.Instant;
 import com.hydra.pica.plataforma_pica.billetera.domain.Custodia;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
 import jakarta.persistence.criteria.CriteriaBuilder;
@@ -20,7 +21,7 @@ import org.springframework.data.jpa.domain.Specification;
 /** Los filtros del libro de auditoría (HU-704). Cada uno es null sin valor, y Spring lo ignora. */
 public final class AuditoriaSpecifications {
 
-    private static final String TORNEO = "TORNEO";
+    private static final String TORNEO = EntidadAuditoria.TORNEO.name();
 
     private AuditoriaSpecifications() {
     }
@@ -72,9 +73,9 @@ public final class AuditoriaSpecifications {
 
             return cb.or(
                     entidad(root, cb, TORNEO, cb.equal(root.get("entidadId"), String.valueOf(torneoId))),
-                    entidad(root, cb, "PARTIDO", root.get("entidadId").in(partidos)),
-                    entidad(root, cb, "RIFA", root.get("entidadId").in(rifas)),
-                    entidad(root, cb, "CUSTODIA", root.get("entidadId").in(custodias)));
+                    entidad(root, cb, EntidadAuditoria.PARTIDO.name(), root.get("entidadId").in(partidos)),
+                    entidad(root, cb, EntidadAuditoria.RIFA.name(), root.get("entidadId").in(rifas)),
+                    entidad(root, cb, EntidadAuditoria.CUSTODIA.name(), root.get("entidadId").in(custodias)));
         };
     }
 

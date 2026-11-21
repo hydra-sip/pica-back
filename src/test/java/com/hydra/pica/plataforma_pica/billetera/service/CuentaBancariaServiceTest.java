@@ -21,6 +21,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
@@ -176,7 +177,7 @@ class CuentaBancariaServiceTest {
         assertThat(res.estadoValidacion()).isEqualTo(EstadoValidacion.VALIDADA);
         assertThat(res.valor()).isEqualTo(CBU_VALIDO);
         verify(cuentaBancariaRepository).save(any(CuentaBancaria.class));
-        verify(auditoriaService).registrar(eq(1L), eq(AccionAuditoria.ALTA), eq("cuenta_bancaria"), any(), any());
+        verify(auditoriaService).registrar(eq(1L), eq(AccionAuditoria.ALTA), eq(EntidadAuditoria.CUENTA_BANCARIA), any(), any());
     }
 
     @Test
@@ -204,7 +205,7 @@ class CuentaBancariaServiceTest {
 
         assertThat(cuenta.getEliminadoEn()).isNotNull();
         verify(cuentaBancariaRepository).save(cuenta);
-        verify(auditoriaService).registrar(eq(1L), eq(AccionAuditoria.BAJA), eq("cuenta_bancaria"), any(), any());
+        verify(auditoriaService).registrar(eq(1L), eq(AccionAuditoria.BAJA), eq(EntidadAuditoria.CUENTA_BANCARIA), any(), any());
     }
 
     private static Usuario usuarioConDni(Long id, String dni) {

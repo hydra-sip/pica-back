@@ -10,7 +10,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties(CriptoConfig.CriptoProperties.class)
+@EnableConfigurationProperties({CriptoConfig.CriptoProperties.class, CriptoConfig.RetirosCriptoProperties.class})
 public class CriptoConfig {
 
     /**
@@ -55,6 +55,36 @@ public class CriptoConfig {
         /** Lo que hay que pagar en el contrato por ese monto en pesos (con 2 decimales como mucho). */
         public BigInteger weiPara(BigDecimal pesos) {
             return pesos.movePointRight(2).toBigIntegerExact().multiply(weiPorPeso).divide(CIEN);
+        }
+    }
+
+    /**
+     * La pasarela de retiros a la wallet en Base Sepolia (HU-610, PICA-455): el back firma un permiso EIP-712 y el
+     * usuario lo cobra en el contrato PasarelaRetiros. Sin contrato o sin clave, los retiros a la wallet responden 503.
+     *
+     * @param contrato          la dirección de PasarelaRetiros (PICA-457)
+     * @param claveFirmante     la clave privada con la que se firman los permisos, en hex. No tiene fondos: el contrato
+     *                          solo paga lo que ella firma. Es un secreto: nunca va al repo ni a los logs
+     * @param vigencia          cuánto tiempo tiene el usuario para cobrar un permiso
+     * @param margenDevolucion  cuánto se espera después del vencimiento para devolver el saldo de un permiso sin cobrar
+     */
+    @ConfigurationProperties(prefix = "app.cripto.retiros")
+    public record RetirosCriptoProperties(
+            @DefaultValue("") String contrato,
+            @DefaultValue("") String claveFirmante,
+            @DefaultValue("1h") Duration vigencia,
+            @DefaultValue("5m") Duration margenDevolucion) {
+
+        public boolean habilitados() {
+            return !contrato.isBlank() && !claveFirmante.isBlank();
+        }
+
+        // el toString de un record mostraría la clave en cualquier log de la configuración
+        @Override
+        public String toString() {
+            return "RetirosCriptoProperties[contrato=" + contrato + ", claveFirmante="
+                    + (claveFirmante.isBlank() ? "" : "***") + ", vigencia=" + vigencia
+                    + ", margenDevolucion=" + margenDevolucion + "]";
         }
     }
 }

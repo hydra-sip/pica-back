@@ -17,6 +17,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancelacion;
@@ -147,7 +148,7 @@ public class CancelacionTorneoService {
         detalle.put("motivo", "INSCRIPTOS_INSUFICIENTES");
         detalle.put("confirmadas", confirmadas);
         detalle.put("minimo", minimo);
-        auditoriaService.registrar(null, AccionAuditoria.CANCELACION, "TORNEO", id.toString(), detalle);
+        auditoriaService.registrar(null, AccionAuditoria.CANCELACION, EntidadAuditoria.TORNEO, id.toString(), detalle);
 
         if (automatica) {
             cierreDeCancelacion.cerrar(torneo);
@@ -287,6 +288,7 @@ public class CancelacionTorneoService {
         detalle.put("estado", estado);
         detalle.put("motivo", motivo);
         detalle.put("totalGastos", totalGastos);
-        auditoriaService.registrar(organizadorId, AccionAuditoria.CANCELACION, "TORNEO", torneoId.toString(), detalle);
+        auditoriaService.registrar(organizadorId, AccionAuditoria.CANCELACION, EntidadAuditoria.TORNEO,
+                torneoId.toString(), detalle);
     }
 }

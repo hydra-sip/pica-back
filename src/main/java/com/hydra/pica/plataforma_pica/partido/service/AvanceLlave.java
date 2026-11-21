@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
@@ -106,7 +107,7 @@ public class AvanceLlave {
         // sin ResultadoService.auditar: ResultadoService depende de esta clase
         Auditoria auditoria = new Auditoria();
         auditoria.setAccion(AccionAuditoria.MODIFICACION);
-        auditoria.setEntidad("PARTIDO");
+        auditoria.setEntidad(EntidadAuditoria.PARTIDO.name());
         auditoria.setEntidadId(String.valueOf(bloqueado.getId()));
         auditoria.setDetalle(ResultadoService.detalle("PASE_DIRECTO", lado));
         auditoriaRepository.save(auditoria);
