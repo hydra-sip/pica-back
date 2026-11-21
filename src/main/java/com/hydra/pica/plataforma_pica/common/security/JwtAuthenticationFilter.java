@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 
+import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
@@ -19,6 +20,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    public static final String ATRIBUTO_ERROR = "jwt-error";
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
@@ -46,24 +49,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             Claims claims = jwtService.validar(token).getPayload();
             if (!sesionVigente(claims)) {
-                request.setAttribute("jwt-error", "SESION_REVOCADA");
-                SecurityContextHolder.clearContext();
-                filterChain.doFilter(request, response);
-                return;
+                rechazar(request, CodigoError.SESION_REVOCADA);
+            } else {
+                List<SimpleGrantedAuthority> authorities = authoritiesFrom(claims);
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(claims.getSubject(), null, authorities);
+                SecurityContextHolder.getContext().setAuthentication(authentication);
             }
-            List<SimpleGrantedAuthority> authorities = authoritiesFrom(claims);
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(claims.getSubject(), null, authorities);
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-        } catch (ExpiredJwtException exception) {
-            request.setAttribute("jwt-error", "TOKEN_VENCIDO");
-            SecurityContextHolder.clearContext();
         } catch (JwtException exception) {
-            request.setAttribute("jwt-error", "TOKEN_INVALIDO");
-            SecurityContextHolder.clearContext();
+            rechazar(request, exception instanceof ExpiredJwtException
+                    ? CodigoError.TOKEN_VENCIDO
+                    : CodigoError.TOKEN_INVALIDO);
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private void rechazar(HttpServletRequest request, CodigoError error) {
+        request.setAttribute(ATRIBUTO_ERROR, error);
+        SecurityContextHolder.clearContext();
     }
 
     /**
