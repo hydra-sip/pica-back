@@ -24,6 +24,7 @@ import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.billetera.service.Acreditacion.Rol;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
@@ -55,7 +56,7 @@ class AcreditadorTest {
     private static final Long USUARIO_1 = 1L;
     private static final Long USUARIO_2 = 2L;
     private static final Long USUARIO_3 = 3L;
-    private static final Acreditador.Evento EVENTO_GENERICO = new Acreditador.Evento(null, null, "TORNEO", 1L);
+    private static final Acreditador.Evento EVENTO_GENERICO = new Acreditador.Evento(null, null, EntidadAuditoria.TORNEO, 1L);
 
     @Mock private BilleteraRepository billeteraRepository;
     @Mock private MovimientoRepository movimientoRepository;
