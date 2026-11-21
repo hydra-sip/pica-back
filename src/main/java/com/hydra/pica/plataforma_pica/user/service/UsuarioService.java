@@ -1,13 +1,11 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
-import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
 import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.common.audit.AuditConstants;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -94,14 +92,7 @@ public class UsuarioService {
             throw traducirViolacion(e, username, nuevo.email());
         }
 
-        Billetera billetera = new Billetera();
-        billetera.setUsuario(usuario);
-        billetera.setSaldoDisponible(BigDecimal.ZERO);
-        billetera.setSaldoRetenido(BigDecimal.ZERO);
-        billetera.setGananciaAcumulada(BigDecimal.ZERO);
-        billetera.setMoneda("ARS");
-        billetera.setEstado(EstadoBilletera.ACTIVA);
-        billeteraRepository.save(billetera);
+        billeteraRepository.save(Billetera.nuevaPara(usuario));
 
         // UsuarioRol exige los dos ids, por eso va después del save
         String asignadoPor = currentUserProvider.getCurrentUserId().map(String::valueOf).orElse(AuditConstants.SISTEMA);
