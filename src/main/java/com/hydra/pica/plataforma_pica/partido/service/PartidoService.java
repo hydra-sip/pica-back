@@ -67,7 +67,7 @@ public class PartidoService {
                 .map(Juega::getLado)
                 .findFirst()
                 .orElse(null);
-        boolean bye = partido.getRonda() == 1 && local != null && visitante == null;
+        boolean bye = Partidos.esBye(partido, local, visitante);
         return new PartidoDetalle(partido.getId(), partido.getTorneo().getId(), partido.getTorneo().getNombre(),
                 partido.getTorneo().getSlug(), partido.getRonda(), Partidos.nombreRonda(partido, rondas),
                 partido.getFase(), partido.getPosicion(), partido.getEstado(), bye, local, visitante,
