@@ -14,6 +14,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
+import com.hydra.pica.plataforma_pica.common.error.ViolacionesIntegridad;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.Permiso;
 import com.hydra.pica.plataforma_pica.user.domain.Rol;
@@ -26,7 +27,6 @@ import com.hydra.pica.plataforma_pica.user.repository.RolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository.CantidadPorRol;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.auditing.AuditingHandler;
 import org.springframework.data.domain.Page;
@@ -234,20 +234,12 @@ public class RolService {
             // flush ahora para que el choque salte acá y no al cerrar la transacción
             return rolRepository.saveAndFlush(rol);
         } catch (DataIntegrityViolationException e) {
-            if (!UQ_NOMBRE.equals(nombreDeConstraint(e))) {
+            if (!ViolacionesIntegridad.esConstraint(e, UQ_NOMBRE)) {
                 throw e;
             }
             throw new ConflictoException(CodigoError.ROL_DUPLICADO,
                     "El rol " + rol.getNombre() + " se creó al mismo tiempo desde otra solicitud");
         }
-    }
-
-    private static String nombreDeConstraint(DataIntegrityViolationException e) {
-        Throwable causa = e;
-        while (causa != null && !(causa instanceof ConstraintViolationException)) {
-            causa = causa.getCause();
-        }
-        return causa == null ? null : ((ConstraintViolationException) causa).getConstraintName();
     }
 
     private RolDetalle detalle(Rol rol) {

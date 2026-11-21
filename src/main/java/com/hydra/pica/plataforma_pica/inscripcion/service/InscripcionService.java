@@ -22,6 +22,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
+import com.hydra.pica.plataforma_pica.common.error.ViolacionesIntegridad;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
@@ -58,7 +59,6 @@ import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -201,7 +201,7 @@ public class InscripcionService {
         try {
             return inscripcionRepository.saveAndFlush(inscripcion);
         } catch (DataIntegrityViolationException e) {
-            if (UQ_EQUIPO.equals(nombreDeConstraint(e))) {
+            if (ViolacionesIntegridad.esConstraint(e, UQ_EQUIPO)) {
                 throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
                         "El equipo " + inscripcion.getEquipo().getId() + " ya tiene una inscripción en el torneo "
                                 + inscripcion.getTorneo().getId());
@@ -489,7 +489,7 @@ public class InscripcionService {
             guardada = inscripcionRepository.saveAndFlush(inscripcion);
         } catch (DataIntegrityViolationException e) {
             // otra confirmación individual del mismo usuario ganó la carrera entre el chequeo de arriba y este flush
-            if (UQ_ACTIVA.equals(nombreDeConstraint(e))) {
+            if (ViolacionesIntegridad.esConstraint(e, UQ_ACTIVA)) {
                 throw new ConflictoException(CodigoError.INSCRIPCION_DUPLICADA,
                         "Ya tenés una inscripción activa en el torneo " + torneoId);
             }
@@ -522,14 +522,6 @@ public class InscripcionService {
         }
         jugadores.forEach(this::validarUsuario);
         validarJugadoresLibres(torneo, jugadores, inscripcion.getId());
-    }
-
-    private static String nombreDeConstraint(DataIntegrityViolationException e) {
-        Throwable causa = e;
-        while (causa != null && !(causa instanceof ConstraintViolationException)) {
-            causa = causa.getCause();
-        }
-        return causa == null ? null : ((ConstraintViolationException) causa).getConstraintName();
     }
 
     /**

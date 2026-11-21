@@ -18,13 +18,13 @@ import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
+import com.hydra.pica.plataforma_pica.common.error.ViolacionesIntegridad;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -43,6 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CargaService {
 
     private static final Logger log = LoggerFactory.getLogger(CargaService.class);
+    private static final String UQ_REFERENCIA_EXTERNA = "uq_movimiento_referencia_externa";
 
     private final BilleteraRepository billeteraRepository;
     private final MovimientoRepository movimientoRepository;
@@ -110,7 +111,7 @@ public class CargaService {
         try {
             movimiento = movimientoRepository.saveAndFlush(movimiento);
         } catch (DataIntegrityViolationException e) {
-            if (esViolacionReferenciaUnica(e)) {
+            if (ViolacionesIntegridad.esConstraintOMensaje(e, UQ_REFERENCIA_EXTERNA)) {
                 throw new ConflictoException(CodigoError.CLAVE_IDEMPOTENCIA_USADA,
                         "La referencia ya fue utilizada en otra operación");
             }
@@ -175,20 +176,5 @@ public class CargaService {
                     "La referencia ya fue utilizada en otra operación");
         }
         return existente;
-    }
-
-    private static boolean esViolacionReferenciaUnica(DataIntegrityViolationException e) {
-        Throwable causa = e;
-        while (causa != null && !(causa instanceof ConstraintViolationException)) {
-            causa = causa.getCause();
-        }
-        if (causa instanceof ConstraintViolationException cve) {
-            String nombre = cve.getConstraintName();
-            if (nombre != null && nombre.equalsIgnoreCase("uq_movimiento_referencia_externa")) {
-                return true;
-            }
-        }
-        String msg = e.getMessage();
-        return msg != null && msg.contains("uq_movimiento_referencia_externa");
     }
 }

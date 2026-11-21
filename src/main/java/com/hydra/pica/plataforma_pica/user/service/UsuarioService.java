@@ -11,6 +11,7 @@ import com.hydra.pica.plataforma_pica.common.audit.AuditConstants;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.common.error.ViolacionesIntegridad;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -23,7 +24,6 @@ import com.hydra.pica.plataforma_pica.user.repository.RolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -186,14 +186,11 @@ public class UsuarioService {
      * arriba y una pierde contra el índice único. Se traduce al mismo 409 que hubiera dado el chequeo.
      */
     private RuntimeException traducirViolacion(DataIntegrityViolationException e, String username, String email) {
-        Throwable causa = e;
-        while (causa != null && !(causa instanceof ConstraintViolationException)) {
-            causa = causa.getCause();
-        }
-        if (causa == null || ((ConstraintViolationException) causa).getConstraintName() == null) {
+        String constraint = ViolacionesIntegridad.nombreDeConstraint(e).orElse(null);
+        if (constraint == null) {
             return e;
         }
-        return switch (((ConstraintViolationException) causa).getConstraintName()) {
+        return switch (constraint) {
             case "uq_usuario_username_lower" ->
                     new ConflictoException(CodigoError.USERNAME_DUPLICADO, "El username " + username + " ya está en uso");
             case "uq_usuario_email_lower" ->
