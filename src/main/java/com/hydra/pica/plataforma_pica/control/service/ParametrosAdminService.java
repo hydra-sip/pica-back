@@ -7,6 +7,7 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -40,10 +41,21 @@ public class ParametrosAdminService {
 
     static final String ENTIDAD = EntidadAuditoria.PARAMETRO.name();
 
-    /** El máximo de NUMERIC(12,2). */
-    private static final BigDecimal MAXIMO = new BigDecimal("9999999999.99");
-    private static final BigDecimal CIEN = BigDecimal.valueOf(100);
-    private static final BigDecimal MIL = BigDecimal.valueOf(1000);
+    private static final List<ReglaOrden> REGLAS_DE_ORDEN = List.of(
+            new ReglaOrden(ClaveParametro.GASTOS_ADMINISTRATIVOS, ClaveParametro.GASTOS_ADMINISTRATIVOS_TOPE,
+                    "No puede superar el tope", "No puede ser menor que el % vigente de gastos administrativos"),
+            new ReglaOrden(ClaveParametro.RETIRO_MINIMO, ClaveParametro.RETIRO_MAXIMO,
+                    "No puede superar el retiro máximo", "No puede ser menor que el retiro mínimo"),
+            new ReglaOrden(ClaveParametro.FAIR_PLAY_INICIAL, ClaveParametro.FAIR_PLAY_MAXIMO,
+                    "No puede superar el índice máximo", "No puede ser menor que el índice inicial"),
+            new ReglaOrden(ClaveParametro.FAIR_PLAY_SANCION_LEVE, ClaveParametro.FAIR_PLAY_SANCION_MEDIA,
+                    "No puede restar más que una sanción media", "No puede restar menos que una sanción leve"),
+            new ReglaOrden(ClaveParametro.FAIR_PLAY_SANCION_MEDIA, ClaveParametro.FAIR_PLAY_SANCION_GRAVE,
+                    "No puede restar más que una sanción grave", "No puede restar menos que una sanción media"),
+            new ReglaOrden(ClaveParametro.INDICE_ORGANIZADOR_CANCELACION,
+                    ClaveParametro.INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS,
+                    "No puede restar más que una cancelación con gastos",
+                    "No puede restar menos que una cancelación sin gastos"));
 
     private final ParametroPlataformaRepository parametroPlataformaRepository;
     private final AuditoriaRepository auditoriaRepository;
@@ -65,7 +77,7 @@ public class ParametrosAdminService {
             } else if (valor == null) {
                 errores.add(new ErrorCampo(clave, ErrorCampo.Codigo.REQUERIDO, "Falta el valor"));
             } else {
-                validarValor(c, valor, errores);
+                c.validar(valor).ifPresent(errores::add);
                 pedidos.put(c, valor);
             }
         });
@@ -78,28 +90,7 @@ public class ParametrosAdminService {
             }
         }
         if (errores.isEmpty()) {
-            Map<ClaveParametro, BigDecimal> resultado = new EnumMap<>(ClaveParametro.class);
-            actuales.forEach((c, p) -> resultado.put(c, p.getValor()));
-            resultado.putAll(pedidos);
-            noSupera(ClaveParametro.GASTOS_ADMINISTRATIVOS, ClaveParametro.GASTOS_ADMINISTRATIVOS_TOPE,
-                    "No puede superar el tope", "No puede ser menor que el % vigente de gastos administrativos",
-                    resultado, pedidos.keySet(), errores);
-            noSupera(ClaveParametro.RETIRO_MINIMO, ClaveParametro.RETIRO_MAXIMO,
-                    "No puede superar el retiro máximo", "No puede ser menor que el retiro mínimo",
-                    resultado, pedidos.keySet(), errores);
-            noSupera(ClaveParametro.FAIR_PLAY_INICIAL, ClaveParametro.FAIR_PLAY_MAXIMO,
-                    "No puede superar el índice máximo", "No puede ser menor que el índice inicial",
-                    resultado, pedidos.keySet(), errores);
-            noSupera(ClaveParametro.FAIR_PLAY_SANCION_LEVE, ClaveParametro.FAIR_PLAY_SANCION_MEDIA,
-                    "No puede restar más que una sanción media", "No puede restar menos que una sanción leve",
-                    resultado, pedidos.keySet(), errores);
-            noSupera(ClaveParametro.FAIR_PLAY_SANCION_MEDIA, ClaveParametro.FAIR_PLAY_SANCION_GRAVE,
-                    "No puede restar más que una sanción grave", "No puede restar menos que una sanción media",
-                    resultado, pedidos.keySet(), errores);
-            noSupera(ClaveParametro.INDICE_ORGANIZADOR_CANCELACION, ClaveParametro.INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS,
-                    "No puede restar más que una cancelación con gastos",
-                    "No puede restar menos que una cancelación sin gastos",
-                    resultado, pedidos.keySet(), errores);
+            validarOrdenEntreParametros(actuales, pedidos, errores);
         }
         if (!errores.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay parámetros inválidos")
@@ -119,71 +110,34 @@ public class ParametrosAdminService {
         return detalles(List.copyOf(actuales.values()));
     }
 
-    /** Lo que se puede validar con el valor solo: el rango de su unidad y los decimales. */
-    private static void validarValor(ClaveParametro clave, BigDecimal valor, List<ErrorCampo> errores) {
-        String campo = clave.name();
-        switch (clave.unidad()) {
-            case PORCENTAJE -> {
-                if (valor.signum() < 0 || valor.compareTo(CIEN) > 0) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que estar entre 0 y 100"));
-                } else if (valor.stripTrailingZeros().scale() > 2) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.FORMATO_INVALIDO, "Hasta dos decimales"));
-                }
-            }
-            case MINUTOS -> {
-                boolean admiteCero = clave == ClaveParametro.MARGEN_CIERRE_INICIO_MIN;
-                if (valor.stripTrailingZeros().scale() > 0) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.FORMATO_INVALIDO, "Son minutos enteros"));
-                } else if (admiteCero ? valor.signum() < 0 : valor.signum() <= 0) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO,
-                            admiteCero ? "No puede ser negativo" : "Tiene que ser mayor que 0"));
-                } else if (valor.compareTo(MAXIMO) > 0) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Es demasiado grande"));
-                }
-            }
-            case PUNTOS -> {
-                if (valor.stripTrailingZeros().scale() > 0) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.FORMATO_INVALIDO, "Son puntos enteros"));
-                } else if (valor.signum() < 0 || valor.compareTo(MIL) > 0) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que estar entre 0 y 1000"));
-                }
-            }
-            case CANTIDAD -> {
-                if (valor.stripTrailingZeros().scale() > 0) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.FORMATO_INVALIDO, "Tiene que ser una cantidad entera"));
-                } else if (valor.signum() <= 0) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que ser mayor que 0"));
-                } else if (valor.compareTo(MAXIMO) > 0) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Es demasiado grande"));
-                }
-            }
-            case PESOS -> {
-                if (valor.signum() <= 0) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que ser mayor que 0"));
-                } else if (valor.compareTo(MAXIMO) > 0) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.RANGO_INVALIDO, "Es demasiado grande"));
-                } else if (valor.stripTrailingZeros().scale() > 2) {
-                    errores.add(new ErrorCampo(campo, ErrorCampo.Codigo.FORMATO_INVALIDO, "Hasta dos decimales"));
-                }
-            }
+    private static void validarOrdenEntreParametros(
+            Map<ClaveParametro, ParametroPlataforma> actuales,
+            Map<ClaveParametro, BigDecimal> pedidos,
+            List<ErrorCampo> errores) {
+        Map<ClaveParametro, BigDecimal> resultado = new EnumMap<>(ClaveParametro.class);
+        actuales.forEach((c, p) -> resultado.put(c, p.getValor()));
+        resultado.putAll(pedidos);
+        for (ReglaOrden regla : REGLAS_DE_ORDEN) {
+            regla.validar(resultado, pedidos.keySet()).ifPresent(errores::add);
         }
     }
 
     /**
-     * {@code menor} no puede quedar por encima de {@code mayor}. El error va en el que se cambió: si se cambió el
-     * mayor (o los dos), en el mayor; si no, en el menor.
+     * Regla declarativa {@code menor <= mayor}: el error va en el parámetro modificado (priorizando {@code mayor} si se
+     * cambiaron ambos).
      */
-    private static void noSupera(ClaveParametro menor, ClaveParametro mayor, String mensajeMenor, String mensajeMayor,
-            Map<ClaveParametro, BigDecimal> resultado, Set<ClaveParametro> cambiados, List<ErrorCampo> errores) {
-        BigDecimal vMenor = resultado.get(menor);
-        BigDecimal vMayor = resultado.get(mayor);
-        if (vMenor == null || vMayor == null || vMenor.compareTo(vMayor) <= 0) {
-            return;
-        }
-        if (cambiados.contains(mayor)) {
-            errores.add(new ErrorCampo(mayor.name(), ErrorCampo.Codigo.RANGO_INVALIDO, mensajeMayor));
-        } else {
-            errores.add(new ErrorCampo(menor.name(), ErrorCampo.Codigo.RANGO_INVALIDO, mensajeMenor));
+    private record ReglaOrden(ClaveParametro menor, ClaveParametro mayor, String mensajeMenor, String mensajeMayor) {
+
+        Optional<ErrorCampo> validar(Map<ClaveParametro, BigDecimal> resultado, Set<ClaveParametro> cambiados) {
+            BigDecimal vMenor = resultado.get(menor);
+            BigDecimal vMayor = resultado.get(mayor);
+            if (vMenor == null || vMayor == null || vMenor.compareTo(vMayor) <= 0) {
+                return Optional.empty();
+            }
+            if (cambiados.contains(mayor)) {
+                return Optional.of(new ErrorCampo(mayor.name(), ErrorCampo.Codigo.RANGO_INVALIDO, mensajeMayor));
+            }
+            return Optional.of(new ErrorCampo(menor.name(), ErrorCampo.Codigo.RANGO_INVALIDO, mensajeMenor));
         }
     }
 
