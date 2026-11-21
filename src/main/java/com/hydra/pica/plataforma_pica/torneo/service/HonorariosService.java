@@ -24,6 +24,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignado;
 import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignadoId;
@@ -68,7 +69,6 @@ public class HonorariosService {
             EstadoTorneo.CANCELACION_EN_REVISION);
     private static final Set<EstadoDesignacion> VIGENTES = Set.of(EstadoDesignacion.PENDIENTE,
             EstadoDesignacion.ACEPTADO);
-    private static final String ENTIDAD = "CUSTODIA";
 
     private final TorneosPropios torneosPropios;
     private final GastoRepository gastoRepository;
@@ -257,7 +257,8 @@ public class HonorariosService {
             detalle.put("reintegroId", reintegro.getId());
         }
         detalle.put("motivo", motivo);
-        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, custodia != null ? ENTIDAD : "TORNEO",
+        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO,
+                custodia != null ? EntidadAuditoria.CUSTODIA : EntidadAuditoria.TORNEO,
                 (custodia != null ? custodia.getId() : torneo.getId()).toString(), detalle);
     }
 

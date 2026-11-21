@@ -28,11 +28,13 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.ReclamoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.DecisionReclamo;
 import com.hydra.pica.plataforma_pica.rifa.dto.ReclamoAdminDetalle;
 import com.hydra.pica.plataforma_pica.rifa.event.FondosReclamoLiberados;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
@@ -209,11 +211,12 @@ class LiberacionReclamoServiceTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> auditCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(auditoriaService).registrar(eq(7L), eq(AccionAuditoria.LIQUIDACION), eq("RECLAMO_RIFA"), eq("1"),
+        verify(auditoriaService).registrar(eq(7L), eq(AccionAuditoria.LIQUIDACION), eq(EntidadAuditoria.RECLAMO_RIFA), eq("1"),
                 auditCaptor.capture());
         assertThat(auditCaptor.getValue())
                 .containsEntry("rifaId", 10L)
                 .containsEntry("torneoId", 30L)
+                .containsEntry("resolucion", DecisionReclamo.SIN_FRAUDE.name())
                 .containsEntry("monto", new BigDecimal("1100.00"))
                 .containsEntry("destino", "LIQUIDACION_GANADORES")
                 .containsEntry("ejecutadoPor", "soporte_ana");
@@ -251,11 +254,12 @@ class LiberacionReclamoServiceTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> auditCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(auditoriaService).registrar(eq(7L), eq(AccionAuditoria.REINTEGRO), eq("RECLAMO_RIFA"), eq("1"),
+        verify(auditoriaService).registrar(eq(7L), eq(AccionAuditoria.REINTEGRO), eq(EntidadAuditoria.RECLAMO_RIFA), eq("1"),
                 auditCaptor.capture());
         assertThat(auditCaptor.getValue())
                 .containsEntry("rifaId", 10L)
                 .containsEntry("torneoId", 30L)
+                .containsEntry("resolucion", DecisionReclamo.FRAUDE_CONFIRMADO.name())
                 .containsEntry("monto", new BigDecimal("1100.00"))
                 .containsEntry("destino", "REINTEGRO_COMPRADORES")
                 .containsEntry("reclamanteId", 42L)
@@ -275,7 +279,7 @@ class LiberacionReclamoServiceTest {
                 .isInstanceOfSatisfying(ConflictoException.class,
                         e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.CUSTODIA_LIBERADA));
 
-        verify(auditoriaService, never()).registrar(any(), any(), any(), any(), anyMap());
+        verifyNoInteractions(auditoriaService);
     }
 
     private void stubBloqueos() {

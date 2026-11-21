@@ -17,11 +17,13 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.ReclamoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.DecisionReclamo;
 import com.hydra.pica.plataforma_pica.rifa.dto.ReclamoAdminDetalle;
 import com.hydra.pica.plataforma_pica.rifa.event.FondosReclamoLiberados;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
@@ -47,8 +49,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class LiberacionReclamoService {
-
-    private static final String ENTIDAD_AUDITORIA = "RECLAMO_RIFA";
 
     private final ReclamoRifaRepository reclamoRifaRepository;
     private final RifaRepository rifaRepository;
@@ -139,7 +139,7 @@ public class LiberacionReclamoService {
         }
 
         registrarAuditoria(ejecutor.getId(), AccionAuditoria.LIQUIDACION, reclamoId, rifaId, rifaTitulo, torneoId,
-                "SIN_FRAUDE", EstadoRifa.LIQUIDADA, montoAcreditado, "LIQUIDACION_GANADORES",
+                DecisionReclamo.SIN_FRAUDE, EstadoRifa.LIQUIDADA, montoAcreditado, "LIQUIDACION_GANADORES",
                 destinatarios, ejecutor.getUsername(), liquidacion.aportePendiente(), liquidacion.aporteAlTorneo());
 
         Map<Long, BigDecimal> acreditados = new LinkedHashMap<>();
@@ -175,7 +175,7 @@ public class LiberacionReclamoService {
                 .toList();
 
         registrarAuditoria(ejecutor.getId(), AccionAuditoria.REINTEGRO, reclamoId, rifaId, rifaTitulo, torneoId,
-                "FRAUDE_CONFIRMADO", EstadoRifa.CANCELADA, reintegro.totalDevuelto(),
+                DecisionReclamo.FRAUDE_CONFIRMADO, EstadoRifa.CANCELADA, reintegro.totalDevuelto(),
                 "REINTEGRO_COMPRADORES", destinatarios, ejecutor.getUsername(), false, BigDecimal.ZERO, reclamanteId);
 
         Map<Long, BigDecimal> acreditados = new LinkedHashMap<>();
@@ -202,7 +202,7 @@ public class LiberacionReclamoService {
             Long rifaId,
             String rifaTitulo,
             Long torneoId,
-            String resolucion,
+            DecisionReclamo resolucion,
             EstadoRifa rifaEstadoFinal,
             BigDecimal monto,
             String destino,
@@ -219,7 +219,7 @@ public class LiberacionReclamoService {
         if (torneoId != null) {
             detalle.put("torneoId", torneoId);
         }
-        detalle.put("resolucion", resolucion);
+        detalle.put("resolucion", resolucion.name());
         detalle.put("rifaEstadoFinal", rifaEstadoFinal.name());
         detalle.put("monto", monto);
         detalle.put("destino", destino);
@@ -232,7 +232,7 @@ public class LiberacionReclamoService {
         if (reclamanteOpcional.length > 0 && reclamanteOpcional[0] != null) {
             detalle.put("reclamanteId", reclamanteOpcional[0]);
         }
-        auditoriaService.registrar(ejecutorId, accion, ENTIDAD_AUDITORIA, reclamoId.toString(), detalle);
+        auditoriaService.registrar(ejecutorId, accion, EntidadAuditoria.RECLAMO_RIFA, reclamoId.toString(), detalle);
     }
 
     private ReclamoAdminDetalle detalleActualizado(Long reclamoId) {

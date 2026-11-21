@@ -15,6 +15,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.reputacion.domain.Calificacion;
 import com.hydra.pica.plataforma_pica.reputacion.dto.CalificacionDetalle;
@@ -85,7 +86,8 @@ public class CalificacionService {
         detalle.put("puntaje", request.puntaje());
         detalle.put("comentario", calificacion.getComentario());
         detalle.put("noConfiable", request.noConfiable());
-        auditoriaService.registrar(organizadorId, AccionAuditoria.CALIFICACION, "TORNEO", torneoId.toString(), detalle);
+        auditoriaService.registrar(organizadorId, AccionAuditoria.CALIFICACION, EntidadAuditoria.TORNEO,
+                torneoId.toString(), detalle);
         return CalificacionDetalle.desde(calificacionRepository.conTodo(calificacion.getId()).orElseThrow());
     }
 

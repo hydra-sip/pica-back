@@ -10,7 +10,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.List;
 import java.util.Optional;
 
+import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.security.SignatureException;
 import org.junit.jupiter.api.AfterEach;
@@ -70,12 +72,24 @@ class JwtAuthenticationFilterTest {
 
     @Test
     void bearerConFirmaInvalidaPasaLaCadenaSinAutenticar() throws Exception {
-        when(jwtService.validar("vencido")).thenThrow(new SignatureException("firma inválida"));
+        when(jwtService.validar("invalido")).thenThrow(new SignatureException("firma inválida"));
+
+        mockMvc.perform(get("/prueba").header("Authorization", "Bearer invalido"))
+                .andExpect(status().isOk());
+
+        assertThat(controller.authentication).isNull();
+        assertThat(controller.jwtError).isEqualTo(CodigoError.TOKEN_INVALIDO);
+    }
+
+    @Test
+    void bearerVencidoPasaLaCadenaSinAutenticarYMarcaTokenVencido() throws Exception {
+        when(jwtService.validar("vencido")).thenThrow(new ExpiredJwtException(null, null, "vencido"));
 
         mockMvc.perform(get("/prueba").header("Authorization", "Bearer vencido"))
                 .andExpect(status().isOk());
 
         assertThat(controller.authentication).isNull();
+        assertThat(controller.jwtError).isEqualTo(CodigoError.TOKEN_VENCIDO);
     }
 
     @Test
@@ -88,7 +102,7 @@ class JwtAuthenticationFilterTest {
                 .andExpect(status().isOk());
 
         assertThat(controller.authentication).isNull();
-        assertThat(controller.jwtError).isEqualTo("SESION_REVOCADA");
+        assertThat(controller.jwtError).isEqualTo(CodigoError.SESION_REVOCADA);
     }
 
     @Test
@@ -100,7 +114,7 @@ class JwtAuthenticationFilterTest {
                 .andExpect(status().isOk());
 
         assertThat(controller.authentication).isNull();
-        assertThat(controller.jwtError).isEqualTo("SESION_REVOCADA");
+        assertThat(controller.jwtError).isEqualTo(CodigoError.SESION_REVOCADA);
     }
 
     @Test
@@ -111,7 +125,7 @@ class JwtAuthenticationFilterTest {
                 .andExpect(status().isOk());
 
         assertThat(controller.authentication).isNull();
-        assertThat(controller.jwtError).isEqualTo("SESION_REVOCADA");
+        assertThat(controller.jwtError).isEqualTo(CodigoError.SESION_REVOCADA);
         verifyNoInteractions(versionesDeSesion);
     }
 
@@ -134,7 +148,7 @@ class JwtAuthenticationFilterTest {
         @GetMapping("/prueba")
         String prueba(HttpServletRequest request) {
             authentication = SecurityContextHolder.getContext().getAuthentication();
-            jwtError = request.getAttribute("jwt-error");
+            jwtError = request.getAttribute(JwtAuthenticationFilter.ATRIBUTO_ERROR);
             return "ok";
         }
     }

@@ -12,6 +12,7 @@ import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
@@ -101,7 +102,8 @@ public class SancionService {
         detalle.put("partidoId", request.partidoId());
         detalle.put("gravedad", request.gravedad().name());
         detalle.put("motivo", sancion.getMotivo());
-        auditoriaService.registrar(usuarioId, AccionAuditoria.SANCION, "TORNEO", torneoId.toString(), detalle);
+        auditoriaService.registrar(usuarioId, AccionAuditoria.SANCION, EntidadAuditoria.TORNEO,
+                torneoId.toString(), detalle);
         eventos.publishEvent(new SancionAplicada(sancion.getId(), torneoId, request.usuarioId(), request.gravedad()));
         return SancionDetalle.desde(sancionRepository.conTodo(sancion.getId()).orElseThrow());
     }

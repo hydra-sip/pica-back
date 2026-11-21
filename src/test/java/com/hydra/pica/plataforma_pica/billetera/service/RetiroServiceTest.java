@@ -29,6 +29,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
@@ -223,7 +224,7 @@ class RetiroServiceTest {
         verify(auditoriaService).registrar(
                 eq(USUARIO_ID),
                 eq(AccionAuditoria.ALTA),
-                eq("retiro"),
+                eq(EntidadAuditoria.RETIRO),
                 any(),
                 any());
     }
@@ -250,7 +251,7 @@ class RetiroServiceTest {
         verify(auditoriaService).registrar(
                 any(),
                 eq(AccionAuditoria.MODIFICACION),
-                eq("retiro"),
+                eq(EntidadAuditoria.RETIRO),
                 any(),
                 any());
     }

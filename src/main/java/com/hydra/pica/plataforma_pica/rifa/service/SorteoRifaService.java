@@ -10,6 +10,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
@@ -128,7 +129,7 @@ public class SorteoRifaService {
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(actorId == null ? null : usuarioRepository.getReferenceById(actorId));
         auditoria.setAccion(AccionAuditoria.SORTEO);
-        auditoria.setEntidad("RIFA");
+        auditoria.setEntidad(EntidadAuditoria.RIFA.name());
         auditoria.setEntidadId(String.valueOf(rifa.getId()));
         auditoria.setDetalle(detalle);
         auditoriaRepository.save(auditoria);

@@ -19,6 +19,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
@@ -189,7 +190,7 @@ class ReclamoAdminServiceTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> auditoriaCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(auditoriaService).registrar(eq(7L), eq(AccionAuditoria.LAUDO), eq("RECLAMO_RIFA"), eq("1"),
+        verify(auditoriaService).registrar(eq(7L), eq(AccionAuditoria.LAUDO), eq(EntidadAuditoria.RECLAMO_RIFA), eq("1"),
                 auditoriaCaptor.capture());
         assertThat(auditoriaCaptor.getValue())
                 .containsEntry("decision", "SIN_FRAUDE")

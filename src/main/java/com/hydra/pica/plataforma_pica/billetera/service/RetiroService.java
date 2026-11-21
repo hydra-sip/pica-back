@@ -24,6 +24,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
@@ -36,17 +37,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Servicio encargado de gestionar los retiros de saldo disponible hacia cuentas bancarias validadas (HU-607, PICA-337).
- * Controla topes configurados en la plataforma, bloquea pesimistamente la billetera para evitar saldos negativos
- * en solicitudes concurrentes, descuenta saldo disponible y registra el movimiento en estado PENDIENTE.
+ * Servicio encargado de gestionar los retiros de saldo disponible hacia cuentas
+ * bancarias validadas (HU-607, PICA-337).
+ * Controla topes configurados en la plataforma, bloquea pesimistamente la
+ * billetera para evitar saldos negativos
+ * en solicitudes concurrentes, descuenta saldo disponible y registra el
+ * movimiento en estado PENDIENTE.
  */
 @Service
 @RequiredArgsConstructor
 public class RetiroService {
 
     private static final Logger log = LoggerFactory.getLogger(RetiroService.class);
-    public static final String MENSAJE_SALDO_INSUFICIENTE =
-            "El saldo disponible no alcanza para el retiro solicitado. Los fondos retenidos no pueden ser movilizados";
+    public static final String MENSAJE_SALDO_INSUFICIENTE = "El saldo disponible no alcanza para el retiro solicitado. Los fondos retenidos no pueden ser movilizados";
 
     private final BilleteraRepository billeteraRepository;
     private final CuentaBancariaRepository cuentaBancariaRepository;
@@ -153,7 +156,7 @@ public class RetiroService {
         auditoriaService.registrar(
                 usuarioId,
                 AccionAuditoria.ALTA,
-                "retiro",
+                EntidadAuditoria.RETIRO,
                 String.valueOf(guardado.getId()),
                 detalleAuditoria);
 
@@ -184,7 +187,7 @@ public class RetiroService {
         auditoriaService.registrar(
                 movimiento.getBilletera().getUsuario().getId(),
                 AccionAuditoria.MODIFICACION,
-                "retiro",
+                EntidadAuditoria.RETIRO,
                 String.valueOf(guardado.getId()),
                 Map.of("estado", EstadoMovimiento.CONFIRMADO.name(), "referencia", movimiento.getReferenciaExterna()));
 

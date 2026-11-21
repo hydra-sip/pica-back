@@ -10,6 +10,7 @@ import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.AlcanceBloqueo;
 import com.hydra.pica.plataforma_pica.control.domain.Bloqueo;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.BloqueoRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
@@ -107,7 +108,7 @@ public class BloqueoService {
 
     // en el login no hay nadie autenticado: el registro queda sin usuario, que el libro muestra como el sistema
     private void auditar(AccionAuditoria accion, Usuario usuario, Map<String, Object> detalle) {
-        auditoriaService.registrar(currentUserProvider.getCurrentUserId().orElse(null), accion, "USUARIO",
-                usuario.getId().toString(), detalle);
+        auditoriaService.registrar(currentUserProvider.getCurrentUserId().orElse(null), accion,
+                EntidadAuditoria.USUARIO, usuario.getId().toString(), detalle);
     }
 }
