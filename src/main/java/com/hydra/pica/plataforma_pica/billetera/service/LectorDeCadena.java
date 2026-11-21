@@ -32,6 +32,17 @@ public class LectorDeCadena {
     /** keccak256("CargaRegistrada(bytes32,address,uint256)"), el topic0 del evento de PasarelaCargas. */
     static final String TOPIC_CARGA_REGISTRADA = "0x3197a34ed765fdfa490419a8d5ed536a04869055bd7773ec777f2b99834e2534";
 
+    private static final int TOPICS_CARGA_REGISTRADA = 3;
+    private static final int INDICE_TOPIC_EVENTO = 0;
+    private static final int INDICE_TOPIC_REFERENCIA = 1;
+    private static final int INDICE_TOPIC_PAGADOR = 2;
+    /** Un topic EVM es "0x" + 64 dígitos hex; la address de 20 bytes empieza en el índice 26. */
+    private static final int OFFSET_DIRECCION_EN_TOPIC = 26;
+    private static final String STATUS_TRANSACCION_EXITOSA = "0x1";
+    private static final String PREFIJO_HEX = "0x";
+    private static final int LONGITUD_PREFIJO_HEX = PREFIJO_HEX.length();
+    private static final int BASE_HEXADECIMAL = 16;
+
     private static final Logger log = LoggerFactory.getLogger(LectorDeCadena.class);
 
     private final RestClient http;
@@ -84,15 +95,16 @@ public class LectorDeCadena {
         List<CargaRegistrada> cargas = new ArrayList<>();
         for (JsonNode evento : recibo.path("logs")) {
             JsonNode topics = evento.path("topics");
-            if (topics.size() == 3 && TOPIC_CARGA_REGISTRADA.equalsIgnoreCase(topics.get(0).asText())) {
+            if (topics.size() == TOPICS_CARGA_REGISTRADA
+                    && TOPIC_CARGA_REGISTRADA.equalsIgnoreCase(topics.get(INDICE_TOPIC_EVENTO).asText())) {
                 cargas.add(new CargaRegistrada(
                         minuscula(evento.path("address").asText()),
-                        minuscula(topics.get(1).asText()),
-                        "0x" + minuscula(topics.get(2).asText()).substring(26),
+                        minuscula(topics.get(INDICE_TOPIC_REFERENCIA).asText()),
+                        direccionDesdeTopic(topics.get(INDICE_TOPIC_PAGADOR).asText()),
                         cantidad(evento.path("data").asText())));
             }
         }
-        return new Transaccion.Minada("0x1".equals(recibo.path("status").asText()),
+        return new Transaccion.Minada(STATUS_TRANSACCION_EXITOSA.equals(recibo.path("status").asText()),
                 cantidad(recibo.path("blockNumber").asText()).longValueExact(), List.copyOf(cargas));
     }
 
@@ -126,7 +138,11 @@ public class LectorDeCadena {
 
     // los números del JSON-RPC van en hex con 0x
     private static BigInteger cantidad(String hex) {
-        return new BigInteger(hex.substring(2), 16);
+        return new BigInteger(hex.substring(LONGITUD_PREFIJO_HEX), BASE_HEXADECIMAL);
+    }
+
+    private static String direccionDesdeTopic(String topic) {
+        return PREFIJO_HEX + minuscula(topic).substring(OFFSET_DIRECCION_EN_TOPIC);
     }
 
     private static String minuscula(String hex) {

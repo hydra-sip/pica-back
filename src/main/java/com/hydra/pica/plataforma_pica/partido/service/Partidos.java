@@ -31,6 +31,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class Partidos {
 
+    private static final int RONDA_INICIAL = 1;
+
     /** Ya no cambian: el ganador pasó a la ronda siguiente (o el torneo terminó). */
     public static final Set<EstadoPartido> CERRADOS =
             EnumSet.of(EstadoPartido.CONFIRMADO, EstadoPartido.CORREGIDO, EstadoPartido.WALKOVER);
@@ -85,6 +87,11 @@ public class Partidos {
                 .map(j -> new LadoBracket(j.getId().getInscripcionId(), nombre(j.getInscripcion()), j.getPuntaje(),
                         j.getPenales(), j.getEsGanador()))
                 .orElse(null);
+    }
+
+    /** Un partido es bye cuando en la primera ronda solo tiene lado local y avanza sin rival. */
+    public static boolean esBye(Partido partido, LadoBracket local, LadoBracket visitante) {
+        return partido.getRonda() != null && partido.getRonda() == RONDA_INICIAL && local != null && visitante == null;
     }
 
     /**

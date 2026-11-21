@@ -297,7 +297,7 @@ public class BracketService {
     static PartidoBracket partidoBracket(Partido partido, List<Juega> lados) {
         LadoBracket local = Partidos.ladoBracket(lados, Lado.LOCAL);
         LadoBracket visitante = Partidos.ladoBracket(lados, Lado.VISITANTE);
-        boolean bye = partido.getRonda() == 1 && local != null && visitante == null;
+        boolean bye = Partidos.esBye(partido, local, visitante);
         return new PartidoBracket(partido.getId(), partido.getRonda(), partido.getPosicion(), partido.getEstado(), bye,
                 local, visitante, partido.getCancha() == null ? null : partido.getCancha().getNombre(),
                 partido.getFechaProgramada(), Partidos.nombre(partido.getArbitro()));
