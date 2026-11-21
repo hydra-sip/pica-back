@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.CuentaBancaria;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoValidacion;
@@ -41,6 +42,13 @@ public class CuentaBancariaService {
 
     public static final String MENSAJE_TITULAR_NO_COINCIDE =
             "La cuenta destino debe estar a nombre del titular verificado en la plataforma";
+
+    private static final int ALIAS_LONGITUD_MINIMA = 6;
+    private static final int ALIAS_LONGITUD_MAXIMA = 20;
+    private static final int CBU_CVU_DIGITOS = 22;
+    private static final int CUIT_CUIL_DIGITOS = 11;
+    private static final Pattern PATRON_ALIAS = Pattern.compile("^[a-zA-Z0-9.-]+$");
+    private static final Pattern PATRON_NO_DIGITOS = Pattern.compile("\\D");
 
     private final CuentaBancariaRepository cuentaBancariaRepository;
     private final UsuarioRepository usuarioRepository;
@@ -92,8 +100,8 @@ public class CuentaBancariaService {
         }
 
         String valorLimpio = request.valor().strip();
-        String cuitDigitos = request.cuitCuil().replaceAll("\\D", "");
-        String docDigitos = nroDoc.replaceAll("\\D", "");
+        String cuitDigitos = soloDigitos(request.cuitCuil());
+        String docDigitos = soloDigitos(nroDoc);
 
         // Chequear duplicado activo
         Optional<CuentaBancaria> existente = cuentaBancariaRepository.findByUsuarioIdAndValorIgnoreCase(usuarioId, valorLimpio);
@@ -224,17 +232,17 @@ public class CuentaBancariaService {
     private static void validarCbuOCvu(TipoCuenta tipo, String valor, List<ErrorCampo> errores) {
         if (!ValidadorCbuCvu.esValido(valor)) {
             errores.add(new ErrorCampo("valor", ErrorCampo.Codigo.FORMATO_INVALIDO,
-                    "El " + tipo + " debe tener 22 dígitos válidos con su dígito verificador"));
+                    "El " + tipo + " debe tener " + CBU_CVU_DIGITOS + " dígitos válidos con su dígito verificador"));
         }
     }
 
     private static void validarAlias(String valor, List<ErrorCampo> errores) {
-        if (valor.length() < 6 || valor.length() > 20) {
+        if (valor.length() < ALIAS_LONGITUD_MINIMA || valor.length() > ALIAS_LONGITUD_MAXIMA) {
             errores.add(new ErrorCampo("valor", ErrorCampo.Codigo.LONGITUD,
-                    "El alias debe tener entre 6 y 20 caracteres"));
+                    "El alias debe tener entre " + ALIAS_LONGITUD_MINIMA + " y " + ALIAS_LONGITUD_MAXIMA + " caracteres"));
             return;
         }
-        if (!valor.matches("^[a-zA-Z0-9.-]+$")) {
+        if (!PATRON_ALIAS.matcher(valor).matches()) {
             errores.add(new ErrorCampo("valor", ErrorCampo.Codigo.FORMATO_INVALIDO,
                     "El alias solo puede contener letras, números, puntos y guiones"));
         }
@@ -245,10 +253,13 @@ public class CuentaBancariaService {
             errores.add(new ErrorCampo("cuitCuil", ErrorCampo.Codigo.REQUERIDO, "El CUIT/CUIL es obligatorio"));
             return;
         }
-        String digitos = cuitCuil.replaceAll("\\D", "");
-        if (digitos.length() != 11) {
+        if (soloDigitos(cuitCuil).length() != CUIT_CUIL_DIGITOS) {
             errores.add(new ErrorCampo("cuitCuil", ErrorCampo.Codigo.FORMATO_INVALIDO,
-                    "El CUIT/CUIL debe contener 11 dígitos"));
+                    "El CUIT/CUIL debe contener " + CUIT_CUIL_DIGITOS + " dígitos"));
         }
+    }
+
+    private static String soloDigitos(String texto) {
+        return PATRON_NO_DIGITOS.matcher(texto).replaceAll("");
     }
 }
