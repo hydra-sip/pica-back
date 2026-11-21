@@ -73,6 +73,10 @@ curl -i http://localhost:8080/actuator/health
 
 Responde 200 con `"status": "UP"` si la app y la base andan, y 503 con `DOWN` si la base no responde. Es el mismo chequeo que usan el `HEALTHCHECK` de la imagen y el deploy a staging.
 
+### Tests
+
+`./mvnw verify` corre los unitarios, los de controllers y los de integración (con Testcontainers, necesita Docker) y controla el mínimo de cobertura de JaCoCo. La estrategia de testing de los tres repos (qué se prueba en cada nivel y por qué, qué corre en el CI, los E2E de Playwright y los antipatrones que revisamos) está en [docs/testing.md](docs/testing.md).
+
 ### Prueba de humo del contrato
 
 `scripts/prueba-de-humo.sh` recorre todas las operaciones de `docs/api/openapi.yaml` contra una API levantada y compara cada código HTTP con el del contrato. Termina con `Contrato: N/N operaciones` (todas las operaciones del contrato) y falla si alguna operación quedó sin probar, así que un endpoint nuevo en el contrato obliga a sumarlo al script. Los torneos todavía no tienen API: para probar las inscripciones el script carga tres torneos (uno gratis, uno con costo y uno por equipos, con un equipo del usuario de prueba) por SQL y los borra al limpiar, junto con la nómina, el equipo, el movimiento y la billetera del pago.
