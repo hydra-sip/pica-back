@@ -49,6 +49,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class RetiroService {
 
     private static final Logger log = LoggerFactory.getLogger(RetiroService.class);
+    private static final String MONEDA_POR_DEFECTO = "ARS";
+    private static final int ESCALA_MONTO = 2;
     public static final String MENSAJE_SALDO_INSUFICIENTE = "El saldo disponible no alcanza para el retiro solicitado. Los fondos retenidos no pueden ser movilizados";
 
     private final BilleteraRepository billeteraRepository;
@@ -67,98 +69,17 @@ public class RetiroService {
 
     @Transactional
     public Movimiento solicitar(Long usuarioId, Long cuentaId, BigDecimal monto) {
-        if (monto == null || monto.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "El monto debe ser mayor a cero");
-        }
-        if (cuentaId == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "La cuenta es obligatoria");
-        }
+        BigDecimal montoEscalado = validarEntradaYTopes(cuentaId, monto);
+        CuentaBancaria cuenta = obtenerCuentaValidada(usuarioId, cuentaId);
+        Billetera billetera = obtenerOCrearBilleteraBloqueada(usuarioId);
+        validarBilleteraYSaldo(billetera, montoEscalado);
 
-        // 1. Validar topes mínimo y máximo de la plataforma
-        BigDecimal minimo = parametrosPlataforma.retiroMinimo();
-        BigDecimal maximo = parametrosPlataforma.retiroMaximo();
-        BigDecimal montoEscalado = monto.setScale(2, RoundingMode.HALF_UP);
-
-        if (montoEscalado.compareTo(minimo) < 0 || montoEscalado.compareTo(maximo) > 0) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.RETIRO_FUERA_DE_TOPES,
-                    "El monto a retirar debe estar entre $" + minimo.stripTrailingZeros().toPlainString()
-                            + " y $" + maximo.stripTrailingZeros().toPlainString())
-                    .con("minimo", minimo)
-                    .con("maximo", maximo)
-                    .con("monto", montoEscalado);
-        }
-
-        // 2. Validar que la cuenta pertenezca al usuario y esté VALIDADA
-        CuentaBancaria cuenta = cuentaBancariaRepository.findByIdAndUsuarioId(cuentaId, usuarioId)
-                .orElseThrow(() -> new NoEncontradoException(
-                        CodigoError.CUENTA_BANCARIA_NO_ENCONTRADA,
-                        "Cuenta bancaria no encontrada o no pertenece al usuario"));
-
-        if (cuenta.getEstadoValidacion() != EstadoValidacion.VALIDADA) {
-            throw new ConflictoException(CodigoError.CUENTA_NO_VALIDADA,
-                    "Solo se puede solicitar retiros a una cuenta bancaria validada");
-        }
-
-        // 3. Bloqueo pesimista de la billetera (SELECT ... FOR UPDATE)
-        Billetera billetera = billeteraRepository.findConBloqueoPorUsuarioId(usuarioId)
-                .orElseGet(() -> {
-                    Billetera nueva = new Billetera();
-                    nueva.setUsuario(usuarioRepository.getReferenceById(usuarioId));
-                    nueva.setSaldoDisponible(BigDecimal.ZERO);
-                    nueva.setSaldoRetenido(BigDecimal.ZERO);
-                    nueva.setGananciaAcumulada(BigDecimal.ZERO);
-                    nueva.setMoneda("ARS");
-                    nueva.setEstado(EstadoBilletera.ACTIVA);
-                    billeteraRepository.save(nueva);
-                    return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElse(nueva);
-                });
-
-        if (billetera.getEstado() == EstadoBilletera.BLOQUEADA) {
-            throw new ProhibidoException(CodigoError.BILLETERA_BLOQUEADA, "La billetera se encuentra bloqueada");
-        }
-
-        // 4. Validar saldo disponible
-        if (montoEscalado.compareTo(billetera.getSaldoDisponible()) > 0) {
-            throw new ConflictoException(CodigoError.SALDO_INSUFICIENTE, MENSAJE_SALDO_INSUFICIENTE)
-                    .con("saldoDisponible", billetera.getSaldoDisponible())
-                    .con("saldoRetenido", billetera.getSaldoRetenido())
-                    .con("montoSolicitado", montoEscalado);
-        }
-
-        // 5. Deducir saldo disponible
         BigDecimal nuevoSaldoDisponible = billetera.getSaldoDisponible().subtract(montoEscalado);
         billetera.setSaldoDisponible(nuevoSaldoDisponible);
         billeteraRepository.save(billetera);
 
-        // 6. Registrar movimiento RETIRO en estado PENDIENTE
-        String referencia = "sim-retiro-" + UUID.randomUUID();
-        Movimiento movimiento = new Movimiento();
-        movimiento.setBilletera(billetera);
-        movimiento.setTipo(TipoMovimiento.RETIRO);
-        movimiento.setMonto(montoEscalado);
-        movimiento.setMoneda(billetera.getMoneda() != null ? billetera.getMoneda() : "ARS");
-        movimiento.setSaldoResultante(nuevoSaldoDisponible);
-        movimiento.setEstado(EstadoMovimiento.PENDIENTE);
-        movimiento.setReferenciaExterna(referencia);
-        movimiento.setDescripcion("Retiro a " + cuenta.getTipo() + " " + cuenta.getValor());
-        Movimiento guardado = movimientoRepository.saveAndFlush(movimiento);
-
-        // 7. Auditoría
-        Map<String, Object> detalleAuditoria = new LinkedHashMap<>();
-        detalleAuditoria.put("monto", montoEscalado);
-        detalleAuditoria.put("cuentaId", cuenta.getId());
-        detalleAuditoria.put("tipoCuenta", cuenta.getTipo().name());
-        detalleAuditoria.put("valorCuenta", cuenta.getValor());
-        detalleAuditoria.put("saldoResultante", nuevoSaldoDisponible);
-        detalleAuditoria.put("referencia", referencia);
-        detalleAuditoria.put("estado", EstadoMovimiento.PENDIENTE.name());
-
-        auditoriaService.registrar(
-                usuarioId,
-                AccionAuditoria.ALTA,
-                EntidadAuditoria.RETIRO,
-                String.valueOf(guardado.getId()),
-                detalleAuditoria);
+        Movimiento guardado = registrarMovimientoRetiro(billetera, cuenta, montoEscalado, nuevoSaldoDisponible);
+        auditarSolicitud(usuarioId, cuenta, guardado);
 
         if (eventos != null) {
             eventos.publishEvent(new MovimientoBilleteraRegistrado(
@@ -169,6 +90,105 @@ public class RetiroService {
                 usuarioId, montoEscalado, cuenta.getId(), nuevoSaldoDisponible);
 
         return guardado;
+    }
+
+    private BigDecimal validarEntradaYTopes(Long cuentaId, BigDecimal monto) {
+        if (monto == null || monto.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "El monto debe ser mayor a cero");
+        }
+        if (cuentaId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "La cuenta es obligatoria");
+        }
+
+        BigDecimal minimo = parametrosPlataforma.retiroMinimo();
+        BigDecimal maximo = parametrosPlataforma.retiroMaximo();
+        BigDecimal montoEscalado = monto.setScale(ESCALA_MONTO, RoundingMode.HALF_UP);
+
+        if (montoEscalado.compareTo(minimo) < 0 || montoEscalado.compareTo(maximo) > 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.RETIRO_FUERA_DE_TOPES,
+                    "El monto a retirar debe estar entre $" + minimo.stripTrailingZeros().toPlainString()
+                            + " y $" + maximo.stripTrailingZeros().toPlainString())
+                    .con("minimo", minimo)
+                    .con("maximo", maximo)
+                    .con("monto", montoEscalado);
+        }
+        return montoEscalado;
+    }
+
+    private CuentaBancaria obtenerCuentaValidada(Long usuarioId, Long cuentaId) {
+        CuentaBancaria cuenta = cuentaBancariaRepository.findByIdAndUsuarioId(cuentaId, usuarioId)
+                .orElseThrow(() -> new NoEncontradoException(
+                        CodigoError.CUENTA_BANCARIA_NO_ENCONTRADA,
+                        "Cuenta bancaria no encontrada o no pertenece al usuario"));
+
+        if (cuenta.getEstadoValidacion() != EstadoValidacion.VALIDADA) {
+            throw new ConflictoException(CodigoError.CUENTA_NO_VALIDADA,
+                    "Solo se puede solicitar retiros a una cuenta bancaria validada");
+        }
+        return cuenta;
+    }
+
+    private Billetera obtenerOCrearBilleteraBloqueada(Long usuarioId) {
+        return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId)
+                .orElseGet(() -> {
+                    Billetera nueva = new Billetera();
+                    nueva.setUsuario(usuarioRepository.getReferenceById(usuarioId));
+                    nueva.setSaldoDisponible(BigDecimal.ZERO);
+                    nueva.setSaldoRetenido(BigDecimal.ZERO);
+                    nueva.setGananciaAcumulada(BigDecimal.ZERO);
+                    nueva.setMoneda(MONEDA_POR_DEFECTO);
+                    nueva.setEstado(EstadoBilletera.ACTIVA);
+                    billeteraRepository.save(nueva);
+                    return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElse(nueva);
+                });
+    }
+
+    private static void validarBilleteraYSaldo(Billetera billetera, BigDecimal montoEscalado) {
+        if (billetera.getEstado() == EstadoBilletera.BLOQUEADA) {
+            throw new ProhibidoException(CodigoError.BILLETERA_BLOQUEADA, "La billetera se encuentra bloqueada");
+        }
+        if (montoEscalado.compareTo(billetera.getSaldoDisponible()) > 0) {
+            throw new ConflictoException(CodigoError.SALDO_INSUFICIENTE, MENSAJE_SALDO_INSUFICIENTE)
+                    .con("saldoDisponible", billetera.getSaldoDisponible())
+                    .con("saldoRetenido", billetera.getSaldoRetenido())
+                    .con("montoSolicitado", montoEscalado);
+        }
+    }
+
+    private Movimiento registrarMovimientoRetiro(
+            Billetera billetera,
+            CuentaBancaria cuenta,
+            BigDecimal montoEscalado,
+            BigDecimal nuevoSaldoDisponible) {
+        String referencia = "sim-retiro-" + UUID.randomUUID();
+        Movimiento movimiento = new Movimiento();
+        movimiento.setBilletera(billetera);
+        movimiento.setTipo(TipoMovimiento.RETIRO);
+        movimiento.setMonto(montoEscalado);
+        movimiento.setMoneda(billetera.getMoneda() != null ? billetera.getMoneda() : MONEDA_POR_DEFECTO);
+        movimiento.setSaldoResultante(nuevoSaldoDisponible);
+        movimiento.setEstado(EstadoMovimiento.PENDIENTE);
+        movimiento.setReferenciaExterna(referencia);
+        movimiento.setDescripcion("Retiro a " + cuenta.getTipo() + " " + cuenta.getValor());
+        return movimientoRepository.saveAndFlush(movimiento);
+    }
+
+    private void auditarSolicitud(Long usuarioId, CuentaBancaria cuenta, Movimiento guardado) {
+        Map<String, Object> detalleAuditoria = new LinkedHashMap<>();
+        detalleAuditoria.put("monto", guardado.getMonto());
+        detalleAuditoria.put("cuentaId", cuenta.getId());
+        detalleAuditoria.put("tipoCuenta", cuenta.getTipo().name());
+        detalleAuditoria.put("valorCuenta", cuenta.getValor());
+        detalleAuditoria.put("saldoResultante", guardado.getSaldoResultante());
+        detalleAuditoria.put("referencia", guardado.getReferenciaExterna());
+        detalleAuditoria.put("estado", EstadoMovimiento.PENDIENTE.name());
+
+        auditoriaService.registrar(
+                usuarioId,
+                AccionAuditoria.ALTA,
+                EntidadAuditoria.RETIRO,
+                String.valueOf(guardado.getId()),
+                detalleAuditoria);
     }
 
     /**
