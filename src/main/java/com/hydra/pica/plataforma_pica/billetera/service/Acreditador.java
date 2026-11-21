@@ -89,25 +89,7 @@ public class Acreditador {
         Billetera billetera = resolverBilletera(acreditacion);
         acreditarSaldo(billetera, acreditacion.monto());
 
-        Movimiento movimiento = new Movimiento();
-        movimiento.setBilletera(billetera);
-        if (evento.torneoId() != null) {
-            movimiento.setTorneo(torneoRepository.getReferenceById(evento.torneoId()));
-        }
-        if (evento.rifaId() != null) {
-            movimiento.setRifa(rifaRepository.getReferenceById(evento.rifaId()));
-        }
-        if (acreditacion.inscripcionId() != null) {
-            movimiento.setInscripcion(inscripcionRepository.getReferenceById(acreditacion.inscripcionId()));
-        }
-        movimiento.setTipo(tipoMovimiento(acreditacion.rol()));
-        movimiento.setMonto(acreditacion.monto());
-        movimiento.setMoneda(billetera.getMoneda());
-        movimiento.setSaldoResultante(billetera.getSaldoDisponible());
-        movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
-        movimiento.setReferenciaExterna(acreditacion.referencia());
-        movimiento.setDescripcion(truncar(acreditacion.descripcion(), DESCRIPCION_MAX_LENGTH));
-        Movimiento guardado = movimientoRepository.save(movimiento);
+        Movimiento guardado = movimientoRepository.save(crearMovimiento(evento, acreditacion, billetera));
 
         Map<String, Object> detalle = new LinkedHashMap<>();
         detalle.put("tipo", switch (acreditacion.rol()) {
@@ -155,6 +137,28 @@ public class Acreditador {
         billetera.setSaldoDisponible(billetera.getSaldoDisponible().add(monto));
         billetera.setGananciaAcumulada(billetera.getGananciaAcumulada().add(monto));
         billeteraRepository.save(billetera);
+    }
+
+    private Movimiento crearMovimiento(Evento evento, Acreditacion acreditacion, Billetera billetera) {
+        Movimiento movimiento = new Movimiento();
+        movimiento.setBilletera(billetera);
+        if (evento.torneoId() != null) {
+            movimiento.setTorneo(torneoRepository.getReferenceById(evento.torneoId()));
+        }
+        if (evento.rifaId() != null) {
+            movimiento.setRifa(rifaRepository.getReferenceById(evento.rifaId()));
+        }
+        if (acreditacion.inscripcionId() != null) {
+            movimiento.setInscripcion(inscripcionRepository.getReferenceById(acreditacion.inscripcionId()));
+        }
+        movimiento.setTipo(tipoMovimiento(acreditacion.rol()));
+        movimiento.setMonto(acreditacion.monto());
+        movimiento.setMoneda(billetera.getMoneda());
+        movimiento.setSaldoResultante(billetera.getSaldoDisponible());
+        movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
+        movimiento.setReferenciaExterna(acreditacion.referencia());
+        movimiento.setDescripcion(truncar(acreditacion.descripcion(), DESCRIPCION_MAX_LENGTH));
+        return movimiento;
     }
 
     private static TipoMovimiento tipoMovimiento(Rol rol) {
