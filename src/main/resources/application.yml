@@ -129,6 +129,14 @@ app:
     bloque-deploy: ${APP_CRIPTO_BLOQUE_DEPLOY:55324950}   # desde donde la conciliación lee los eventos (HU-608)
     explorador-api-url: ${APP_CRIPTO_EXPLORADOR_API_URL:https://api.etherscan.io/v2/api}
     explorador-api-key: ${BASESCAN_API_KEY:}   # la de BaseScan/Etherscan; sin ella la conciliación responde 503
+    # Retiro de saldo a la wallet con el contrato PasarelaRetiros (HU-610, PICA-455). Sin contrato o sin clave, 503.
+    retiros:
+      contrato: ${PASARELA_RETIROS_ADDRESS:}   # el deploy de PICA-457
+      clave-firmante: ${APP_CRIPTO_RETIROS_CLAVE_FIRMANTE:}   # SECRETO: la clave con la que el back firma los permisos (sin fondos)
+      vigencia: ${APP_CRIPTO_RETIROS_VIGENCIA:1h}   # cuánto tiene el usuario para cobrar un permiso
+      margen-devolucion: ${APP_CRIPTO_RETIROS_MARGEN_DEVOLUCION:5m}   # después del vencimiento, antes de devolver el saldo
+      devolucion-automatica: ${APP_CRIPTO_RETIROS_DEVOLUCION_AUTOMATICA:true}   # devolver el saldo de los permisos vencidos sin cobrar
+      revision: ${APP_CRIPTO_RETIROS_REVISION:60s}   # cada cuánto se buscan
   # Avisos del torneo al canal de Discord del organizador (PICA-369)
   discord:
     espera-base: ${APP_DISCORD_ESPERA_BASE:2s}   # la primera espera ante un 5xx o un error de red; se duplica en cada intento
