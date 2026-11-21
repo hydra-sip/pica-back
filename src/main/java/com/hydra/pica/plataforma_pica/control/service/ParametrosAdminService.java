@@ -17,6 +17,7 @@ import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.domain.ClaveParametro;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.ParametroPlataforma;
 import com.hydra.pica.plataforma_pica.control.dto.ParametroDetalle;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
@@ -37,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ParametrosAdminService {
 
-    static final String ENTIDAD = "PARAMETRO";
+    static final String ENTIDAD = EntidadAuditoria.PARAMETRO.name();
 
     /** El máximo de NUMERIC(12,2). */
     private static final BigDecimal MAXIMO = new BigDecimal("9999999999.99");

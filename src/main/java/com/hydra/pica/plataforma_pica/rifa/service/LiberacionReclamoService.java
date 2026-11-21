@@ -17,6 +17,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
@@ -47,8 +48,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class LiberacionReclamoService {
-
-    private static final String ENTIDAD_AUDITORIA = "RECLAMO_RIFA";
 
     private final ReclamoRifaRepository reclamoRifaRepository;
     private final RifaRepository rifaRepository;
@@ -232,7 +231,7 @@ public class LiberacionReclamoService {
         if (reclamanteOpcional.length > 0 && reclamanteOpcional[0] != null) {
             detalle.put("reclamanteId", reclamanteOpcional[0]);
         }
-        auditoriaService.registrar(ejecutorId, accion, ENTIDAD_AUDITORIA, reclamoId.toString(), detalle);
+        auditoriaService.registrar(ejecutorId, accion, EntidadAuditoria.RECLAMO_RIFA, reclamoId.toString(), detalle);
     }
 
     private ReclamoAdminDetalle detalleActualizado(Long reclamoId) {

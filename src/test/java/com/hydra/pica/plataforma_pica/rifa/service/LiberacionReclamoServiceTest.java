@@ -28,6 +28,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
@@ -209,7 +210,7 @@ class LiberacionReclamoServiceTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> auditCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(auditoriaService).registrar(eq(7L), eq(AccionAuditoria.LIQUIDACION), eq("RECLAMO_RIFA"), eq("1"),
+        verify(auditoriaService).registrar(eq(7L), eq(AccionAuditoria.LIQUIDACION), eq(EntidadAuditoria.RECLAMO_RIFA), eq("1"),
                 auditCaptor.capture());
         assertThat(auditCaptor.getValue())
                 .containsEntry("rifaId", 10L)
@@ -251,7 +252,7 @@ class LiberacionReclamoServiceTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> auditCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(auditoriaService).registrar(eq(7L), eq(AccionAuditoria.REINTEGRO), eq("RECLAMO_RIFA"), eq("1"),
+        verify(auditoriaService).registrar(eq(7L), eq(AccionAuditoria.REINTEGRO), eq(EntidadAuditoria.RECLAMO_RIFA), eq("1"),
                 auditCaptor.capture());
         assertThat(auditCaptor.getValue())
                 .containsEntry("rifaId", 10L)
@@ -275,7 +276,7 @@ class LiberacionReclamoServiceTest {
                 .isInstanceOfSatisfying(ConflictoException.class,
                         e -> assertThat(e.getCodigo()).isEqualTo(CodigoError.CUSTODIA_LIBERADA));
 
-        verify(auditoriaService, never()).registrar(any(), any(), any(), any(), anyMap());
+        verifyNoInteractions(auditoriaService);
     }
 
     private void stubBloqueos() {

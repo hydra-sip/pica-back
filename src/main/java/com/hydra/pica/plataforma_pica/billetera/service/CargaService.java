@@ -20,6 +20,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
@@ -134,7 +135,8 @@ public class CargaService {
         detalleAuditoria.put("descripcion", movimiento.getDescripcion());
         detalleAuditoria.put("saldoResultante", nuevoSaldo);
         detalleAuditoria.put("movimientoId", movimiento.getId());
-        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, "BILLETERA", billetera.getId().toString(), detalleAuditoria);
+        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, EntidadAuditoria.BILLETERA,
+                billetera.getId().toString(), detalleAuditoria);
 
         if (eventos != null) {
             eventos.publishEvent(new MovimientoBilleteraRegistrado(
@@ -172,7 +174,8 @@ public class CargaService {
         }
         detalle.put("estado", "RECHAZADA");
 
-        return auditoriaService.registrarEnTransaccionNueva(usuarioId, AccionAuditoria.PAGO, "BILLETERA", entidadId, detalle);
+        return auditoriaService.registrarEnTransaccionNueva(usuarioId, AccionAuditoria.PAGO,
+                EntidadAuditoria.BILLETERA, entidadId, detalle);
     }
 
     private Movimiento validarYDevolverExistente(Movimiento existente, Long usuarioId) {

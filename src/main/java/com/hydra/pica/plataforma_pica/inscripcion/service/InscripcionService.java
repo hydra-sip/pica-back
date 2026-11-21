@@ -24,6 +24,7 @@ import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.equipo.domain.Equipo;
@@ -412,7 +413,7 @@ public class InscripcionService {
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(usuarioRepository.getReferenceById(actorId));
         auditoria.setAccion(AccionAuditoria.MODIFICACION);
-        auditoria.setEntidad("INSCRIPCION");
+        auditoria.setEntidad(EntidadAuditoria.INSCRIPCION.name());
         auditoria.setEntidadId(String.valueOf(inscripcion.getId()));
         auditoria.setDetalle(detalle);
         auditoriaRepository.save(auditoria);

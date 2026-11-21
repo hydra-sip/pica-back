@@ -10,6 +10,7 @@ import com.hydra.pica.plataforma_pica.common.config.IntentosLoginConfig.Intentos
 import com.hydra.pica.plataforma_pica.common.error.DemasiadosIntentosException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import lombok.RequiredArgsConstructor;
@@ -69,7 +70,7 @@ public class IntentosLogin {
         Auditoria auditoria = new Auditoria();
         auditoria.setAccion(accion);
         auditoria.setUsuario(usuario);
-        auditoria.setEntidad("USUARIO");
+        auditoria.setEntidad(EntidadAuditoria.USUARIO.name());
         auditoria.setEntidadId(usuario == null ? null : String.valueOf(usuario.getId()));
         auditoria.setIp(ip);
         auditoria.setDetalle(Map.of("identificador", normalizar(identificador)));
