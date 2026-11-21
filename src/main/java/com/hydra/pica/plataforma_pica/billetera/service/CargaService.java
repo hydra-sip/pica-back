@@ -76,18 +76,7 @@ public class CargaService {
         }
 
         // 2. Bloqueo pesimista de la billetera del usuario (SELECT ... FOR UPDATE)
-        Billetera billetera = billeteraRepository.findConBloqueoPorUsuarioId(usuarioId)
-                .orElseGet(() -> {
-                    Billetera nueva = new Billetera();
-                    nueva.setUsuario(usuarioRepository.getReferenceById(usuarioId));
-                    nueva.setSaldoDisponible(BigDecimal.ZERO);
-                    nueva.setSaldoRetenido(BigDecimal.ZERO);
-                    nueva.setGananciaAcumulada(BigDecimal.ZERO);
-                    nueva.setMoneda("ARS");
-                    nueva.setEstado(EstadoBilletera.ACTIVA);
-                    billeteraRepository.save(nueva);
-                    return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElse(nueva);
-                });
+        Billetera billetera = Billeteras.obtenerOCrearBloqueada(billeteraRepository, usuarioRepository, usuarioId);
 
         // 3. Verificación de idempotencia tras adquirir el bloqueo (doble verificación concurrente)
         Optional<Movimiento> existenteConBloqueo = movimientoRepository.findByReferenciaExterna(referencia);
@@ -112,7 +101,7 @@ public class CargaService {
         movimiento.setBilletera(billetera);
         movimiento.setTipo(TipoMovimiento.CARGA);
         movimiento.setMonto(montoAcreditado);
-        movimiento.setMoneda(billetera.getMoneda() != null ? billetera.getMoneda() : "ARS");
+        movimiento.setMoneda(billetera.getMoneda() != null ? billetera.getMoneda() : Billetera.MONEDA_POR_DEFECTO);
         movimiento.setSaldoResultante(nuevoSaldo);
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(referencia);

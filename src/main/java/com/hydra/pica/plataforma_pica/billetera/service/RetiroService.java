@@ -49,7 +49,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class RetiroService {
 
     private static final Logger log = LoggerFactory.getLogger(RetiroService.class);
-    private static final String MONEDA_POR_DEFECTO = "ARS";
     private static final int ESCALA_MONTO = 2;
     public static final String MENSAJE_SALDO_INSUFICIENTE = "El saldo disponible no alcanza para el retiro solicitado. Los fondos retenidos no pueden ser movilizados";
 
@@ -113,7 +112,8 @@ public class RetiroService {
      */
     public Movimiento descontar(Long usuarioId, BigDecimal monto, String referencia, String descripcion,
                                 Map<String, Object> detalle) {
-        Billetera billetera = obtenerOCrearBilleteraBloqueada(usuarioId);
+        // bloqueo pesimista de la billetera (SELECT ... FOR UPDATE)
+        Billetera billetera = Billeteras.obtenerOCrearBloqueada(billeteraRepository, usuarioRepository, usuarioId);
         validarBilleteraYSaldo(billetera, monto);
 
         BigDecimal nuevoSaldoDisponible = billetera.getSaldoDisponible().subtract(monto);
@@ -153,22 +153,6 @@ public class RetiroService {
         return cuenta;
     }
 
-    private Billetera obtenerOCrearBilleteraBloqueada(Long usuarioId) {
-        // bloqueo pesimista de la billetera (SELECT ... FOR UPDATE)
-        return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId)
-                .orElseGet(() -> {
-                    Billetera nueva = new Billetera();
-                    nueva.setUsuario(usuarioRepository.getReferenceById(usuarioId));
-                    nueva.setSaldoDisponible(BigDecimal.ZERO);
-                    nueva.setSaldoRetenido(BigDecimal.ZERO);
-                    nueva.setGananciaAcumulada(BigDecimal.ZERO);
-                    nueva.setMoneda(MONEDA_POR_DEFECTO);
-                    nueva.setEstado(EstadoBilletera.ACTIVA);
-                    billeteraRepository.save(nueva);
-                    return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElse(nueva);
-                });
-    }
-
     private static void validarBilleteraYSaldo(Billetera billetera, BigDecimal monto) {
         if (billetera.getEstado() == EstadoBilletera.BLOQUEADA) {
             throw new ProhibidoException(CodigoError.BILLETERA_BLOQUEADA, "La billetera se encuentra bloqueada");
@@ -187,7 +171,7 @@ public class RetiroService {
         movimiento.setBilletera(billetera);
         movimiento.setTipo(TipoMovimiento.RETIRO);
         movimiento.setMonto(monto);
-        movimiento.setMoneda(billetera.getMoneda() != null ? billetera.getMoneda() : MONEDA_POR_DEFECTO);
+        movimiento.setMoneda(billetera.getMoneda() != null ? billetera.getMoneda() : Billetera.MONEDA_POR_DEFECTO);
         movimiento.setSaldoResultante(nuevoSaldoDisponible);
         movimiento.setEstado(EstadoMovimiento.PENDIENTE);
         movimiento.setReferenciaExterna(referencia);

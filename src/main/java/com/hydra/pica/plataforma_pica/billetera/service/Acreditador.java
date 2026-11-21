@@ -34,8 +34,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 public class Acreditador {
 
-    private static final int DESCRIPCION_MAX_LENGTH = 255;
-
     private final BilleteraRepository billeteraRepository;
     private final MovimientoRepository movimientoRepository;
     private final TorneoRepository torneoRepository;
@@ -139,7 +137,7 @@ public class Acreditador {
         return acreditacion.rol() == Rol.PLATAFORMA
                 ? billeteraRepository.findPlataformaConBloqueo()
                         .orElseThrow(() -> new IllegalStateException("Falta la billetera de la plataforma (V40)"))
-                : bloqueada(acreditacion.usuarioId());
+                : Billeteras.obtenerOCrearBloqueada(billeteraRepository, usuarioRepository, acreditacion.usuarioId());
     }
 
     private void acreditarSaldo(Billetera billetera, BigDecimal monto) {
@@ -166,7 +164,7 @@ public class Acreditador {
         movimiento.setSaldoResultante(billetera.getSaldoDisponible());
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(acreditacion.referencia());
-        movimiento.setDescripcion(truncar(acreditacion.descripcion(), DESCRIPCION_MAX_LENGTH));
+        movimiento.setDescripcion(Movimiento.truncarDescripcion(acreditacion.descripcion()));
         return movimiento;
     }
 
@@ -176,19 +174,5 @@ public class Acreditador {
             case HONORARIO -> TipoMovimiento.HONORARIO;
             default -> TipoMovimiento.LIQUIDACION;
         };
-    }
-
-    private static String truncar(String texto, int longitudMaxima) {
-        return texto.length() > longitudMaxima ? texto.substring(0, longitudMaxima) : texto;
-    }
-
-    private Billetera bloqueada(Long usuarioId) {
-        return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElseGet(() -> {
-            // respaldo por si algún test persiste un Usuario directo sin pasar por UsuarioService.crear
-            Billetera nueva = new Billetera();
-            nueva.setUsuario(usuarioRepository.getReferenceById(usuarioId));
-            billeteraRepository.saveAndFlush(nueva);
-            return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElseThrow();
-        });
     }
 }

@@ -224,7 +224,7 @@ public class Reintegrador {
         movimiento.setSaldoResultante(billetera.getSaldoDisponible());
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(referencia);
-        movimiento.setDescripcion(descripcion.length() > 255 ? descripcion.substring(0, 255) : descripcion);
+        movimiento.setDescripcion(Movimiento.truncarDescripcion(descripcion));
         Movimiento guardado = movimientoRepository.save(movimiento);
 
         Map<String, Object> detalle = new LinkedHashMap<>();

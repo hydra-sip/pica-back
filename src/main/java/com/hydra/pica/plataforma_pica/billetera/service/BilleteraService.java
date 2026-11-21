@@ -1,13 +1,11 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
-import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
-import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
 import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
 import com.hydra.pica.plataforma_pica.billetera.dto.BilleteraResponse;
 import com.hydra.pica.plataforma_pica.billetera.dto.MovimientoBilleteraResponse;
@@ -41,13 +39,13 @@ public class BilleteraService {
 
     @Transactional
     public BilleteraResponse obtenerBilletera(Long usuarioId) {
-        Billetera billetera = obtenerOCrearBilletera(usuarioId);
+        Billetera billetera = Billeteras.obtenerOCrear(billeteraRepository, usuarioRepository, usuarioId);
         return BilleteraResponse.de(billetera);
     }
 
     @Transactional
     public Page<MovimientoBilleteraResponse> listarMovimientos(Long usuarioId, Pageable pageable) {
-        Billetera billetera = obtenerOCrearBilletera(usuarioId);
+        Billetera billetera = Billeteras.obtenerOCrear(billeteraRepository, usuarioRepository, usuarioId);
 
         // Se ignora el sort del cliente: el orden es siempre cronológico inverso estricto (creadoEn DESC, id DESC)
         Pageable ordenado = PageRequest.of(
@@ -72,19 +70,6 @@ public class BilleteraService {
         // lo que acredita la liquidación de una rifa la trae; una compra, por su ticket
         return pagina.map(m -> MovimientoBilleteraResponse.de(m,
                 m.getRifa() != null ? m.getRifa() : rifasPorMovimiento.get(m.getId()), cripto.exploradorUrl()));
-    }
-
-    private Billetera obtenerOCrearBilletera(Long usuarioId) {
-        return billeteraRepository.findByUsuarioId(usuarioId).orElseGet(() -> {
-            Billetera nueva = new Billetera();
-            nueva.setUsuario(usuarioRepository.getReferenceById(usuarioId));
-            nueva.setSaldoDisponible(BigDecimal.ZERO);
-            nueva.setSaldoRetenido(BigDecimal.ZERO);
-            nueva.setGananciaAcumulada(BigDecimal.ZERO);
-            nueva.setMoneda("ARS");
-            nueva.setEstado(EstadoBilletera.ACTIVA);
-            return billeteraRepository.save(nueva);
-        });
     }
 }
 
