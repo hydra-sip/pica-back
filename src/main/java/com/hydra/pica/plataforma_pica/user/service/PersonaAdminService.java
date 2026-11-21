@@ -6,6 +6,7 @@ import java.util.Locale;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.common.error.ViolacionesIntegridad;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
@@ -134,7 +135,7 @@ public class PersonaAdminService {
         try {
             return personaRepository.saveAndFlush(persona);
         } catch (DataIntegrityViolationException e) {
-            if (!PersonaService.UQ_DOCUMENTO.equals(PersonaService.nombreDeConstraint(e))) {
+            if (!ViolacionesIntegridad.esConstraint(e, PersonaService.UQ_DOCUMENTO)) {
                 throw e;
             }
             throw new ConflictoException(CodigoError.DOCUMENTO_DUPLICADO,

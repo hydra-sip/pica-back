@@ -7,12 +7,12 @@ import java.util.Objects;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
+import com.hydra.pica.plataforma_pica.common.error.ViolacionesIntegridad;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
 import com.hydra.pica.plataforma_pica.user.repository.PersonaRepository;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -71,7 +71,7 @@ public class PersonaService {
             // flush ahora para que el choque salte acá y no al cerrar la transacción
             return personaRepository.saveAndFlush(nueva(datos));
         } catch (DataIntegrityViolationException e) {
-            if (!UQ_DOCUMENTO.equals(nombreDeConstraint(e))) {
+            if (!ViolacionesIntegridad.esConstraint(e, UQ_DOCUMENTO)) {
                 throw e;
             }
             throw new ConflictoException(CodigoError.DOCUMENTO_DUPLICADO,
@@ -102,7 +102,7 @@ public class PersonaService {
             // mismo caso que en crear: dos pedidos a la vez con el mismo documento
             personaRepository.saveAndFlush(persona);
         } catch (DataIntegrityViolationException e) {
-            if (!UQ_DOCUMENTO.equals(nombreDeConstraint(e))) {
+            if (!ViolacionesIntegridad.esConstraint(e, UQ_DOCUMENTO)) {
                 throw e;
             }
             throw new ConflictoException(CodigoError.DOCUMENTO_DUPLICADO,
@@ -113,14 +113,6 @@ public class PersonaService {
     /** El documento se guarda y se compara siempre en mayúsculas ("ab123" y "AB123" son el mismo). */
     private static String mayusculas(String nroDoc) {
         return nroDoc == null ? null : nroDoc.toUpperCase(Locale.ROOT);
-    }
-
-    static String nombreDeConstraint(DataIntegrityViolationException e) {
-        Throwable causa = e;
-        while (causa != null && !(causa instanceof ConstraintViolationException)) {
-            causa = causa.getCause();
-        }
-        return causa == null ? null : ((ConstraintViolationException) causa).getConstraintName();
     }
 
     private Persona nueva(DatosPersona datos) {

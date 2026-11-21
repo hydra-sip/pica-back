@@ -88,7 +88,7 @@ public class Acreditador {
         Billetera billetera = acreditacion.rol() == Rol.PLATAFORMA
                 ? billeteraRepository.findPlataformaConBloqueo()
                         .orElseThrow(() -> new IllegalStateException("Falta la billetera de la plataforma (V40)"))
-                : bloqueada(acreditacion.usuarioId());
+                : Billeteras.obtenerOCrearBloqueada(billeteraRepository, usuarioRepository, acreditacion.usuarioId());
         billetera.setSaldoDisponible(billetera.getSaldoDisponible().add(acreditacion.monto()));
         billetera.setGananciaAcumulada(billetera.getGananciaAcumulada().add(acreditacion.monto()));
         billeteraRepository.save(billetera);
@@ -114,8 +114,7 @@ public class Acreditador {
         movimiento.setSaldoResultante(billetera.getSaldoDisponible());
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(acreditacion.referencia());
-        String descripcion = acreditacion.descripcion();
-        movimiento.setDescripcion(descripcion.length() > 255 ? descripcion.substring(0, 255) : descripcion);
+        movimiento.setDescripcion(Movimiento.truncarDescripcion(acreditacion.descripcion()));
         Movimiento guardado = movimientoRepository.save(movimiento);
 
         Map<String, Object> detalle = new LinkedHashMap<>();
@@ -151,15 +150,5 @@ public class Acreditador {
 
     static BigDecimal suma(List<Acreditacion> acreditaciones) {
         return acreditaciones.stream().map(Acreditacion::monto).reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    private Billetera bloqueada(Long usuarioId) {
-        return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElseGet(() -> {
-            // respaldo por si algún test persiste un Usuario directo sin pasar por UsuarioService.crear
-            Billetera nueva = new Billetera();
-            nueva.setUsuario(usuarioRepository.getReferenceById(usuarioId));
-            billeteraRepository.saveAndFlush(nueva);
-            return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElseThrow();
-        });
     }
 }

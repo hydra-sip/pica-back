@@ -43,7 +43,7 @@ public class CobroConSaldo implements CobroService {
     public Movimiento cobrar(SolicitudCobro solicitud) {
         String referencia = PREFIJO_REFERENCIA + solicitud.claveIdempotencia();
         // primero el bloqueo: un reintento simultáneo con la misma clave espera y encuentra el movimiento del otro
-        Billetera billetera = bloqueada(solicitud.usuarioId());
+        Billetera billetera = Billeteras.obtenerOCrearBloqueada(billeteraRepository, usuarioRepository, solicitud.usuarioId());
 
         var anterior = movimientoRepository.findByReferenciaExterna(referencia);
         if (anterior.isPresent()) {
@@ -80,7 +80,7 @@ public class CobroConSaldo implements CobroService {
     @Override
     @Transactional
     public void exigirSaldo(Long usuarioId, BigDecimal total) {
-        exigirDisponible(bloqueada(usuarioId), total);
+        exigirDisponible(Billeteras.obtenerOCrearBloqueada(billeteraRepository, usuarioRepository, usuarioId), total);
     }
 
     private static void exigirDisponible(Billetera billetera, BigDecimal monto) {
@@ -91,17 +91,6 @@ public class CobroConSaldo implements CobroService {
         if (faltante.signum() > 0) {
             throw new SaldoInsuficienteException(faltante.setScale(2));
         }
-    }
-
-    // el bloqueo dura hasta que termina la transacción de quien cobra
-    private Billetera bloqueada(Long usuarioId) {
-        return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElseGet(() -> {
-            // respaldo por si algún test persiste un Usuario directo sin pasar por UsuarioService.crear
-            Billetera nueva = new Billetera();
-            nueva.setUsuario(usuarioRepository.getReferenceById(usuarioId));
-            billeteraRepository.saveAndFlush(nueva);
-            return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElseThrow();
-        });
     }
 
     // la misma clave para otro pago es un error de quien cobra, no un reintento
