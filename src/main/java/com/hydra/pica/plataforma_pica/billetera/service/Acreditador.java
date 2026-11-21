@@ -85,10 +85,7 @@ public class Acreditador {
     }
 
     private void acreditar(Evento evento, Acreditacion acreditacion) {
-        Billetera billetera = acreditacion.rol() == Rol.PLATAFORMA
-                ? billeteraRepository.findPlataformaConBloqueo()
-                        .orElseThrow(() -> new IllegalStateException("Falta la billetera de la plataforma (V40)"))
-                : bloqueada(acreditacion.usuarioId());
+        Billetera billetera = resolverBilletera(acreditacion);
         billetera.setSaldoDisponible(billetera.getSaldoDisponible().add(acreditacion.monto()));
         billetera.setGananciaAcumulada(billetera.getGananciaAcumulada().add(acreditacion.monto()));
         billeteraRepository.save(billetera);
@@ -151,6 +148,13 @@ public class Acreditador {
 
     static BigDecimal suma(List<Acreditacion> acreditaciones) {
         return acreditaciones.stream().map(Acreditacion::monto).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private Billetera resolverBilletera(Acreditacion acreditacion) {
+        return acreditacion.rol() == Rol.PLATAFORMA
+                ? billeteraRepository.findPlataformaConBloqueo()
+                        .orElseThrow(() -> new IllegalStateException("Falta la billetera de la plataforma (V40)"))
+                : bloqueada(acreditacion.usuarioId());
     }
 
     private Billetera bloqueada(Long usuarioId) {
