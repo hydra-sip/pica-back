@@ -64,6 +64,7 @@ class ParametroAdminControllerTest {
     @WithMockUser(authorities = "ROL_VER")
     @DisplayName("Con otro permiso del admin es 403 SIN_PERMISO")
     void otroPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ADMIN));
         mockMvc.perform(get("/api/v1/admin/parametros"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));

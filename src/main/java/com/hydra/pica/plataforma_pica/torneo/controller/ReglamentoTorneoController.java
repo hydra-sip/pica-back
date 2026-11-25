@@ -1,9 +1,10 @@
 package com.hydra.pica.plataforma_pica.torneo.controller;
 
 import java.io.IOException;
+import java.util.Optional;
 
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
 import com.hydra.pica.plataforma_pica.torneo.service.ReglamentoTorneoService;
 import org.springframework.http.ContentDisposition;
@@ -11,7 +12,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,45 +31,37 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class ReglamentoTorneoController {
 
     private final ReglamentoTorneoService reglamentoService;
-    private final CurrentUserProvider currentUserProvider;
 
-    public ReglamentoTorneoController(ReglamentoTorneoService reglamentoService,
-            CurrentUserProvider currentUserProvider) {
+    public ReglamentoTorneoController(ReglamentoTorneoService reglamentoService) {
         this.reglamentoService = reglamentoService;
-        this.currentUserProvider = currentUserProvider;
     }
 
     /** Multipart con el archivo en la parte {@code archivo}. */
     @PostMapping
     @PreAuthorize("hasAuthority('TORNEO_GESTIONAR')")
-    public TorneoInformacion subir(@PathVariable Long id, @RequestParam("archivo") MultipartFile archivo)
-            throws IOException {
+    public TorneoInformacion subir(@PathVariable Long id, @RequestParam("archivo") MultipartFile archivo,
+            @UsuarioActual Long usuarioId) throws IOException {
         if (archivo.getSize() > ReglamentoTorneoService.TAMANIO_MAXIMO) {
             throw ReglamentoTorneoService.archivoInvalido(ErrorCampo.Codigo.LONGITUD, "Supera el tamaño máximo");
         }
         // la misma URL del POST, absoluta: es la del GET
         String url = ServletUriComponentsBuilder.fromCurrentRequestUri().toUriString();
-        return reglamentoService.subir(usuarioActual(), id, archivo.getBytes(), url);
+        return reglamentoService.subir(usuarioId, id, archivo.getBytes(), url);
     }
 
     @DeleteMapping
     @PreAuthorize("hasAuthority('TORNEO_GESTIONAR')")
-    public TorneoInformacion quitar(@PathVariable Long id) {
-        return reglamentoService.quitar(usuarioActual(), id);
+    public TorneoInformacion quitar(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return reglamentoService.quitar(usuarioId, id);
     }
 
     @GetMapping
-    public ResponseEntity<byte[]> ver(@PathVariable Long id) {
-        byte[] pdf = reglamentoService.pdf(currentUserProvider.getCurrentUserId(), id);
+    public ResponseEntity<byte[]> ver(@PathVariable Long id, @UsuarioActual(requerido = false) Long usuarioId) {
+        byte[] pdf = reglamentoService.pdf(Optional.ofNullable(usuarioId), id);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.inline().filename("reglamento-" + id + ".pdf").build().toString())
                 .body(pdf);
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
     }
 }

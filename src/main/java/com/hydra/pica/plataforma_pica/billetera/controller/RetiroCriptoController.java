@@ -9,12 +9,11 @@ import com.hydra.pica.plataforma_pica.billetera.dto.SolicitarRetiroCriptoRequest
 import com.hydra.pica.plataforma_pica.billetera.service.RetiroCriptoService;
 import com.hydra.pica.plataforma_pica.common.config.CriptoConfig.CriptoProperties;
 import com.hydra.pica.plataforma_pica.common.config.CriptoConfig.RetirosCriptoProperties;
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,32 +32,28 @@ public class RetiroCriptoController {
     private final RetiroCriptoService retiroCriptoService;
     private final CriptoProperties cripto;
     private final RetirosCriptoProperties retiros;
-    private final CurrentUserProvider currentUserProvider;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public RetiroCriptoResponse solicitar(@Valid @RequestBody SolicitarRetiroCriptoRequest request) {
-        return respuesta(retiroCriptoService.solicitar(usuarioActual(), request.monto(), request.destino()));
+    public RetiroCriptoResponse solicitar(@Valid @RequestBody SolicitarRetiroCriptoRequest request,
+            @UsuarioActual Long usuarioId) {
+        return respuesta(retiroCriptoService.solicitar(usuarioId, request.monto(), request.destino()));
     }
 
     /** Los permisos que el usuario todavía puede cobrar, para retomarlos si cerró la pestaña. */
     @GetMapping
-    public List<RetiroCriptoResponse> pendientes() {
-        return retiroCriptoService.pendientes(usuarioActual()).stream().map(this::respuesta).toList();
+    public List<RetiroCriptoResponse> pendientes(@UsuarioActual Long usuarioId) {
+        return retiroCriptoService.pendientes(usuarioId).stream().map(this::respuesta).toList();
     }
 
     @PostMapping("/{referencia}/confirmar")
     public RetiroCriptoResponse confirmar(@PathVariable String referencia,
-                                          @Valid @RequestBody ConfirmarRetiroCriptoRequest request) {
-        return respuesta(retiroCriptoService.confirmar(usuarioActual(), referencia, request.hash()));
+                                          @Valid @RequestBody ConfirmarRetiroCriptoRequest request,
+                                          @UsuarioActual Long usuarioId) {
+        return respuesta(retiroCriptoService.confirmar(usuarioId, referencia, request.hash()));
     }
 
     private RetiroCriptoResponse respuesta(RetiroCripto retiro) {
         return RetiroCriptoResponse.de(retiro, retiros.contrato(), cripto.chainId(), cripto.exploradorUrl());
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
     }
 }

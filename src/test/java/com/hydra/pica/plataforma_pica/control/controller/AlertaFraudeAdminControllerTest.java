@@ -84,6 +84,7 @@ class AlertaFraudeAdminControllerTest {
     @WithMockUser(authorities = "AUDITORIA_VER")
     @DisplayName("Sin ALERTA_FRAUDE_REVISAR responde 403 SIN_PERMISO")
     void sinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(SOPORTE));
         mockMvc.perform(get("/api/v1/admin/alertas-fraude"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));

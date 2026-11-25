@@ -82,6 +82,7 @@ class AdminReclamoControllerTest {
     @WithMockUser(authorities = "ROL_VER")
     @DisplayName("Sin permiso RECLAMO_RESOLVER responden 403 SIN_PERMISO")
     void sinPermisoResponde403() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(SOPORTE_ID));
         mockMvc.perform(get("/api/v1/admin/reclamos"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));

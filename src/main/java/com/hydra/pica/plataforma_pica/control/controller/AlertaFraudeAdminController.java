@@ -3,7 +3,7 @@ package com.hydra.pica.plataforma_pica.control.controller;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.common.dto.PaginaResponse;
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.control.domain.EstadoAlertaFraude;
 import com.hydra.pica.plataforma_pica.control.domain.ReglaFraude;
 import com.hydra.pica.plataforma_pica.control.dto.AlertaFraudeDetalle;
@@ -13,7 +13,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,7 +31,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class AlertaFraudeAdminController {
 
     private final AlertaFraudeAdminService alertaFraudeAdminService;
-    private final CurrentUserProvider currentUserProvider;
 
     @GetMapping
     public PaginaResponse<AlertaFraudeDetalle> listar(
@@ -63,9 +61,8 @@ public class AlertaFraudeAdminController {
     @PostMapping("/{id}/revisar")
     public AlertaFraudeDetalle revisar(
             @PathVariable Long id,
-            @RequestBody(required = false) RevisarAlertaFraudeRequest request) {
-        Long revisorId = currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+            @RequestBody(required = false) RevisarAlertaFraudeRequest request,
+            @UsuarioActual Long revisorId) {
         return alertaFraudeAdminService.revisar(revisorId, id, request);
     }
 }

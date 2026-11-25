@@ -1,7 +1,7 @@
 package com.hydra.pica.plataforma_pica.torneo.controller;
 
 import com.hydra.pica.plataforma_pica.common.dto.PaginaResponse;
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionEnRevision;
 import com.hydra.pica.plataforma_pica.torneo.dto.Comprobante;
 import com.hydra.pica.plataforma_pica.torneo.dto.RechazoCancelacionRequest;
@@ -16,7 +16,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,7 +35,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class RevisionCancelacionController {
 
     private final RevisionCancelacionService revisionCancelacionService;
-    private final CurrentUserProvider currentUserProvider;
 
     /** Las que esperan a soporte, de la más vieja a la más nueva. */
     @GetMapping
@@ -58,17 +56,13 @@ public class RevisionCancelacionController {
     }
 
     @PostMapping("/{torneoId}/aprobar")
-    public ResolucionCancelacion aprobar(@PathVariable Long torneoId) {
-        return revisionCancelacionService.aprobar(usuarioActual(), torneoId);
+    public ResolucionCancelacion aprobar(@PathVariable Long torneoId, @UsuarioActual Long usuarioId) {
+        return revisionCancelacionService.aprobar(usuarioId, torneoId);
     }
 
     @PostMapping("/{torneoId}/rechazar")
-    public ResolucionCancelacion rechazar(@PathVariable Long torneoId, @RequestBody RechazoCancelacionRequest request) {
-        return revisionCancelacionService.rechazar(usuarioActual(), torneoId, request.motivo());
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+    public ResolucionCancelacion rechazar(@PathVariable Long torneoId, @RequestBody RechazoCancelacionRequest request,
+            @UsuarioActual Long usuarioId) {
+        return revisionCancelacionService.rechazar(usuarioId, torneoId, request.motivo());
     }
 }

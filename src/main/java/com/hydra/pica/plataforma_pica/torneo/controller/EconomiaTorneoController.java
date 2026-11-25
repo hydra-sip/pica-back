@@ -3,7 +3,7 @@ package com.hydra.pica.plataforma_pica.torneo.controller;
 import java.net.URI;
 import java.util.List;
 
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.torneo.dto.EconomiaTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoRequest;
@@ -17,7 +17,6 @@ import com.hydra.pica.plataforma_pica.torneo.service.PublicacionTorneoService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -40,36 +39,35 @@ public class EconomiaTorneoController {
     private final EconomiaTorneoService economiaTorneoService;
     private final PublicacionTorneoService publicacionTorneoService;
     private final HonorariosService honorariosService;
-    private final CurrentUserProvider currentUserProvider;
 
     public EconomiaTorneoController(EconomiaTorneoService economiaTorneoService,
-            PublicacionTorneoService publicacionTorneoService, HonorariosService honorariosService,
-            CurrentUserProvider currentUserProvider) {
+            PublicacionTorneoService publicacionTorneoService, HonorariosService honorariosService) {
         this.economiaTorneoService = economiaTorneoService;
         this.publicacionTorneoService = publicacionTorneoService;
         this.honorariosService = honorariosService;
-        this.currentUserProvider = currentUserProvider;
     }
 
     @PutMapping("/economia")
     public TorneoInformacion actualizarEconomia(@PathVariable Long id,
-            @Valid @RequestBody EconomiaTorneoRequest request) {
-        return economiaTorneoService.actualizarEconomia(usuarioActual(), id, request);
+            @Valid @RequestBody EconomiaTorneoRequest request,
+            @UsuarioActual Long usuarioId) {
+        return economiaTorneoService.actualizarEconomia(usuarioId, id, request);
     }
 
     @GetMapping("/resumen-economico")
-    public ResumenEconomico resumen(@PathVariable Long id) {
-        return economiaTorneoService.resumen(usuarioActual(), id);
+    public ResumenEconomico resumen(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return economiaTorneoService.resumen(usuarioId, id);
     }
 
     @GetMapping("/gastos")
-    public List<GastoDetalle> gastos(@PathVariable Long id) {
-        return economiaTorneoService.gastos(usuarioActual(), id);
+    public List<GastoDetalle> gastos(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return economiaTorneoService.gastos(usuarioId, id);
     }
 
     @PostMapping("/gastos")
-    public ResponseEntity<GastoDetalle> agregarGasto(@PathVariable Long id, @Valid @RequestBody GastoRequest request) {
-        GastoDetalle creado = economiaTorneoService.agregarGasto(usuarioActual(), id, request);
+    public ResponseEntity<GastoDetalle> agregarGasto(@PathVariable Long id, @Valid @RequestBody GastoRequest request,
+            @UsuarioActual Long usuarioId) {
+        GastoDetalle creado = economiaTorneoService.agregarGasto(usuarioId, id, request);
         URI ubicacion = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{gastoId}")
                 .buildAndExpand(creado.gastoId())
@@ -79,37 +77,37 @@ public class EconomiaTorneoController {
 
     @PutMapping("/gastos/{gastoId}")
     public GastoDetalle modificarGasto(@PathVariable Long id, @PathVariable int gastoId,
-            @Valid @RequestBody GastoRequest request) {
-        return economiaTorneoService.modificarGasto(usuarioActual(), id, gastoId, request);
+            @Valid @RequestBody GastoRequest request,
+            @UsuarioActual Long usuarioId) {
+        return economiaTorneoService.modificarGasto(usuarioId, id, gastoId, request);
     }
 
     @DeleteMapping("/gastos/{gastoId}")
-    public ResponseEntity<Void> eliminarGasto(@PathVariable Long id, @PathVariable int gastoId) {
-        economiaTorneoService.eliminarGasto(usuarioActual(), id, gastoId);
+    public ResponseEntity<Void> eliminarGasto(@PathVariable Long id, @PathVariable int gastoId,
+            @UsuarioActual Long usuarioId) {
+        economiaTorneoService.eliminarGasto(usuarioId, id, gastoId);
         return ResponseEntity.noContent().build();
     }
 
     /** HU-604: deposita un honorario para un árbitro designado o registra un gasto común pagado por fuera. */
     @PostMapping("/gastos/{gastoId}/pago")
     public GastoDetalle pagarGasto(@PathVariable Long id, @PathVariable int gastoId,
-            @Valid @RequestBody PagoGastoRequest request) {
-        return honorariosService.pagar(usuarioActual(), id, gastoId, request);
+            @Valid @RequestBody PagoGastoRequest request,
+            @UsuarioActual Long usuarioId) {
+        return honorariosService.pagar(usuarioId, id, gastoId, request);
     }
 
     /** HU-604: el honorario depositado vuelve a la billetera del organizador. */
     @DeleteMapping("/gastos/{gastoId}/pago")
-    public GastoDetalle retirarHonorario(@PathVariable Long id, @PathVariable int gastoId) {
-        return honorariosService.retirar(usuarioActual(), id, gastoId);
+    public GastoDetalle retirarHonorario(@PathVariable Long id, @PathVariable int gastoId,
+            @UsuarioActual Long usuarioId) {
+        return honorariosService.retirar(usuarioId, id, gastoId);
     }
 
     /** El body solo trae la aceptación de los términos; sin ella responde 400 antes de llegar al servicio. */
     @PostMapping("/publicar")
-    public TorneoInformacion publicar(@PathVariable Long id, @Valid @RequestBody PublicarTorneoRequest request) {
-        return publicacionTorneoService.publicar(usuarioActual(), id);
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+    public TorneoInformacion publicar(@PathVariable Long id, @Valid @RequestBody PublicarTorneoRequest request,
+            @UsuarioActual Long usuarioId) {
+        return publicacionTorneoService.publicar(usuarioId, id);
     }
 }

@@ -2,7 +2,7 @@ package com.hydra.pica.plataforma_pica.reputacion.controller;
 
 import java.net.URI;
 import java.util.List;
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.reputacion.dto.JugadorSancionable;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionDetalle;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionRequest;
@@ -10,7 +10,6 @@ import com.hydra.pica.plataforma_pica.reputacion.service.SancionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,11 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class SancionController {
 
     private final SancionService sancionService;
-    private final CurrentUserProvider currentUserProvider;
 
     @PostMapping("/torneos/{id}/sanciones")
-    public ResponseEntity<SancionDetalle> aplicar(@PathVariable Long id, @Valid @RequestBody SancionRequest request) {
-        SancionDetalle sancion = sancionService.aplicar(usuarioActual(), id, request);
+    public ResponseEntity<SancionDetalle> aplicar(@PathVariable Long id, @Valid @RequestBody SancionRequest request,
+            @UsuarioActual Long usuarioId) {
+        SancionDetalle sancion = sancionService.aplicar(usuarioId, id, request);
         return ResponseEntity.created(URI.create("/api/v1/torneos/" + id + "/sanciones")).body(sancion);
     }
 
@@ -44,17 +43,13 @@ public class SancionController {
 
     @GetMapping("/torneos/{id}/sanciones/jugadores")
     public List<JugadorSancionable> sancionables(@PathVariable Long id,
-            @RequestParam(required = false) Long partidoId) {
-        return sancionService.sancionables(usuarioActual(), id, partidoId);
+            @RequestParam(required = false) Long partidoId,
+            @UsuarioActual Long usuarioId) {
+        return sancionService.sancionables(usuarioId, id, partidoId);
     }
 
     @GetMapping("/sanciones/mias")
-    public List<SancionDetalle> mias() {
-        return sancionService.mias(usuarioActual());
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+    public List<SancionDetalle> mias(@UsuarioActual Long usuarioId) {
+        return sancionService.mias(usuarioId);
     }
 }
