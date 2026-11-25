@@ -5,12 +5,11 @@ import java.util.List;
 import com.hydra.pica.plataforma_pica.billetera.dto.CrearCuentaBancariaRequest;
 import com.hydra.pica.plataforma_pica.billetera.dto.CuentaBancariaResponse;
 import com.hydra.pica.plataforma_pica.billetera.service.CuentaBancariaService;
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,28 +29,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class CuentaBancariaController {
 
     private final CuentaBancariaService cuentaBancariaService;
-    private final CurrentUserProvider currentUserProvider;
 
     @GetMapping
-    public List<CuentaBancariaResponse> listar() {
-        return cuentaBancariaService.listar(usuarioActual());
+    public List<CuentaBancariaResponse> listar(@UsuarioActual Long usuarioId) {
+        return cuentaBancariaService.listar(usuarioId);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public CuentaBancariaResponse crear(@Valid @RequestBody CrearCuentaBancariaRequest request) {
-        return cuentaBancariaService.crear(usuarioActual(), request);
+    public CuentaBancariaResponse crear(@Valid @RequestBody CrearCuentaBancariaRequest request,
+            @UsuarioActual Long usuarioId) {
+        return cuentaBancariaService.crear(usuarioId, request);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void eliminar(@PathVariable Long id) {
-        cuentaBancariaService.eliminar(usuarioActual(), id);
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+    public void eliminar(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        cuentaBancariaService.eliminar(usuarioId, id);
     }
 }
 

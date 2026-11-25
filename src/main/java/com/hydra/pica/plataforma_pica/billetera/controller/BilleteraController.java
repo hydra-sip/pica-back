@@ -15,7 +15,7 @@ import com.hydra.pica.plataforma_pica.billetera.service.CargaCriptoService;
 import com.hydra.pica.plataforma_pica.billetera.service.CargaService;
 import com.hydra.pica.plataforma_pica.billetera.service.RetiroService;
 import com.hydra.pica.plataforma_pica.common.config.CriptoConfig.CriptoProperties;
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -23,7 +23,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,24 +46,25 @@ public class BilleteraController {
     private final CargaCriptoService cargaCriptoService;
     private final RetiroService retiroService;
     private final CriptoProperties cripto;
-    private final CurrentUserProvider currentUserProvider;
 
     @GetMapping
-    public BilleteraResponse verBilletera() {
-        return billeteraService.obtenerBilletera(usuarioActual());
+    public BilleteraResponse verBilletera(@UsuarioActual Long usuarioId) {
+        return billeteraService.obtenerBilletera(usuarioId);
     }
 
     @GetMapping("/movimientos")
-    public Page<MovimientoBilleteraResponse> listarMovimientos(@PageableDefault(size = 20) Pageable pageable) {
-        return billeteraService.listarMovimientos(usuarioActual(), pageable);
+    public Page<MovimientoBilleteraResponse> listarMovimientos(@PageableDefault(size = 20) Pageable pageable,
+            @UsuarioActual Long usuarioId) {
+        return billeteraService.listarMovimientos(usuarioId, pageable);
     }
 
     @PostMapping("/cargas")
     @ResponseStatus(HttpStatus.CREATED)
-    public MovimientoBilleteraResponse cargarSaldo(@Valid @RequestBody CargaRequest request) {
+    public MovimientoBilleteraResponse cargarSaldo(@Valid @RequestBody CargaRequest request,
+            @UsuarioActual Long usuarioId) {
         String referencia = "sim-carga-" + UUID.randomUUID();
         Movimiento movimiento = cargaService.acreditar(
-                usuarioActual(),
+                usuarioId,
                 request.monto(),
                 referencia,
                 "Carga de saldo simulada");
@@ -73,15 +73,17 @@ public class BilleteraController {
 
     @PostMapping("/cargas/cripto")
     @ResponseStatus(HttpStatus.CREATED)
-    public CargaCriptoResponse iniciarCargaCripto(@Valid @RequestBody CargaRequest request) {
-        return CargaCriptoResponse.de(cargaCriptoService.iniciar(usuarioActual(), request.monto()),
+    public CargaCriptoResponse iniciarCargaCripto(@Valid @RequestBody CargaRequest request,
+            @UsuarioActual Long usuarioId) {
+        return CargaCriptoResponse.de(cargaCriptoService.iniciar(usuarioId, request.monto()),
                 cripto.contrato(), cripto.chainId());
     }
 
     @PostMapping("/cargas/cripto/{referencia}/confirmar")
     public MovimientoBilleteraResponse confirmarCargaCripto(@PathVariable String referencia,
-                                                            @Valid @RequestBody ConfirmarCargaCriptoRequest request) {
-        Movimiento movimiento = cargaCriptoService.confirmar(usuarioActual(), referencia, request.hash());
+                                                            @Valid @RequestBody ConfirmarCargaCriptoRequest request,
+                                                            @UsuarioActual Long usuarioId) {
+        Movimiento movimiento = cargaCriptoService.confirmar(usuarioId, referencia, request.hash());
         return MovimientoBilleteraResponse.de(movimiento, null, cripto.exploradorUrl());
     }
 
@@ -92,14 +94,10 @@ public class BilleteraController {
 
     @PostMapping("/retiros")
     @ResponseStatus(HttpStatus.CREATED)
-    public MovimientoBilleteraResponse solicitarRetiro(@Valid @RequestBody SolicitarRetiroRequest request) {
-        Movimiento movimiento = retiroService.solicitar(usuarioActual(), request.cuentaId(), request.monto());
+    public MovimientoBilleteraResponse solicitarRetiro(@Valid @RequestBody SolicitarRetiroRequest request,
+            @UsuarioActual Long usuarioId) {
+        Movimiento movimiento = retiroService.solicitar(usuarioId, request.cuentaId(), request.monto());
         return MovimientoBilleteraResponse.de(movimiento, null, cripto.exploradorUrl());
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
     }
 }
 

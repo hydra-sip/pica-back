@@ -2,7 +2,7 @@ package com.hydra.pica.plataforma_pica.torneo.controller;
 
 import java.net.URI;
 
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
@@ -22,7 +22,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -47,24 +46,22 @@ public class TorneoController {
     private final MisTorneosService misTorneosService;
     private final InscripcionTorneoService inscripcionTorneoService;
     private final DiscordTorneoService discordTorneoService;
-    private final CurrentUserProvider currentUserProvider;
 
     public TorneoController(TorneoService torneoService, MisTorneosService misTorneosService,
-            InscripcionTorneoService inscripcionTorneoService, DiscordTorneoService discordTorneoService,
-            CurrentUserProvider currentUserProvider) {
+            InscripcionTorneoService inscripcionTorneoService, DiscordTorneoService discordTorneoService) {
         this.torneoService = torneoService;
         this.misTorneosService = misTorneosService;
         this.inscripcionTorneoService = inscripcionTorneoService;
         this.discordTorneoService = discordTorneoService;
-        this.currentUserProvider = currentUserProvider;
     }
 
     @GetMapping("/mis-torneos")
     public MisTorneos misTorneos(@RequestParam(required = false) String q,
             @RequestParam(required = false) EstadoTorneo estado,
             @RequestParam(required = false) String disciplina,
-            @PageableDefault(size = 20) Pageable pageable) {
-        return misTorneosService.listar(usuarioActual(), q, estado, disciplina, pageable);
+            @PageableDefault(size = 20) Pageable pageable,
+            @UsuarioActual Long usuarioId) {
+        return misTorneosService.listar(usuarioId, q, estado, disciplina, pageable);
     }
 
     @GetMapping("/opciones")
@@ -73,13 +70,14 @@ public class TorneoController {
     }
 
     @GetMapping("/{id}")
-    public TorneoInformacion ver(@PathVariable Long id) {
-        return torneoService.detalle(usuarioActual(), id);
+    public TorneoInformacion ver(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return torneoService.detalle(usuarioId, id);
     }
 
     @PostMapping
-    public ResponseEntity<TorneoInformacion> crear(@Valid @RequestBody InformacionTorneoRequest request) {
-        TorneoInformacion creado = torneoService.crear(usuarioActual(), request);
+    public ResponseEntity<TorneoInformacion> crear(@Valid @RequestBody InformacionTorneoRequest request,
+            @UsuarioActual Long usuarioId) {
+        TorneoInformacion creado = torneoService.crear(usuarioId, request);
         URI ubicacion = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
                 .buildAndExpand(creado.id())
@@ -89,43 +87,42 @@ public class TorneoController {
 
     @PutMapping("/{id}/informacion")
     public TorneoInformacion actualizarInformacion(@PathVariable Long id,
-            @Valid @RequestBody InformacionTorneoRequest request) {
-        return torneoService.actualizarInformacion(usuarioActual(), id, request);
+            @Valid @RequestBody InformacionTorneoRequest request,
+            @UsuarioActual Long usuarioId) {
+        return torneoService.actualizarInformacion(usuarioId, id, request);
     }
 
     /** HU-206: las inscripciones del torneo, sin borradores y de la más vieja a la más nueva. */
     @GetMapping("/{id}/inscripciones")
     public Page<InscripcionDelTorneo> inscripciones(@PathVariable Long id,
             @RequestParam(required = false) EstadoInscripcion estado,
-            @PageableDefault(size = 20) Pageable pageable) {
-        return inscripcionTorneoService.listar(usuarioActual(), id, estado, pageable);
+            @PageableDefault(size = 20) Pageable pageable,
+            @UsuarioActual Long usuarioId) {
+        return inscripcionTorneoService.listar(usuarioId, id, estado, pageable);
     }
 
     /** HU-206: cierra la inscripción antes de la fecha; el cierre es definitivo. */
     @PostMapping("/{id}/cerrar-inscripcion")
-    public TorneoInformacion cerrarInscripcion(@PathVariable Long id) {
-        return inscripcionTorneoService.cerrar(usuarioActual(), id);
+    public TorneoInformacion cerrarInscripcion(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return inscripcionTorneoService.cerrar(usuarioId, id);
     }
 
     /** La ventana de check-in de todos los cruces (HU-308); con el torneo publicado y sin terminar. */
     @PutMapping("/{id}/checkin")
-    public TorneoInformacion configurarCheckin(@PathVariable Long id, @RequestBody CheckinTorneoRequest request) {
-        return torneoService.configurarCheckin(usuarioActual(), id, request);
+    public TorneoInformacion configurarCheckin(@PathVariable Long id, @RequestBody CheckinTorneoRequest request,
+            @UsuarioActual Long usuarioId) {
+        return torneoService.configurarCheckin(usuarioId, id, request);
     }
 
     /** PICA-370: el webhook del canal de Discord al que van los avisos del torneo; al guardarlo va uno de prueba. */
     @PutMapping("/{id}/discord")
-    public TorneoInformacion guardarDiscord(@PathVariable Long id, @Valid @RequestBody DiscordTorneoRequest request) {
-        return discordTorneoService.guardar(usuarioActual(), id, request.url());
+    public TorneoInformacion guardarDiscord(@PathVariable Long id, @Valid @RequestBody DiscordTorneoRequest request,
+            @UsuarioActual Long usuarioId) {
+        return discordTorneoService.guardar(usuarioId, id, request.url());
     }
 
     @DeleteMapping("/{id}/discord")
-    public TorneoInformacion quitarDiscord(@PathVariable Long id) {
-        return discordTorneoService.quitar(usuarioActual(), id);
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+    public TorneoInformacion quitarDiscord(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return discordTorneoService.quitar(usuarioId, id);
     }
 }
