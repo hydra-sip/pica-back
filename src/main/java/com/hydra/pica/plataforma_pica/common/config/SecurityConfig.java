@@ -77,6 +77,8 @@ public class SecurityConfig {
                                 // el sorteo de grupos, para el portal de verificación (CR-02)
                                 "/api/v1/torneos/*/sorteo-grupos",
                                 "/api/v1/torneos/*/grupos",
+                                // el historial de reprogramaciones, para la ficha (CR-01)
+                                "/api/v1/torneos/*/reprogramaciones",
                                 // las rifas para quien compra (PICA-221)
                                 "/api/v1/rifas/publicas",
                                 "/api/v1/rifas/publicas/*",

@@ -54,6 +54,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.GastosAdministrativos;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.repository.ReprogramacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
@@ -101,6 +102,7 @@ public class InscripcionService {
     private final CierreInscripcion cierreInscripcion;
     private final AuditoriaRepository auditoriaRepository;
     private final BloqueoService bloqueoService;
+    private final ReprogramacionRepository reprogramacionRepository;
 
     /**
      * Crea el borrador. En un torneo individual se inscribe el usuario y no lleva cuerpo; en uno por equipos
@@ -617,9 +619,12 @@ public class InscripcionService {
     }
 
     // HU-206: la confirmación que completa el cupo cierra la inscripción en la misma transacción, con el torneo ya
-    // bloqueado; así nadie más llega a pagar. El cierre es automático: no lo hace quien paga
+    // bloqueado; así nadie más llega a pagar. El cierre es automático: no lo hace quien paga. Mientras corre el plazo
+    // de una reprogramación (CR-01) no se cierra: los que rechacen la nueva fecha todavía pueden liberar lugares, y
+    // al vencer el plazo se cierra si el cupo sigue completo
     private void cerrarSiSeCompletoElCupo(Torneo torneo) {
-        if (confirmadas(torneo.getId()) >= torneo.getCupoMaximo()) {
+        if (confirmadas(torneo.getId()) >= torneo.getCupoMaximo()
+                && !reprogramacionRepository.existsByTorneoIdAndPlazoProcesadoEnIsNull(torneo.getId())) {
             cierreInscripcion.cerrar(torneo, MotivoCierre.CUPO, null);
         }
     }

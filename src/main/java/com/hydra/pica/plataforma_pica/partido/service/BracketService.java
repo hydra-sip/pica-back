@@ -33,8 +33,11 @@ import com.hydra.pica.plataforma_pica.partido.dto.BracketTorneo;
 import com.hydra.pica.plataforma_pica.partido.dto.LadoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
+import com.hydra.pica.plataforma_pica.partido.repository.GrupoInscripcionRepository;
+import com.hydra.pica.plataforma_pica.partido.repository.GrupoRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
+import com.hydra.pica.plataforma_pica.partido.repository.PronosticoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignado;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
@@ -47,6 +50,7 @@ import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -81,6 +85,9 @@ public class BracketService {
     private final AuditoriaRepository auditoriaRepository;
     private final UsuarioRepository usuarioRepository;
     private final SorteoGruposService sorteoGruposService;
+    private final GrupoRepository grupoRepository;
+    private final GrupoInscripcionRepository grupoInscripcionRepository;
+    private final PronosticoRepository pronosticoRepository;
     private final org.springframework.context.ApplicationEventPublisher eventos;
 
     @Transactional
@@ -130,6 +137,29 @@ public class BracketService {
         sortear(torneo, organizadorId, anterior);
         torneoRepository.subirVersionBracket(torneoId);
         return armar(torneo);
+    }
+
+    /**
+     * Deshace la llave, y con fase de grupos también los grupos, al reprogramar el torneo (CR-01): se borran los
+     * partidos con sus lados y pronósticos, y el torneo queda sin semilla, como antes de generarla. Igual que
+     * regenerar, solo sin resultados cargados; si no, 409 BRACKET_CON_RESULTADOS. Corre dentro de la transacción de
+     * quien lo llama, con la fila del torneo bloqueada.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void descartar(Torneo torneo) {
+        Long torneoId = torneo.getId();
+        if (juegaRepository.existsByPartidoTorneoIdAndPuntajeIsNotNull(torneoId)) {
+            throw new ConflictoException(CodigoError.BRACKET_CON_RESULTADOS,
+                    "El torneo " + torneoId + " ya tiene resultados cargados: la llave no se descarta");
+        }
+        pronosticoRepository.borrarDelTorneo(torneoId);
+        juegaRepository.borrarDelTorneo(torneoId);
+        partidoRepository.borrarDelTorneo(torneoId);
+        grupoInscripcionRepository.borrarDelTorneo(torneoId);
+        grupoRepository.borrarDelTorneo(torneoId);
+        torneo.setSemillaBracket(null);
+        torneo.setSemillaFirma(null);
+        torneoRepository.subirVersionBracket(torneoId);
     }
 
     /** Público (PICA-216): el de un torneo publicado; sin generar, con las rondas vacías. */
