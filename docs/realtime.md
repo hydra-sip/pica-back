@@ -98,6 +98,7 @@ Notifica eventos que alteran el desarrollo de un torneo (bracket, estado y pozo 
 - `RESULTADO_OBJETADO`: Un resultado fue objetado y el bracket volvió a su estado previo.
 - `PARTIDO_SIN_PRESENTES`: Al vencer la ventana de check-in no se presentó ninguno de los dos (HU-309): el partido quedó sin fecha o descalificaron a los dos, según el criterio del torneo. Un walkover y un pase directo llegan como `RESULTADO_CONFIRMADO`.
 - `ESTADO_CAMBIADO`: Cambió el estado del torneo (ej. `INSCRIPCION_CERRADA` $\to$ `EN_CURSO` $\to$ `FINALIZADO`).
+- `TORNEO_REPROGRAMADO`: El organizador cambió las fechas (CR-01): la ficha y la consola vuelven a pedir el torneo y el historial (`GET /torneos/{id}/reprogramaciones`). Si además cambió el estado (en curso → inscripción cerrada), llega también `ESTADO_CAMBIADO`.
 - `POZO_ACTUALIZADO`: Se incrementó el pozo del torneo tras la venta de números de una rifa asociada.
 - `SYNC`: Snapshot completo enviado a un cliente que se reconecta.
 

@@ -28,6 +28,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Reprogramacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.ReprogramacionDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.ReprogramacionRequest;
+import com.hydra.pica.plataforma_pica.torneo.event.PlazoReprogramacionVencido;
+import com.hydra.pica.plataforma_pica.torneo.event.ReprogramacionPorVencer;
 import com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado;
 import com.hydra.pica.plataforma_pica.torneo.event.TorneoReprogramado;
 import com.hydra.pica.plataforma_pica.torneo.repository.ReprogramacionRepository;
@@ -61,6 +63,8 @@ public class ReprogramacionTorneoService {
     private static final Set<EstadoTorneo> REPROGRAMABLES = Set.of(EstadoTorneo.INSCRIPCION_ABIERTA,
             EstadoTorneo.INSCRIPCION_CERRADA, EstadoTorneo.EN_CURSO);
     private static final int MOTIVO_MAXIMO = 500;
+    /** Cuánto antes de que venza el plazo para rechazar sale el recordatorio (CR-01-4). */
+    static final Duration RECORDATORIO = Duration.ofDays(1);
 
     private final TorneosPropios torneosPropios;
     private final TorneoRepository torneoRepository;
@@ -156,6 +160,30 @@ public class ReprogramacionTorneoService {
         if (torneo.getEstado() != anterior) {
             eventos.publishEvent(new TorneoEstadoCambiado(torneoId, anterior, torneo.getEstado()));
         }
+        eventos.publishEvent(new PlazoReprogramacionVencido(torneoId, reprogramacion.getId()));
+        return true;
+    }
+
+    /**
+     * El recordatorio a los que siguen inscriptos (CR-01-4): si al plazo para rechazar le queda {@link #RECORDATORIO}
+     * o menos y todavía no salió, lo marca y publica {@link ReprogramacionPorVencer}. Bloquea la fila del torneo y
+     * vuelve a mirar, así sale una sola vez aunque corra en varias réplicas.
+     *
+     * @return si lo mandó
+     */
+    @Transactional
+    public boolean recordarSiFaltaPoco(Long torneoId, Instant ahora) {
+        Torneo torneo = torneoRepository.buscarBloqueado(torneoId).orElse(null);
+        Reprogramacion reprogramacion = torneo == null ? null
+                : reprogramacionRepository.findByTorneoIdAndPlazoProcesadoEnIsNull(torneoId).orElse(null);
+        if (reprogramacion == null || reprogramacion.getRecordatorioEnviadoEn() != null
+                || !reprogramacion.getRechazoHasta().isAfter(ahora)
+                || reprogramacion.getRechazoHasta().isAfter(ahora.plus(RECORDATORIO))) {
+            return false;
+        }
+        reprogramacion.setRecordatorioEnviadoEn(ahora);
+        reprogramacionRepository.saveAndFlush(reprogramacion);
+        eventos.publishEvent(new ReprogramacionPorVencer(torneoId, reprogramacion.getId()));
         return true;
     }
 

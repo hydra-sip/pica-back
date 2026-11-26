@@ -65,6 +65,14 @@ public class Reprogramacion {
     @Column(name = "plazo_procesado_en")
     private Instant plazoProcesadoEn;
 
+    /** Cuándo salió el recordatorio del día antes de que venza el plazo (CR-01-4, V70); sale una sola vez. */
+    @Column(name = "recordatorio_enviado_en")
+    private Instant recordatorioEnviadoEn;
+
+    /** Los que se bajaron en esta reprogramación (CR-01-3), para el aviso al organizador al vencer el plazo. */
+    @Column(name = "rechazos", nullable = false)
+    private int rechazos;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "creada_por", nullable = false)
     private Usuario creadaPor;

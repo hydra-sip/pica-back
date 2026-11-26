@@ -74,6 +74,8 @@ public class RechazoReprogramacionService {
 
         inscripcion.setEstado(EstadoInscripcion.REINTEGRADA);
         inscripcionRepository.saveAndFlush(inscripcion);
+        reprogramacion.setRechazos(reprogramacion.getRechazos() + 1);
+        reprogramacionRepository.saveAndFlush(reprogramacion);
         BigDecimal reintegrado = reintegrador.reintegrarInscripcion(torneoId, inscripcionId,
                 "reint-t" + torneoId + "-reprog-" + inscripcionId,
                 "Reintegro de la inscripción al torneo " + torneo.getNombre() + ": la nueva fecha no te sirve");
