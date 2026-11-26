@@ -2,10 +2,14 @@ package com.hydra.pica.plataforma_pica.reputacion;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.hasItem;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -24,9 +28,18 @@ import com.hydra.pica.plataforma_pica.reputacion.domain.Gravedad;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionDetalle;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionRequest;
 import com.hydra.pica.plataforma_pica.reputacion.service.FairPlayService;
+import com.hydra.pica.plataforma_pica.reputacion.service.InsigniaService;
 import com.hydra.pica.plataforma_pica.reputacion.service.SancionService;
+import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
+import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
+import com.hydra.pica.plataforma_pica.rifa.service.CierreVentaService;
+import com.hydra.pica.plataforma_pica.rifa.service.Drand;
+import com.hydra.pica.plataforma_pica.rifa.service.RifaService;
+import com.hydra.pica.plataforma_pica.rifa.service.SorteoRifaService;
+import com.hydra.pica.plataforma_pica.rifa.service.VentaRifaService;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
+import com.hydra.pica.plataforma_pica.torneo.domain.SelloTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.dto.DesignarArbitroRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
@@ -43,6 +56,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
@@ -71,7 +85,14 @@ class PerfilJugadorIntegracionTest {
     @Autowired private InscripcionService inscripcionService;
     @Autowired private BracketService bracketService;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private InsigniaService insigniaService;
+    @Autowired private RifaService rifaService;
+    @Autowired private VentaRifaService ventaRifaService;
+    @Autowired private CierreVentaService cierreVentaService;
+    @Autowired private SorteoRifaService sorteoRifaService;
     @Autowired private ObjectMapper objectMapper;
+
+    @MockitoSpyBean private Drand drand;
     @Autowired private EntityManager entityManager;
 
     private Long organizador;
@@ -79,6 +100,10 @@ class PerfilJugadorIntegracionTest {
 
     @BeforeEach
     void preparar() {
+        doAnswer(i -> {
+            long ronda = i.getArgument(0);
+            return new Drand.Pulso(ronda, SelloTorneo.sha256("ronda:" + ronda), "firma");
+        }).when(drand).pulso(anyLong());
         organizador = escenario.usuario("org_perfil_jugador", "ORGANIZADOR").getId();
         arbitro = escenario.usuario("juez_perfil_jugador", "ARBITRO").getId();
     }
@@ -182,10 +207,13 @@ class PerfilJugadorIntegracionTest {
     }
 
     @Test
-    void unJugadorNuevoNoTieneUltimosTorneos() throws Exception {
+    void unJugadorNuevoTieneLasListasVacias() throws Exception {
         Long nuevo = escenario.usuario("jugador_sin_torneos", "PARTICIPANTE").getId();
 
-        perfil(nuevo).andExpect(jsonPath("$.ultimosTorneos").isEmpty());
+        perfil(nuevo)
+                .andExpect(jsonPath("$.ultimosTorneos").isEmpty())
+                .andExpect(jsonPath("$.rifasGanadas").isEmpty())
+                .andExpect(jsonPath("$.insignias").isEmpty());
     }
 
     @Test
@@ -277,23 +305,59 @@ class PerfilJugadorIntegracionTest {
                 .andExpect(jsonPath("$.ultimosTorneos[0].equipo").value("Los del perfil"));
     }
 
+    @Test
+    void unJugadorQueGanoUnaRifaLaVeEnSuPerfil() throws Exception {
+        Long comprador = escenario.usuario("comprador_perfil", "PARTICIPANTE").getId();
+
+        Long rifa = rifaGanada(comprador, "Rifa del perfil", 7);
+
+        perfil(comprador)
+                .andExpect(jsonPath("$.rifasGanadas.length()").value(1))
+                .andExpect(jsonPath("$.rifasGanadas[0].rifaId").value(rifa))
+                .andExpect(jsonPath("$.rifasGanadas[0].rifaTitulo").value("Rifa del perfil"))
+                .andExpect(jsonPath("$.rifasGanadas[0].puesto").value(1))
+                .andExpect(jsonPath("$.rifasGanadas[0].numeroGanador").value(7))
+                .andExpect(jsonPath("$.rifasGanadas[0].fecha").isNotEmpty());
+    }
+
+    @Test
+    void unJugadorQueJugoSuPrimerTorneoVeLaInsignia() throws Exception {
+        Usuario jugador = escenario.usuario("jugador_insignia", "PARTICIPANTE");
+
+        finalizado(jugador, "Copa de la insignia", EN_UN_MES, EN_UN_MES.plus(1, ChronoUnit.DAYS));
+
+        perfil(jugador.getId())
+                .andExpect(jsonPath("$.insignias[*].codigo").value(hasItem("PRIMER_TORNEO_JUGADO")))
+                .andExpect(jsonPath("$.insignias[?(@.codigo == 'PRIMER_TORNEO_JUGADO')].nombre").isNotEmpty())
+                .andExpect(jsonPath("$.insignias[?(@.codigo == 'PRIMER_TORNEO_JUGADO')].otorgadaEn").isNotEmpty());
+    }
+
     /** Un campo privado agregado por error (email, documento, datos bancarios) rompe este test. */
     @Test
     void elPerfilTraeSoloLasClavesPublicas() throws Exception {
         Usuario jugador = escenario.usuario("jugador_claves", "PARTICIPANTE");
         finalizado(jugador, "Copa de las claves", EN_UN_MES, EN_UN_MES.plus(1, ChronoUnit.DAYS));
+        rifaGanada(jugador.getId(), "Rifa de las claves", 3);
 
         JsonNode perfil = json(jugador.getId());
 
         assertThat(claves(perfil)).containsExactlyInAnyOrder(
                 "id", "username", "nombreCompleto", "avatar", "historial", "fairPlay",
-                "ultimosTorneos");
+                "ultimosTorneos", "rifasGanadas", "insignias");
         assertThat(claves(perfil.get("historial"))).containsExactlyInAnyOrder(
                 "torneosJugados", "victorias", "derrotas", "podios");
         assertThat(claves(perfil.get("fairPlay"))).containsExactlyInAnyOrder("valor", "actualizadoEn");
         assertThat(perfil.get("ultimosTorneos")).hasSize(1);
         assertThat(claves(perfil.get("ultimosTorneos").get(0))).containsExactlyInAnyOrder(
                 "torneoId", "slug", "nombre", "disciplina", "fechaFin", "posicion", "equipo");
+        assertThat(perfil.get("rifasGanadas")).hasSize(1);
+        assertThat(claves(perfil.get("rifasGanadas").get(0))).containsExactlyInAnyOrder(
+                "rifaId", "rifaTitulo", "torneoId", "torneoNombre", "torneoSlug", "puesto", "numeroGanador", "fecha");
+        assertThat(perfil.get("insignias")).isNotEmpty();
+        for (JsonNode insignia : perfil.get("insignias")) {
+            assertThat(claves(insignia)).containsExactlyInAnyOrder(
+                    "codigo", "nombre", "descripcion", "icono", "otorgadaEn");
+        }
     }
 
     // --- helpers --------------------------------------------------------------
@@ -359,12 +423,49 @@ class PerfilJugadorIntegracionTest {
         entityManager.flush();
     }
 
-    /** Un torneo de dos que el jugador juega contra un rival nuevo y que termina con la final. */
+    /**
+     * Un torneo de dos que el jugador juega contra un rival nuevo y que termina con la final. Evalúa las insignias como
+     * lo hace {@code InsigniaAutomatica} después del commit, que este test no llega a hacer.
+     */
     private Long finalizado(Usuario jugador, String nombre, Instant inicio, Instant fin) {
         Usuario rival = escenario.usuario("rival_" + nombre.toLowerCase().replaceAll("\\W", "_"), "PARTICIPANTE");
         Long torneo = escenario.individualEnCurso(organizador, arbitro, nombre, inicio, fin, List.of(jugador, rival));
-        jugar(escenario.partido(torneo, 1, 1), 1, 0);
+        Long laFinal = escenario.partido(torneo, 1, 1);
+        jugar(laFinal, 1, 0);
+        insigniaService.evaluarResultadoConfirmado(torneo, laFinal, true);
+        entityManager.flush();
         return torneo;
+    }
+
+    /**
+     * Una rifa suelta de un premio que el comprador gana con el único número vendido. Evalúa las insignias como lo
+     * hace {@code InsigniaAutomatica} después del commit.
+     */
+    private Long rifaGanada(Long comprador, String titulo, int numero) {
+        Long rifa = rifaService.crear(organizador, new RifaRequest(titulo, null, 1, 50, new BigDecimal("500"),
+                Instant.now().plus(1, ChronoUnit.DAYS), Instant.now().plus(5, ChronoUnit.DAYS),
+                Instant.now().plus(6, ChronoUnit.DAYS), null, null)).id();
+        rifaService.reemplazarPremios(organizador, rifa, List.of(new PremioRifaRequest(new BigDecimal("100"),
+                "Premio único")));
+        rifaService.publicar(organizador, rifa);
+        jdbc.update("UPDATE rifa SET venta_desde = now() - interval '1 hour' WHERE id = ?", rifa);
+        entityManager.clear();
+        ventaRifaService.reservar(comprador, rifa, List.of(numero));
+        ventaRifaService.comprar(comprador, rifa, List.of(numero), "compra-" + rifa + "-" + numero);
+        entityManager.flush();
+        jdbc.update("""
+                UPDATE rifa SET venta_desde = now() - interval '3 hours',
+                                venta_hasta = now() - interval '2 hours',
+                                sorteada_en = now() - interval '1 hour'
+                WHERE id = ?""", rifa);
+        entityManager.clear();
+        cierreVentaService.cerrarSiVencio(rifa, Instant.now().minus(90, ChronoUnit.MINUTES));
+        sorteoRifaService.sortear(organizador, rifa);
+        entityManager.flush();
+        entityManager.clear();
+        insigniaService.evaluarRifaSorteada(rifa);
+        entityManager.flush();
+        return rifa;
     }
 
     /** El resultado que hace ganar al usuario, juegue de local o de visitante. */

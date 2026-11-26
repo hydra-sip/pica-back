@@ -20,6 +20,7 @@ public class PerfilJugadorService {
     private final UsuarioRepository usuarioRepository;
     private final HistorialCompetitivoService historialService;
     private final FairPlayService fairPlayService;
+    private final InsigniaService insigniaService;
 
     /** 404 USUARIO_NO_ENCONTRADO si el usuario no existe o está dado de baja; el bloqueado se muestra igual. */
     @Transactional(readOnly = true)
@@ -34,6 +35,8 @@ public class PerfilJugadorService {
         return new PerfilJugador(usuario.getId(), identidad.username(), identidad.nombreCompleto(), null,
                 historialService.de(usuarioId),
                 new IndiceFairPlay(fairPlay.valor(), fairPlay.actualizadoEn()),
-                historialService.ultimosTorneos(usuarioId));
+                historialService.ultimosTorneos(usuarioId),
+                insigniaService.rifasGanadas(usuarioId),
+                insigniaService.insigniasDe(usuarioId));
     }
 }

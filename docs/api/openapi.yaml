@@ -2794,6 +2794,8 @@ paths:
         `GET /usuarios/{id}/fair-play`, con sesión. `ultimosTorneos` trae hasta 5 torneos que terminó, con el mismo
         criterio que `historial.torneosJugados` (FINALIZADOS, en los que jugó al menos un partido cerrado con rival):
         del más reciente al más viejo por la fecha de fin planificada (la de inicio si no tiene) y, si empatan, por id.
+        También las rifas que ganó y las insignias que obtuvo (HU-804). La marca «no confiable» no va: el organizador
+        la ve en la lista de inscripciones.
         Nunca trae documento, email ni datos bancarios. Un jugador que nunca jugó tiene todo en cero, las listas
         vacías y el fair play en el valor inicial (FAIR_PLAY_INICIAL). Un usuario bloqueado se
         muestra igual. 404 `USUARIO_NO_ENCONTRADO` si no existe o está dado de baja.
@@ -4835,7 +4837,7 @@ components:
         torneosProximos: {type: array, items: {$ref: '#/components/schemas/TorneoResumen'}}
     PerfilJugador:
       type: object
-      required: [id, username, nombreCompleto, avatar, historial, fairPlay, ultimosTorneos]
+      required: [id, username, nombreCompleto, avatar, historial, fairPlay, ultimosTorneos, rifasGanadas, insignias]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         username: {type: string}
@@ -4853,6 +4855,36 @@ components:
           type: array
           maxItems: 5
           items: {$ref: '#/components/schemas/TorneoJugado'}
+        rifasGanadas:
+          type: array
+          description: La más reciente primero
+          items: {$ref: '#/components/schemas/RifaGanada'}
+        insignias:
+          type: array
+          items: {$ref: '#/components/schemas/InsigniaObtenida'}
+    RifaGanada:
+      type: object
+      required: [rifaId, rifaTitulo, torneoId, torneoNombre, torneoSlug, puesto, numeroGanador, fecha]
+      description: HU-804. Un premio de una rifa sorteada (o liquidada) que ganó el usuario con un número suyo
+      properties:
+        rifaId: {$ref: '#/components/schemas/Id'}
+        rifaTitulo: {type: string}
+        torneoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'Null si la rifa no está asociada a un torneo'}
+        torneoNombre: {type: [string, 'null']}
+        torneoSlug: {type: [string, 'null']}
+        puesto: {type: integer, minimum: 1}
+        numeroGanador: {type: [integer, 'null']}
+        fecha: {type: [string, 'null'], format: date-time, description: Cuándo se sorteó}
+    InsigniaObtenida:
+      type: object
+      required: [codigo, nombre, descripcion, icono, otorgadaEn]
+      description: HU-804. Una insignia del catálogo que el usuario obtuvo
+      properties:
+        codigo: {type: string, examples: [PRIMER_TORNEO_JUGADO]}
+        nombre: {type: string}
+        descripcion: {type: string}
+        icono: {type: string}
+        otorgadaEn: {type: string, format: date-time}
     TorneoJugado:
       type: object
       required: [torneoId, slug, nombre, disciplina, fechaFin, posicion, equipo]

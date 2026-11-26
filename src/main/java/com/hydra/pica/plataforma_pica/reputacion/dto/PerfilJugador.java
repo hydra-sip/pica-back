@@ -14,7 +14,9 @@ public record PerfilJugador(
         String avatar,
         HistorialCompetitivo historial,
         IndiceFairPlay fairPlay,
-        List<TorneoJugado> ultimosTorneos) {
+        List<TorneoJugado> ultimosTorneos,
+        List<RifaGanada> rifasGanadas,
+        List<InsigniaObtenida> insignias) {
 
     /**
      * El índice de fair play actual, sin el historial de movimientos: las sanciones y su gravedad quedan detrás de
