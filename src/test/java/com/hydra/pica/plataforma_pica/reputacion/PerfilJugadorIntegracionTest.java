@@ -13,6 +13,11 @@ import com.hydra.pica.plataforma_pica.EscenarioTorneo;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.service.ResultadoService;
+import com.hydra.pica.plataforma_pica.reputacion.domain.Gravedad;
+import com.hydra.pica.plataforma_pica.reputacion.dto.SancionDetalle;
+import com.hydra.pica.plataforma_pica.reputacion.dto.SancionRequest;
+import com.hydra.pica.plataforma_pica.reputacion.service.FairPlayService;
+import com.hydra.pica.plataforma_pica.reputacion.service.SancionService;
 import com.hydra.pica.plataforma_pica.user.service.UsuarioEdicionService;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +46,8 @@ class PerfilJugadorIntegracionTest {
     @Autowired private EscenarioTorneo escenario;
     @Autowired private UsuarioEdicionService usuarioEdicionService;
     @Autowired private ResultadoService resultadoService;
+    @Autowired private SancionService sancionService;
+    @Autowired private FairPlayService fairPlayService;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private EntityManager entityManager;
 
@@ -127,6 +134,30 @@ class PerfilJugadorIntegracionTest {
                 .andExpect(jsonPath("$.historial.podios").value(1));
     }
 
+    @Test
+    void unJugadorCuyoIndiceNuncaSeMovioTieneElFairPlayInicial() throws Exception {
+        Long nuevo = escenario.usuario("jugador_fair_play", "PARTICIPANTE").getId();
+
+        perfil(nuevo)
+                .andExpect(jsonPath("$.fairPlay.valor").value(100))
+                .andExpect(jsonPath("$.fairPlay.actualizadoEn").isEmpty());
+    }
+
+    @Test
+    void despuesDeUnaSancionElPerfilMuestraElIndiceNuevoPeroNoLaSancion() throws Exception {
+        Long torneo = escenario.individualEnCurso(organizador, arbitro, "Copa sancionada", "jugador_sancion_", 2);
+        Long sancionado = escenario.jugador(escenario.partido(torneo, 1, 1), "LOCAL");
+        SancionDetalle sancion = sancionService.aplicar(organizador, torneo,
+                new SancionRequest(sancionado, null, Gravedad.MEDIA, "Conducta antideportiva"));
+        // lo que hace FairPlayAutomatico después del commit, que este test no llega a hacer
+        fairPlayService.registrarSancion(sancionado, torneo, sancion.id(), Gravedad.MEDIA);
+        entityManager.flush();
+
+        perfil(sancionado)
+                .andExpect(jsonPath("$.fairPlay.valor").value(85))
+                .andExpect(jsonPath("$.fairPlay.actualizadoEn").isNotEmpty());
+    }
+
     /** Un campo privado agregado por error (email, documento, datos bancarios) rompe este test. */
     @Test
     void elPerfilTraeSoloLasClavesPublicas() throws Exception {
@@ -135,9 +166,10 @@ class PerfilJugadorIntegracionTest {
         JsonNode perfil = json(jugador);
 
         assertThat(claves(perfil)).containsExactlyInAnyOrder(
-                "id", "username", "nombreCompleto", "avatar", "historial");
+                "id", "username", "nombreCompleto", "avatar", "historial", "fairPlay");
         assertThat(claves(perfil.get("historial"))).containsExactlyInAnyOrder(
                 "torneosJugados", "victorias", "derrotas", "podios");
+        assertThat(claves(perfil.get("fairPlay"))).containsExactlyInAnyOrder("valor", "actualizadoEn");
     }
 
     // --- helpers --------------------------------------------------------------

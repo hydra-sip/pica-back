@@ -2789,8 +2789,10 @@ paths:
       security: []
       description: >-
         HU-801. Público (sin login obligatorio): identidad visible (`nombreCompleto` sale de nombres y apellidos de la
-        persona, o del username si no tiene; `avatar` siempre null por ahora) y el historial competitivo. Nunca trae
-        documento, email ni datos bancarios. Un jugador que nunca jugó tiene todo en cero. Un usuario bloqueado se
+        persona, o del username si no tiene; `avatar` siempre null por ahora), el historial competitivo y el valor
+        actual del índice de fair play (HU-802), sin su historial: las sanciones y su gravedad siguen en
+        `GET /usuarios/{id}/fair-play`, con sesión. Nunca trae documento, email ni datos bancarios. Un jugador que
+        nunca jugó tiene todo en cero y el fair play en el valor inicial (FAIR_PLAY_INICIAL). Un usuario bloqueado se
         muestra igual. 404 `USUARIO_NO_ENCONTRADO` si no existe o está dado de baja.
       responses:
         '200':
@@ -4830,13 +4832,20 @@ components:
         torneosProximos: {type: array, items: {$ref: '#/components/schemas/TorneoResumen'}}
     PerfilJugador:
       type: object
-      required: [id, username, nombreCompleto, avatar, historial]
+      required: [id, username, nombreCompleto, avatar, historial, fairPlay]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         username: {type: string}
         nombreCompleto: {type: string}
         avatar: {type: [string, 'null'], description: 'Siempre null: la plataforma todavía no tiene avatares'}
         historial: {$ref: '#/components/schemas/HistorialCompetitivo'}
+        fairPlay:
+          type: object
+          required: [valor, actualizadoEn]
+          description: El índice de fair play actual, sin el historial de movimientos
+          properties:
+            valor: {type: integer, minimum: 0, examples: [85]}
+            actualizadoEn: {type: [string, 'null'], format: date-time, description: 'Null: nunca se movió, tiene el inicial'}
     HistorialCompetitivo:
       type: object
       required: [torneosJugados, victorias, derrotas, podios]
