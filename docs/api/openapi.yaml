@@ -3999,13 +3999,43 @@ paths:
       x-owner: Tomás
       description: >-
         Solo quien se inscribió (el capitán, en una de equipo). Sale de los movimientos del pago: número, fecha,
-        quién pagó, concepto, monto, gastos administrativos, total y en qué quedó la custodia. El de una compra de
-        números es su ticket (`GET /tickets/{id}`). 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o es de otro;
-        `COMPROBANTE_NO_ENCONTRADO` si no tiene un pago (pendiente, o de un torneo sin costo).
+        quién pagó, concepto, monto, gastos administrativos, total y en qué quedó la custodia. Si la inscripción se
+        devolvió al rechazar una reprogramación (CR-01-3), sigue mostrando el pago con la custodia REINTEGRADA. El de
+        una compra de números es su ticket (`GET /tickets/{id}`). 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o es de
+        otro; `COMPROBANTE_NO_ENCONTRADO` si no tiene un pago (pendiente, o de un torneo sin costo).
       responses:
         '200': {description: El comprobante, content: {application/json: {schema: {$ref: '#/components/schemas/ComprobantePago'}}}}
         '401': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
+  /api/v1/inscripciones/{id}/rechazo-reprogramacion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Inscripciones]
+      summary: Rechazar la nueva fecha del torneo
+      x-jira: PICA-392
+      x-permiso: INSCRIPCION_GESTIONAR
+      x-owner: Laura
+      description: >-
+        CR-01-3. El participante de la individual o el capitán del equipo dice que la nueva fecha de un torneo
+        reprogramado (`POST /torneos/{id}/reprogramaciones`) no le sirve, dentro del plazo (`rechazoHasta`). La
+        inscripción pasa a REINTEGRADA y libera su lugar; el pago de la inscripción queda REVERTIDO y el valor vuelve
+        del retenido al disponible de quien pagó con un movimiento REINTEGRO (`reint-t{torneo}-reprog-{inscripcion}`).
+        Los gastos administrativos no se devuelven y siguen en la custodia (si después se cancela el torneo, vuelven
+        con el resto). Queda en la auditoría: REINTEGRO (el movimiento) y REPROGRAMACION (entidad INSCRIPCION, con
+        `bajoElMinimo`). Si con las confirmadas que quedan el torneo no llega al mínimo para jugar, no se cancela: se
+        avisa al organizador (CR-01-4). 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o no es suya; 403 `NO_ES_CAPITAN`
+        a un jugador de la nómina que no es el capitán. 409 `INSCRIPCION_NO_EDITABLE` si no está CONFIRMADA (también
+        si ya la rechazó: no se devuelve dos veces), `PLAZO_RECHAZO_VENCIDO` si el torneo no tiene una reprogramación
+        con el plazo abierto, y `CUSTODIA_LIBERADA` si la custodia ya se liberó.
+      responses:
+        '200':
+          description: La inscripción reintegrada
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RechazoReprogramacion'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
 
   # --- Torneos (Públicos) -----------------------------------------------------
 
@@ -4196,6 +4226,7 @@ components:
         TORNEO_NO_CANCELABLE (se cancela con la inscripción abierta o cerrada, o en curso; una vez cancelado o en revisión, no; trae `estado`, HU-605) ·
         TORNEO_NO_REPROGRAMABLE (se reprograma con la inscripción abierta o cerrada, o en curso sin resultados; trae `estado`, CR-01) ·
         REPROGRAMACION_EN_CURSO (ya hay una reprogramación con el plazo para rechazar abierto; tampoco se cierra la inscripción a mano, CR-01) ·
+        PLAZO_RECHAZO_VENCIDO (el torneo no tiene una reprogramación con el plazo para rechazar la nueva fecha abierto, CR-01-3) ·
         CAMPOS_BLOQUEADOS (el torneo publicado ya no admite cambios en esos campos; la lista va en `campos`) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) · SALDO_INSUFICIENTE (el disponible de la
         billetera no alcanza para el total; lo que falta va en `faltante`, HU-603) · FONDOS_EN_CUSTODIA (los
@@ -4283,7 +4314,7 @@ components:
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
              USUARIO_YA_BLOQUEADO, BLOQUEO_POR_ENDPOINT_PROPIO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
-             TORNEO_INCOMPLETO, TORNEO_NO_REPROGRAMABLE, REPROGRAMACION_EN_CURSO,
+             TORNEO_INCOMPLETO, TORNEO_NO_REPROGRAMABLE, REPROGRAMACION_EN_CURSO, PLAZO_RECHAZO_VENCIDO,
              CAMPOS_BLOQUEADOS, COBRO_RECHAZADO, SALDO_INSUFICIENTE, FONDOS_EN_CUSTODIA, CUSTODIA_LIBERADA,
              INSCRIPCION_NO_ABIERTA, ORGANIZADOR_BLOQUEADO, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
@@ -6139,6 +6170,15 @@ components:
         motivo: {type: string}
         plazoAbierto: {type: boolean, description: Si todavía se puede rechazar la nueva fecha}
         creadaEn: {type: string, format: date-time}
+    RechazoReprogramacion:
+      type: object
+      required: [inscripcionId, torneoId, estado, reintegrado]
+      description: El resultado de rechazar la nueva fecha (CR-01-3).
+      properties:
+        inscripcionId: {type: integer, format: int64}
+        torneoId: {type: integer, format: int64}
+        estado: {type: string, enum: [REINTEGRADA]}
+        reintegrado: {type: number, description: Lo que volvió a la billetera de quien pagó, sin los gastos administrativos; 0 en un torneo sin costo}
     ResolucionCancelacion:
       type: object
       required: [torneoId, estado, reintegrado, retenido, alOrganizador]
