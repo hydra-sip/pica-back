@@ -86,7 +86,9 @@ public class SecurityConfig {
                                 "/api/v1/pronosticos/partidos",
                                 "/api/v1/pronosticos/ranking",
                                 // perfil público del organizador (HU-806)
-                                "/api/v1/usuarios/*/perfil-organizador")
+                                "/api/v1/usuarios/*/perfil-organizador",
+                                // perfil público del jugador (HU-801)
+                                "/api/v1/usuarios/*/perfil")
                         .permitAll()
 
                         .anyRequest().authenticated());

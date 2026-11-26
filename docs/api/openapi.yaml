@@ -2779,6 +2779,27 @@ paths:
               schema: {$ref: '#/components/schemas/PerfilOrganizador'}
         '404': {$ref: '#/components/responses/Error'}
 
+  /api/v1/usuarios/{id}/perfil:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Reputación]
+      summary: Perfil público del jugador
+      x-jira: PICA-419
+      x-owner: Mateo
+      security: []
+      description: >-
+        HU-801. Público (sin login obligatorio): identidad visible (`nombreCompleto` sale de nombres y apellidos de la
+        persona, o del username si no tiene; `avatar` siempre null por ahora) y el historial competitivo. Nunca trae
+        documento, email ni datos bancarios. Un jugador que nunca jugó tiene todo en cero. Un usuario bloqueado se
+        muestra igual. 404 `USUARIO_NO_ENCONTRADO` si no existe o está dado de baja.
+      responses:
+        '200':
+          description: Perfil público del jugador
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PerfilJugador'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/sanciones/mias:
     get:
       tags: [Reputación]
@@ -4807,6 +4828,27 @@ components:
         indiceActualizadoEn: {type: [string, 'null'], format: date-time, description: 'Null: nunca tuvo cancelaciones, conserva el inicial'}
         historialIndice: {type: array, items: {$ref: '#/components/schemas/MovimientoIndiceOrganizador'}}
         torneosProximos: {type: array, items: {$ref: '#/components/schemas/TorneoResumen'}}
+    PerfilJugador:
+      type: object
+      required: [id, username, nombreCompleto, avatar, historial]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        nombreCompleto: {type: string}
+        avatar: {type: [string, 'null'], description: 'Siempre null: la plataforma todavía no tiene avatares'}
+        historial: {$ref: '#/components/schemas/HistorialCompetitivo'}
+    HistorialCompetitivo:
+      type: object
+      required: [torneosJugados, victorias, derrotas, podios]
+      description: >-
+        HU-801. Torneos FINALIZADOS en los que jugó al menos un partido cerrado con rival; partidos ganados y perdidos
+        (el walkover cuenta, el BYE no); y podios (puesto 1, 2 o 3 en un torneo finalizado). En un torneo por equipos
+        suma a cada integrante de la nómina definitiva.
+      properties:
+        torneosJugados: {type: integer, minimum: 0}
+        victorias: {type: integer, minimum: 0}
+        derrotas: {type: integer, minimum: 0}
+        podios: {type: integer, minimum: 0}
     MovimientoIndiceOrganizador:
       type: object
       required: [torneoId, torneo, conGastos, delta, valorResultante, creadoEn]
