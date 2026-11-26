@@ -19,11 +19,13 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.web3j.crypto.Hash;
 
 /**
  * Lo que el back lee de Base Sepolia por JSON-RPC para confirmar una carga con cripto (HU-609, PICA-333): el recibo
  * de una transacción, con los {@code CargaRegistrada} que emitió, y el bloque actual. Devuelve lo que dice la cadena,
- * sin decidir si alcanza para acreditar: eso es de {@link CargaCriptoService}. Si el nodo no contesta a tiempo,
+ * sin decidir si alcanza para acreditar: eso es de {@link CargaCriptoService}. También lee los {@code RetiroCobrado} de
+ * PasarelaRetiros y si un retiro se cobró (HU-610, PICA-455), para {@link RetiroCriptoService}. Si el nodo no contesta a tiempo,
  * falla o devuelve un error de JSON-RPC, es 503 {@code RED_NO_DISPONIBLE}: el problema no es de la transacción.
  */
 @Component
@@ -31,6 +33,23 @@ public class LectorDeCadena {
 
     /** keccak256("CargaRegistrada(bytes32,address,uint256)"), el topic0 del evento de PasarelaCargas. */
     static final String TOPIC_CARGA_REGISTRADA = "0x3197a34ed765fdfa490419a8d5ed536a04869055bd7773ec777f2b99834e2534";
+
+    /** keccak256("RetiroCobrado(bytes32,address,uint256)"), el topic0 del evento de PasarelaRetiros. */
+    static final String TOPIC_RETIRO_COBRADO = Hash.sha3String("RetiroCobrado(bytes32,address,uint256)");
+
+    /** Los 4 bytes del selector de {@code cobrado(bytes32)}. */
+    private static final String SELECTOR_COBRADO = Hash.sha3String("cobrado(bytes32)").substring(0, 10);
+
+    private static final int TOPICS_DE_EVENTO = 3;
+    private static final int INDICE_TOPIC_EVENTO = 0;
+    private static final int INDICE_TOPIC_REFERENCIA = 1;
+    private static final int INDICE_TOPIC_DIRECCION = 2;
+    /** Un topic EVM es "0x" + 64 dígitos hex; la address de 20 bytes empieza en el índice 26. */
+    private static final int OFFSET_DIRECCION_EN_TOPIC = 26;
+    private static final String STATUS_TRANSACCION_EXITOSA = "0x1";
+    private static final String PREFIJO_HEX = "0x";
+    private static final int LONGITUD_PREFIJO_HEX = PREFIJO_HEX.length();
+    private static final int BASE_HEXADECIMAL = 16;
 
     private static final Logger log = LoggerFactory.getLogger(LectorDeCadena.class);
 
@@ -65,12 +84,22 @@ public class LectorDeCadena {
         }
 
         /** Entró en un bloque. {@code exitosa} es falso si revirtió; en ese caso no emitió eventos. */
-        record Minada(boolean exitosa, long bloque, List<CargaRegistrada> cargas) implements Transaccion {
+        record Minada(boolean exitosa, long bloque, List<CargaRegistrada> cargas, List<RetiroCobrado> retiros)
+                implements Transaccion {
+
+            /** Una transacción que no cobró retiros. */
+            public Minada(boolean exitosa, long bloque, List<CargaRegistrada> cargas) {
+                this(exitosa, bloque, cargas, List.of());
+            }
         }
     }
 
     /** Un {@code CargaRegistrada} de un log, con el contrato que lo emitió. Las direcciones y hex, en minúscula. */
     public record CargaRegistrada(String contrato, String referencia, String pagador, BigInteger monto) {
+    }
+
+    /** Un {@code RetiroCobrado} de un log, con el contrato que lo emitió. Las direcciones y hex, en minúscula. */
+    public record RetiroCobrado(String contrato, String referencia, String destino, BigInteger monto) {
     }
 
     public Transaccion transaccion(String hash) {
@@ -82,18 +111,38 @@ public class LectorDeCadena {
                     : new Transaccion.Pendiente();
         }
         List<CargaRegistrada> cargas = new ArrayList<>();
+        List<RetiroCobrado> retiros = new ArrayList<>();
         for (JsonNode evento : recibo.path("logs")) {
             JsonNode topics = evento.path("topics");
-            if (topics.size() == 3 && TOPIC_CARGA_REGISTRADA.equalsIgnoreCase(topics.get(0).asText())) {
-                cargas.add(new CargaRegistrada(
-                        minuscula(evento.path("address").asText()),
-                        minuscula(topics.get(1).asText()),
-                        "0x" + minuscula(topics.get(2).asText()).substring(26),
-                        cantidad(evento.path("data").asText())));
+            // los dos eventos tienen la misma forma: referencia y dirección indexadas, y el monto en data
+            if (topics.size() != TOPICS_DE_EVENTO) {
+                continue;
+            }
+            String topic = topics.get(INDICE_TOPIC_EVENTO).asText();
+            boolean esCarga = TOPIC_CARGA_REGISTRADA.equalsIgnoreCase(topic);
+            if (!esCarga && !TOPIC_RETIRO_COBRADO.equalsIgnoreCase(topic)) {
+                continue;
+            }
+            String contrato = minuscula(evento.path("address").asText());
+            String referencia = minuscula(topics.get(INDICE_TOPIC_REFERENCIA).asText());
+            String direccion = direccionDesdeTopic(topics.get(INDICE_TOPIC_DIRECCION).asText());
+            BigInteger monto = cantidad(evento.path("data").asText());
+            if (esCarga) {
+                cargas.add(new CargaRegistrada(contrato, referencia, direccion, monto));
+            } else {
+                retiros.add(new RetiroCobrado(contrato, referencia, direccion, monto));
             }
         }
-        return new Transaccion.Minada("0x1".equals(recibo.path("status").asText()),
-                cantidad(recibo.path("blockNumber").asText()).longValueExact(), List.copyOf(cargas));
+        return new Transaccion.Minada(STATUS_TRANSACCION_EXITOSA.equals(recibo.path("status").asText()),
+                cantidad(recibo.path("blockNumber").asText()).longValueExact(), List.copyOf(cargas),
+                List.copyOf(retiros));
+    }
+
+    /** Lo que dice {@code cobrado(referencia)} de PasarelaRetiros en el último bloque. */
+    public boolean retiroCobrado(String contrato, String referencia) {
+        String datos = SELECTOR_COBRADO + minuscula(referencia).substring(LONGITUD_PREFIJO_HEX);
+        String resultado = llamar("eth_call", Map.of("to", contrato, "data", datos), "latest").asText();
+        return cantidad(resultado).signum() != 0;
     }
 
     public long bloqueActual() {
@@ -126,7 +175,11 @@ public class LectorDeCadena {
 
     // los números del JSON-RPC van en hex con 0x
     private static BigInteger cantidad(String hex) {
-        return new BigInteger(hex.substring(2), 16);
+        return new BigInteger(hex.substring(LONGITUD_PREFIJO_HEX), BASE_HEXADECIMAL);
+    }
+
+    private static String direccionDesdeTopic(String topic) {
+        return PREFIJO_HEX + minuscula(topic).substring(OFFSET_DIRECCION_EN_TOPIC);
     }
 
     private static String minuscula(String hex) {

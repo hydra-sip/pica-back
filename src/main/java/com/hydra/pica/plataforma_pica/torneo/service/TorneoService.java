@@ -21,6 +21,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.control.service.ParametrosPlataforma;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancha;
@@ -213,7 +214,7 @@ public class TorneoService {
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(usuarioRepository.getReferenceById(organizadorId));
         auditoria.setAccion(AccionAuditoria.MODIFICACION);
-        auditoria.setEntidad("TORNEO");
+        auditoria.setEntidad(EntidadAuditoria.TORNEO.name());
         auditoria.setEntidadId(String.valueOf(id));
         auditoria.setDetalle(detalle);
         auditoriaRepository.save(auditoria);

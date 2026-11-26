@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.CuentaBancaria;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoValidacion;
@@ -19,6 +20,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
@@ -40,6 +42,9 @@ public class CuentaBancariaService {
 
     public static final String MENSAJE_TITULAR_NO_COINCIDE =
             "La cuenta destino debe estar a nombre del titular verificado en la plataforma";
+
+    private static final int CUIT_CUIL_DIGITOS = 11;
+    private static final Pattern PATRON_NO_DIGITOS = Pattern.compile("\\D");
 
     private final CuentaBancariaRepository cuentaBancariaRepository;
     private final UsuarioRepository usuarioRepository;
@@ -91,8 +96,8 @@ public class CuentaBancariaService {
         }
 
         String valorLimpio = request.valor().strip();
-        String cuitDigitos = request.cuitCuil().replaceAll("\\D", "");
-        String docDigitos = nroDoc.replaceAll("\\D", "");
+        String cuitDigitos = soloDigitos(request.cuitCuil());
+        String docDigitos = soloDigitos(nroDoc);
 
         // Chequear duplicado activo
         Optional<CuentaBancaria> existente = cuentaBancariaRepository.findByUsuarioIdAndValorIgnoreCase(usuarioId, valorLimpio);
@@ -122,7 +127,7 @@ public class CuentaBancariaService {
         auditoriaService.registrar(
                 usuarioId,
                 AccionAuditoria.ALTA,
-                "cuenta_bancaria",
+                EntidadAuditoria.CUENTA_BANCARIA,
                 String.valueOf(guardada.getId()),
                 Map.of("tipo", guardada.getTipo().name(), "valor", guardada.getValor(),
                         "estado", EstadoValidacion.VALIDADA.name(), "titular", guardada.getTitular()));
@@ -144,7 +149,7 @@ public class CuentaBancariaService {
         auditoriaService.registrar(
                 usuarioId,
                 AccionAuditoria.BAJA,
-                "cuenta_bancaria",
+                EntidadAuditoria.CUENTA_BANCARIA,
                 String.valueOf(cuenta.getId()),
                 Map.of("tipo", cuenta.getTipo().name(), "valor", cuenta.getValor()));
     }
@@ -168,7 +173,7 @@ public class CuentaBancariaService {
             auditoriaService.registrar(
                     usuario.getId(),
                     AccionAuditoria.ALTA,
-                    "cuenta_bancaria",
+                    EntidadAuditoria.CUENTA_BANCARIA,
                     guardada != null && guardada.getId() != null ? String.valueOf(guardada.getId()) : "sin-id",
                     Map.of("tipo", request.tipo().name(), "valor", valorLimpio,
                             "estado", EstadoValidacion.RECHAZADA.name(), "motivo", "CUENTA_TITULAR_NO_COINCIDE"));
@@ -193,44 +198,41 @@ public class CuentaBancariaService {
         if (request.tipo() == null) {
             errores.add(new ErrorCampo("tipo", ErrorCampo.Codigo.REQUERIDO, "El tipo de cuenta es obligatorio"));
         }
-
-        if (request.valor() == null || request.valor().isBlank()) {
-            errores.add(new ErrorCampo("valor", ErrorCampo.Codigo.REQUERIDO, "El CBU, CVU o alias es obligatorio"));
-        } else {
-            String valor = request.valor().strip();
-            if (request.tipo() == TipoCuenta.CBU || request.tipo() == TipoCuenta.CVU) {
-                if (!ValidadorCbuCvu.esValido(valor)) {
-                    errores.add(new ErrorCampo("valor", ErrorCampo.Codigo.FORMATO_INVALIDO,
-                            "El " + request.tipo() + " debe tener 22 dígitos válidos con su dígito verificador"));
-                }
-            } else if (request.tipo() == TipoCuenta.ALIAS) {
-                if (valor.length() < 6 || valor.length() > 20) {
-                    errores.add(new ErrorCampo("valor", ErrorCampo.Codigo.LONGITUD,
-                            "El alias debe tener entre 6 y 20 caracteres"));
-                } else if (!valor.matches("^[a-zA-Z0-9.-]+$")) {
-                    errores.add(new ErrorCampo("valor", ErrorCampo.Codigo.FORMATO_INVALIDO,
-                            "El alias solo puede contener letras, números, puntos y guiones"));
-                }
-            }
-        }
-
+        validarValor(request.tipo(), request.valor(), errores);
         if (request.titular() == null || request.titular().isBlank()) {
             errores.add(new ErrorCampo("titular", ErrorCampo.Codigo.REQUERIDO, "El titular es obligatorio"));
         }
-
-        if (request.cuitCuil() == null || request.cuitCuil().isBlank()) {
-            errores.add(new ErrorCampo("cuitCuil", ErrorCampo.Codigo.REQUERIDO, "El CUIT/CUIL es obligatorio"));
-        } else {
-            String digitos = request.cuitCuil().replaceAll("\\D", "");
-            if (digitos.length() != 11) {
-                errores.add(new ErrorCampo("cuitCuil", ErrorCampo.Codigo.FORMATO_INVALIDO,
-                        "El CUIT/CUIL debe contener 11 dígitos"));
-            }
-        }
+        validarCuitCuil(request.cuitCuil(), errores);
 
         if (!errores.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay campos inválidos")
                     .con("errores", errores);
         }
+    }
+
+    private static void validarValor(TipoCuenta tipo, String valorRecibido, List<ErrorCampo> errores) {
+        if (valorRecibido == null || valorRecibido.isBlank()) {
+            errores.add(new ErrorCampo("valor", ErrorCampo.Codigo.REQUERIDO, "El CBU, CVU o alias es obligatorio"));
+            return;
+        }
+        if (tipo == null) {
+            return;
+        }
+        tipo.validarValor(valorRecibido.strip()).ifPresent(errores::add);
+    }
+
+    private static void validarCuitCuil(String cuitCuil, List<ErrorCampo> errores) {
+        if (cuitCuil == null || cuitCuil.isBlank()) {
+            errores.add(new ErrorCampo("cuitCuil", ErrorCampo.Codigo.REQUERIDO, "El CUIT/CUIL es obligatorio"));
+            return;
+        }
+        if (soloDigitos(cuitCuil).length() != CUIT_CUIL_DIGITOS) {
+            errores.add(new ErrorCampo("cuitCuil", ErrorCampo.Codigo.FORMATO_INVALIDO,
+                    "El CUIT/CUIL debe contener " + CUIT_CUIL_DIGITOS + " dígitos"));
+        }
+    }
+
+    private static String soloDigitos(String texto) {
+        return PATRON_NO_DIGITOS.matcher(texto).replaceAll("");
     }
 }

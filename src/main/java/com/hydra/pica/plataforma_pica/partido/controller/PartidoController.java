@@ -5,7 +5,7 @@ import java.net.URI;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.EvidenciaDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.LaudoRequest;
@@ -25,7 +25,6 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -52,90 +51,90 @@ public class PartidoController {
     private final LaudoService laudoService;
     private final ProgramacionService programacionService;
     private final CheckinService checkinService;
-    private final CurrentUserProvider currentUserProvider;
 
     @GetMapping("/partidos/{id}")
-    public PartidoDetalle ver(@PathVariable Long id) {
-        return partidoService.ver(usuarioActual(), id);
+    public PartidoDetalle ver(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return partidoService.ver(usuarioId, id);
     }
 
     /** 204 si no juega el torneo, si quedó afuera o si ya terminó. */
     @GetMapping("/torneos/{id}/mi-proximo-partido")
-    public ResponseEntity<PartidoDetalle> miProximo(@PathVariable Long id) {
-        return partidoService.miProximo(usuarioActual(), id)
+    public ResponseEntity<PartidoDetalle> miProximo(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return partidoService.miProximo(usuarioId, id)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PostMapping("/partidos/{id}/resultado")
-    public PartidoDetalle cargarResultado(@PathVariable Long id, @Valid @RequestBody ResultadoRequest request) {
-        return resultadoService.cargar(usuarioActual(), id, request);
+    public PartidoDetalle cargarResultado(@PathVariable Long id, @Valid @RequestBody ResultadoRequest request,
+            @UsuarioActual Long usuarioId) {
+        return resultadoService.cargar(usuarioId, id, request);
     }
 
     @PostMapping("/partidos/{id}/resultado/aceptar")
-    public PartidoDetalle aceptarResultado(@PathVariable Long id) {
-        return resultadoService.aceptar(usuarioActual(), id);
+    public PartidoDetalle aceptarResultado(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return resultadoService.aceptar(usuarioId, id);
     }
 
     /** La evidencia de quien objeta se sube antes, por {@code POST /partidos/{id}/evidencias}. */
     @PostMapping("/partidos/{id}/objecion")
-    public PartidoDetalle objetarResultado(@PathVariable Long id, @Valid @RequestBody ObjecionRequest request) {
-        return resultadoService.objetar(usuarioActual(), id, request);
+    public PartidoDetalle objetarResultado(@PathVariable Long id, @Valid @RequestBody ObjecionRequest request,
+            @UsuarioActual Long usuarioId) {
+        return resultadoService.objetar(usuarioId, id, request);
     }
 
     /** El organizador o un árbitro con permiso para resolver objeciones; cita una evidencia del partido. */
     @PostMapping("/partidos/{id}/laudo")
-    public PartidoDetalle laudar(@PathVariable Long id, @Valid @RequestBody LaudoRequest request) {
-        return laudoService.laudar(usuarioActual(), id, request);
+    public PartidoDetalle laudar(@PathVariable Long id, @Valid @RequestBody LaudoRequest request,
+            @UsuarioActual Long usuarioId) {
+        return laudoService.laudar(usuarioId, id, request);
     }
 
     /** El organizador del torneo, con el partido PROGRAMADO: de la fecha sale la ventana de check-in (HU-308). */
     @PutMapping("/partidos/{id}/programacion")
-    public PartidoDetalle programar(@PathVariable Long id, @RequestBody ProgramacionRequest request) {
-        return programacionService.programar(usuarioActual(), id, request.fechaProgramada());
+    public PartidoDetalle programar(@PathVariable Long id, @RequestBody ProgramacionRequest request,
+            @UsuarioActual Long usuarioId) {
+        return programacionService.programar(usuarioId, id, request.fechaProgramada());
     }
 
     /** Cualquiera con sesión: la ventana y si cada lado hizo check-in (HU-308). */
     @GetMapping("/partidos/{id}/checkin")
-    public CheckinPartido verCheckin(@PathVariable Long id) {
-        return checkinService.ver(usuarioActual(), id);
+    public CheckinPartido verCheckin(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return checkinService.ver(usuarioId, id);
     }
 
     /** El capitán de un lado confirma su presencia, sin cuerpo; repetirlo no cambia nada. */
     @PostMapping("/partidos/{id}/checkin")
-    public CheckinPartido hacerCheckin(@PathVariable Long id) {
-        return checkinService.hacer(usuarioActual(), id);
+    public CheckinPartido hacerCheckin(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return checkinService.hacer(usuarioId, id);
     }
 
     /** Multipart con el archivo en la parte {@code archivo}. */
     @PostMapping("/partidos/{id}/evidencias")
     public ResponseEntity<EvidenciaDetalle> subirEvidencia(@PathVariable Long id,
-            @RequestParam("archivo") MultipartFile archivo) throws IOException {
+            @RequestParam("archivo") MultipartFile archivo,
+            @UsuarioActual Long usuarioId) throws IOException {
         if (archivo.getSize() > EvidenciaService.MAXIMO_VIDEO) {
             throw EvidenciaService.archivoInvalido(ErrorCampo.Codigo.LONGITUD, "Supera el tamaño máximo");
         }
         String urlBase = ServletUriComponentsBuilder.fromCurrentRequestUri().toUriString();
-        EvidenciaDetalle subida = evidenciaService.subir(usuarioActual(), id, archivo.getBytes(), urlBase);
+        EvidenciaDetalle subida = evidenciaService.subir(usuarioId, id, archivo.getBytes(), urlBase);
         return ResponseEntity.created(URI.create(subida.url())).body(subida);
     }
 
     @GetMapping("/partidos/{id}/evidencias")
-    public List<EvidenciaDetalle> listarEvidencias(@PathVariable Long id) {
-        return evidenciaService.listar(usuarioActual(), id);
+    public List<EvidenciaDetalle> listarEvidencias(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return evidenciaService.listar(usuarioId, id);
     }
 
     @GetMapping("/partidos/{id}/evidencias/{evidenciaId}/archivo")
-    public ResponseEntity<byte[]> verEvidencia(@PathVariable Long id, @PathVariable Long evidenciaId) {
-        EvidenciaService.Archivo archivo = evidenciaService.archivo(usuarioActual(), id, evidenciaId);
+    public ResponseEntity<byte[]> verEvidencia(@PathVariable Long id, @PathVariable Long evidenciaId,
+            @UsuarioActual Long usuarioId) {
+        EvidenciaService.Archivo archivo = evidenciaService.archivo(usuarioId, id, evidenciaId);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(archivo.tipoContenido()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.inline().filename("evidencia-" + evidenciaId).build().toString())
                 .body(archivo.contenido());
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
     }
 }

@@ -56,6 +56,7 @@ class RevisionCancelacionControllerTest {
     @WithMockUser(authorities = "TORNEO_GESTIONAR")
     @DisplayName("Sin CANCELACION_REVISAR responde 403 SIN_PERMISO")
     void sinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(SOPORTE));
         mockMvc.perform(post("/api/v1/admin/cancelaciones/9/rechazar")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"motivo\": \"No\"}"))
                 .andExpect(status().isForbidden())

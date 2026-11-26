@@ -2,14 +2,13 @@ package com.hydra.pica.plataforma_pica.partido.controller;
 
 import java.util.List;
 
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoPronostico;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.RankingResponse;
 import com.hydra.pica.plataforma_pica.partido.service.PronosticoService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -27,7 +26,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class PronosticoController {
 
     private final PronosticoService pronosticoService;
-    private final CurrentUserProvider currentUserProvider;
 
     /**
      * Lista los partidos para pronóstico, incluyendo el pronóstico del usuario actual si está autenticado.
@@ -35,8 +33,8 @@ public class PronosticoController {
     @GetMapping("/pronosticos/partidos")
     public List<PartidoPronostico> listarPartidos(
             @RequestParam(required = false) Long torneoId,
-            @RequestParam(required = false) Boolean abierto) {
-        Long usuarioId = currentUserProvider.getCurrentUserId().orElse(null);
+            @RequestParam(required = false) Boolean abierto,
+            @UsuarioActual(requerido = false) Long usuarioId) {
         return pronosticoService.listarPartidos(usuarioId, torneoId, abierto);
     }
 
@@ -44,8 +42,8 @@ public class PronosticoController {
      * Obtiene el ranking general de posiciones en base a los puntajes obtenidos, o filtrado por torneo (HU-307, T307-1).
      */
     @GetMapping("/pronosticos/ranking")
-    public RankingResponse obtenerRanking(@RequestParam(required = false) Long torneoId) {
-        Long usuarioId = currentUserProvider.getCurrentUserId().orElse(null);
+    public RankingResponse obtenerRanking(@RequestParam(required = false) Long torneoId,
+            @UsuarioActual(requerido = false) Long usuarioId) {
         return pronosticoService.obtenerRanking(usuarioId, torneoId);
     }
 
@@ -56,9 +54,8 @@ public class PronosticoController {
     @PutMapping("/partidos/{id}/pronostico")
     public PronosticoDetalle pronosticar(
             @PathVariable Long id,
-            @RequestBody PronosticoRequest request) {
-        Long usuarioId = currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+            @RequestBody PronosticoRequest request,
+            @UsuarioActual Long usuarioId) {
         return pronosticoService.pronosticar(usuarioId, id, request);
     }
 }

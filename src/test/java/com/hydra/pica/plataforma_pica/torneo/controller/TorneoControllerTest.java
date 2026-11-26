@@ -272,6 +272,7 @@ class TorneoControllerTest {
     @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
     @DisplayName("PUT /api/v1/torneos/{id}/checkin sin TORNEO_GESTIONAR responde 403")
     void configuraCheckinSinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
         mockMvc.perform(put("/api/v1/torneos/9/checkin")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"minAntes\": 30, \"duracion\": 20}"))

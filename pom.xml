@@ -117,6 +117,24 @@
         </dependency>
 
         <!-- Testing -->
+        <!-- Firma de los permisos de retiro a la wallet (EIP-712, HU-610): solo keccak y secp256k1 -->
+        <dependency>
+            <groupId>org.web3j</groupId>
+            <artifactId>crypto</artifactId>
+            <version>4.14.0</version>
+            <exclusions>
+                <!-- son para las transacciones con blobs (EIP-4844), que no se usan: traen vert.x y netty -->
+                <exclusion>
+                    <groupId>io.consensys.protocols</groupId>
+                    <artifactId>jc-kzg-4844</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.consensys.tuweni</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- La liquidación final en PDF (HU-608) -->
         <dependency>
             <groupId>com.github.librepdf</groupId>

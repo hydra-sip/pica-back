@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.rifa.service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,11 +18,13 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.ReclamoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
+import com.hydra.pica.plataforma_pica.rifa.dto.DecisionReclamo;
 import com.hydra.pica.plataforma_pica.rifa.dto.ReclamoAdminDetalle;
 import com.hydra.pica.plataforma_pica.rifa.event.FondosReclamoLiberados;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
@@ -47,8 +50,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class LiberacionReclamoService {
-
-    private static final String ENTIDAD_AUDITORIA = "RECLAMO_RIFA";
 
     private final ReclamoRifaRepository reclamoRifaRepository;
     private final RifaRepository rifaRepository;
@@ -76,28 +77,7 @@ public class LiberacionReclamoService {
         ReclamoRifa reclamo = reclamoRifaRepository.buscarBloqueado(reclamoId)
                 .orElseThrow(() -> noEncontrado(reclamoId));
 
-        if (reclamo.getFondosLiberadosEn() != null) {
-            throw new ConflictoException(CodigoError.CUSTODIA_LIBERADA,
-                    "Los fondos del reclamo " + reclamoId + " ya fueron liberados")
-                    .con("estado", rifa.getEstado() == EstadoRifa.CANCELADA
-                            ? EstadoCustodia.REINTEGRADA : EstadoCustodia.LIBERADA);
-        }
-        if (reclamo.getEstado() == EstadoReclamo.PENDIENTE) {
-            throw new ConflictoException(CodigoError.RECLAMO_NO_RESUELTO,
-                    "El reclamo " + reclamoId + " debe estar resuelto antes de liberar los fondos")
-                    .con("estado", reclamo.getEstado());
-        }
-        if (rifa.getEstado() == EstadoRifa.LIQUIDADA || rifa.getEstado() == EstadoRifa.CANCELADA) {
-            throw new ConflictoException(CodigoError.CUSTODIA_LIBERADA,
-                    "La custodia de la rifa " + rifaId + " ya fue liberada")
-                    .con("estado", rifa.getEstado() == EstadoRifa.CANCELADA
-                            ? EstadoCustodia.REINTEGRADA : EstadoCustodia.LIBERADA);
-        }
-        if (rifa.getEstado() == EstadoRifa.EN_REVISION
-                || reclamoRifaRepository.existsByRifaIdAndEstado(rifaId, EstadoReclamo.PENDIENTE)) {
-            throw new FondosEnCustodiaException(
-                    "La rifa " + rifaId + " todavía tiene reclamos pendientes de resolución");
-        }
+        validarPrecondiciones(rifaId, reclamoId, rifa, reclamo);
 
         if (reclamo.getEstado() == EstadoReclamo.RECHAZADO) {
             return liberarSinFraude(ejecutor, rifa, reclamoId);
@@ -105,12 +85,38 @@ public class LiberacionReclamoService {
         return liberarConFraude(ejecutor, rifa, reclamoId, reclamo.getUsuario().getId());
     }
 
-    private ReclamoAdminDetalle liberarSinFraude(Usuario ejecutor, Rifa rifa, Long reclamoId) {
-        Long rifaId = rifa.getId();
-        String rifaTitulo = rifa.getTitulo();
-        Long torneoId = rifa.getTorneo() != null ? rifa.getTorneo().getId() : null;
+    private void validarPrecondiciones(Long rifaId, Long reclamoId, Rifa rifa, ReclamoRifa reclamo) {
+        if (reclamo.getFondosLiberadosEn() != null) {
+            throw new ConflictoException(CodigoError.CUSTODIA_LIBERADA,
+                    "Los fondos del reclamo " + reclamoId + " ya fueron liberados")
+                    .con("estado", estadoCustodiaDe(rifa));
+        }
+        if (reclamo.getEstado() == EstadoReclamo.PENDIENTE) {
+            throw new ConflictoException(CodigoError.RECLAMO_NO_RESUELTO,
+                    "El reclamo " + reclamoId + " debe estar resuelto antes de liberar los fondos")
+                    .con("estado", reclamo.getEstado());
+        }
+        if (rifa.getEstado().esTerminal()) {
+            throw new ConflictoException(CodigoError.CUSTODIA_LIBERADA,
+                    "La custodia de la rifa " + rifaId + " ya fue liberada")
+                    .con("estado", estadoCustodiaDe(rifa));
+        }
+        if (rifa.getEstado() == EstadoRifa.EN_REVISION
+                || reclamoRifaRepository.existsByRifaIdAndEstado(rifaId, EstadoReclamo.PENDIENTE)) {
+            throw new FondosEnCustodiaException(
+                    "La rifa " + rifaId + " todavía tiene reclamos pendientes de resolución");
+        }
+    }
 
-        LiquidacionRifa liquidacion = liquidacionRifaService.liquidarRifa(rifaId);
+    private static EstadoCustodia estadoCustodiaDe(Rifa rifa) {
+        return rifa.getEstado() == EstadoRifa.CANCELADA ? EstadoCustodia.REINTEGRADA : EstadoCustodia.LIBERADA;
+    }
+
+    private ReclamoAdminDetalle liberarSinFraude(Usuario ejecutor, Rifa rifa, Long reclamoId) {
+        // Se captura antes porque CustodiaService.liberarRifa limpia el EntityManager.
+        RifaResumen resumen = RifaResumen.de(rifa);
+
+        LiquidacionRifa liquidacion = liquidacionRifaService.liquidarRifa(resumen.id());
         BigDecimal sumaAcreditaciones = liquidacion.acreditaciones().stream()
                 .map(Acreditacion::monto)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -120,7 +126,7 @@ public class LiberacionReclamoService {
 
         marcarLiberado(reclamoId, ejecutor.getUsername(), montoAcreditado);
 
-        List<Map<String, Object>> destinatarios = new java.util.ArrayList<>(liquidacion.acreditaciones().stream()
+        List<Map<String, Object>> destinatarios = new ArrayList<>(liquidacion.acreditaciones().stream()
                 .map(a -> {
                     Map<String, Object> item = new LinkedHashMap<>();
                     item.put("rol", a.rol().name());
@@ -133,34 +139,30 @@ public class LiberacionReclamoService {
         if (!liquidacion.aportePendiente() && sumaAcreditaciones.compareTo(montoAcreditado) < 0) {
             Map<String, Object> aporte = new LinkedHashMap<>();
             aporte.put("rol", "APORTE_TORNEO");
-            aporte.put("torneoId", torneoId);
+            aporte.put("torneoId", resumen.torneoId());
             aporte.put("monto", liquidacion.aporteAlTorneo());
             destinatarios.add(aporte);
         }
 
-        registrarAuditoria(ejecutor.getId(), AccionAuditoria.LIQUIDACION, reclamoId, rifaId, rifaTitulo, torneoId,
-                "SIN_FRAUDE", EstadoRifa.LIQUIDADA, montoAcreditado, "LIQUIDACION_GANADORES",
-                destinatarios, ejecutor.getUsername(), liquidacion.aportePendiente(), liquidacion.aporteAlTorneo());
+        auditarLiquidacion(ejecutor, reclamoId, resumen, montoAcreditado, destinatarios, liquidacion);
 
         Map<Long, BigDecimal> acreditados = new LinkedHashMap<>();
         liquidacion.acreditaciones().stream()
                 .filter(a -> a.usuarioId() != null)
                 .forEach(a -> acreditados.merge(a.usuarioId(), a.monto(), BigDecimal::add));
-        eventPublisher.publishEvent(new FondosReclamoLiberados(reclamoId, rifaId, torneoId, EstadoRifa.LIQUIDADA,
-                acreditados));
+        eventPublisher.publishEvent(new FondosReclamoLiberados(reclamoId, resumen.id(), resumen.torneoId(),
+                EstadoRifa.LIQUIDADA, acreditados));
         return detalleActualizado(reclamoId);
     }
 
     private ReclamoAdminDetalle liberarConFraude(Usuario ejecutor, Rifa rifa, Long reclamoId, Long reclamanteId) {
-        Long rifaId = rifa.getId();
-        String rifaTitulo = rifa.getTitulo();
-        Long torneoId = rifa.getTorneo() != null ? rifa.getTorneo().getId() : null;
+        RifaResumen resumen = RifaResumen.de(rifa);
 
         rifa.setEstado(EstadoRifa.CANCELADA);
         rifaRepository.saveAndFlush(rifa);
-        numeroRepository.reintegrarVendidos(rifaId);
+        numeroRepository.reintegrarVendidos(resumen.id());
 
-        ReintegroRifa reintegro = reintegrador.reintegrarRifa(rifaId, rifaTitulo);
+        ReintegroRifa reintegro = reintegrador.reintegrarRifa(resumen.id(), resumen.titulo());
 
         marcarLiberado(reclamoId, ejecutor.getUsername(), reintegro.totalDevuelto());
 
@@ -174,14 +176,12 @@ public class LiberacionReclamoService {
                 })
                 .toList();
 
-        registrarAuditoria(ejecutor.getId(), AccionAuditoria.REINTEGRO, reclamoId, rifaId, rifaTitulo, torneoId,
-                "FRAUDE_CONFIRMADO", EstadoRifa.CANCELADA, reintegro.totalDevuelto(),
-                "REINTEGRO_COMPRADORES", destinatarios, ejecutor.getUsername(), false, BigDecimal.ZERO, reclamanteId);
+        auditarReintegro(ejecutor, reclamoId, resumen, reintegro.totalDevuelto(), destinatarios, reclamanteId);
 
         Map<Long, BigDecimal> acreditados = new LinkedHashMap<>();
         reintegro.destinatarios().forEach(d -> acreditados.merge(d.usuarioId(), d.monto(), BigDecimal::add));
-        eventPublisher.publishEvent(new FondosReclamoLiberados(reclamoId, rifaId, torneoId, EstadoRifa.CANCELADA,
-                acreditados));
+        eventPublisher.publishEvent(new FondosReclamoLiberados(reclamoId, resumen.id(), resumen.torneoId(),
+                EstadoRifa.CANCELADA, acreditados));
         return detalleActualizado(reclamoId);
     }
 
@@ -195,44 +195,70 @@ public class LiberacionReclamoService {
         reclamoRifaRepository.saveAndFlush(reclamo);
     }
 
-    private void registrarAuditoria(
-            Long ejecutorId,
-            AccionAuditoria accion,
+    private void auditarLiquidacion(
+            Usuario ejecutor,
             Long reclamoId,
-            Long rifaId,
-            String rifaTitulo,
-            Long torneoId,
-            String resolucion,
+            RifaResumen rifa,
+            BigDecimal monto,
+            List<Map<String, Object>> destinatarios,
+            LiquidacionRifa liquidacion) {
+        Map<String, Object> detalle = detalleBaseAuditoria(reclamoId, rifa, DecisionReclamo.SIN_FRAUDE,
+                EstadoRifa.LIQUIDADA, monto, "LIQUIDACION_GANADORES", destinatarios, ejecutor.getUsername());
+        if (liquidacion.aportePendiente()) {
+            detalle.put("aportePendiente", true);
+            detalle.put("aporteAlTorneo", liquidacion.aporteAlTorneo());
+        }
+        auditoriaService.registrar(ejecutor.getId(), AccionAuditoria.LIQUIDACION, EntidadAuditoria.RECLAMO_RIFA,
+                reclamoId.toString(), detalle);
+    }
+
+    private void auditarReintegro(
+            Usuario ejecutor,
+            Long reclamoId,
+            RifaResumen rifa,
+            BigDecimal monto,
+            List<Map<String, Object>> destinatarios,
+            Long reclamanteId) {
+        Map<String, Object> detalle = detalleBaseAuditoria(reclamoId, rifa, DecisionReclamo.FRAUDE_CONFIRMADO,
+                EstadoRifa.CANCELADA, monto, "REINTEGRO_COMPRADORES", destinatarios, ejecutor.getUsername());
+        if (reclamanteId != null) {
+            detalle.put("reclamanteId", reclamanteId);
+        }
+        auditoriaService.registrar(ejecutor.getId(), AccionAuditoria.REINTEGRO, EntidadAuditoria.RECLAMO_RIFA,
+                reclamoId.toString(), detalle);
+    }
+
+    private static Map<String, Object> detalleBaseAuditoria(
+            Long reclamoId,
+            RifaResumen rifa,
+            DecisionReclamo resolucion,
             EstadoRifa rifaEstadoFinal,
             BigDecimal monto,
             String destino,
             List<Map<String, Object>> destinatarios,
-            String ejecutadoPor,
-            boolean aportePendiente,
-            BigDecimal aporteAlTorneo,
-            Long... reclamanteOpcional) {
+            String ejecutadoPor) {
         Map<String, Object> detalle = new LinkedHashMap<>();
         detalle.put("tipo", "LIBERACION_RECLAMO");
         detalle.put("reclamoId", reclamoId);
-        detalle.put("rifaId", rifaId);
-        detalle.put("rifaTitulo", rifaTitulo);
-        if (torneoId != null) {
-            detalle.put("torneoId", torneoId);
+        detalle.put("rifaId", rifa.id());
+        detalle.put("rifaTitulo", rifa.titulo());
+        if (rifa.torneoId() != null) {
+            detalle.put("torneoId", rifa.torneoId());
         }
-        detalle.put("resolucion", resolucion);
+        detalle.put("resolucion", resolucion.name());
         detalle.put("rifaEstadoFinal", rifaEstadoFinal.name());
         detalle.put("monto", monto);
         detalle.put("destino", destino);
         detalle.put("destinatarios", destinatarios);
         detalle.put("ejecutadoPor", ejecutadoPor);
-        if (aportePendiente) {
-            detalle.put("aportePendiente", true);
-            detalle.put("aporteAlTorneo", aporteAlTorneo);
+        return detalle;
+    }
+
+    private record RifaResumen(Long id, String titulo, Long torneoId) {
+        static RifaResumen de(Rifa rifa) {
+            Long torneoId = rifa.getTorneo() != null ? rifa.getTorneo().getId() : null;
+            return new RifaResumen(rifa.getId(), rifa.getTitulo(), torneoId);
         }
-        if (reclamanteOpcional.length > 0 && reclamanteOpcional[0] != null) {
-            detalle.put("reclamanteId", reclamanteOpcional[0]);
-        }
-        auditoriaService.registrar(ejecutorId, accion, ENTIDAD_AUDITORIA, reclamoId.toString(), detalle);
     }
 
     private ReclamoAdminDetalle detalleActualizado(Long reclamoId) {

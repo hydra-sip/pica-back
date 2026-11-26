@@ -19,6 +19,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
@@ -145,7 +146,7 @@ public class CargaCriptoService {
         detalle.put("motivo", motivo);
         detalle.put("estado", "RECHAZADA");
         auditoriaService.registrarEnTransaccionNueva(carga.getUsuario().getId(), AccionAuditoria.PAGO,
-                "CARGA_CRIPTO", carga.getId().toString(), detalle);
+                EntidadAuditoria.CARGA_CRIPTO, carga.getId().toString(), detalle);
         return new ApiException(HttpStatus.BAD_REQUEST, codigo, motivo);
     }
 

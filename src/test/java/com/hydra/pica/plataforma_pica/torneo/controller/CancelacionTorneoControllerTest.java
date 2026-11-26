@@ -59,6 +59,7 @@ class CancelacionTorneoControllerTest {
     @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
     @DisplayName("Cancelar sin TORNEO_GESTIONAR responde 403 SIN_PERMISO")
     void sinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
         mockMvc.perform(multipart("/api/v1/torneos/9/cancelacion").param("motivo", "Lluvia"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));

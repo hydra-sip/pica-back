@@ -18,6 +18,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
@@ -39,8 +40,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class CustodiaService {
-
-    private static final String ENTIDAD = "CUSTODIA";
 
     private final CustodiaRepository custodiaRepository;
     private final MovimientoRepository movimientoRepository;
@@ -83,7 +82,8 @@ public class CustodiaService {
         detalle.put("monto", pago.getMonto());
         detalle.put("evento", custodia.getRifa() != null ? "RIFA" : "TORNEO");
         detalle.put("eventoId", custodia.getRifa() != null ? custodia.getRifa().getId() : custodia.getTorneo().getId());
-        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, ENTIDAD, custodia.getId().toString(), detalle);
+        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, EntidadAuditoria.CUSTODIA,
+                custodia.getId().toString(), detalle);
     }
 
     // --- la puerta de salida ------------------------------------------------------------------------
@@ -129,7 +129,8 @@ public class CustodiaService {
         detalle.put("estado", destino);
         detalle.put("total", totales.total());
         detalle.put("gastosAdministrativos", totales.gastos());
-        auditoriaService.registrar(null, AccionAuditoria.PAGO, ENTIDAD, custodiaId.toString(), detalle);
+        auditoriaService.registrar(null, AccionAuditoria.PAGO, EntidadAuditoria.CUSTODIA,
+                custodiaId.toString(), detalle);
         return new LiberacionCustodia(custodiaId, destino, totales.total(), totales.gastos());
     }
 
@@ -212,7 +213,7 @@ public class CustodiaService {
 
     /** Liquidada, cancelada o sorteada con el plazo de reclamo vencido; con un reclamo abierto está EN_REVISION. */
     private static boolean terminada(Rifa rifa, Instant ahora) {
-        if (rifa.getEstado() == EstadoRifa.LIQUIDADA || rifa.getEstado() == EstadoRifa.CANCELADA) {
+        if (rifa.getEstado().esTerminal()) {
             return true;
         }
         Instant plazo = ReclamoRifaService.plazoReclamo(rifa);

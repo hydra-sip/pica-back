@@ -13,6 +13,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
@@ -280,7 +281,7 @@ public class ResultadoService {
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(usuarioId == null ? null : usuarioRepository.getReferenceById(usuarioId));
         auditoria.setAccion(accion);
-        auditoria.setEntidad("PARTIDO");
+        auditoria.setEntidad(EntidadAuditoria.PARTIDO.name());
         auditoria.setEntidadId(String.valueOf(partido.getId()));
         auditoria.setDetalle(detalle);
         auditoriaRepository.save(auditoria);

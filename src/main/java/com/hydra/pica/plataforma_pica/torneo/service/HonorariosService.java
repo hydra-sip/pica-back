@@ -24,6 +24,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignado;
 import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignadoId;
@@ -68,7 +69,6 @@ public class HonorariosService {
             EstadoTorneo.CANCELACION_EN_REVISION);
     private static final Set<EstadoDesignacion> VIGENTES = Set.of(EstadoDesignacion.PENDIENTE,
             EstadoDesignacion.ACEPTADO);
-    private static final String ENTIDAD = "CUSTODIA";
 
     private final TorneosPropios torneosPropios;
     private final GastoRepository gastoRepository;
@@ -157,7 +157,7 @@ public class HonorariosService {
                 + movimientoRepository.countByReferenciaExternaStartingWith("sim-" + base);
         Movimiento deposito = cobroService.cobrar(new SolicitudCobro(torneo.getOrganizador().getId(),
                 TipoMovimiento.PAGO_SERVICIO, gasto.getMonto(), torneo.getId(), null, base + (anteriores + 1),
-                corta("Honorario arbitral de " + nombre(arbitro) + " en " + torneo.getNombre()
+                Movimiento.truncarDescripcion("Honorario arbitral de " + nombre(arbitro) + " en " + torneo.getNombre()
                         + ": en custodia hasta la liquidación")));
 
         gasto.setBeneficiario(arbitro);
@@ -234,8 +234,8 @@ public class HonorariosService {
             reintegro.setSaldoResultante(billetera.getSaldoDisponible());
             reintegro.setEstado(EstadoMovimiento.CONFIRMADO);
             reintegro.setReferenciaExterna("reint-" + deposito.getReferenciaExterna());
-            reintegro.setDescripcion(corta("Devolución del honorario arbitral de " + nombre(arbitro) + " en "
-                    + torneo.getNombre() + ": " + motivo));
+            reintegro.setDescripcion(Movimiento.truncarDescripcion("Devolución del honorario arbitral de "
+                    + nombre(arbitro) + " en " + torneo.getNombre() + ": " + motivo));
             reintegro = movimientoRepository.save(reintegro);
         }
 
@@ -257,7 +257,8 @@ public class HonorariosService {
             detalle.put("reintegroId", reintegro.getId());
         }
         detalle.put("motivo", motivo);
-        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, custodia != null ? ENTIDAD : "TORNEO",
+        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO,
+                custodia != null ? EntidadAuditoria.CUSTODIA : EntidadAuditoria.TORNEO,
                 (custodia != null ? custodia.getId() : torneo.getId()).toString(), detalle);
     }
 
@@ -295,9 +296,5 @@ public class HonorariosService {
 
     private static String nombre(Usuario usuario) {
         return usuario.getPersona().getNombres() + " " + usuario.getPersona().getApellidos();
-    }
-
-    private static String corta(String texto) {
-        return texto.length() > 255 ? texto.substring(0, 255) : texto;
     }
 }

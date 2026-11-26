@@ -4,7 +4,7 @@ import java.net.URI;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.common.dto.PaginaResponse;
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.torneo.dto.ArbitroBuscado;
 import com.hydra.pica.plataforma_pica.torneo.dto.ArbitroDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.DesignarArbitroRequest;
@@ -15,7 +15,6 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,11 +32,9 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class ArbitrosTorneoController {
 
     private final ArbitrosTorneoService arbitrosService;
-    private final CurrentUserProvider currentUserProvider;
 
-    public ArbitrosTorneoController(ArbitrosTorneoService arbitrosService, CurrentUserProvider currentUserProvider) {
+    public ArbitrosTorneoController(ArbitrosTorneoService arbitrosService) {
         this.arbitrosService = arbitrosService;
-        this.currentUserProvider = currentUserProvider;
     }
 
     /** Para el buscador del paso 2: sin {@code q}, los primeros por apellido. */
@@ -50,14 +47,15 @@ public class ArbitrosTorneoController {
     }
 
     @GetMapping("/torneos/{id}/arbitros")
-    public List<ArbitroDetalle> listar(@PathVariable Long id) {
-        return arbitrosService.listar(usuarioActual(), id);
+    public List<ArbitroDetalle> listar(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return arbitrosService.listar(usuarioId, id);
     }
 
     @PostMapping("/torneos/{id}/arbitros")
     public ResponseEntity<ArbitroDetalle> designar(@PathVariable Long id,
-            @Valid @RequestBody DesignarArbitroRequest request) {
-        ArbitroDetalle designado = arbitrosService.designar(usuarioActual(), id, request);
+            @Valid @RequestBody DesignarArbitroRequest request,
+            @UsuarioActual Long solicitanteId) {
+        ArbitroDetalle designado = arbitrosService.designar(solicitanteId, id, request);
         URI ubicacion = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{usuarioId}")
                 .buildAndExpand(designado.usuarioId())
@@ -66,13 +64,9 @@ public class ArbitrosTorneoController {
     }
 
     @DeleteMapping("/torneos/{id}/arbitros/{usuarioId}")
-    public ResponseEntity<Void> quitar(@PathVariable Long id, @PathVariable Long usuarioId) {
-        arbitrosService.quitar(usuarioActual(), id, usuarioId);
+    public ResponseEntity<Void> quitar(@PathVariable Long id, @PathVariable Long usuarioId,
+            @UsuarioActual Long solicitanteId) {
+        arbitrosService.quitar(solicitanteId, id, usuarioId);
         return ResponseEntity.noContent().build();
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
     }
 }

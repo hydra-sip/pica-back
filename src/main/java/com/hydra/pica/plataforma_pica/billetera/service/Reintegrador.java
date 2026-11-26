@@ -23,6 +23,7 @@ import com.hydra.pica.plataforma_pica.billetera.service.Acreditador.Evento;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -108,7 +109,7 @@ public class Reintegrador {
                     m -> m.setRifa(rifaRepository.getReferenceById(rifaId)),
                     "reint-r" + rifaId + "-b" + pago.billeteraId,
                     descripcion,
-                    "RIFA",
+                    EntidadAuditoria.RIFA,
                     rifaId.toString(),
                     null));
         }
@@ -151,7 +152,7 @@ public class Reintegrador {
                     m -> m.setTorneo(torneoRepository.getReferenceById(torneoId)),
                     "reint-t" + torneoId + "-b" + pago.billeteraId,
                     descripcion,
-                    "TORNEO",
+                    EntidadAuditoria.TORNEO,
                     torneoId.toString(),
                     pago.descuento);
         }
@@ -206,7 +207,7 @@ public class Reintegrador {
             Consumer<Movimiento> vincularEvento,
             String referencia,
             String descripcion,
-            String entidadAuditoria,
+            EntidadAuditoria entidadAuditoria,
             String entidadIdAuditoria,
             BigDecimal retenidoOpcional) {
         Billetera billetera = billeteraRepository.findConBloqueoPorId(pago.billeteraId).orElseThrow();
@@ -223,7 +224,7 @@ public class Reintegrador {
         movimiento.setSaldoResultante(billetera.getSaldoDisponible());
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(referencia);
-        movimiento.setDescripcion(descripcion.length() > 255 ? descripcion.substring(0, 255) : descripcion);
+        movimiento.setDescripcion(Movimiento.truncarDescripcion(descripcion));
         Movimiento guardado = movimientoRepository.save(movimiento);
 
         Map<String, Object> detalle = new LinkedHashMap<>();

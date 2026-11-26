@@ -57,6 +57,7 @@ class BracketControllerTest {
     @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
     @DisplayName("Sin TORNEO_GESTIONAR responde 403 SIN_PERMISO")
     void sinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
         mockMvc.perform(post("/api/v1/torneos/9/bracket"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));

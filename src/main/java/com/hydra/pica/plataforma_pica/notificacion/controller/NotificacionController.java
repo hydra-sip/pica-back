@@ -1,14 +1,13 @@
 package com.hydra.pica.plataforma_pica.notificacion.controller;
 
 import com.hydra.pica.plataforma_pica.common.dto.PaginaResponse;
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.notificacion.dto.NotificacionDetalle;
 import com.hydra.pica.plataforma_pica.notificacion.service.NotificacionService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,7 +23,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class NotificacionController {
 
     private final NotificacionService notificacionService;
-    private final CurrentUserProvider currentUserProvider;
 
     /**
      * Sin {@code leida}, todas; {@code leida=false}, las que faltan leer; {@code leida=true}, las leídas. La campana
@@ -34,24 +32,20 @@ public class NotificacionController {
     public PaginaResponse<NotificacionDetalle> listar(
             @RequestParam(required = false) Boolean leida,
             @RequestParam(required = false, defaultValue = "0") @Min(0) int page,
-            @RequestParam(required = false, defaultValue = "20") @Min(1) @Max(100) int size) {
-        return PaginaResponse.desde(notificacionService.listar(usuarioActual(), leida, page, size));
+            @RequestParam(required = false, defaultValue = "20") @Min(1) @Max(100) int size,
+            @UsuarioActual Long usuarioId) {
+        return PaginaResponse.desde(notificacionService.listar(usuarioId, leida, page, size));
     }
 
     @PostMapping("/{id}/leida")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void marcarLeida(@PathVariable Long id) {
-        notificacionService.marcarLeida(usuarioActual(), id);
+    public void marcarLeida(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        notificacionService.marcarLeida(usuarioId, id);
     }
 
     @PostMapping("/leidas")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void marcarTodasLeidas() {
-        notificacionService.marcarTodasLeidas(usuarioActual());
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+    public void marcarTodasLeidas(@UsuarioActual Long usuarioId) {
+        notificacionService.marcarTodasLeidas(usuarioId);
     }
 }

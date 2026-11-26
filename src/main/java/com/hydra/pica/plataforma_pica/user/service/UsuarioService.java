@@ -1,18 +1,17 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
-import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
 import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.common.audit.AuditConstants;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.common.error.NombreDeConstraint;
 import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -25,7 +24,6 @@ import com.hydra.pica.plataforma_pica.user.repository.RolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -94,14 +92,7 @@ public class UsuarioService {
             throw traducirViolacion(e, username, nuevo.email());
         }
 
-        Billetera billetera = new Billetera();
-        billetera.setUsuario(usuario);
-        billetera.setSaldoDisponible(BigDecimal.ZERO);
-        billetera.setSaldoRetenido(BigDecimal.ZERO);
-        billetera.setGananciaAcumulada(BigDecimal.ZERO);
-        billetera.setMoneda("ARS");
-        billetera.setEstado(EstadoBilletera.ACTIVA);
-        billeteraRepository.save(billetera);
+        billeteraRepository.save(Billetera.nuevaPara(usuario));
 
         // UsuarioRol exige los dos ids, por eso va después del save
         String asignadoPor = currentUserProvider.getCurrentUserId().map(String::valueOf).orElse(AuditConstants.SISTEMA);
@@ -195,14 +186,11 @@ public class UsuarioService {
      * arriba y una pierde contra el índice único. Se traduce al mismo 409 que hubiera dado el chequeo.
      */
     private RuntimeException traducirViolacion(DataIntegrityViolationException e, String username, String email) {
-        Throwable causa = e;
-        while (causa != null && !(causa instanceof ConstraintViolationException)) {
-            causa = causa.getCause();
-        }
-        if (causa == null || ((ConstraintViolationException) causa).getConstraintName() == null) {
+        String constraint = NombreDeConstraint.de(e);
+        if (constraint == null) {
             return e;
         }
-        return switch (((ConstraintViolationException) causa).getConstraintName()) {
+        return switch (constraint) {
             case "uq_usuario_username_lower" ->
                     new ConflictoException(CodigoError.USERNAME_DUPLICADO, "El username " + username + " ya está en uso");
             case "uq_usuario_email_lower" ->

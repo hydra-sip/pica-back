@@ -15,6 +15,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
@@ -267,7 +268,7 @@ public class BracketService {
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(usuarioRepository.getReferenceById(organizadorId));
         auditoria.setAccion(AccionAuditoria.SORTEO);
-        auditoria.setEntidad("TORNEO");
+        auditoria.setEntidad(EntidadAuditoria.TORNEO.name());
         auditoria.setEntidadId(String.valueOf(torneo.getId()));
         auditoria.setDetalle(detalle);
         auditoriaRepository.save(auditoria);
@@ -296,7 +297,7 @@ public class BracketService {
     static PartidoBracket partidoBracket(Partido partido, List<Juega> lados) {
         LadoBracket local = Partidos.ladoBracket(lados, Lado.LOCAL);
         LadoBracket visitante = Partidos.ladoBracket(lados, Lado.VISITANTE);
-        boolean bye = partido.getRonda() == 1 && local != null && visitante == null;
+        boolean bye = Partidos.esBye(partido, local, visitante);
         return new PartidoBracket(partido.getId(), partido.getRonda(), partido.getPosicion(), partido.getEstado(), bye,
                 local, visitante, partido.getCancha() == null ? null : partido.getCancha().getNombre(),
                 partido.getFechaProgramada(), Partidos.nombre(partido.getArbitro()));
