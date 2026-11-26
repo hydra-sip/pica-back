@@ -1,23 +1,38 @@
 package com.hydra.pica.plataforma_pica.reputacion;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hydra.pica.plataforma_pica.EscenarioTorneo;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
+import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
+import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
+import com.hydra.pica.plataforma_pica.partido.service.BracketService;
 import com.hydra.pica.plataforma_pica.partido.service.ResultadoService;
 import com.hydra.pica.plataforma_pica.reputacion.domain.Gravedad;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionDetalle;
 import com.hydra.pica.plataforma_pica.reputacion.dto.SancionRequest;
 import com.hydra.pica.plataforma_pica.reputacion.service.FairPlayService;
 import com.hydra.pica.plataforma_pica.reputacion.service.SancionService;
+import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
+import com.hydra.pica.plataforma_pica.torneo.domain.PermisoArbitro;
+import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
+import com.hydra.pica.plataforma_pica.torneo.dto.DesignarArbitroRequest;
+import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
+import com.hydra.pica.plataforma_pica.torneo.service.ArbitrosTorneoService;
+import com.hydra.pica.plataforma_pica.torneo.service.TorneoService;
+import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.service.UsuarioEdicionService;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +41,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -42,12 +58,19 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class PerfilJugadorIntegracionTest {
 
+    private static final Instant EN_UN_MES = Instant.now().plus(30, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+
     @Autowired private MockMvc mockMvc;
     @Autowired private EscenarioTorneo escenario;
     @Autowired private UsuarioEdicionService usuarioEdicionService;
     @Autowired private ResultadoService resultadoService;
     @Autowired private SancionService sancionService;
     @Autowired private FairPlayService fairPlayService;
+    @Autowired private TorneoService torneoService;
+    @Autowired private ArbitrosTorneoService arbitrosService;
+    @Autowired private InscripcionService inscripcionService;
+    @Autowired private BracketService bracketService;
+    @Autowired private JdbcTemplate jdbc;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private EntityManager entityManager;
 
@@ -158,18 +181,119 @@ class PerfilJugadorIntegracionTest {
                 .andExpect(jsonPath("$.fairPlay.actualizadoEn").isNotEmpty());
     }
 
+    @Test
+    void unJugadorNuevoNoTieneUltimosTorneos() throws Exception {
+        Long nuevo = escenario.usuario("jugador_sin_torneos", "PARTICIPANTE").getId();
+
+        perfil(nuevo).andExpect(jsonPath("$.ultimosTorneos").isEmpty());
+    }
+
+    @Test
+    void unTorneoFinalizadoApareceEnLosUltimosConElPuestoDeCadaUno() throws Exception {
+        Usuario campeon = escenario.usuario("campeon_ultimos", "PARTICIPANTE");
+        Usuario subcampeon = escenario.usuario("subcampeon_ultimos", "PARTICIPANTE");
+        Instant fin = EN_UN_MES.plus(1, ChronoUnit.DAYS);
+        Long torneo = escenario.individualEnCurso(organizador, arbitro, "Copa de los últimos", EN_UN_MES, fin,
+                List.of(campeon, subcampeon));
+        Long laFinal = escenario.partido(torneo, 1, 1);
+
+        jugar(laFinal, ganaElDe(laFinal, campeon.getId()));
+
+        perfil(campeon.getId())
+                .andExpect(jsonPath("$.ultimosTorneos.length()").value(1))
+                .andExpect(jsonPath("$.ultimosTorneos[0].torneoId").value(torneo))
+                .andExpect(jsonPath("$.ultimosTorneos[0].slug").value("escenario-" + torneo))
+                .andExpect(jsonPath("$.ultimosTorneos[0].nombre").value("Copa de los últimos"))
+                .andExpect(jsonPath("$.ultimosTorneos[0].disciplina").value("Ajedrez"))
+                .andExpect(jsonPath("$.ultimosTorneos[0].fechaFin").value(fin.toString()))
+                .andExpect(jsonPath("$.ultimosTorneos[0].posicion").value(1))
+                .andExpect(jsonPath("$.ultimosTorneos[0].equipo").isEmpty());
+        perfil(subcampeon.getId())
+                .andExpect(jsonPath("$.ultimosTorneos.length()").value(1))
+                .andExpect(jsonPath("$.ultimosTorneos[0].posicion").value(2));
+    }
+
+    @Test
+    void unTorneoEnCursoEnElQueJugoNoApareceEnLosUltimos() throws Exception {
+        Long torneo = escenario.individualEnCurso(organizador, arbitro, "Copa en curso", "jugador_en_curso_", 4);
+        Long partido = escenario.partido(torneo, 1, 1);
+        Long ganador = escenario.jugador(partido, "LOCAL");
+
+        jugar(partido, 1, 0);
+
+        perfil(ganador)
+                .andExpect(jsonPath("$.historial.victorias").value(1))
+                .andExpect(jsonPath("$.historial.torneosJugados").value(0))
+                .andExpect(jsonPath("$.ultimosTorneos").isEmpty());
+    }
+
+    @Test
+    void conMasDeCincoTorneosVienenLosCincoMasRecientesPorFechaDeFinYPorIdSiEmpatan() throws Exception {
+        Usuario jugador = escenario.usuario("jugador_de_seis", "PARTICIPANTE");
+        Long a = finalizado(jugador, "Copa A", EN_UN_MES, EN_UN_MES.plus(3, ChronoUnit.DAYS));
+        finalizado(jugador, "Copa B", EN_UN_MES, EN_UN_MES.plus(1, ChronoUnit.DAYS));
+        Long c = finalizado(jugador, "Copa C", EN_UN_MES, EN_UN_MES.plus(6, ChronoUnit.DAYS));
+        Long d = finalizado(jugador, "Copa D", EN_UN_MES, EN_UN_MES.plus(2, ChronoUnit.DAYS));
+        Long e = finalizado(jugador, "Copa E", EN_UN_MES, EN_UN_MES.plus(5, ChronoUnit.DAYS));
+        Long f = finalizado(jugador, "Copa F", EN_UN_MES, EN_UN_MES.plus(5, ChronoUnit.DAYS));
+
+        perfil(jugador.getId())
+                .andExpect(jsonPath("$.historial.torneosJugados").value(6))
+                .andExpect(jsonPath("$.ultimosTorneos[*].torneoId").value(contains(
+                        c.intValue(), f.intValue(), e.intValue(), a.intValue(), d.intValue())));
+    }
+
+    @Test
+    void unTorneoSinFechaDeFinSeOrdenaPorSuFechaDeInicio() throws Exception {
+        Usuario jugador = escenario.usuario("jugador_sin_fin", "PARTICIPANTE");
+        Long antes = finalizado(jugador, "Copa de antes", EN_UN_MES.minus(10, ChronoUnit.DAYS),
+                EN_UN_MES.minus(8, ChronoUnit.DAYS));
+        Long sinFin = finalizado(jugador, "Copa sin fin", EN_UN_MES, null);
+        Long despues = finalizado(jugador, "Copa de después", EN_UN_MES, EN_UN_MES.plus(5, ChronoUnit.DAYS));
+
+        perfil(jugador.getId())
+                .andExpect(jsonPath("$.ultimosTorneos[*].torneoId").value(contains(
+                        despues.intValue(), sinFin.intValue(), antes.intValue())))
+                .andExpect(jsonPath("$.ultimosTorneos[1].fechaFin").isEmpty());
+    }
+
+    @Test
+    void enUnTorneoPorEquiposElIntegranteDeLaNominaLoVeConElNombreDelEquipo() throws Exception {
+        Long porEquipos = torneoPorEquipos();
+        Long capitanA = escenario.usuario("capitan_perfil_a", "PARTICIPANTE").getId();
+        Long companieroA = escenario.usuario("companiero_perfil_a", "PARTICIPANTE").getId();
+        Long capitanB = escenario.usuario("capitan_perfil_b", "PARTICIPANTE").getId();
+        Long companieroB = escenario.usuario("companiero_perfil_b", "PARTICIPANTE").getId();
+        inscribirEquipo(porEquipos, capitanA, "Los del perfil", companieroA);
+        inscribirEquipo(porEquipos, capitanB, "Los otros", companieroB);
+        cerrarYSortear(porEquipos);
+
+        jugar(escenario.partido(porEquipos, 1, 1), capitanA, capitanB);
+
+        perfil(companieroA)
+                .andExpect(jsonPath("$.historial.torneosJugados").value(1))
+                .andExpect(jsonPath("$.ultimosTorneos.length()").value(1))
+                .andExpect(jsonPath("$.ultimosTorneos[0].torneoId").value(porEquipos))
+                .andExpect(jsonPath("$.ultimosTorneos[0].equipo").value("Los del perfil"));
+    }
+
     /** Un campo privado agregado por error (email, documento, datos bancarios) rompe este test. */
     @Test
     void elPerfilTraeSoloLasClavesPublicas() throws Exception {
-        Long jugador = escenario.usuario("jugador_claves", "PARTICIPANTE").getId();
+        Usuario jugador = escenario.usuario("jugador_claves", "PARTICIPANTE");
+        finalizado(jugador, "Copa de las claves", EN_UN_MES, EN_UN_MES.plus(1, ChronoUnit.DAYS));
 
-        JsonNode perfil = json(jugador);
+        JsonNode perfil = json(jugador.getId());
 
         assertThat(claves(perfil)).containsExactlyInAnyOrder(
-                "id", "username", "nombreCompleto", "avatar", "historial", "fairPlay");
+                "id", "username", "nombreCompleto", "avatar", "historial", "fairPlay",
+                "ultimosTorneos");
         assertThat(claves(perfil.get("historial"))).containsExactlyInAnyOrder(
                 "torneosJugados", "victorias", "derrotas", "podios");
         assertThat(claves(perfil.get("fairPlay"))).containsExactlyInAnyOrder("valor", "actualizadoEn");
+        assertThat(perfil.get("ultimosTorneos")).hasSize(1);
+        assertThat(claves(perfil.get("ultimosTorneos").get(0))).containsExactlyInAnyOrder(
+                "torneoId", "slug", "nombre", "disciplina", "fechaFin", "posicion", "equipo");
     }
 
     // --- helpers --------------------------------------------------------------
@@ -187,6 +311,69 @@ class PerfilJugadorIntegracionTest {
         List<String> claves = new ArrayList<>();
         objeto.fieldNames().forEachRemaining(claves::add);
         return claves;
+    }
+
+    /** Un torneo gratis por equipos de 2, con la inscripción abierta y el árbitro designado (aceptó). */
+    private Long torneoPorEquipos() {
+        Long id = torneoService.crear(organizador, new InformacionTorneoRequest("Copa por equipos del perfil", "Futbol",
+                null, null, Modalidad.ONLINE, TipoParticipante.EQUIPO, null, null, EN_UN_MES, null,
+                Instant.now().plus(7, ChronoUnit.DAYS), "Partidos de 20 minutos", 8, 2, 2, 2)).id();
+        arbitrosService.designar(organizador, id,
+                new DesignarArbitroRequest(arbitro, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
+        jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO' WHERE torneo_id = ?", id);
+        jdbc.update("""
+                UPDATE torneo SET valor_inscripcion = 0, pct_pozo_competidores = 90, pct_premio_rifa = 0,
+                                  estado = 'INSCRIPCION_ABIERTA', publicado_en = now()
+                WHERE id = ?""", id);
+        entityManager.clear();
+        return id;
+    }
+
+    /** El capitán inscribe un equipo nuevo con él y el compañero, y confirma: el torneo es gratis. */
+    private void inscribirEquipo(Long torneoId, Long capitan, String nombre, Long companiero) {
+        Long id = inscripcionService.crear(capitan, torneoId,
+                new InscripcionEquipoRequest(null, nombre, List.of(capitan, companiero))).id();
+        inscripcionService.confirmar(capitan, id, true);
+    }
+
+    /** Cierra la inscripción y genera el bracket. */
+    private void cerrarYSortear(Long torneoId) {
+        jdbc.update("UPDATE torneo SET estado = 'INSCRIPCION_CERRADA' WHERE id = ?", torneoId);
+        entityManager.flush();
+        entityManager.clear();
+        bracketService.generar(organizador, torneoId);
+        entityManager.flush();
+        entityManager.clear();
+    }
+
+    /** Juegan los capitanes: el que carga gana 1-0, lo acepta el otro. */
+    private void jugar(Long partidoId, Long capitanGanador, Long capitanPerdedor) {
+        Long capitanLocal = jdbc.queryForObject("""
+                SELECT e.capitan_id FROM juega j JOIN inscripcion i ON i.id = j.inscripcion_id
+                JOIN equipo e ON e.id = i.equipo_id WHERE j.partido_id = ? AND j.lado = 'LOCAL'""",
+                Long.class, partidoId);
+        boolean ganaLocal = capitanGanador.equals(capitanLocal);
+        resultadoService.cargar(capitanGanador, partidoId,
+                new ResultadoRequest(ganaLocal ? 1 : 0, ganaLocal ? 0 : 1, null, null));
+        resultadoService.aceptar(capitanPerdedor, partidoId);
+        entityManager.flush();
+    }
+
+    /** Un torneo de dos que el jugador juega contra un rival nuevo y que termina con la final. */
+    private Long finalizado(Usuario jugador, String nombre, Instant inicio, Instant fin) {
+        Usuario rival = escenario.usuario("rival_" + nombre.toLowerCase().replaceAll("\\W", "_"), "PARTICIPANTE");
+        Long torneo = escenario.individualEnCurso(organizador, arbitro, nombre, inicio, fin, List.of(jugador, rival));
+        jugar(escenario.partido(torneo, 1, 1), 1, 0);
+        return torneo;
+    }
+
+    /** El resultado que hace ganar al usuario, juegue de local o de visitante. */
+    private int[] ganaElDe(Long partidoId, Long usuarioId) {
+        return usuarioId.equals(escenario.jugador(partidoId, "LOCAL")) ? new int[] {1, 0} : new int[] {0, 1};
+    }
+
+    private void jugar(Long partidoId, int[] goles) {
+        jugar(partidoId, goles[0], goles[1]);
     }
 
     /** Carga el resultado desde el local y lo acepta el visitante. */

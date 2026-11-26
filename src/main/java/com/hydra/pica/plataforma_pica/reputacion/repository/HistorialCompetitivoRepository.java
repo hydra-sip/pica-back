@@ -1,5 +1,7 @@
 package com.hydra.pica.plataforma_pica.reputacion.repository;
 
+import java.time.Instant;
+import java.util.List;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
@@ -54,4 +56,51 @@ public interface HistorialCompetitivoRepository extends Repository<Inscripcion, 
                    (SELECT count(*) FROM inscripciones i JOIN torneo t ON t.id = i.torneo_id
                     WHERE t.estado = 'FINALIZADO' AND i.posicion BETWEEN 1 AND 3) AS podios""", nativeQuery = true)
     Historial historial(@Param("usuarioId") Long usuarioId);
+
+    /** Una fila de {@link #ultimosTorneos}. */
+    interface TorneoJugado {
+        Long getTorneoId();
+
+        String getSlug();
+
+        String getNombre();
+
+        String getDisciplina();
+
+        Instant getFechaFin();
+
+        Integer getPosicion();
+
+        String getEquipo();
+    }
+
+    /**
+     * Los últimos 5 torneos jugados del usuario, con el mismo criterio que {@code torneosJugados} de
+     * {@link #historial}: FINALIZADOS, en los que una inscripción suya jugó al menos un partido cerrado con rival. Van
+     * del más reciente al más viejo por la fecha de fin planificada (o la de inicio, si no tiene) y, si empatan, por
+     * id. {@code posicion} es null si quedó afuera en grupos; {@code equipo}, si el torneo era individual.
+     */
+    @Query(value = """
+            WITH inscripciones AS (
+                SELECT i.id, i.torneo_id, i.posicion, i.equipo_id FROM inscripcion i
+                WHERE i.usuario_id = :usuarioId
+                   OR EXISTS (SELECT 1 FROM nomina n WHERE n.inscripcion_id = i.id AND n.usuario_id = :usuarioId)
+            ), jugadas AS (
+                SELECT DISTINCT j.inscripcion_id
+                FROM juega j
+                JOIN inscripciones i ON i.id = j.inscripcion_id
+                JOIN partido p ON p.id = j.partido_id
+                JOIN juega r ON r.partido_id = j.partido_id AND r.inscripcion_id <> j.inscripcion_id
+                WHERE p.estado IN ('CONFIRMADO', 'CORREGIDO', 'WALKOVER')
+            )
+            SELECT t.id AS torneoId, t.slug AS slug, t.nombre AS nombre, t.disciplina AS disciplina,
+                   t.fecha_fin AS fechaFin, i.posicion AS posicion, e.nombre AS equipo
+            FROM inscripciones i
+            JOIN jugadas jg ON jg.inscripcion_id = i.id
+            JOIN torneo t ON t.id = i.torneo_id
+            LEFT JOIN equipo e ON e.id = i.equipo_id
+            WHERE t.estado = 'FINALIZADO'
+            ORDER BY COALESCE(t.fecha_fin, t.fecha_inicio) DESC, t.id DESC
+            LIMIT 5""", nativeQuery = true)
+    List<TorneoJugado> ultimosTorneos(@Param("usuarioId") Long usuarioId);
 }

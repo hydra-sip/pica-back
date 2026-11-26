@@ -33,6 +33,7 @@ public class PerfilJugadorService {
         FairPlayDetalle fairPlay = fairPlayService.ver(usuarioId);
         return new PerfilJugador(usuario.getId(), identidad.username(), identidad.nombreCompleto(), null,
                 historialService.de(usuarioId),
-                new IndiceFairPlay(fairPlay.valor(), fairPlay.actualizadoEn()));
+                new IndiceFairPlay(fairPlay.valor(), fairPlay.actualizadoEn()),
+                historialService.ultimosTorneos(usuarioId));
     }
 }
