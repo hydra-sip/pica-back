@@ -2759,6 +2759,25 @@ paths:
               schema: {$ref: '#/components/schemas/FairPlayDetalle'}
         '404': {$ref: '#/components/responses/Error'}
 
+  /api/v1/usuarios/{id}/logros:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Reputación]
+      summary: Insignias y rifas ganadas de un usuario
+      x-jira: PICA-425
+      x-owner: Salvador
+      description: >-
+        HU-804. Con sesión, cualquiera: las insignias obtenidas automáticamente por eventos (la más reciente primero) y
+        las rifas sorteadas o liquidadas en las que ganó algún premio. Vacías si todavía no tiene logros. 404
+        `USUARIO_NO_ENCONTRADO` si no existe.
+      responses:
+        '200':
+          description: Insignias y rifas ganadas del usuario
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LogrosJugador'}
+        '404': {$ref: '#/components/responses/Error'}
+
   /api/v1/usuarios/{id}/perfil-organizador:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -4771,6 +4790,37 @@ components:
       type: string
       enum: [LOGIN, LOGIN_FALLIDO, LOGOUT, ALTA, MODIFICACION, BAJA, BLOQUEO, DESBLOQUEO, PAGO, LAUDO, SORTEO,
              CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO, SANCION, CALIFICACION]
+    LogrosJugador:
+      type: object
+      required: [usuarioId, insignias, rifasGanadas]
+      description: HU-804. Las insignias obtenidas y las rifas ganadas por un usuario.
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        insignias:
+          type: array
+          items:
+            type: object
+            required: [codigo, nombre, descripcion, icono, otorgadaEn]
+            properties:
+              codigo: {type: string, enum: [PRIMER_TORNEO_JUGADO, PRIMER_TORNEO_GANADO, PRIMER_PODIO, PRIMERA_RIFA_GANADA, DIEZ_CHECKINS_SEGUIDOS]}
+              nombre: {type: string}
+              descripcion: {type: string}
+              icono: {type: string}
+              otorgadaEn: {type: string, format: date-time}
+        rifasGanadas:
+          type: array
+          items:
+            type: object
+            required: [rifaId, rifaTitulo, torneoId, torneoNombre, torneoSlug, puesto, numeroGanador, fecha]
+            properties:
+              rifaId: {$ref: '#/components/schemas/Id'}
+              rifaTitulo: {type: string}
+              torneoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}]}
+              torneoNombre: {type: [string, 'null']}
+              torneoSlug: {type: [string, 'null']}
+              puesto: {type: integer, minimum: 1}
+              numeroGanador: {type: integer}
+              fecha: {type: string, format: date-time}
     FairPlayDetalle:
       type: object
       required: [usuarioId, valor, actualizadoEn, historial]
