@@ -167,6 +167,23 @@ class RechazoReprogramacionIntegracionTest {
     }
 
     @Test
+    void quienSeInscribioConLaNuevaFechaYaPublicadaNoLaPuedeRechazar() {
+        Long nuevo = escenario.usuario("jug_rech_nuevo", "PARTICIPANTE").getId();
+        cargar(nuevo);
+        long posterior = inscripcion(torneo, nuevo);
+        jdbc.update("UPDATE inscripcion SET creado_en = ? WHERE id = ?",
+                java.sql.Timestamp.from(Instant.now().plusSeconds(1)), posterior);
+        entityManager.clear();
+        inscripcionService.pagar(nuevo, posterior);
+
+        assertError(() -> rechazoService.rechazar(nuevo, posterior), HttpStatus.CONFLICT,
+                CodigoError.INSCRIPCION_POSTERIOR_A_REPROGRAMACION);
+        entityManager.flush();
+        assertThat(jdbc.queryForObject("SELECT estado FROM inscripcion WHERE id = ?", String.class, posterior))
+                .isEqualTo("CONFIRMADA");
+    }
+
+    @Test
     void otroUsuarioNoEncuentraLaInscripcion() {
         assertError(() -> rechazoService.rechazar(jugador[1], inscripcion[0]), HttpStatus.NOT_FOUND,
                 CodigoError.INSCRIPCION_NO_ENCONTRADA);
