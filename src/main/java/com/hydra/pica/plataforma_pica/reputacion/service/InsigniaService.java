@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.equipo.repository.NominaRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
@@ -18,12 +20,14 @@ import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.reputacion.domain.CodigoInsignia;
 import com.hydra.pica.plataforma_pica.reputacion.domain.Insignia;
 import com.hydra.pica.plataforma_pica.reputacion.dto.InsigniaObtenida;
+import com.hydra.pica.plataforma_pica.reputacion.dto.LogrosJugador;
 import com.hydra.pica.plataforma_pica.reputacion.dto.RifaGanada;
 import com.hydra.pica.plataforma_pica.reputacion.repository.InsigniaRepository;
 import com.hydra.pica.plataforma_pica.reputacion.repository.RifasGanadasRepository;
 import com.hydra.pica.plataforma_pica.reputacion.repository.UsuarioInsigniaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
+import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +51,16 @@ public class InsigniaService {
     private final InscripcionRepository inscripcionRepository;
     private final NominaRepository nominaRepository;
     private final TorneoRepository torneoRepository;
+    private final UsuarioRepository usuarioRepository;
+
+    /** Las insignias obtenidas y las rifas ganadas del jugador. 404 USUARIO_NO_ENCONTRADO si no existe. */
+    @Transactional(readOnly = true)
+    public LogrosJugador ver(Long usuarioId) {
+        if (!usuarioRepository.existsById(usuarioId)) {
+            throw new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + usuarioId);
+        }
+        return new LogrosJugador(usuarioId, insigniasDe(usuarioId), rifasGanadas(usuarioId));
+    }
 
     @Transactional(readOnly = true)
     public List<RifaGanada> rifasGanadas(Long usuarioId) {
