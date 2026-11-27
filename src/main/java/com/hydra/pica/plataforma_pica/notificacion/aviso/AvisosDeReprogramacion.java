@@ -139,12 +139,18 @@ public class AvisosDeReprogramacion {
                 "Terminó el plazo de la nueva fecha de " + torneo.getNombre(), cuerpo));
     }
 
-    /** A cada integrante de las inscripciones confirmadas: las que se bajaron ya no están. */
+    /**
+     * A cada integrante de las inscripciones confirmadas: las que se bajaron ya no están. Las que se crearon después de
+     * la reprogramación tampoco: se anotaron con la fecha nueva y no pueden bajarse (CR-01-3).
+     */
     private List<Aviso> aLosInscriptos(Reprogramacion r, TipoNotificacion tipo, String titulo, String cuerpo) {
         Torneo torneo = r.getTorneo();
         List<Aviso> todos = new ArrayList<>();
         for (Inscripcion inscripcion : inscripcionRepository.findByTorneoIdAndEstadoInOrderByIdAsc(torneo.getId(),
                 List.of(EstadoInscripcion.CONFIRMADA))) {
+            if (!inscripcion.getCreadoEn().isBefore(r.getCreadaEn())) {
+                continue;
+            }
             for (Long usuarioId : avisos.integrantes(inscripcion)) {
                 todos.add(new Aviso(usuarioId, tipo, titulo, cuerpo, enlace(torneo), datos(r)));
             }

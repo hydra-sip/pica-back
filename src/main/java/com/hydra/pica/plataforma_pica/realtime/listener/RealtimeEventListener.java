@@ -26,6 +26,7 @@ import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
+import com.hydra.pica.plataforma_pica.torneo.event.ReprogramacionRechazada;
 import com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado;
 import com.hydra.pica.plataforma_pica.torneo.event.TorneoReprogramado;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -109,6 +110,29 @@ public class RealtimeEventListener {
                 null,
                 false,
                 obtenerBracket(evento.torneoId()),
+                pozoTorneoService.calcularPozo(evento.torneoId())
+        );
+
+        realtimeNotifier.publicarTorneo(evento.torneoId(), mensaje);
+    }
+
+    /**
+     * Alguien se bajó por la nueva fecha (CR-01-3): se liberó un lugar y bajó el pozo. La ficha y la consola vuelven a
+     * pedir el torneo, las inscripciones y el historial.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onReprogramacionRechazada(ReprogramacionRechazada evento) {
+        log.info("Inscripción {} reintegrada por la reprogramación del torneo {}", evento.inscripcionId(),
+                evento.torneoId());
+
+        EventoTorneoMessage mensaje = new EventoTorneoMessage(
+                "INSCRIPCION_REINTEGRADA",
+                evento.torneoId(),
+                obtenerEstadoTorneo(evento.torneoId()),
+                null,
+                null,
+                false,
+                null,
                 pozoTorneoService.calcularPozo(evento.torneoId())
         );
 

@@ -117,6 +117,28 @@ class AvisosReprogramacionIntegracionTest {
     }
 
     @Test
+    @DisplayName("quien se inscribió con la nueva fecha ya publicada no recibe el recordatorio")
+    void elRecordatorioNoLlegaAQuienSeInscribioDespues() {
+        reprogramar();
+        Long nuevo = transaccion.execute(estado -> {
+            Long id = escenario.usuario("jug_nuevo_" + SECUENCIA.incrementAndGet() + "_" + System.nanoTime(),
+                    "PARTICIPANTE").getId();
+            jdbc.update("""
+                    INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
+                    VALUES (?, ?, 'CONFIRMADA', now())
+                    """, torneo, id);
+            return id;
+        });
+        jdbc.update("UPDATE reprogramacion SET rechazo_hasta = now() + interval '12 hours' WHERE torneo_id = ?",
+                torneo);
+
+        vencimiento.recordar();
+
+        assertThat(tipos(jugador[0])).containsExactly("TORNEO_REPROGRAMADO", "REPROGRAMACION_POR_VENCER");
+        assertThat(tipos(nuevo)).isEmpty();
+    }
+
+    @Test
     @DisplayName("con más de un día por delante todavía no hay recordatorio")
     void lejosDelPlazoNoHayRecordatorio() {
         reprogramar();
