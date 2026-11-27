@@ -22,6 +22,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.dto.EconomiaTorneoRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.InformacionTorneoRequest;
+import com.hydra.pica.plataforma_pica.torneo.dto.ReprogramacionDetalle;
+import com.hydra.pica.plataforma_pica.torneo.dto.ReprogramacionRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,8 +38,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * El ambiente de prueba con {@code app.torneos.sin-validar-fechas=true} (PICA-448): se crea, edita y publica un torneo
  * con fechas pasadas y se programan partidos en cualquier fecha, pero el orden entre las fechas se sigue exigiendo.
- * Con el flag apagado lo cubren EdicionTorneoIntegracionTest, PublicacionTorneoServiceIntegracionTest y
- * CheckinIntegracionTest. Cada test hace rollback al terminar.
+ * Con el flag apagado lo cubren EdicionTorneoIntegracionTest, PublicacionTorneoServiceIntegracionTest,
+ * CheckinIntegracionTest y ReprogramacionTorneoIntegracionTest. Cada test hace rollback al terminar.
  */
 @SpringBootTest(properties = "app.torneos.sin-validar-fechas=true")
 @ActiveProfiles("dev")
@@ -53,6 +55,7 @@ class FechasSinValidarIntegracionTest {
     @Autowired private EconomiaTorneoService economiaService;
     @Autowired private PublicacionTorneoService publicacionService;
     @Autowired private ProgramacionService programacionService;
+    @Autowired private ReprogramacionTorneoService reprogramacionService;
     @Autowired private EscenarioTorneo escenario;
 
     private Long organizador;
@@ -126,6 +129,22 @@ class FechasSinValidarIntegracionTest {
     }
 
     // --- ayudas -------------------------------------------------------------
+
+    @Test
+    void seReprogramaConFechasPasadasPeroElOrdenSeSigueExigiendo() {
+        Long arbitro = escenario.usuario("arb_sin_fechas", "ARBITRO").getId();
+        Long torneo = escenario.individualEnCurso(organizador, arbitro, "Reprogramado", "jug_sin_fechas_", 2);
+
+        assertThatValidacion(() -> reprogramacionService.reprogramar(organizador, torneo,
+                new ReprogramacionRequest(HACE_UN_DIA, HACE_UNA_SEMANA, HACE_UNA_SEMANA, HACE_UNA_SEMANA, "Lluvia")))
+                .containsEntry("fechaFin", ErrorCampo.Codigo.FECHAS_INVALIDAS);
+
+        ReprogramacionDetalle hecha = reprogramacionService.reprogramar(organizador, torneo,
+                new ReprogramacionRequest(HACE_UN_DIA, null, HACE_UNA_SEMANA, HACE_UNA_SEMANA, "Lluvia"));
+
+        assertThat(hecha.fechaInicioNueva()).isEqualTo(HACE_UN_DIA);
+        assertThat(hecha.rechazoHasta()).isEqualTo(HACE_UNA_SEMANA);
+    }
 
     private static InformacionTorneoRequest informacion(Instant inicio, Instant fin, Instant cierre) {
         return new InformacionTorneoRequest("Torneo de prueba", "Fútbol 5", null, null, Modalidad.PRESENCIAL,

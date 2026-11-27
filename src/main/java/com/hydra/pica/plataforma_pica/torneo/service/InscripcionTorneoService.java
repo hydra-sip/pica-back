@@ -22,6 +22,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.MinimoInscriptos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
+import com.hydra.pica.plataforma_pica.torneo.repository.ReprogramacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -48,6 +49,7 @@ public class InscripcionTorneoService {
     private final FairPlayService fairPlayService;
     private final CalificacionService calificacionService;
     private final CancelacionTorneoService cancelacionTorneoService;
+    private final ReprogramacionRepository reprogramacionRepository;
 
     /** Todas menos los borradores, de la más vieja a la más nueva; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
@@ -71,7 +73,8 @@ public class InscripcionTorneoService {
     /**
      * En cualquier momento mientras la inscripción está abierta, con las inscripciones confirmadas que hacen falta para
      * jugar ({@link MinimoInscriptos}, PICA-447); si no, 409 PARTICIPANTES_INSUFICIENTES. HU-206 lo pedía sin mínimo,
-     * pero un torneo cerrado por debajo después no puede generar el bracket ni sortear los grupos.
+     * pero un torneo cerrado por debajo después no puede generar el bracket ni sortear los grupos. Mientras corre el
+     * plazo de una reprogramación (CR-01), 409 REPROGRAMACION_EN_CURSO: los que rechacen todavía liberan lugares.
      */
     @Transactional
     public TorneoInformacion cerrar(Long organizadorId, Long id) {
@@ -79,6 +82,10 @@ public class InscripcionTorneoService {
         if (torneo.getEstado() != EstadoTorneo.INSCRIPCION_ABIERTA) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
                     "El torneo " + id + " está " + torneo.getEstado() + ": solo se cierra con la inscripción abierta");
+        }
+        if (reprogramacionRepository.existsByTorneoIdAndPlazoProcesadoEnIsNull(id)) {
+            throw new ConflictoException(CodigoError.REPROGRAMACION_EN_CURSO, "El torneo " + id
+                    + " tiene abierto el plazo para rechazar la nueva fecha: la inscripción no se cierra hasta que venza");
         }
         long confirmadas = confirmadas(torneo);
         int minimo = MinimoInscriptos.de(torneo);

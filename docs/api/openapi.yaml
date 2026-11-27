@@ -2222,6 +2222,65 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
         '502': {$ref: '#/components/responses/Error'}
+  /api/v1/torneos/{id}/reprogramaciones:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: Historial de reprogramaciones del torneo (público)
+      x-jira: PICA-391
+      x-owner: Laura
+      security: []
+      description: >-
+        CR-01. Sin sesión, como la ficha: las reprogramaciones de un torneo publicado, de la más vieja a la más nueva,
+        con las fechas de antes y las nuevas, el motivo y si el plazo para rechazar sigue abierto (`plazoAbierto`). 404
+        `TORNEO_NO_ENCONTRADO` si no existe, está dado de baja o está en BORRADOR.
+      responses:
+        '200':
+          description: El historial
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ReprogramacionDetalle'}
+        '404': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Torneos]
+      summary: Reprogramar el torneo
+      x-jira: PICA-391
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Laura
+      description: >-
+        CR-01. Solo el organizador (para otro, 404 `TORNEO_NO_ENCONTRADO`). Cambia las fechas sin cancelar el torneo:
+        la plata sigue en custodia y las inscripciones no cambian. Hasta `rechazoHasta` los inscriptos pueden decir
+        que la nueva fecha no les sirve. Con la inscripción abierta, sigue abierta, y mientras corre el plazo
+        completar el cupo no la cierra (tampoco se cierra a mano: 409 `REPROGRAMACION_EN_CURSO`). Con la inscripción
+        cerrada o en curso sin resultados, queda INSCRIPCION_CERRADA durante el plazo: se descartan la llave (y los
+        grupos, con sus pronósticos), la lista sellada (`listaHash`) y el compromiso del sorteo de grupos, que se
+        vuelven a fijar en el próximo cierre. Al vencer el plazo, una tarea programada abre la inscripción hasta
+        `cierreInscripcion` si quedaron lugares, o la cierra y vuelve a sellar la lista si el cupo sigue completo.
+        Queda en la auditoría (REPROGRAMACION, entidad TORNEO) con las fechas, el motivo y lo descartado. 400
+        `VALIDACION`, con todos los errores juntos: `motivo` (`REQUERIDO`, o `LONGITUD` si pasa los 500
+        caracteres), `fechaInicio`, `cierreInscripcion` y `rechazoHasta` (`REQUERIDO`), y `FECHAS_INVALIDAS` si
+        `rechazoHasta` ya pasó, si `cierreInscripcion` no es posterior a `rechazoHasta`, si `fechaFin` es anterior a
+        `fechaInicio` o si entre `cierreInscripcion` y `fechaInicio` no está el margen MARGEN_CIERRE_INICIO_MIN. Con
+        `app.torneos.sin-validar-fechas` (PICA-448) las fechas pueden ser pasadas y el cierre no tiene que ser
+        posterior al plazo; el orden y el margen se exigen igual. 409 `TORNEO_NO_REPROGRAMABLE` en otro estado (trae
+        `estado`), `BRACKET_CON_RESULTADOS` si ya hay resultados cargados y `REPROGRAMACION_EN_CURSO` si ya hay una
+        con el plazo abierto.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReprogramacionRequest'}
+      responses:
+        '201':
+          description: La reprogramación
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReprogramacionDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
   /api/v1/arbitros:
     get:
       tags: [Torneos]
@@ -3423,12 +3482,14 @@ paths:
         sella la lista de confirmadas en `listaHash` (ver `TorneoInformacion`) con la fecha y hora en
         `inscripcionCerradaEn`; y queda en la auditoría (CIERRE_INSCRIPCION) con el motivo (CUPO, FECHA o MANUAL) y
         cuántas se cancelaron (el cierre a mano lleva al organizador; el automático, ningún usuario). El cierre es
-        definitivo y no se cambia el cupo máximo: crear y pagar una inscripción y reemplazar un jugador responden 409
+        definitivo (salvo que se reprograme el torneo, `POST /torneos/{id}/reprogramaciones`) y no se cambia el cupo
+        máximo: crear y pagar una inscripción y reemplazar un jugador responden 409
         `INSCRIPCION_NO_ABIERTA` (pagar lo chequea antes que el estado, porque la pendiente ya quedó cancelada), y
         editar o confirmar un borrador cancelado, `INSCRIPCION_NO_EDITABLE`. 404
         `TORNEO_NO_ENCONTRADO` si no existe, está dado de baja o quien llama no es el organizador. 409
-        `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA y `PARTICIPANTES_INSUFICIENTES` por
-        debajo del mínimo.
+        `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA, `REPROGRAMACION_EN_CURSO` mientras
+        corre el plazo para rechazar una reprogramación (CR-01; tampoco se cierra sola al completar el cupo) y
+        `PARTICIPANTES_INSUFICIENTES` por debajo del mínimo.
       parameters: [{$ref: '#/components/parameters/id'}]
       responses:
         '200': {$ref: '#/components/responses/TorneoInformacion'}
@@ -4152,6 +4213,8 @@ components:
         TORNEO_NO_EDITABLE (la parte económica, el reglamento y la publicación solo en BORRADOR; los pasos 1 y 2, hasta que empieza) ·
         TORNEO_INCOMPLETO (le falta algo para publicarse; la lista va en `faltantes`) ·
         TORNEO_NO_CANCELABLE (se cancela con la inscripción abierta o cerrada, o en curso; una vez cancelado o en revisión, no; trae `estado`, HU-605) ·
+        TORNEO_NO_REPROGRAMABLE (se reprograma con la inscripción abierta o cerrada, o en curso sin resultados; trae `estado`, CR-01) ·
+        REPROGRAMACION_EN_CURSO (ya hay una reprogramación con el plazo para rechazar abierto; tampoco se cierra la inscripción a mano, CR-01) ·
         CAMPOS_BLOQUEADOS (el torneo publicado ya no admite cambios en esos campos; la lista va en `campos`) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) · SALDO_INSUFICIENTE (el disponible de la
         billetera no alcanza para el total; lo que falta va en `faltante`, HU-603) · FONDOS_EN_CUSTODIA (los
@@ -4239,7 +4302,7 @@ components:
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
              USUARIO_YA_BLOQUEADO, BLOQUEO_POR_ENDPOINT_PROPIO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
-             TORNEO_INCOMPLETO,
+             TORNEO_INCOMPLETO, TORNEO_NO_REPROGRAMABLE, REPROGRAMACION_EN_CURSO,
              CAMPOS_BLOQUEADOS, COBRO_RECHAZADO, SALDO_INSUFICIENTE, FONDOS_EN_CUSTODIA, CUSTODIA_LIBERADA,
              INSCRIPCION_NO_ABIERTA, ORGANIZADOR_BLOQUEADO, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
@@ -4789,7 +4852,8 @@ components:
     AccionAuditoria:
       type: string
       enum: [LOGIN, LOGIN_FALLIDO, LOGOUT, ALTA, MODIFICACION, BAJA, BLOQUEO, DESBLOQUEO, PAGO, LAUDO, SORTEO,
-             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO, SANCION, CALIFICACION]
+             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO, SANCION, CALIFICACION,
+             REPROGRAMACION]
     LogrosJugador:
       type: object
       required: [usuarioId, insignias, rifasGanadas]
@@ -6100,6 +6164,31 @@ components:
         totalGastos: {type: number, description: La suma de los gastos declarados}
         pozo: {type: number, description: Lo recaudado en inscripciones, sin gastos administrativos}
         reintegrado: {type: number, description: Lo devuelto a las billeteras}
+    ReprogramacionRequest:
+      type: object
+      required: [fechaInicio, cierreInscripcion, rechazoHasta, motivo]
+      description: La reprogramación que pide el organizador (CR-01). Las reglas, en `POST /torneos/{id}/reprogramaciones`.
+      properties:
+        fechaInicio: {type: string, format: date-time}
+        fechaFin: {type: [string, 'null'], format: date-time, description: Opcional, como en el torneo}
+        cierreInscripcion: {type: string, format: date-time, description: Hasta cuándo se anota gente en los lugares que se liberen; posterior al plazo}
+        rechazoHasta: {type: string, format: date-time, description: Hasta cuándo los inscriptos pueden rechazar la nueva fecha}
+        motivo: {type: string, maxLength: 500}
+    ReprogramacionDetalle:
+      type: object
+      required: [id, fechaInicioAnterior, fechaInicioNueva, cierreInscripcion, rechazoHasta, motivo, plazoAbierto, creadaEn]
+      description: Una reprogramación del historial del torneo (CR-01). Es pública, sale en la ficha.
+      properties:
+        id: {type: integer, format: int64}
+        fechaInicioAnterior: {type: string, format: date-time}
+        fechaFinAnterior: {type: [string, 'null'], format: date-time}
+        fechaInicioNueva: {type: string, format: date-time}
+        fechaFinNueva: {type: [string, 'null'], format: date-time}
+        cierreInscripcion: {type: string, format: date-time}
+        rechazoHasta: {type: string, format: date-time}
+        motivo: {type: string}
+        plazoAbierto: {type: boolean, description: Si todavía se puede rechazar la nueva fecha}
+        creadaEn: {type: string, format: date-time}
     ResolucionCancelacion:
       type: object
       required: [torneoId, estado, reintegrado, retenido, alOrganizador]
