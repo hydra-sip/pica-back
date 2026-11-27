@@ -41,7 +41,7 @@ class ReprogramacionTorneoControllerTest {
     private static final Instant CIERRE = Instant.parse("2026-12-10T18:00:00Z");
     private static final Instant RECHAZO = Instant.parse("2026-12-05T18:00:00Z");
     private static final ReprogramacionDetalle DETALLE = new ReprogramacionDetalle(3L,
-            Instant.parse("2026-12-06T18:00:00Z"), null, INICIO, null, CIERRE, RECHAZO, "Lluvia", true,
+            Instant.parse("2026-12-06T18:00:00Z"), null, INICIO, null, CIERRE, RECHAZO, "Lluvia", true, 2,
             Instant.parse("2026-11-20T12:00:00Z"));
     private static final String CUERPO = """
             {"fechaInicio": "2026-12-20T18:00:00Z", "cierreInscripcion": "2026-12-10T18:00:00Z",
@@ -94,6 +94,7 @@ class ReprogramacionTorneoControllerTest {
         mockMvc.perform(get("/api/v1/torneos/9/reprogramaciones"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(3))
-                .andExpect(jsonPath("$[0].fechaInicioNueva").value("2026-12-20T18:00:00Z"));
+                .andExpect(jsonPath("$[0].fechaInicioNueva").value("2026-12-20T18:00:00Z"))
+                .andExpect(jsonPath("$[0].rechazos").value(2));
     }
 }

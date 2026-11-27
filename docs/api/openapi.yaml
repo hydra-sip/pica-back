@@ -6170,7 +6170,8 @@ components:
         motivo: {type: string, maxLength: 500}
     ReprogramacionDetalle:
       type: object
-      required: [id, fechaInicioAnterior, fechaInicioNueva, cierreInscripcion, rechazoHasta, motivo, plazoAbierto, creadaEn]
+      required: [id, fechaInicioAnterior, fechaInicioNueva, cierreInscripcion, rechazoHasta, motivo, plazoAbierto,
+                 rechazos, creadaEn]
       description: Una reprogramación del historial del torneo (CR-01). Es pública, sale en la ficha.
       properties:
         id: {type: integer, format: int64}
@@ -6182,6 +6183,7 @@ components:
         rechazoHasta: {type: string, format: date-time}
         motivo: {type: string}
         plazoAbierto: {type: boolean, description: Si todavía se puede rechazar la nueva fecha}
+        rechazos: {type: integer, description: 'Cuántas inscripciones se bajaron por esta nueva fecha (CR-01-4)'}
         creadaEn: {type: string, format: date-time}
     RechazoReprogramacion:
       type: object
