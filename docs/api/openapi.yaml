@@ -4026,7 +4026,8 @@ paths:
         avisa al organizador (CR-01-4). 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o no es suya; 403 `NO_ES_CAPITAN`
         a un jugador de la nómina que no es el capitán. 409 `INSCRIPCION_NO_EDITABLE` si no está CONFIRMADA (también
         si ya la rechazó: no se devuelve dos veces), `PLAZO_RECHAZO_VENCIDO` si el torneo no tiene una reprogramación
-        con el plazo abierto, y `CUSTODIA_LIBERADA` si la custodia ya se liberó.
+        con el plazo abierto, `INSCRIPCION_POSTERIOR_A_REPROGRAMACION` si la inscripción se creó con la nueva fecha ya
+        publicada (la aceptó al anotarse), y `CUSTODIA_LIBERADA` si la custodia ya se liberó.
       responses:
         '200':
           description: La inscripción reintegrada
@@ -4227,6 +4228,7 @@ components:
         TORNEO_NO_REPROGRAMABLE (se reprograma con la inscripción abierta o cerrada, o en curso sin resultados; trae `estado`, CR-01) ·
         REPROGRAMACION_EN_CURSO (ya hay una reprogramación con el plazo para rechazar abierto; tampoco se cierra la inscripción a mano, CR-01) ·
         PLAZO_RECHAZO_VENCIDO (el torneo no tiene una reprogramación con el plazo para rechazar la nueva fecha abierto, CR-01-3) ·
+        INSCRIPCION_POSTERIOR_A_REPROGRAMACION (la inscripción se hizo con la nueva fecha ya publicada: no se puede rechazar, CR-01-3) ·
         CAMPOS_BLOQUEADOS (el torneo publicado ya no admite cambios en esos campos; la lista va en `campos`) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) · SALDO_INSUFICIENTE (el disponible de la
         billetera no alcanza para el total; lo que falta va en `faltante`, HU-603) · FONDOS_EN_CUSTODIA (los
@@ -4315,6 +4317,7 @@ components:
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
              USUARIO_YA_BLOQUEADO, BLOQUEO_POR_ENDPOINT_PROPIO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
              TORNEO_INCOMPLETO, TORNEO_NO_REPROGRAMABLE, REPROGRAMACION_EN_CURSO, PLAZO_RECHAZO_VENCIDO,
+             INSCRIPCION_POSTERIOR_A_REPROGRAMACION,
              CAMPOS_BLOQUEADOS, COBRO_RECHAZADO, SALDO_INSUFICIENTE, FONDOS_EN_CUSTODIA, CUSTODIA_LIBERADA,
              INSCRIPCION_NO_ABIERTA, ORGANIZADOR_BLOQUEADO, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,

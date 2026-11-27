@@ -33,7 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
  * El inscripto que no puede en la nueva fecha se baja dentro del plazo de la reprogramación (CR-01-3, PICA-392): la
  * inscripción pasa a REINTEGRADA, libera su lugar y se le devuelve la inscripción a la billetera de quien pagó
  * ({@link Reintegrador#reintegrarInscripcion}); los gastos administrativos no se devuelven. Lo hace el participante de
- * la individual o el capitán del equipo. Si con las confirmadas que quedan el torneo no llega al mínimo para jugar, no
+ * la individual o el capitán del equipo, y solo si la inscripción es anterior a la reprogramación: quien se anotó con
+ * la fecha nueva ya publicada la aceptó. Si con las confirmadas que quedan el torneo no llega al mínimo para jugar, no
  * se cancela: se avisa al organizador para que decida ({@link ReprogramacionRechazada}).
  */
 @Service
@@ -71,6 +72,11 @@ public class RechazoReprogramacionService {
                 .filter(r -> !ahora.isAfter(r.getRechazoHasta()))
                 .orElseThrow(() -> new ConflictoException(CodigoError.PLAZO_RECHAZO_VENCIDO,
                         "El torneo " + torneoId + " no tiene una reprogramación con el plazo para rechazar abierto"));
+        // quien se inscribió con la fecha nueva ya publicada la aceptó al anotarse
+        if (!inscripcion.getCreadoEn().isBefore(reprogramacion.getCreadaEn())) {
+            throw new ConflictoException(CodigoError.INSCRIPCION_POSTERIOR_A_REPROGRAMACION, "La inscripción "
+                    + inscripcionId + " se hizo con la nueva fecha ya publicada: no se puede rechazar");
+        }
 
         inscripcion.setEstado(EstadoInscripcion.REINTEGRADA);
         inscripcionRepository.saveAndFlush(inscripcion);
