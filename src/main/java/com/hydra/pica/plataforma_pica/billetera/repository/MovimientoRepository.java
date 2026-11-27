@@ -27,10 +27,15 @@ public interface MovimientoRepository extends JpaRepository<Movimiento, Long> {
             """)
     List<Object[]> totalesDeLaCustodia(@Param("custodiaId") Long custodiaId);
 
-    /** El pago y los gastos de una inscripción, para su comprobante; el más viejo primero. */
+    /**
+     * El pago y los gastos de una inscripción, para su comprobante; el más viejo primero. También el pago REVERTIDO de
+     * quien rechazó una reprogramación (CR-01-3): se pagó y se devolvió, y el comprobante lo sigue mostrando.
+     */
     @Query("""
             SELECT m FROM Movimiento m JOIN FETCH m.billetera b JOIN FETCH b.usuario
-            WHERE m.inscripcion.id = :inscripcionId AND m.estado = com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento.CONFIRMADO
+            WHERE m.inscripcion.id = :inscripcionId
+              AND m.estado IN (com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento.CONFIRMADO,
+                               com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento.REVERTIDO)
             ORDER BY m.id
             """)
     List<Movimiento> pagosDeLaInscripcion(@Param("inscripcionId") Long inscripcionId);
