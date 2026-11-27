@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.reputacion.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
@@ -17,6 +18,8 @@ import com.hydra.pica.plataforma_pica.EscenarioTorneo;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.billetera.event.TorneoLiquidado;
 import com.hydra.pica.plataforma_pica.billetera.service.LiquidacionService;
+import com.hydra.pica.plataforma_pica.common.error.CodigoError;
+import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
@@ -31,6 +34,7 @@ import com.hydra.pica.plataforma_pica.partido.service.ResultadoService;
 import com.hydra.pica.plataforma_pica.reputacion.domain.CodigoInsignia;
 import com.hydra.pica.plataforma_pica.reputacion.domain.Insignia;
 import com.hydra.pica.plataforma_pica.reputacion.dto.InsigniaObtenida;
+import com.hydra.pica.plataforma_pica.reputacion.dto.LogrosJugador;
 import com.hydra.pica.plataforma_pica.reputacion.dto.RifaGanada;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
@@ -134,6 +138,11 @@ class InsigniasYLogrosIntegracionTest {
                         CodigoInsignia.PRIMER_TORNEO_JUGADO.name());
         assertThat(insigniaService.insigniasDe(nuevo)).isEmpty();
         assertThat(insigniaService.rifasGanadas(nuevo)).isEmpty();
+        assertThat(insigniaService.ver(nuevo)).isEqualTo(new LogrosJugador(nuevo, List.of(), List.of()));
+        assertThatThrownBy(() -> insigniaService.ver(999_999_999L))
+                .isInstanceOf(NoEncontradoException.class)
+                .extracting("codigo")
+                .isEqualTo(CodigoError.USUARIO_NO_ENCONTRADO);
     }
 
     @Test
