@@ -1,5 +1,8 @@
 package com.hydra.pica.plataforma_pica.discord;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -22,8 +25,11 @@ import com.hydra.pica.plataforma_pica.partido.repository.GrupoInscripcionReposit
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.partido.service.Partidos;
+import com.hydra.pica.plataforma_pica.torneo.domain.Reprogramacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.event.TorneoReprogramado;
 import com.hydra.pica.plataforma_pica.torneo.event.WebhookDiscordGuardado;
+import com.hydra.pica.plataforma_pica.torneo.repository.ReprogramacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -45,17 +51,23 @@ public class AvisosDiscord {
     private final TorneoRepository torneoRepository;
     private final PartidoRepository partidoRepository;
     private final JuegaRepository juegaRepository;
+    private static final ZoneId ARGENTINA = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final DateTimeFormatter DIA_HORA = DateTimeFormatter.ofPattern("dd/MM 'a las' HH:mm");
+
     private final GrupoInscripcionRepository grupoInscripcionRepository;
+    private final ReprogramacionRepository reprogramacionRepository;
     private final CanalDiscord canal;
     private final String webUrl;
 
     AvisosDiscord(TorneoRepository torneoRepository, PartidoRepository partidoRepository,
                   JuegaRepository juegaRepository, GrupoInscripcionRepository grupoInscripcionRepository,
-                  CanalDiscord canal, @Value("${app.web-url:http://localhost:5173}") String webUrl) {
+                  ReprogramacionRepository reprogramacionRepository, CanalDiscord canal,
+                  @Value("${app.web-url:http://localhost:5173}") String webUrl) {
         this.torneoRepository = torneoRepository;
         this.partidoRepository = partidoRepository;
         this.juegaRepository = juegaRepository;
         this.grupoInscripcionRepository = grupoInscripcionRepository;
+        this.reprogramacionRepository = reprogramacionRepository;
         this.canal = canal;
         this.webUrl = webUrl;
     }
@@ -88,6 +100,30 @@ public class AvisosDiscord {
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public void alPasarDirecto(PaseDirecto evento) {
         avisar(evento);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void alReprogramar(TorneoReprogramado evento) {
+        avisar(evento);
+    }
+
+    /** La nueva fecha (CR-01-4): la de antes, la nueva, el motivo y hasta cuándo se pueden bajar los inscriptos. */
+    void avisar(TorneoReprogramado evento) {
+        Reprogramacion r = reprogramacionRepository.findById(evento.reprogramacionId()).orElseThrow();
+        Torneo torneo = r.getTorneo();
+        if (torneo.getDiscordWebhook() == null) {
+            return;
+        }
+        canal.publicar(torneo.getDiscordWebhook(), firmado(torneo, "📅 **Cambió la fecha**: del " + diaYHora(
+                r.getFechaInicioAnterior()) + " pasa al **" + diaYHora(r.getFechaInicioNueva()) + "**. Motivo: "
+                + r.getMotivo() + "\nQuien no pueda tiene hasta el " + diaYHora(r.getRechazoHasta())
+                + " para bajarse desde PICA y recuperar la inscripción."));
+    }
+
+    /** En la hora de Argentina, como los avisos del centro de notificaciones. */
+    private static String diaYHora(Instant instante) {
+        return DIA_HORA.format(instante.atZone(ARGENTINA));
     }
 
     /** El mensaje de prueba: sale cada vez que se guarda, aunque sea el mismo webhook. */

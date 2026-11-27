@@ -121,6 +121,8 @@ class RechazoReprogramacionIntegracionTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM auditoria WHERE accion = 'REINTEGRO' AND entidad_id = ?",
                 Long.class, String.valueOf(torneo))).isEqualTo(1);
         assertThat(detalleDelRechazo(inscripcion[0])).contains("\"bajoElMinimo\": false", "\"reintegrado\": 1000.00");
+        assertThat(reprogramacionService.historial(torneo)).singleElement()
+                .satisfies(r -> assertThat(r.rechazos()).isEqualTo(1));
     }
 
     @Test

@@ -30,8 +30,30 @@ public class VencimientoReprogramacion {
     @Scheduled(fixedDelayString = "${app.torneos.revision-cierres:60s}")
     void programado() {
         if (activo) {
+            recordar();
             resolverVencidas();
         }
+    }
+
+    /**
+     * El recordatorio del día antes de que venza el plazo (CR-01-4, {@link ReprogramacionTorneoService#recordarSiFaltaPoco}).
+     *
+     * @return cuántos mandó
+     */
+    public int recordar() {
+        Instant ahora = Instant.now();
+        int recordados = 0;
+        for (Long torneoId : reprogramacionRepository.torneosParaRecordar(ahora,
+                ahora.plus(ReprogramacionTorneoService.RECORDATORIO))) {
+            try {
+                if (reprogramacionTorneoService.recordarSiFaltaPoco(torneoId, ahora)) {
+                    recordados++;
+                }
+            } catch (RuntimeException e) {
+                log.error("No se pudo mandar el recordatorio de la reprogramación del torneo {}", torneoId, e);
+            }
+        }
+        return recordados;
     }
 
     /** @return cuántas resolvió */

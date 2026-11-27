@@ -29,6 +29,10 @@ import com.hydra.pica.plataforma_pica.partido.event.PaseDirecto;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.partido.service.BracketService;
 import com.hydra.pica.plataforma_pica.partido.service.ResultadoService;
+import com.hydra.pica.plataforma_pica.torneo.dto.ReprogramacionDetalle;
+import com.hydra.pica.plataforma_pica.torneo.dto.ReprogramacionRequest;
+import com.hydra.pica.plataforma_pica.torneo.event.TorneoReprogramado;
+import com.hydra.pica.plataforma_pica.torneo.service.ReprogramacionTorneoService;
 import jakarta.persistence.EntityManager;
 import org.hamcrest.Matcher;
 import org.junit.jupiter.api.AfterEach;
@@ -81,6 +85,7 @@ class AvisosDiscordIntegracionTest {
     @Autowired private CanalDiscord canal;
     @Autowired private TransactionTemplate transaccion;
     @Autowired private EscenarioTorneo escenario;
+    @Autowired private ReprogramacionTorneoService reprogramacionService;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
     @Autowired private ApplicationEvents eventos;
@@ -344,6 +349,36 @@ class AvisosDiscordIntegracionTest {
         jdbc.update("UPDATE partido SET fecha_programada = ? WHERE id = ?", Timestamp.from(fecha), semi);
         refrescar();
         return semi;
+    }
+
+    // --- la reprogramación (CR-01-4) ---------------------------------------------
+
+    @Test
+    void reprogramarPublicaLaNuevaFechaYElPlazo() {
+        ReprogramacionDetalle hecha = reprogramar();
+        assertThat(eventos.stream(TorneoReprogramado.class))
+                .containsExactly(new TorneoReprogramado(torneo, hecha.id()));
+        esperar("📅 **Cambió la fecha**", "Motivo: Lluvia", "para bajarse desde PICA", "**Copa Avisos**");
+
+        avisos.avisar(new TorneoReprogramado(torneo, hecha.id()));
+    }
+
+    @Test
+    void sinWebhookNoPublicaLaReprogramacion() {
+        ReprogramacionDetalle hecha = reprogramar();
+        jdbc.update("UPDATE torneo SET discord_webhook = NULL WHERE id = ?", torneo);
+        refrescar();
+
+        avisos.avisar(new TorneoReprogramado(torneo, hecha.id()));   // DISCORD no espera nada
+    }
+
+    private ReprogramacionDetalle reprogramar() {
+        Instant ahora = Instant.now();
+        ReprogramacionDetalle hecha = reprogramacionService.reprogramar(organizador, torneo, new ReprogramacionRequest(
+                ahora.plus(20, ChronoUnit.DAYS), null, ahora.plus(10, ChronoUnit.DAYS),
+                ahora.plus(5, ChronoUnit.DAYS), "Lluvia"));
+        refrescar();
+        return hecha;
     }
 
     // --- ayudas -------------------------------------------------------------------

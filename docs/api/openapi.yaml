@@ -2258,7 +2258,12 @@ paths:
         grupos, con sus pronósticos), la lista sellada (`listaHash`) y el compromiso del sorteo de grupos, que se
         vuelven a fijar en el próximo cierre. Al vencer el plazo, una tarea programada abre la inscripción hasta
         `cierreInscripcion` si quedaron lugares, o la cierra y vuelve a sellar la lista si el cupo sigue completo.
-        Queda en la auditoría (REPROGRAMACION, entidad TORNEO) con las fechas, el motivo y lo descartado. 400
+        Queda en la auditoría (REPROGRAMACION, entidad TORNEO) con las fechas, el motivo y lo descartado. Avisos
+        (CR-01-4), después del commit: cada integrante de las inscripciones confirmadas recibe TORNEO_REPROGRAMADO en el
+        centro de notificaciones y por correo, y REPROGRAMACION_POR_VENCER un día antes de que venza el plazo; al
+        vencer, el organizador recibe REPROGRAMACION_RESUELTA; el canal de Discord del torneo (si tiene webhook) recibe
+        la nueva fecha, y `/topic/torneos/{id}` el evento TORNEO_REPROGRAMADO. Si un aviso falla, la reprogramación
+        queda hecha igual. 400
         `VALIDACION`, con todos los errores juntos: `motivo` (`REQUERIDO`, o `LONGITUD` si pasa los 500
         caracteres), `fechaInicio`, `cierreInscripcion` y `rechazoHasta` (`REQUERIDO`), y `FECHAS_INVALIDAS` si
         `rechazoHasta` ya pasó, si `cierreInscripcion` no es posterior a `rechazoHasta`, si `fechaFin` es anterior a
@@ -4837,8 +4842,16 @@ components:
       enum: [PENDIENTE, REVISADA]
     TipoNotificacion:
       type: string
-      description: Los eventos de HU-808 que le llegan a un usuario.
-      enum: [RIVAL_ASIGNADO, CHECKIN_ABIERTO, CRUCE_INICIADO, RECLAMO_RESUELTO]
+      description: >-
+        Los eventos que le llegan a un usuario (HU-808). De la reprogramación de un torneo (CR-01-4):
+        TORNEO_REPROGRAMADO (a los inscriptos: la fecha de antes, la nueva, el motivo y hasta cuándo pueden bajarse),
+        REPROGRAMACION_POR_VENCER (el recordatorio un día antes de que venza el plazo, a los que siguen inscriptos),
+        INSCRIPTOS_BAJO_EL_MINIMO (al organizador, si con las bajas no llega al mínimo para jugar; el torneo no se
+        cancela solo) y REPROGRAMACION_RESUELTA (al organizador, al vencer el plazo: cuántos se bajaron y cómo quedó la
+        inscripción). Todos enlazan a la ficha del torneo y traen `torneoId`, `reprogramacionId` y `rechazoHasta` en
+        `datos`.
+      enum: [RIVAL_ASIGNADO, CHECKIN_ABIERTO, CRUCE_INICIADO, RECLAMO_RESUELTO, TORNEO_REPROGRAMADO,
+             REPROGRAMACION_POR_VENCER, INSCRIPTOS_BAJO_EL_MINIMO, REPROGRAMACION_RESUELTA]
     Notificacion:
       type: object
       required: [id, tipo, titulo, cuerpo, enlace, datos, leidaEn, creadaEn]
@@ -6210,7 +6223,8 @@ components:
         motivo: {type: string, maxLength: 500}
     ReprogramacionDetalle:
       type: object
-      required: [id, fechaInicioAnterior, fechaInicioNueva, cierreInscripcion, rechazoHasta, motivo, plazoAbierto, creadaEn]
+      required: [id, fechaInicioAnterior, fechaInicioNueva, cierreInscripcion, rechazoHasta, motivo, plazoAbierto,
+                 rechazos, creadaEn]
       description: Una reprogramación del historial del torneo (CR-01). Es pública, sale en la ficha.
       properties:
         id: {type: integer, format: int64}
@@ -6222,6 +6236,7 @@ components:
         rechazoHasta: {type: string, format: date-time}
         motivo: {type: string}
         plazoAbierto: {type: boolean, description: Si todavía se puede rechazar la nueva fecha}
+        rechazos: {type: integer, description: 'Cuántas inscripciones se bajaron por esta nueva fecha (CR-01-4)'}
         creadaEn: {type: string, format: date-time}
     RechazoReprogramacion:
       type: object
