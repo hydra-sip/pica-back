@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
@@ -48,7 +48,7 @@ class CierreAutomaticoIntegracionTest {
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private ApplicationEvents eventos;
     @Autowired private EntityManager entityManager;
 
@@ -225,7 +225,7 @@ class CierreAutomaticoIntegracionTest {
         for (int i = 0; i < pagos; i++) {
             Long usuario = usuario("pago_" + id + "_" + i).getId();
             jdbc.update("INSERT INTO billetera (usuario_id, saldo_disponible) VALUES (?, 5000)", usuario);
-            inscripcionService.pagar(usuario, inscripcion(id, usuario, "PENDIENTE_PAGO"));
+            pagoInscripcionService.pagar(usuario, inscripcion(id, usuario, "PENDIENTE_PAGO"));
             if (i == 0) {
                 pagador = usuario;
             }

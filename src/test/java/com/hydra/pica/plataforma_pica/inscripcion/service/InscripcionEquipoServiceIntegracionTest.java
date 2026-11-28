@@ -61,6 +61,8 @@ import org.springframework.transaction.annotation.Transactional;
 class InscripcionEquipoServiceIntegracionTest {
 
     @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
+    @Autowired private ReemplazoInscripcionService reemplazoInscripcionService;
     @MockitoSpyBean private InscripcionRepository inscripcionRepository;
     @MockitoSpyBean private CobroService cobroService;
     @Autowired private BloqueoService bloqueoService;
@@ -254,7 +256,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, sale, equipo);
 
-        InscripcionDetalle reemplazada = inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra));
+        InscripcionDetalle reemplazada = reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra));
 
         assertThat(reemplazada.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
         assertThat(reemplazada.nomina()).extracting(UsuarioPublico::id)
@@ -274,10 +276,10 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, primero, equipo);
 
-        inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(primero, segundo));
-        inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(segundo, tercero));
+        reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(primero, segundo));
+        reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(segundo, tercero));
 
-        List<ReemplazoDetalle> historial = inscripcionService.reemplazos(capitan, id);
+        List<ReemplazoDetalle> historial = reemplazoInscripcionService.reemplazos(capitan, id);
 
         assertThat(historial).hasSize(2);
         assertThat(historial.get(0).sale().id()).isEqualTo(primero);
@@ -296,9 +298,9 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, jugador, equipo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(capitan, ausente)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(capitan, ausente)),
                 HttpStatus.CONFLICT, CodigoError.REEMPLAZO_INVALIDO);
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(ausente, jugador)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(ausente, jugador)),
                 HttpStatus.CONFLICT, CodigoError.REEMPLAZO_INVALIDO);
     }
 
@@ -307,7 +309,7 @@ class InscripcionEquipoServiceIntegracionTest {
         Long jugador = integranteNuevo("mismo_reemplazo_eq");
         long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(jugador, jugador)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(jugador, jugador)),
                 HttpStatus.BAD_REQUEST, CodigoError.VALIDACION);
     }
 
@@ -318,7 +320,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, sale, equipo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, 999_999L)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, 999_999L)),
                 HttpStatus.NOT_FOUND, CodigoError.USUARIO_NO_ENCONTRADO);
     }
 
@@ -335,9 +337,9 @@ class InscripcionEquipoServiceIntegracionTest {
         long ultimoEquipo = equipo("Los Últimos", ultimoCapitan);
         long ultima = inscripcionDeEquipo(torneo, ultimoEquipo, "PENDIENTE_PAGO");
         enNomina(ultima, ultimoCapitan, ultimoEquipo);
-        inscripcionService.pagar(ultimoCapitan, ultima);
+        pagoInscripcionService.pagar(ultimoCapitan, ultima);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
                 HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
     }
 
@@ -349,7 +351,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, sale, equipo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
                 HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
     }
 
@@ -362,7 +364,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, sale, equipo);
         jdbc.update("UPDATE torneo SET estado = 'INSCRIPCION_CERRADA' WHERE id = ?", torneo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
                 HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
     }
 
@@ -375,7 +377,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, sale, equipo);
         jdbc.update("UPDATE torneo SET cierre_inscripcion_en = now() - interval '1 hour' WHERE id = ?", torneo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
                 HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
     }
 
@@ -389,7 +391,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, jugador, equipo);
         enNomina(id, sale, equipo);
 
-        assertError(() -> inscripcionService.reemplazar(jugador, id, new ReemplazoRequest(sale, entra)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(jugador, id, new ReemplazoRequest(sale, entra)),
                 HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
     }
 
@@ -411,7 +413,7 @@ class InscripcionEquipoServiceIntegracionTest {
                 RETURNING id
                 """, Long.class, individual, jugador);
 
-        assertError(() -> inscripcionService.reemplazar(jugador, id, new ReemplazoRequest(jugador, entra)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(jugador, id, new ReemplazoRequest(jugador, entra)),
                 HttpStatus.CONFLICT, CodigoError.REEMPLAZO_INVALIDO);
     }
 
@@ -424,7 +426,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, sale, equipo);
         enNomina(id, entra, equipo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
                 HttpStatus.CONFLICT, CodigoError.REEMPLAZO_INVALIDO);
     }
 
@@ -437,7 +439,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, sale, equipo);
         inscripcionActivaDeOtroEquipoCon(entra, "PENDIENTE_PAGO");
 
-        assertJugadorYaInscripto(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)), entra);
+        assertJugadorYaInscripto(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)), entra);
     }
 
     @Test
@@ -449,7 +451,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, sale, equipo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra.getId())),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra.getId())),
                 HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO);
         assertThat(integranteActivo(entra.getId(), equipo)).isFalse();
     }
@@ -464,7 +466,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, sale, equipo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra.getId())),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra.getId())),
                 HttpStatus.CONFLICT, CodigoError.USUARIO_NO_ACTIVO);
         assertThat(integranteActivo(entra.getId(), equipo)).isFalse();
     }
@@ -476,7 +478,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, sale, equipo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, organizador)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, organizador)),
                 HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
     }
 
@@ -489,7 +491,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, sale, equipo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, arbitro)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, arbitro)),
                 HttpStatus.FORBIDDEN, CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO);
     }
 
@@ -502,7 +504,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, sale, equipo);
 
-        InscripcionDetalle reemplazada = inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, exIntegrante));
+        InscripcionDetalle reemplazada = reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, exIntegrante));
 
         assertThat(integranteActivo(exIntegrante, equipo)).isTrue();
         assertThat(reemplazada.nomina()).extracting(UsuarioPublico::id).containsExactlyInAnyOrder(capitan, exIntegrante);
@@ -517,13 +519,13 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, sale, equipo);
         inscripcionActivaDeOtroEquipoCon(entra, "CONFIRMADA");
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
                 HttpStatus.CONFLICT, CodigoError.JUGADOR_YA_INSCRIPTO);
 
         assertThat(jdbc.queryForList("SELECT usuario_id FROM nomina WHERE inscripcion_id = ?", Long.class, id))
                 .containsExactlyInAnyOrder(capitan, sale);
         assertThat(integranteActivo(entra, equipo)).isFalse();
-        assertThat(inscripcionService.reemplazos(capitan, id)).isEmpty();
+        assertThat(reemplazoInscripcionService.reemplazos(capitan, id)).isEmpty();
     }
 
     @Test
@@ -535,11 +537,11 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, jugador, equipo);
         enNomina(id, sale, equipo);
-        inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra));
+        reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra));
 
-        assertThat(inscripcionService.reemplazos(organizador, id)).extracting(r -> r.entra().id()).containsExactly(entra);
-        assertThat(inscripcionService.reemplazos(jugador, id)).extracting(r -> r.entra().id()).containsExactly(entra);
-        assertThat(inscripcionService.reemplazos(entra, id)).extracting(r -> r.entra().id()).containsExactly(entra);
+        assertThat(reemplazoInscripcionService.reemplazos(organizador, id)).extracting(r -> r.entra().id()).containsExactly(entra);
+        assertThat(reemplazoInscripcionService.reemplazos(jugador, id)).extracting(r -> r.entra().id()).containsExactly(entra);
+        assertThat(reemplazoInscripcionService.reemplazos(entra, id)).extracting(r -> r.entra().id()).containsExactly(entra);
     }
 
     @Test
@@ -549,8 +551,8 @@ class InscripcionEquipoServiceIntegracionTest {
         long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
         enNomina(id, capitan, equipo);
 
-        assertError(() -> inscripcionService.reemplazos(ajeno, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
-        assertError(() -> inscripcionService.reemplazos(fueraDeLaNomina, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> reemplazoInscripcionService.reemplazos(ajeno, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> reemplazoInscripcionService.reemplazos(fueraDeLaNomina, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
     }
 
     @Test
@@ -565,9 +567,9 @@ class InscripcionEquipoServiceIntegracionTest {
         long otra = inscripcionDeEquipo(torneo, otroEquipo, "CONFIRMADA");
         enNomina(otra, otroCapitan, otroEquipo);
         enNomina(otra, sale, otroEquipo);
-        inscripcionService.reemplazar(otroCapitan, otra, new ReemplazoRequest(sale, entra));
+        reemplazoInscripcionService.reemplazar(otroCapitan, otra, new ReemplazoRequest(sale, entra));
 
-        assertThat(inscripcionService.reemplazos(capitan, id)).isEmpty();
+        assertThat(reemplazoInscripcionService.reemplazos(capitan, id)).isEmpty();
     }
 
     @Test
@@ -1192,7 +1194,7 @@ class InscripcionEquipoServiceIntegracionTest {
         long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
         inscripcionService.confirmar(capitan, id, true);
 
-        ResumenPago resumen = inscripcionService.resumenPago(capitan, id);
+        ResumenPago resumen = pagoInscripcionService.resumenPago(capitan, id);
 
         assertThat(resumen.inscripcionId()).isEqualTo(id);
         assertThat(resumen.equipo().id()).isEqualTo(equipo);
@@ -1210,8 +1212,8 @@ class InscripcionEquipoServiceIntegracionTest {
         long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
         inscripcionService.confirmar(capitan, id, true);
 
-        assertError(() -> inscripcionService.resumenPago(jugador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
-        assertError(() -> inscripcionService.resumenPago(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> pagoInscripcionService.resumenPago(jugador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> pagoInscripcionService.resumenPago(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
     }
 
     @Test
@@ -1220,9 +1222,9 @@ class InscripcionEquipoServiceIntegracionTest {
         Long jugador = integranteNuevo("pago1_eq");
         long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
         inscripcionService.confirmar(capitan, id, true);
-        assertThat(inscripcionService.resumenPago(capitan, id).cupoDisponible()).isEqualTo(8);
+        assertThat(pagoInscripcionService.resumenPago(capitan, id).cupoDisponible()).isEqualTo(8);
 
-        InscripcionDetalle pagada = inscripcionService.pagar(capitan, id);
+        InscripcionDetalle pagada = pagoInscripcionService.pagar(capitan, id);
 
         assertThat(pagada.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
         assertThat(pagada.nomina()).extracting(UsuarioPublico::id).containsExactlyInAnyOrder(capitan, jugador);
@@ -1242,9 +1244,9 @@ class InscripcionEquipoServiceIntegracionTest {
         Long jugador = integranteNuevo("pago2_eq");
         long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
         inscripcionService.confirmar(capitan, id, true);
-        inscripcionService.pagar(capitan, id);
+        pagoInscripcionService.pagar(capitan, id);
 
-        assertThat(inscripcionService.pagar(capitan, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(pagoInscripcionService.pagar(capitan, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isEqualTo(1);
     }
 
@@ -1255,8 +1257,8 @@ class InscripcionEquipoServiceIntegracionTest {
         long id = inscripcionService.crear(capitan, dosATres, existente(equipo, jugador)).id();
         inscripcionService.confirmar(capitan, id, true);
 
-        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
-        assertError(() -> inscripcionService.pagar(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> pagoInscripcionService.pagar(jugador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> pagoInscripcionService.pagar(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isZero();
     }
 
@@ -1268,7 +1270,7 @@ class InscripcionEquipoServiceIntegracionTest {
         jdbc.update("UPDATE torneo SET cupo_maximo = 2 WHERE id = ?", dosATres);
         confirmarEquipos(dosATres, 2);
 
-        assertError(() -> inscripcionService.pagar(capitan, id), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
+        assertError(() -> pagoInscripcionService.pagar(capitan, id), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isZero();
     }
 
@@ -1280,7 +1282,7 @@ class InscripcionEquipoServiceIntegracionTest {
         inscripcionService.confirmar(capitan, id, true);
         doThrow(new CobroRechazadoException("sin fondos")).when(cobroService).cobrar(any());
 
-        assertError(() -> inscripcionService.pagar(capitan, id), HttpStatus.CONFLICT, CodigoError.COBRO_RECHAZADO);
+        assertError(() -> pagoInscripcionService.pagar(capitan, id), HttpStatus.CONFLICT, CodigoError.COBRO_RECHAZADO);
 
         assertThat(inscripcionService.detalle(capitan, id).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM movimiento WHERE inscripcion_id = ?", Integer.class, id)).isZero();
@@ -1590,7 +1592,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNominaConPct(id, sale, "30.00");
         enNominaConPct(id, otro, "20.00");
 
-        InscripcionDetalle detalle = inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra));
+        InscripcionDetalle detalle = reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra));
 
         assertThat(detalle.reparto()).containsExactlyInAnyOrder(
                 new RepartoIntegrante(capitan, new BigDecimal("50.00")),
@@ -1606,7 +1608,7 @@ class InscripcionEquipoServiceIntegracionTest {
         enNomina(id, capitan, equipo);
         enNomina(id, sale, equipo);
 
-        InscripcionDetalle detalle = inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra));
+        InscripcionDetalle detalle = reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra));
 
         assertThat(detalle.reparto()).isNull();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM nomina WHERE inscripcion_id = ? AND pct_premio IS NOT NULL",

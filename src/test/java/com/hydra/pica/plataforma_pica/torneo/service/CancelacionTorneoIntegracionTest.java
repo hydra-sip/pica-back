@@ -16,7 +16,7 @@ import com.hydra.pica.plataforma_pica.common.almacenamiento.AlmacenArchivos;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoRequest;
 import com.hydra.pica.plataforma_pica.partido.service.PronosticoService;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
@@ -60,7 +60,7 @@ import org.springframework.transaction.annotation.Transactional;
 class CancelacionTorneoIntegracionTest {
 
     @Autowired private CancelacionTorneoService cancelacionTorneoService;
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
@@ -90,7 +90,7 @@ class CancelacionTorneoIntegracionTest {
             jugador[i] = usuario("jug_can_" + i);
             saldo(jugador[i], "5000.00");
             inscripcion[i] = inscripcion(jugador[i], "PENDIENTE_PAGO");
-            inscripcionService.pagar(jugador[i], inscripcion[i]);
+            pagoInscripcionService.pagar(jugador[i], inscripcion[i]);
         }
         entityManager.flush();
     }
@@ -162,7 +162,7 @@ class CancelacionTorneoIntegracionTest {
         jdbc.update("INSERT INTO usuario_equipo (usuario_id, equipo_id) VALUES (?, ?)", capitan, equipo);
         jdbc.update("INSERT INTO nomina (inscripcion_id, usuario_id, equipo_id) VALUES (?, ?, ?)", deEquipo, capitan,
                 equipo);
-        inscripcionService.pagar(capitan, deEquipo);
+        pagoInscripcionService.pagar(capitan, deEquipo);
         entityManager.flush();
         assertBilletera(capitan, "900.00", "1100.00");
 

@@ -14,49 +14,30 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
-import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
-import com.hydra.pica.plataforma_pica.billetera.service.CobroService;
-import com.hydra.pica.plataforma_pica.billetera.service.SolicitudCobro;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.common.error.NombreDeConstraint;
-import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
 import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
-import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.equipo.domain.Equipo;
 import com.hydra.pica.plataforma_pica.equipo.domain.Nomina;
-import com.hydra.pica.plataforma_pica.equipo.domain.NominaId;
-import com.hydra.pica.plataforma_pica.equipo.domain.UsuarioEquipo;
-import com.hydra.pica.plataforma_pica.equipo.domain.UsuarioEquipoId;
 import com.hydra.pica.plataforma_pica.equipo.repository.EquipoRepository;
 import com.hydra.pica.plataforma_pica.equipo.repository.NominaRepository;
-import com.hydra.pica.plataforma_pica.equipo.repository.UsuarioEquipoRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
-import com.hydra.pica.plataforma_pica.inscripcion.domain.MotivoCierre;
-import com.hydra.pica.plataforma_pica.inscripcion.domain.Reemplazo;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.RepartoPremio;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionResumen;
-import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoDetalle;
-import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.RepartoIntegrante;
-import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
-import com.hydra.pica.plataforma_pica.inscripcion.repository.ReemplazoRepository;
-import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
-import com.hydra.pica.plataforma_pica.torneo.domain.GastosAdministrativos;
 import com.hydra.pica.plataforma_pica.torneo.domain.TipoParticipante;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
-import com.hydra.pica.plataforma_pica.torneo.repository.ReprogramacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
-import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
@@ -77,6 +58,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Los borradores y las canceladas no cuentan como inscripción activa, así que no impiden crear otro
  * borrador. Que haya una sola activa por usuario y torneo lo asegura el índice parcial de V14, que
  * corta la carrera cuando un borrador pasa a pendiente de pago al confirmar.
+ *
+ * <p>El pago está en {@link PagoInscripcionService} y los reemplazos en {@link ReemplazoInscripcionService}.
  */
 @Service
 @RequiredArgsConstructor
@@ -88,21 +71,15 @@ public class InscripcionService {
     private static final List<EstadoInscripcion> REPARTO_EDITABLE =
             List.of(EstadoInscripcion.BORRADOR, EstadoInscripcion.PENDIENTE_PAGO, EstadoInscripcion.CONFIRMADA);
 
-    private static final List<EstadoInscripcion> ACTIVAS =
-            List.of(EstadoInscripcion.PENDIENTE_PAGO, EstadoInscripcion.CONFIRMADA);
+    private static final List<EstadoInscripcion> ACTIVAS = InscripcionComun.ACTIVAS;
 
     private final InscripcionRepository inscripcionRepository;
     private final TorneoRepository torneoRepository;
     private final UsuarioRepository usuarioRepository;
-    private final CobroService cobroService;
     private final EquipoRepository equipoRepository;
     private final NominaRepository nominaRepository;
-    private final UsuarioEquipoRepository usuarioEquipoRepository;
-    private final ReemplazoRepository reemplazoRepository;
-    private final CierreInscripcion cierreInscripcion;
     private final AuditoriaRepository auditoriaRepository;
-    private final BloqueoService bloqueoService;
-    private final ReprogramacionRepository reprogramacionRepository;
+    private final InscripcionComun comun;
 
     /**
      * Crea el borrador. En un torneo individual se inscribe el usuario y no lleva cuerpo; en uno por equipos
@@ -114,13 +91,13 @@ public class InscripcionService {
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO, "No existe el torneo " + torneoId));
         Usuario usuario = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + usuarioId));
-        validarUsuario(usuario);
-        validarTorneoAbierto(torneo);
-        validarOrganizadorNoBloqueado(torneo);
-        validarQueNoOrganiza(torneo, usuarioId);
+        comun.validarUsuario(usuario);
+        comun.validarTorneoAbierto(torneo);
+        comun.validarOrganizadorNoBloqueado(torneo);
+        comun.validarQueNoOrganiza(torneo, usuarioId);
         // no hay un índice que asegure un borrador por usuario (en uno de equipo el capitán está en el equipo y
         // no en la inscripción), así que dos pedidos simultáneos se serializan por la fila del torneo
-        torneoBloqueado(torneoId);
+        comun.torneoBloqueado(torneoId);
         exigirSinBorrador(torneoId, usuarioId);
         return torneo.getTipoParticipante() == TipoParticipante.EQUIPO
                 ? crearDeEquipo(usuario, torneo, request)
@@ -162,13 +139,13 @@ public class InscripcionService {
         Inscripcion inscripcion = new Inscripcion();
         inscripcion.setTorneo(torneo);
         inscripcion.setUsuario(usuario);
-        return detalleDe(inscripcionRepository.saveAndFlush(inscripcion), usuario.getId());
+        return comun.detalleDe(inscripcionRepository.saveAndFlush(inscripcion), usuario.getId());
     }
 
     private InscripcionDetalle crearDeEquipo(Usuario capitan, Torneo torneo, InscripcionEquipoRequest request) {
         Inscripcion inscripcion = new Inscripcion();
         inscripcion.setTorneo(torneo);
-        return detalleDe(guardarEquipoYNomina(inscripcion, capitan, request), capitan.getId());
+        return comun.detalleDe(guardarEquipoYNomina(inscripcion, capitan, request), capitan.getId());
     }
 
     // Valida todo antes de escribir (el equipo, y que cada jugador exista, esté activo y sin bloqueo y no figure
@@ -192,7 +169,7 @@ public class InscripcionService {
             nominaRepository.flush();
         }
         Equipo equipo = existente != null ? existente : crearEquipo(capitan, request.nombreEquipoNuevo());
-        sumarAlEquipo(equipo, jugadores);
+        comun.sumarAlEquipo(equipo, jugadores);
         inscripcion.setEquipo(equipo);
         Inscripcion guardada = guardarTraduciendoDuplicada(inscripcion);
         guardarNomina(guardada, equipo, jugadores);
@@ -229,7 +206,7 @@ public class InscripcionService {
     // y los árbitros del torneo no figuran en ninguna, como en el reemplazo
     private void validarJugadoresLibres(Torneo torneo, List<Usuario> jugadores, Long editada) {
         for (Usuario jugador : jugadores) {
-            validarQueNoOrganiza(torneo, jugador.getId());
+            comun.validarQueNoOrganiza(torneo, jugador.getId());
             if (nominaRepository.figuraEnOtraInscripcion(torneo.getId(), jugador.getId(), ACTIVAS, editada)) {
                 throw new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO,
                         "El jugador " + jugador.getId() + " ya figura en otra inscripción activa del torneo " + torneo.getId())
@@ -274,7 +251,7 @@ public class InscripcionService {
         for (Long id : ids) {
             Usuario jugador = id.equals(capitan.getId()) ? capitan : usuarioRepository.findById(id)
                     .orElseThrow(() -> new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + id));
-            validarUsuario(jugador);
+            comun.validarUsuario(jugador);
             jugadores.add(jugador);
         }
         return jugadores;
@@ -288,17 +265,6 @@ public class InscripcionService {
         return equipoRepository.save(equipo);
     }
 
-    // los que todavía no son integrantes se suman; un integrante dado de baja que se vuelve a cargar se reactiva
-    private void sumarAlEquipo(Equipo equipo, List<Usuario> jugadores) {
-        for (Usuario jugador : jugadores) {
-            UsuarioEquipoId id = new UsuarioEquipoId(jugador.getId(), equipo.getId());
-            usuarioEquipoRepository.findById(id).ifPresentOrElse(
-                    integrante -> integrante.setEliminadoEn(null),
-                    () -> usuarioEquipoRepository.save(new UsuarioEquipo(jugador, equipo)));
-        }
-        usuarioEquipoRepository.flush();
-    }
-
     // el reparto del premio arranca en partes iguales, con el sobrante al capitán (CR-05)
     private void guardarNomina(Inscripcion inscripcion, Equipo equipo, List<Usuario> jugadores) {
         Map<Long, BigDecimal> reparto = RepartoPremio.partesIguales(jugadores.stream().map(Usuario::getId).toList(),
@@ -310,28 +276,6 @@ public class InscripcionService {
         nominaRepository.flush();
     }
 
-    // los de equipo llevan además el equipo y la nómina; el rol es el de usuarioId
-    private InscripcionDetalle detalleDe(Inscripcion inscripcion, Long usuarioId) {
-        if (!inscripcion.esDeEquipo()) {
-            return InscripcionDetalle.de(inscripcion, null, null, usuarioId);
-        }
-        List<UsuarioPublico> nomina = nominaRepository.jugadoresDe(inscripcion.getId()).stream()
-                .map(UsuarioPublico::desde).toList();
-        return InscripcionDetalle.de(inscripcion, nomina, repartoDe(inscripcion, nomina), usuarioId);
-    }
-
-    // el % de cada uno, en el orden de la nómina; nulo si la inscripción se liquida con todo al capitán
-    private List<RepartoIntegrante> repartoDe(Inscripcion inscripcion, List<UsuarioPublico> nomina) {
-        Map<Long, BigDecimal> pcts = new HashMap<>();
-        for (Nomina fila : nominaRepository.findAllByIdInscripcionId(inscripcion.getId())) {
-            if (fila.getPctPremio() == null) {
-                return null;
-            }
-            pcts.put(fila.getId().getUsuarioId(), fila.getPctPremio());
-        }
-        return nomina.stream().map(u -> new RepartoIntegrante(u.id(), pcts.get(u.id()))).toList();
-    }
-
     /**
      * El capitán cambia el reparto del premio de su equipo (CR-05) mientras la inscripción del torneo siga abierta,
      * aunque ya esté pagada. Cada cambio queda en la auditoría con el reparto de antes y de después; uno que no cambia
@@ -340,14 +284,14 @@ public class InscripcionService {
     @Transactional
     public InscripcionDetalle cambiarReparto(Long usuarioId, Long id, List<RepartoIntegrante> pedido) {
         Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
-                .orElseThrow(() -> noEncontrada(id));
-        Torneo torneo = torneoBloqueado(torneoId);
-        Inscripcion inscripcion = buscar(id);
+                .orElseThrow(() -> comun.noEncontrada(id));
+        Torneo torneo = comun.torneoBloqueado(torneoId);
+        Inscripcion inscripcion = comun.buscar(id);
         if (!inscripcion.esDeEquipo()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
                     "La inscripción individual no tiene reparto del premio");
         }
-        validarTorneoAbierto(torneo);
+        comun.validarTorneoAbierto(torneo);
         if (!REPARTO_EDITABLE.contains(inscripcion.getEstado())) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE, "La inscripción " + id + " está "
                     + inscripcion.getEstado() + ": el reparto se cambia en BORRADOR, PENDIENTE_PAGO o CONFIRMADA");
@@ -364,7 +308,7 @@ public class InscripcionService {
             nominaRepository.flush();
             auditarReparto(inscripcion, usuarioId, antes, despues);
         }
-        return detalleDe(inscripcion, usuarioId);
+        return comun.detalleDe(inscripcion, usuarioId);
     }
 
     // están todos los de la nómina una vez cada uno y nadie más; % entre 0 y 100 con hasta dos decimales; suma 100
@@ -428,24 +372,24 @@ public class InscripcionService {
      */
     @Transactional(readOnly = true)
     public InscripcionDetalle detalle(Long usuarioId, Long id) {
-        Inscripcion inscripcion = buscar(id);
+        Inscripcion inscripcion = comun.buscar(id);
         boolean organiza = inscripcion.getTorneo().getOrganizador().getId().equals(usuarioId);
-        if (!organiza && !esDe(inscripcion, usuarioId) && !figuraEnLaNomina(inscripcion, usuarioId)) {
-            throw noEncontrada(id);
+        if (!organiza && !comun.esDe(inscripcion, usuarioId) && !comun.figuraEnLaNomina(inscripcion, usuarioId)) {
+            throw comun.noEncontrada(id);
         }
-        return detalleDe(inscripcion, usuarioId);
+        return comun.detalleDe(inscripcion, usuarioId);
     }
 
     /**
      * La cancelación es una baja lógica: la inscripción queda en CANCELADA. Bloquea la fila del torneo antes de
-     * leer la inscripción, igual que {@link #pagar}: así no cancela una que otro pedido acaba de pagar.
+     * leer la inscripción, igual que {@link PagoInscripcionService#pagar}: así no cancela una que otro pedido acaba de pagar.
      */
     @Transactional
     public void cancelar(Long usuarioId, Long id) {
         Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
-                .orElseThrow(() -> noEncontrada(id));
-        torneoBloqueado(torneoId);
-        Inscripcion inscripcion = buscar(id);
+                .orElseThrow(() -> comun.noEncontrada(id));
+        comun.torneoBloqueado(torneoId);
+        Inscripcion inscripcion = comun.buscar(id);
         if (inscripcion.getEstado() != EstadoInscripcion.BORRADOR && inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
                     "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se cancela en BORRADOR o PENDIENTE_PAGO");
@@ -456,9 +400,9 @@ public class InscripcionService {
     /** Pasa el borrador a pendiente de pago y deja la fecha en que se aceptó el reglamento. */
     @Transactional
     public InscripcionDetalle confirmar(Long usuarioId, Long id, boolean reglamentoAceptado) {
-        Inscripcion inscripcion = buscar(id);
-        if (!esDe(inscripcion, usuarioId)) {
-            throw noEncontrada(id);
+        Inscripcion inscripcion = comun.buscar(id);
+        if (!comun.esDe(inscripcion, usuarioId)) {
+            throw comun.noEncontrada(id);
         }
         exigirBorrador(id, inscripcion.getEstado());
         if (!reglamentoAceptado) {
@@ -471,20 +415,20 @@ public class InscripcionService {
         // dejen en dos inscripciones activas. En uno pago e individual el cupo es un aviso temprano: el chequeo
         // en firme es el del pago.
         boolean bloquea = gratis || inscripcion.esDeEquipo();
-        Torneo torneo = bloquea ? torneoBloqueado(torneoId) : inscripcion.getTorneo();
+        Torneo torneo = bloquea ? comun.torneoBloqueado(torneoId) : inscripcion.getTorneo();
         if (bloquea) {
             // el estado de arriba se leyó antes de esperar el bloqueo: otro pedido pudo confirmarla mientras tanto
-            exigirBorrador(id, inscripcionRepository.estadoDe(id).orElseThrow(() -> noEncontrada(id)));
+            exigirBorrador(id, inscripcionRepository.estadoDe(id).orElseThrow(() -> comun.noEncontrada(id)));
         }
-        validarUsuario(inscripcion.titular());
-        validarTorneoAbierto(torneo);
-        validarOrganizadorNoBloqueado(torneo);
+        comun.validarUsuario(inscripcion.titular());
+        comun.validarTorneoAbierto(torneo);
+        comun.validarOrganizadorNoBloqueado(torneo);
         if (inscripcion.esDeEquipo()) {
             validarNomina(inscripcion, torneo);
         } else if (inscripcionRepository.existsByTorneoIdAndUsuarioIdAndEstadoIn(torneoId, usuarioId, ACTIVAS)) {
             throw duplicadaPorActiva(torneoId, usuarioId);
         }
-        validarCupo(torneo);
+        comun.validarCupo(torneo);
         inscripcion.setEstado(gratis ? EstadoInscripcion.CONFIRMADA : EstadoInscripcion.PENDIENTE_PAGO);
         inscripcion.setReglamentoAceptadoEn(Instant.now());
         Inscripcion guardada;
@@ -499,9 +443,9 @@ public class InscripcionService {
             throw e;
         }
         if (gratis) {
-            cerrarSiSeCompletoElCupo(torneo);
+            comun.cerrarSiSeCompletoElCupo(torneo);
         }
-        return detalleDe(guardada, usuarioId);
+        return comun.detalleDe(guardada, usuarioId);
     }
 
     private void exigirBorrador(Long id, EstadoInscripcion estado) {
@@ -523,7 +467,7 @@ public class InscripcionService {
         if (jugadores.stream().noneMatch(jugador -> jugador.getId().equals(capitanId))) {
             throw new ConflictoException(CodigoError.NOMINA_INVALIDA, "El capitán tiene que figurar en la nómina");
         }
-        jugadores.forEach(this::validarUsuario);
+        jugadores.forEach(comun::validarUsuario);
         validarJugadoresLibres(torneo, jugadores, inscripcion.getId());
     }
 
@@ -536,9 +480,9 @@ public class InscripcionService {
     @Transactional
     public InscripcionDetalle editar(Long usuarioId, Long id, InscripcionEquipoRequest request) {
         Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
-                .orElseThrow(() -> noEncontrada(id));
-        torneoBloqueado(torneoId);
-        Inscripcion inscripcion = buscar(id);
+                .orElseThrow(() -> comun.noEncontrada(id));
+        comun.torneoBloqueado(torneoId);
+        Inscripcion inscripcion = comun.buscar(id);
         if (!inscripcion.esDeEquipo()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
                     "La inscripción individual no tiene equipo ni nómina");
@@ -548,85 +492,10 @@ public class InscripcionService {
                     "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se edita en BORRADOR");
         }
         Usuario capitan = inscripcion.getEquipo().getCapitan();
-        validarUsuario(capitan);
-        validarTorneoAbierto(inscripcion.getTorneo());
-        validarQueNoOrganiza(inscripcion.getTorneo(), capitan.getId());
-        return detalleDe(guardarEquipoYNomina(inscripcion, capitan, request), usuarioId);
-    }
-
-    /** Lo que va a pagar el participante o el capitán; solo se ve mientras la inscripción está pendiente de pago. */
-    @Transactional(readOnly = true)
-    public ResumenPago resumenPago(Long usuarioId, Long id) {
-        Inscripcion inscripcion = buscar(id);
-        if (!esDe(inscripcion, usuarioId)) {
-            throw noEncontrada(id);
-        }
-        if (inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
-                    "La inscripción " + id + " está " + inscripcion.getEstado() + ": el resumen es de una PENDIENTE_PAGO");
-        }
-        return ResumenPago.de(inscripcion, confirmadas(inscripcion.getTorneo().getId()));
-    }
-
-    /**
-     * Cobra el valor de la inscripción por la interfaz de cobro y la deja confirmada. Primero bloquea la
-     * fila del torneo y recién después lee la inscripción, así un pago simultáneo de la misma inscripción
-     * o por el último lugar ve lo que dejó el anterior.
-     *
-     * <p>El bloqueo del torneo dura todo el cobro. El cobro con saldo (HU-603) es en la misma base y no se nota;
-     * después del torneo bloquea la billetera, siempre en ese orden.
-     */
-    @Transactional
-    public InscripcionDetalle pagar(Long usuarioId, Long id) {
-        Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
-                .orElseThrow(() -> noEncontrada(id));
-        Torneo torneo = torneoBloqueado(torneoId);
-        Inscripcion inscripcion = buscar(id);
-        if (inscripcion.getEstado() == EstadoInscripcion.CONFIRMADA) {
-            return detalleDe(inscripcion, usuarioId);
-        }
-        // antes que el estado: el cierre cancela las pendientes, y a quien llega tarde le sirve saber que cerró
-        validarTorneoAbierto(torneo);
-        if (inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
-                    "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se paga en PENDIENTE_PAGO");
-        }
-        validarUsuario(usuarioRepository.findById(usuarioId)
-                .orElseThrow(() -> new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO, "No existe el usuario " + usuarioId)));
-        validarOrganizadorNoBloqueado(torneo);
-        validarCupo(torneo);
-        BigDecimal gastos = GastosAdministrativos.monto(torneo.getValorInscripcion(), torneo.getPctGastosAdministrativos());
-        BigDecimal total = torneo.getValorInscripcion().add(gastos);
-        // HU-603: si el saldo no alcanza para todo, falla antes de cobrar y con el faltante del total
-        if (total.signum() > 0) {
-            cobroService.exigirSaldo(usuarioId, total);
-        }
-        // un torneo sin costo no pasa por el cobro: V9 exige monto > 0
-        if (torneo.getValorInscripcion().signum() > 0) {
-            cobroService.cobrar(new SolicitudCobro(usuarioId, TipoMovimiento.INSCRIPCION, torneo.getValorInscripcion(),
-                    torneoId, id, "inscripcion-" + id, "Inscripción al torneo " + torneo.getNombre()));
-        }
-        // los gastos administrativos van aparte, en otro movimiento: la inscripción es del torneo y esto de la
-        // plataforma (PICA-283)
-        if (gastos.signum() > 0) {
-            cobroService.cobrar(new SolicitudCobro(usuarioId, TipoMovimiento.COMISION, gastos, torneoId, id,
-                    "gastos-inscripcion-" + id, "Gastos administrativos de la inscripción al torneo " + torneo.getNombre()));
-        }
-        inscripcion.setEstado(EstadoInscripcion.CONFIRMADA);
-        Inscripcion pagada = inscripcionRepository.saveAndFlush(inscripcion);
-        cerrarSiSeCompletoElCupo(torneo);
-        return detalleDe(pagada, usuarioId);
-    }
-
-    // HU-206: la confirmación que completa el cupo cierra la inscripción en la misma transacción, con el torneo ya
-    // bloqueado; así nadie más llega a pagar. El cierre es automático: no lo hace quien paga. Mientras corre el plazo
-    // de una reprogramación (CR-01) no se cierra: los que rechacen la nueva fecha todavía pueden liberar lugares, y
-    // al vencer el plazo se cierra si el cupo sigue completo
-    private void cerrarSiSeCompletoElCupo(Torneo torneo) {
-        if (confirmadas(torneo.getId()) >= torneo.getCupoMaximo()
-                && !reprogramacionRepository.existsByTorneoIdAndPlazoProcesadoEnIsNull(torneo.getId())) {
-            cierreInscripcion.cerrar(torneo, MotivoCierre.CUPO, null);
-        }
+        comun.validarUsuario(capitan);
+        comun.validarTorneoAbierto(inscripcion.getTorneo());
+        comun.validarQueNoOrganiza(inscripcion.getTorneo(), capitan.getId());
+        return comun.detalleDe(guardarEquipoYNomina(inscripcion, capitan, request), usuarioId);
     }
 
     /** Mis inscripciones (HU-209), la más nueva primero; el orden no se elige desde afuera. */
@@ -638,167 +507,22 @@ public class InscripcionService {
 
     /**
      * Vuelve una pendiente de pago a borrador: se pierde la aceptación del reglamento y el equipo y la nómina
-     * quedan. Igual que {@link #pagar}, primero bloquea la fila del torneo y recién después lee la inscripción:
+     * quedan. Igual que {@link PagoInscripcionService#pagar}, primero bloquea la fila del torneo y recién después lee la inscripción:
      * un pago simultáneo no puede cobrar y que después se lo pise con BORRADOR.
      */
     @Transactional
     public InscripcionDetalle reabrir(Long usuarioId, Long id) {
         Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
-                .orElseThrow(() -> noEncontrada(id));
-        torneoBloqueado(torneoId);
-        Inscripcion inscripcion = buscar(id);
+                .orElseThrow(() -> comun.noEncontrada(id));
+        comun.torneoBloqueado(torneoId);
+        Inscripcion inscripcion = comun.buscar(id);
         if (inscripcion.getEstado() != EstadoInscripcion.PENDIENTE_PAGO) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
                     "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se reabre en PENDIENTE_PAGO");
         }
         inscripcion.setEstado(EstadoInscripcion.BORRADOR);
         inscripcion.setReglamentoAceptadoEn(null);
-        return detalleDe(inscripcionRepository.saveAndFlush(inscripcion), usuarioId);
+        return comun.detalleDe(inscripcionRepository.saveAndFlush(inscripcion), usuarioId);
     }
 
-    @Transactional
-    public InscripcionDetalle reemplazar(Long usuarioId, Long id, ReemplazoRequest request) {
-        if (request == null || request.saleUsuarioId() == null || request.entraUsuarioId() == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION, "Hay que indicar quién sale y quién entra");
-        }
-        if (request.saleUsuarioId().equals(request.entraUsuarioId())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, CodigoError.VALIDACION,
-                    "El usuario que sale y el que entra tienen que ser distintos");
-        }
-
-        Long torneoId = inscripcionRepository.torneoIdDeInscripcionPropia(id, usuarioId)
-                .orElseThrow(() -> noEncontrada(id));
-        Torneo torneo = torneoBloqueado(torneoId);
-        Inscripcion inscripcion = buscar(id);
-        if (!inscripcion.esDeEquipo()) {
-            throw new ConflictoException(CodigoError.REEMPLAZO_INVALIDO,
-                    "Una inscripción individual no tiene nómina para reemplazar");
-        }
-        if (inscripcion.getEstado() != EstadoInscripcion.CONFIRMADA) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE,
-                    "La inscripción " + id + " está " + inscripcion.getEstado() + ": solo se reemplaza en CONFIRMADA");
-        }
-        validarTorneoAbierto(torneo);
-
-        Long capitanId = inscripcion.titular().getId();
-        Usuario entra = usuarioRepository.findById(request.entraUsuarioId())
-                .orElseThrow(() -> new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO,
-                        "No existe el usuario " + request.entraUsuarioId()));
-        if (request.saleUsuarioId().equals(capitanId)
-                || !nominaRepository.existsByIdInscripcionIdAndIdUsuarioId(id, request.saleUsuarioId())
-                || nominaRepository.existsByIdInscripcionIdAndIdUsuarioId(id, request.entraUsuarioId())) {
-            throw new ConflictoException(CodigoError.REEMPLAZO_INVALIDO,
-                    "El jugador no se puede reemplazar en la nómina de la inscripción " + id);
-        }
-
-        Usuario sale = usuarioRepository.findById(request.saleUsuarioId())
-                .orElseThrow(() -> new NoEncontradoException(CodigoError.USUARIO_NO_ENCONTRADO,
-                        "No existe el usuario " + request.saleUsuarioId()));
-        validarUsuario(entra);
-        validarQueNoOrganiza(torneo, entra.getId());
-        if (nominaRepository.figuraEnOtraInscripcion(torneoId, entra.getId(), ACTIVAS, id)) {
-            throw new ConflictoException(CodigoError.JUGADOR_YA_INSCRIPTO,
-                    "El jugador " + entra.getId() + " ya figura en otra inscripción activa del torneo " + torneoId)
-                    .con("jugador", UsuarioPublico.desde(entra));
-        }
-
-        Equipo equipo = inscripcion.getEquipo();
-        sumarAlEquipo(equipo, List.of(entra));
-        // el que entra hereda el % del que sale (CR-05); si no había reparto, tampoco lo hay
-        BigDecimal pctDelQueSale = nominaRepository.findById(new NominaId(sale.getId(), equipo.getId(), id))
-                .map(Nomina::getPctPremio).orElse(null);
-        nominaRepository.deleteById(new NominaId(sale.getId(), equipo.getId(), id));
-        nominaRepository.flush();
-        nominaRepository.saveAndFlush(new Nomina(entra.getId(), equipo.getId(), id, pctDelQueSale));
-        reemplazoRepository.saveAndFlush(new Reemplazo(inscripcion, equipo, sale, entra, inscripcion.titular()));
-        return detalleDe(inscripcion, usuarioId);
-    }
-
-    @Transactional(readOnly = true)
-    public List<ReemplazoDetalle> reemplazos(Long usuarioId, Long id) {
-        Inscripcion inscripcion = buscar(id);
-        boolean organiza = inscripcion.getTorneo().getOrganizador().getId().equals(usuarioId);
-        if (!organiza && !esDe(inscripcion, usuarioId) && !figuraEnLaNomina(inscripcion, usuarioId)) {
-            throw noEncontrada(id);
-        }
-        return reemplazoRepository.findAllByInscripcionIdOrderByCreadoEnAscIdAsc(id).stream()
-                .map(ReemplazoDetalle::de)
-                .toList();
-    }
-
-    private Inscripcion buscar(Long id) {
-        return inscripcionRepository.findById(id).orElseThrow(() -> noEncontrada(id));
-    }
-
-    private boolean figuraEnLaNomina(Inscripcion inscripcion, Long usuarioId) {
-        return inscripcion.esDeEquipo()
-                && nominaRepository.existsByIdInscripcionIdAndIdUsuarioId(inscripcion.getId(), usuarioId);
-    }
-
-    // el dueño: el participante de la individual, o el capitán del equipo de la de equipo
-    private boolean esDe(Inscripcion inscripcion, Long usuarioId) {
-        Usuario titular = inscripcion.titular();
-        return titular != null && titular.getId().equals(usuarioId);
-    }
-
-    private NoEncontradoException noEncontrada(Long id) {
-        return new NoEncontradoException(CodigoError.INSCRIPCION_NO_ENCONTRADA, "No existe la inscripción " + id);
-    }
-
-    private void validarUsuario(Usuario usuario) {
-        if (usuario.getEstado() == EstadoUsuario.ACTIVO) {
-            return;
-        }
-        if (usuario.getEstado() == EstadoUsuario.BLOQUEADO) {
-            throw new ProhibidoException(CodigoError.USUARIO_BLOQUEADO,
-                    "El usuario " + usuario.getId() + " está bloqueado");
-        }
-        // pendiente de verificación, o cualquier estado que se agregue después
-        throw new ConflictoException(CodigoError.USUARIO_NO_ACTIVO,
-                "El usuario " + usuario.getId() + " no está activo");
-    }
-
-    private void validarTorneoAbierto(Torneo torneo) {
-        if (torneo.getEliminadoEn() != null) {
-            throw new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO, "No existe el torneo " + torneo.getId());
-        }
-        if (torneo.getEstado() != EstadoTorneo.INSCRIPCION_ABIERTA || !torneo.getCierreInscripcionEn().isAfter(Instant.now())) {
-            throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
-                    "El torneo " + torneo.getId() + " no tiene la inscripción abierta");
-        }
-    }
-
-    /**
-     * Mientras su organizador está bloqueado, el torneo no suma inscripciones: no se empieza, no se confirma ni se
-     * paga ninguna. Las que ya existían quedan como están y no se mueve plata (HU-703).
-     */
-    private void validarOrganizadorNoBloqueado(Torneo torneo) {
-        if (bloqueoService.estaBloqueado(torneo.getOrganizador())) {
-            throw new ConflictoException(CodigoError.ORGANIZADOR_BLOQUEADO,
-                    "El organizador del torneo " + torneo.getId() + " está bloqueado: la inscripción está suspendida");
-        }
-    }
-
-    private Torneo torneoBloqueado(Long torneoId) {
-        return torneoRepository.buscarBloqueado(torneoId)
-                .orElseThrow(() -> new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO, "No existe el torneo " + torneoId));
-    }
-
-    // solo las confirmadas ocupan cupo
-    private long confirmadas(Long torneoId) {
-        return inscripcionRepository.countByTorneoIdAndEstado(torneoId, EstadoInscripcion.CONFIRMADA);
-    }
-
-    private void validarCupo(Torneo torneo) {
-        if (confirmadas(torneo.getId()) >= torneo.getCupoMaximo()) {
-            throw new ConflictoException(CodigoError.CUPO_COMPLETO, "El torneo " + torneo.getId() + " ya no tiene cupo");
-        }
-    }
-
-    private void validarQueNoOrganiza(Torneo torneo, Long usuarioId) {
-        if (torneo.getOrganizador().getId().equals(usuarioId) || torneoRepository.esArbitro(torneo.getId(), usuarioId)) {
-            throw new ProhibidoException(CodigoError.INSCRIPCION_NO_PERMITIDA_EN_TORNEO,
-                    "El organizador y los árbitros del torneo no se inscriben en él");
-        }
-    }
 }

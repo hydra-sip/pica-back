@@ -14,7 +14,7 @@ import com.hydra.pica.plataforma_pica.billetera.repository.CustodiaRepository;
 import com.hydra.pica.plataforma_pica.billetera.service.LiquidacionService.LiquidacionTorneo;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.torneo.service.TorneoPublicoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
@@ -49,7 +49,7 @@ class LiquidacionIntegracionTest {
     @Autowired private LiquidacionService liquidacionService;
     @Autowired private RepartoLiquidacionService repartoLiquidacionService;
     @Autowired private CustodiaRepository custodiaRepository;
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private TorneoPublicoService torneoPublicoService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
@@ -81,7 +81,7 @@ class LiquidacionIntegracionTest {
                     INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
                     VALUES (?, ?, 'PENDIENTE_PAGO', now()) RETURNING id
                     """, Long.class, torneo, jugador[i]);
-            inscripcionService.pagar(jugador[i], inscripcion[i]);
+            pagoInscripcionService.pagar(jugador[i], inscripcion[i]);
         }
         entityManager.flush();
     }

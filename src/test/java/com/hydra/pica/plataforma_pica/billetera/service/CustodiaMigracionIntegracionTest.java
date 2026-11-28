@@ -10,7 +10,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
@@ -42,7 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class CustodiaMigracionIntegracionTest {
 
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private VentaRifaService ventaRifaService;
     @Autowired private RifaService rifaService;
     @Autowired private UsuarioRepository usuarioRepository;
@@ -66,7 +66,7 @@ class CustodiaMigracionIntegracionTest {
                 INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
                 VALUES (?, ?, 'PENDIENTE_PAGO', now()) RETURNING id
                 """, Long.class, torneo, jugador);
-        inscripcionService.pagar(jugador, inscripcion);
+        pagoInscripcionService.pagar(jugador, inscripcion);
         long rifa = rifaDelTorneo(organizador, torneo);
         ventaRifaService.reservar(jugador, rifa, List.of(3));
         ventaRifaService.comprar(jugador, rifa, List.of(3), "compra-v39");

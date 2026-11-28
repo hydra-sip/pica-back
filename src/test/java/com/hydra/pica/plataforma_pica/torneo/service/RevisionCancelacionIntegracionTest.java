@@ -19,7 +19,7 @@ import com.hydra.pica.plataforma_pica.common.email.EmailService;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionEnRevision;
 import com.hydra.pica.plataforma_pica.torneo.dto.Comprobante;
@@ -68,7 +68,7 @@ class RevisionCancelacionIntegracionTest {
 
     @Autowired private RevisionCancelacionService revisionCancelacionService;
     @Autowired private CancelacionTorneoService cancelacionTorneoService;
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
@@ -95,7 +95,7 @@ class RevisionCancelacionIntegracionTest {
                     INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
                     VALUES (?, ?, 'PENDIENTE_PAGO', now()) RETURNING id
                     """, Long.class, torneo, jugador[i]);
-            inscripcionService.pagar(jugador[i], inscripcion[i]);
+            pagoInscripcionService.pagar(jugador[i], inscripcion[i]);
         }
         cancelacionTorneoService.cancelar(organizador, torneo, new SolicitudCancelacion("Se inundó la cancha",
                 List.of(new GastoDeclarado(new BigDecimal("300.00"), "Alquiler de la cancha", PDF),
@@ -434,7 +434,7 @@ class RevisionCancelacionIntegracionTest {
                 INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
                 VALUES (?, ?, 'PENDIENTE_PAGO', now()) RETURNING id
                 """, Long.class, automatico, pago);
-        inscripcionService.pagar(pago, suInscripcion);
+        pagoInscripcionService.pagar(pago, suInscripcion);
         cancelacionTorneoService.cancelar(organizador, automatico, new SolicitudCancelacion("Lluvia", List.of()));
         entityManager.flush();
 
@@ -479,7 +479,7 @@ class RevisionCancelacionIntegracionTest {
                 INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
                 VALUES (?, ?, 'PENDIENTE_PAGO', now()) RETURNING id
                 """, Long.class, id, jugadorDelOtro);
-        inscripcionService.pagar(jugadorDelOtro, suInscripcion);
+        pagoInscripcionService.pagar(jugadorDelOtro, suInscripcion);
         cancelacionTorneoService.cancelar(organizador, id, new SolicitudCancelacion("Lluvia",
                 List.of(new GastoDeclarado(new BigDecimal("100.00"), "Cancha", PDF))));
         entityManager.flush();

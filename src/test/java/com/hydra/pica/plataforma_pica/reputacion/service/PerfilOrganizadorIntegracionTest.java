@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Set;
 import com.hydra.pica.plataforma_pica.EscenarioTorneo;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.service.ResultadoService;
 import com.hydra.pica.plataforma_pica.reputacion.dto.PerfilOrganizador;
@@ -73,7 +73,7 @@ class PerfilOrganizadorIntegracionTest {
     @Autowired private CancelacionTorneoService cancelacionTorneoService;
     @Autowired private RevisionCancelacionService revisionCancelacionService;
     @Autowired private ResultadoService resultadoService;
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private ApplicationEvents eventos;
     @Autowired private EscenarioTorneo escenario;
     @Autowired private JdbcTemplate jdbc;
@@ -237,7 +237,7 @@ class PerfilOrganizadorIntegracionTest {
                 """, Long.class, torneoId, jugador);
         entityManager.flush();
         entityManager.clear();
-        inscripcionService.pagar(jugador, insId);
+        pagoInscripcionService.pagar(jugador, insId);
         return torneoId;
     }
 }

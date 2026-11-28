@@ -17,6 +17,8 @@ import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDelTorneo;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.ReemplazoInscripcionService;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
@@ -50,6 +52,8 @@ class CierreInscripcionIntegracionTest {
 
     @Autowired private InscripcionTorneoService inscripcionTorneoService;
     @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
+    @Autowired private ReemplazoInscripcionService reemplazoInscripcionService;
     @Autowired private TorneoService torneoService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
@@ -170,7 +174,7 @@ class CierreInscripcionIntegracionTest {
         inscripcionTorneoService.cerrar(organizador, individual);
 
         assertError(() -> inscripcionService.crear(nuevo, individual, null), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
-        assertError(() -> inscripcionService.pagar(pendiente, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+        assertError(() -> pagoInscripcionService.pagar(pendiente, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
     }
 
     @Test
@@ -187,7 +191,7 @@ class CierreInscripcionIntegracionTest {
 
         inscripcionTorneoService.cerrar(organizador, torneo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
                 HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
     }
 
@@ -201,7 +205,7 @@ class CierreInscripcionIntegracionTest {
         long id = inscripcionIndividual(individual, ultimo, "PENDIENTE_PAGO");
         long borrador = inscripcionIndividual(individual, usuario("cupo_borrador").getId(), "BORRADOR");
 
-        InscripcionDetalle pagada = inscripcionService.pagar(ultimo, id);
+        InscripcionDetalle pagada = pagoInscripcionService.pagar(ultimo, id);
 
         assertThat(pagada.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
         assertThat(estadoDelTorneo(individual)).isEqualTo("INSCRIPCION_CERRADA");
@@ -230,7 +234,7 @@ class CierreInscripcionIntegracionTest {
         long id = inscripcionIndividual(individual, primero, "PENDIENTE_PAGO");
         inscripcionIndividual(individual, usuario("cupo_otra_pendiente").getId(), "PENDIENTE_PAGO");
 
-        inscripcionService.pagar(primero, id);
+        pagoInscripcionService.pagar(primero, id);
 
         assertThat(estadoDelTorneo(individual)).isEqualTo("INSCRIPCION_ABIERTA");
     }

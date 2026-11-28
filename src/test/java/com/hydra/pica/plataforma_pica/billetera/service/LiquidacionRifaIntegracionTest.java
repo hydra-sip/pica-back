@@ -18,6 +18,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.RepartoIntegrante;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
@@ -67,6 +68,7 @@ class LiquidacionRifaIntegracionTest {
     @Autowired private VentaRifaService ventaRifaService;
     @Autowired private TicketService ticketService;
     @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private RifaRepository rifaRepository;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
@@ -396,7 +398,7 @@ class LiquidacionRifaIntegracionTest {
                     INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
                     VALUES (?, ?, 'PENDIENTE_PAGO', now()) RETURNING id
                     """, Long.class, torneo, jugador);
-            inscripcionService.pagar(jugador, inscripcion);
+            pagoInscripcionService.pagar(jugador, inscripcion);
         }
         entityManager.flush();
         return torneo;
@@ -423,7 +425,7 @@ class LiquidacionRifaIntegracionTest {
         long inscripcion = inscripcionService.crear(equipo[0], torneo, new InscripcionEquipoRequest(null,
                 "Los de la Rifa", List.of(equipo[1], equipo[2], equipo[3]))).id();
         inscripcionService.confirmar(equipo[0], inscripcion, true);
-        inscripcionService.pagar(equipo[0], inscripcion);
+        pagoInscripcionService.pagar(equipo[0], inscripcion);
         inscripcionService.cambiarReparto(equipo[0], inscripcion, List.of(
                 new RepartoIntegrante(equipo[0], new BigDecimal("40")), new RepartoIntegrante(equipo[1], new BigDecimal("20")),
                 new RepartoIntegrante(equipo[2], new BigDecimal("20")), new RepartoIntegrante(equipo[3], new BigDecimal("20"))));

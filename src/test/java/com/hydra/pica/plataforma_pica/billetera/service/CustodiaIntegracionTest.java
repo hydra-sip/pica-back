@@ -15,7 +15,7 @@ import com.hydra.pica.plataforma_pica.billetera.dto.ComprobantePago;
 import com.hydra.pica.plataforma_pica.billetera.dto.CustodiaResumen;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
@@ -55,7 +55,7 @@ class CustodiaIntegracionTest {
 
     @Autowired private CustodiaService custodiaService;
     @Autowired private ComprobanteService comprobanteService;
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private VentaRifaService ventaRifaService;
     @Autowired private RifaService rifaService;
     @Autowired private UsuarioRepository usuarioRepository;
@@ -79,7 +79,7 @@ class CustodiaIntegracionTest {
 
     @Test
     void laInscripcionEntraEnteraALaCustodiaDelTorneoYQuedaEnLaAuditoria() {
-        inscripcionService.pagar(jugador, pendienteDePago(jugador));
+        pagoInscripcionService.pagar(jugador, pendienteDePago(jugador));
 
         CustodiaResumen custodia = custodiaService.resumenDelTorneo(organizador, torneo);
         assertThat(custodia.estado()).isEqualTo(EstadoCustodia.RETENIDA);
@@ -124,7 +124,7 @@ class CustodiaIntegracionTest {
 
     @Test
     void conElTorneoEnCursoLaPuertaDeSalidaFallaConFondosEnCustodia() {
-        inscripcionService.pagar(jugador, pendienteDePago(jugador));
+        pagoInscripcionService.pagar(jugador, pendienteDePago(jugador));
         jdbc.update("UPDATE torneo SET estado = 'EN_CURSO' WHERE id = ?", torneo);
         entityManager.clear();
 
@@ -135,7 +135,7 @@ class CustodiaIntegracionTest {
 
     @Test
     void elOrganizadorNoRetiraLosFondosDeSuTorneoAntesDelCierre() {
-        inscripcionService.pagar(jugador, pendienteDePago(jugador));
+        pagoInscripcionService.pagar(jugador, pendienteDePago(jugador));
 
         assertError(() -> custodiaService.retirarDelTorneo(organizador, torneo), HttpStatus.CONFLICT,
                 CodigoError.FONDOS_EN_CUSTODIA);
@@ -144,7 +144,7 @@ class CustodiaIntegracionTest {
 
     @Test
     void niDespuesDelCierreElOrganizadorLosSacaDirecto() {
-        inscripcionService.pagar(jugador, pendienteDePago(jugador));
+        pagoInscripcionService.pagar(jugador, pendienteDePago(jugador));
         finalizar();
 
         assertError(() -> custodiaService.retirarDelTorneo(organizador, torneo), HttpStatus.CONFLICT,
@@ -167,7 +167,7 @@ class CustodiaIntegracionTest {
 
     @Test
     void conElTorneoFinalizadoSeLiberaUnaSolaVezYSaleDelRetenidoDelPagador() {
-        inscripcionService.pagar(jugador, pendienteDePago(jugador));
+        pagoInscripcionService.pagar(jugador, pendienteDePago(jugador));
         finalizar();
 
         LiberacionCustodia liberacion = custodiaService.liberarTorneo(torneo);
@@ -183,7 +183,7 @@ class CustodiaIntegracionTest {
 
     @Test
     void conElTorneoCanceladoQuedaParaReintegrar() {
-        inscripcionService.pagar(jugador, pendienteDePago(jugador));
+        pagoInscripcionService.pagar(jugador, pendienteDePago(jugador));
         jdbc.update("UPDATE torneo SET estado = 'CANCELADO', motivo_cancelacion = 'Lluvia' WHERE id = ?", torneo);
         entityManager.clear();
 
@@ -222,7 +222,7 @@ class CustodiaIntegracionTest {
     @Test
     void quienPagoVeSuComprobante() {
         long inscripcion = pendienteDePago(jugador);
-        inscripcionService.pagar(jugador, inscripcion);
+        pagoInscripcionService.pagar(jugador, inscripcion);
 
         ComprobantePago comprobante = comprobanteService.deInscripcion(jugador, inscripcion);
 
@@ -241,7 +241,7 @@ class CustodiaIntegracionTest {
     @Test
     void elComprobanteDeOtroNoExiste() {
         long inscripcion = pendienteDePago(jugador);
-        inscripcionService.pagar(jugador, inscripcion);
+        pagoInscripcionService.pagar(jugador, inscripcion);
 
         assertError(() -> comprobanteService.deInscripcion(organizador, inscripcion), HttpStatus.NOT_FOUND,
                 CodigoError.INSCRIPCION_NO_ENCONTRADA);

@@ -15,6 +15,8 @@ import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.RepartoIntegrante;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.ReemplazoInscripcionService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -42,9 +44,14 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class InscripcionController {
 
     private final InscripcionService inscripcionService;
+    private final PagoInscripcionService pagoInscripcionService;
+    private final ReemplazoInscripcionService reemplazoInscripcionService;
 
-    public InscripcionController(InscripcionService inscripcionService) {
+    public InscripcionController(InscripcionService inscripcionService, PagoInscripcionService pagoInscripcionService,
+                                 ReemplazoInscripcionService reemplazoInscripcionService) {
         this.inscripcionService = inscripcionService;
+        this.pagoInscripcionService = pagoInscripcionService;
+        this.reemplazoInscripcionService = reemplazoInscripcionService;
     }
 
     @PostMapping("/torneos/{torneoId}/inscripciones")
@@ -97,7 +104,7 @@ public class InscripcionController {
     @PreAuthorize("hasAuthority('INSCRIPCION_GESTIONAR')")
     public InscripcionDetalle reemplazar(@PathVariable Long id, @Valid @RequestBody ReemplazoRequest request,
             @UsuarioActual Long usuarioId) {
-        return inscripcionService.reemplazar(usuarioId, id, request);
+        return reemplazoInscripcionService.reemplazar(usuarioId, id, request);
     }
 
     /** El capitán cambia el reparto del premio de su equipo (CR-05); el cuerpo es la lista de {usuarioId, pct}. */
@@ -110,19 +117,19 @@ public class InscripcionController {
 
     @GetMapping("/inscripciones/{id}/reemplazos")
     public List<ReemplazoDetalle> reemplazos(@PathVariable Long id, @UsuarioActual Long usuarioId) {
-        return inscripcionService.reemplazos(usuarioId, id);
+        return reemplazoInscripcionService.reemplazos(usuarioId, id);
     }
 
     @GetMapping("/inscripciones/{id}/resumen-pago")
     @PreAuthorize("hasAuthority('INSCRIPCION_GESTIONAR')")
     public ResumenPago resumenPago(@PathVariable Long id, @UsuarioActual Long usuarioId) {
-        return inscripcionService.resumenPago(usuarioId, id);
+        return pagoInscripcionService.resumenPago(usuarioId, id);
     }
 
     @PostMapping("/inscripciones/{id}/pago")
     @PreAuthorize("hasAuthority('INSCRIPCION_GESTIONAR')")
     public InscripcionDetalle pagar(@PathVariable Long id, @UsuarioActual Long usuarioId) {
-        return inscripcionService.pagar(usuarioId, id);
+        return pagoInscripcionService.pagar(usuarioId, id);
     }
 
     @DeleteMapping("/inscripciones/{id}")
