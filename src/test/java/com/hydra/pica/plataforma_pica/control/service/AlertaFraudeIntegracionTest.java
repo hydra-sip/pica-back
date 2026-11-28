@@ -33,6 +33,8 @@ import com.hydra.pica.plataforma_pica.control.domain.EstadoAlertaFraude;
 import com.hydra.pica.plataforma_pica.control.domain.ReglaFraude;
 import com.hydra.pica.plataforma_pica.control.dto.RegistroAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AlertaFraudeRepository;
+import com.hydra.pica.plataforma_pica.control.service.fraude.ReglaCuentasCompartidas;
+import com.hydra.pica.plataforma_pica.control.service.fraude.ReglaDeFraude;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
@@ -106,6 +108,8 @@ class AlertaFraudeIntegracionTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private JwtService jwtService;
     @Autowired private DeteccionFraudeService deteccionFraudeService;
+    @Autowired private List<ReglaDeFraude> reglas;
+    @Autowired private ReglaCuentasCompartidas reglaCuentasCompartidas;
     @Autowired private AlertaFraudeRepository alertaFraudeRepository;
     @Autowired private ParametrosPlataforma parametrosPlataforma;
     @Autowired private LibroAuditoriaService libroAuditoriaService;
@@ -329,6 +333,36 @@ class AlertaFraudeIntegracionTest {
         assertThat(alerta.getUsuario().getId()).isEqualTo(u2.getId());
         assertThat(alerta.getMotivo()).contains(CBU_VALIDO);
         assertThat(alerta.getDatos()).containsEntry("valor", CBU_VALIDO).containsEntry("cantidadUsuarios", 2);
+    }
+
+    @Test
+    @DisplayName("Cada regla corre sola: la pasada de una no crea alertas de las otras")
+    void cadaReglaCorreSola() {
+        Usuario u1 = usuarioConDni("sola_1", "36111223");
+        Usuario u2 = usuarioConDni("sola_2", "37222334");
+        for (Usuario u : List.of(u1, u2)) {
+            CuentaBancaria cuenta = new CuentaBancaria();
+            cuenta.setUsuario(u);
+            cuenta.setTipo(TipoCuenta.CBU);
+            cuenta.setValor(CBU_VALIDO);
+            cuenta.setTitular("Titular");
+            cuenta.setCuitCuil("20-36111223-9");
+            cuenta.setEstadoValidacion(EstadoValidacion.RECHAZADA);
+            cuentaBancariaRepository.saveAndFlush(cuenta);
+        }
+
+        assertThat(reglas).hasSize(5);
+        for (ReglaDeFraude regla : reglas) {
+            if (!(regla instanceof ReglaCuentasCompartidas)) {
+                assertThat(regla.evaluarTodo()).as(regla.getClass().getSimpleName()).isZero();
+            }
+        }
+        assertThat(alertaFraudeRepository.count()).isZero();
+
+        assertThat(reglaCuentasCompartidas.evaluarTodo()).isEqualTo(1);
+        assertThat(reglaCuentasCompartidas.evaluarTodo()).isZero();
+        assertThat(alertaFraudeRepository.findAll()).singleElement()
+                .extracting(AlertaFraude::getRegla).isEqualTo(ReglaFraude.CUENTAS_COMPARTIDAS);
     }
 
     @Test
