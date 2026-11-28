@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.reputacion.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,6 +52,7 @@ public class SancionService {
     private final Arbitraje arbitraje;
     private final AuditoriaService auditoriaService;
     private final ApplicationEventPublisher eventos;
+    private final Clock clock;
 
     /**
      * 404 TORNEO_NO_ENCONTRADO si no existe o es un borrador; 403 SIN_PERMISO si no lo organiza ni lo arbitra;
@@ -93,7 +95,7 @@ public class SancionService {
         sancion.setGravedad(request.gravedad());
         sancion.setMotivo(request.motivo().strip());
         sancion.setAplicadaPor(usuarioRepository.getReferenceById(usuarioId));
-        sancion.setAplicadaEn(Instant.now());
+        sancion.setAplicadaEn(Instant.now(clock));
         sancion = sancionRepository.saveAndFlush(sancion);
 
         Map<String, Object> detalle = new LinkedHashMap<>();

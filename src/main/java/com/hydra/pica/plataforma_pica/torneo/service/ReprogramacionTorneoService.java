@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -77,6 +78,7 @@ public class ReprogramacionTorneoService {
     private final ParametrosPlataforma parametrosPlataforma;
     private final TorneoProperties torneoProperties;
     private final ApplicationEventPublisher eventos;
+    private final Clock clock;
 
     @Transactional
     public ReprogramacionDetalle reprogramar(Long organizadorId, Long id, ReprogramacionRequest request) {
@@ -243,7 +245,7 @@ public class ReprogramacionTorneoService {
         requerido(errores, "rechazoHasta", rechazo);
 
         boolean futuras = !torneoProperties.sinValidarFechas();
-        if (futuras && rechazo != null && !rechazo.isAfter(Instant.now())) {
+        if (futuras && rechazo != null && !rechazo.isAfter(Instant.now(clock))) {
             errores.add(fechas("rechazoHasta", "No puede ser anterior a ahora"));
         }
         if (futuras && rechazo != null && cierre != null && !cierre.isAfter(rechazo)) {

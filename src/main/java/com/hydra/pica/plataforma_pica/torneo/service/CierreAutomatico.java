@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -24,6 +25,7 @@ public class CierreAutomatico {
 
     private final InscripcionTorneoService inscripcionTorneoService;
     private final TorneoRepository torneoRepository;
+    private final Clock clock;
 
     @Value("${app.torneos.cierre-automatico:true}")
     private boolean activo = true;
@@ -37,7 +39,7 @@ public class CierreAutomatico {
 
     /** @return cuántas cerró */
     public int cerrarVencidas() {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         int cerradas = 0;
         for (Long id : torneoRepository.conInscripcionVencida(ahora)) {
             try {

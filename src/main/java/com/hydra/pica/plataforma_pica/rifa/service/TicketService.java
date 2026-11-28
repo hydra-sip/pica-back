@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 
@@ -36,6 +37,7 @@ public class TicketService {
     private final PremioRifaRepository premioRifaRepository;
     private final MovimientoRepository movimientoRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public TicketDetalle detalle(Long usuarioId, Long id) {
@@ -62,7 +64,7 @@ public class TicketService {
                 .map(PremioRifaDetalle::de)
                 .toList();
         return TicketDetalle.de(ticket, numeros, usuarioId,
-                ReclamoRifaService.ventanaAbierta(ticket.getRifa(), Instant.now()), ganados,
+                ReclamoRifaService.ventanaAbierta(ticket.getRifa(), Instant.now(clock)), ganados,
                 premioAcreditado(ticket.getRifa(), ganados));
     }
 

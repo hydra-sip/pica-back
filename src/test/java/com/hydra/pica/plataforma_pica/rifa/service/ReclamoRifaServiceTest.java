@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Spy;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -58,6 +60,13 @@ class ReclamoRifaServiceTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    /** El reloj real: Mockito lo pasa al constructor del servicio. */
+
+    @Spy
+
+    private Clock clock = Clock.systemUTC();
+
 
     @InjectMocks
     private ReclamoRifaService reclamoRifaService;

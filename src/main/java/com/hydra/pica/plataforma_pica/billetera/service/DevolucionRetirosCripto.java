@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoRetiroCripto;
@@ -26,6 +27,7 @@ public class DevolucionRetirosCripto {
     private final RetiroCriptoService retiroCriptoService;
     private final RetiroCriptoRepository retiroCriptoRepository;
     private final RetirosCriptoProperties retiros;
+    private final Clock clock;
 
     @Value("${app.cripto.retiros.devolucion-automatica:true}")
     private boolean activa = true;
@@ -40,7 +42,7 @@ public class DevolucionRetirosCripto {
     /** @return cuántos devolvió */
     public int resolverVencidos() {
         int devueltos = 0;
-        for (Long id : retiroCriptoRepository.pendientesVencidosAntesDe(Instant.now().minus(retiros.margenDevolucion()))) {
+        for (Long id : retiroCriptoRepository.pendientesVencidosAntesDe(Instant.now(clock).minus(retiros.margenDevolucion()))) {
             try {
                 if (retiroCriptoService.devolverSiVencio(id) == EstadoRetiroCripto.DEVUELTO) {
                     devueltos++;

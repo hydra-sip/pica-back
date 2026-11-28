@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.control.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -33,6 +34,7 @@ public class BloqueoService {
     private final AuditorAware<String> auditor;
     private final AuditoriaService auditoriaService;
     private final CurrentUserProvider currentUserProvider;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public Optional<Bloqueo> vigente(Long usuarioId) {
@@ -50,7 +52,7 @@ public class BloqueoService {
         if (usuario.getEstado() != EstadoUsuario.BLOQUEADO) {
             return false;
         }
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         return vigente(usuario.getId())
                 .map(Bloqueo::getHasta)
                 .map(hasta -> hasta.isAfter(ahora))
@@ -87,7 +89,7 @@ public class BloqueoService {
         detalle.put("vencido", vencido);
 
         String por = auditor.getCurrentAuditor().orElse(AuditConstants.SISTEMA);
-        bloqueoRepository.levantarAbiertos(usuario.getId(), AlcanceBloqueo.USUARIO, Instant.now(), por);
+        bloqueoRepository.levantarAbiertos(usuario.getId(), AlcanceBloqueo.USUARIO, Instant.now(clock), por);
         usuario.setEstado(usuario.isEmailVerificado() ? EstadoUsuario.ACTIVO : EstadoUsuario.PENDIENTE_VERIFICACION);
         auditar(AccionAuditoria.DESBLOQUEO, usuario, detalle);
     }
@@ -95,7 +97,7 @@ public class BloqueoService {
     /** Lo llama el login: si la fecha de fin ya pasó, levanta el bloqueo y devuelve true. */
     @Transactional
     public boolean levantarSiVencio(Usuario usuario) {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         boolean vencido = vigente(usuario.getId())
                 .map(Bloqueo::getHasta)
                 .filter(hasta -> !hasta.isAfter(ahora))

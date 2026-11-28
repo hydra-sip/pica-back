@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.notificacion.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.Executor;
@@ -40,6 +41,7 @@ public class NotificacionService {
     private final Executor executor;
     private final TransactionTemplate nueva;
     private final String webUrl;
+    private final Clock clock;
 
     public NotificacionService(
             NotificacionRepository notificacionRepository,
@@ -48,7 +50,8 @@ public class NotificacionService {
             EmailService emailService,
             @Qualifier("notificacionExecutor") Executor executor,
             PlatformTransactionManager transacciones,
-            @Value("${app.web-url:http://localhost:5173}") String webUrl) {
+            @Value("${app.web-url:http://localhost:5173}") String webUrl,
+            Clock clock) {
         this.notificacionRepository = notificacionRepository;
         this.usuarioRepository = usuarioRepository;
         this.realtimeNotifier = realtimeNotifier;
@@ -59,6 +62,7 @@ public class NotificacionService {
         this.nueva = new TransactionTemplate(transacciones);
         this.nueva.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.webUrl = webUrl;
+        this.clock = clock;
     }
 
     /** {@code enlace} es la ruta del front sin dominio ({@code /torneos/copa}); el correo le suma la URL de la web. */
@@ -119,12 +123,12 @@ public class NotificacionService {
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.NOTIFICACION_NO_ENCONTRADA,
                         "No existe la notificación " + id));
         if (notificacion.getLeidaEn() == null) {
-            notificacion.setLeidaEn(Instant.now());
+            notificacion.setLeidaEn(Instant.now(clock));
         }
     }
 
     @Transactional
     public void marcarTodasLeidas(Long usuarioId) {
-        notificacionRepository.marcarTodasLeidas(usuarioId, Instant.now());
+        notificacionRepository.marcarTodasLeidas(usuarioId, Instant.now(clock));
     }
 }

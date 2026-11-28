@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.control.service.fraude;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -28,6 +29,7 @@ public class ReglaCarruselBilletera implements ReglaDeFraude {
     private final ParametrosPlataforma parametros;
     private final AlertasFraude alertas;
     private final EntityManager entityManager;
+    private final Clock clock;
 
     @Transactional
     public boolean evaluar(Long usuarioId) {
@@ -36,7 +38,7 @@ public class ReglaCarruselBilletera implements ReglaDeFraude {
         }
         int minOperaciones = parametros.cantidad(ClaveParametro.FRAUDE_CARRUSEL_OPERACIONES_MIN);
         Duration ventana = parametros.minutos(ClaveParametro.FRAUDE_CARRUSEL_VENTANA_MIN);
-        Instant desde = Instant.now().minus(ventana);
+        Instant desde = Instant.now(clock).minus(ventana);
 
         Object[] fila = (Object[]) entityManager.createNativeQuery("""
                 SELECT
@@ -84,7 +86,7 @@ public class ReglaCarruselBilletera implements ReglaDeFraude {
     @Transactional
     public int evaluarTodo() {
         int minOps = parametros.cantidad(ClaveParametro.FRAUDE_CARRUSEL_OPERACIONES_MIN);
-        Instant desde = Instant.now().minus(parametros.minutos(ClaveParametro.FRAUDE_CARRUSEL_VENTANA_MIN));
+        Instant desde = Instant.now(clock).minus(parametros.minutos(ClaveParametro.FRAUDE_CARRUSEL_VENTANA_MIN));
         @SuppressWarnings("unchecked")
         List<Number> usuarios = entityManager.createNativeQuery("""
                 SELECT b.usuario_id

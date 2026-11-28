@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -78,6 +79,7 @@ public class HonorariosService {
     private final MovimientoRepository movimientoRepository;
     private final CustodiaRepository custodiaRepository;
     private final AuditoriaService auditoriaService;
+    private final Clock clock;
 
     /** Un torneo con dinero cobra inscripción: para arbitrarlo hace falta la identidad verificada. */
     static boolean conDinero(Torneo torneo) {
@@ -163,7 +165,7 @@ public class HonorariosService {
         gasto.setBeneficiario(arbitro);
         gasto.setMovimiento(deposito);
         gasto.setMontoAbonado(gasto.getMonto());
-        gasto.setFechaAbonado(Instant.now());
+        gasto.setFechaAbonado(Instant.now(clock));
         gasto.setComprobante("Transferencia interna " + deposito.getReferenciaExterna());
         return GastoDetalle.de(gastoRepository.saveAndFlush(gasto));
     }
@@ -177,7 +179,7 @@ public class HonorariosService {
             throw new ConflictoException(CodigoError.GASTO_YA_PAGADO, "El gasto " + gastoId + " ya está pagado");
         }
         gasto.setMontoAbonado(gasto.getMonto());
-        gasto.setFechaAbonado(Instant.now());
+        gasto.setFechaAbonado(Instant.now(clock));
         gasto.setComprobante(comprobante);
         return GastoDetalle.de(gastoRepository.saveAndFlush(gasto));
     }

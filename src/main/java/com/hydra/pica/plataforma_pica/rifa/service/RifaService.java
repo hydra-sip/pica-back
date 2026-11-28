@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -78,6 +79,7 @@ public class RifaService {
     private final ParametrosPlataforma parametrosPlataforma;
     private final NumeroRepository numeroRepository;
     private final RifaProperties rifaProperties;
+    private final Clock clock;
 
     /** La más nueva primero; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
@@ -147,7 +149,7 @@ public class RifaService {
     @Transactional
     public RifaDetalle publicar(Long organizadorId, Long id) {
         Rifa rifa = buscarEditable(organizadorId, id);
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         List<PremioRifa> premios = premioRifaRepository.buscarPorRifa(rifa.getId());
         int sumaPremios = premios.stream().mapToInt(PremioRifa::getPct).sum();
         boolean conVentana = rifa.getVentaHasta() != null;
@@ -226,7 +228,7 @@ public class RifaService {
         }
         sinCompradores(rifa);
 
-        rifa.setEliminadoEn(Instant.now());
+        rifa.setEliminadoEn(Instant.now(clock));
         rifaRepository.saveAndFlush(rifa);
     }
 
@@ -241,7 +243,7 @@ public class RifaService {
                     "La rifa " + rifa.getId() + " tiene " + vendidos + " números vendidos")
                     .con("numerosVendidos", vendidos);
         }
-        Instant vencidasDesde = Instant.now().minus(rifaProperties.duracionReserva());
+        Instant vencidasDesde = Instant.now(clock).minus(rifaProperties.duracionReserva());
         if (numeroRepository.countByIdRifaIdAndEstadoAndCreadoEnAfter(rifa.getId(), EstadoNumero.RESERVADO,
                 vencidasDesde) > 0) {
             throw new ConflictoException(CodigoError.RIFA_CON_RESERVAS,
@@ -355,7 +357,7 @@ public class RifaService {
         if (desde != null && !desde.isBefore(hasta)) {
             errores.add(new ErrorCampo("ventaHasta", ErrorCampo.Codigo.VENTANA_INVALIDA,
                     "Tiene que ser posterior a ventaDesde"));
-        } else if (!hasta.isAfter(Instant.now())) {
+        } else if (!hasta.isAfter(Instant.now(clock))) {
             errores.add(new ErrorCampo("ventaHasta", ErrorCampo.Codigo.VENTANA_INVALIDA,
                     "La venta no puede terminar en el pasado"));
         } else if (torneo != null) {
@@ -390,7 +392,7 @@ public class RifaService {
         if (fechaSorteo == null) {
             return;
         }
-        if (!fechaSorteo.isAfter(Instant.now())) {
+        if (!fechaSorteo.isAfter(Instant.now(clock))) {
             errores.add(new ErrorCampo("fechaSorteo", ErrorCampo.Codigo.VENTANA_INVALIDA,
                     "El sorteo no puede ser en el pasado"));
         } else if (ventaHasta != null && !fechaSorteo.isAfter(ventaHasta)) {

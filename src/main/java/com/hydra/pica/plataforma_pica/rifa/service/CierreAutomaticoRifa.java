@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
@@ -24,6 +25,7 @@ public class CierreAutomaticoRifa {
 
     private final CierreVentaService cierreVentaService;
     private final RifaRepository rifaRepository;
+    private final Clock clock;
 
     @Value("${app.rifas.cierre-automatico:true}")
     private boolean activo = true;
@@ -37,7 +39,7 @@ public class CierreAutomaticoRifa {
 
     /** @return cuántas cerró */
     public int cerrarVencidas() {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         int cerradas = 0;
         for (Long id : rifaRepository.conVentaVencida(ahora)) {
             try {

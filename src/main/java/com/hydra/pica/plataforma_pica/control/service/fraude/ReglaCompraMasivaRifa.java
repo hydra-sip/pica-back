@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.control.service.fraude;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -34,6 +35,7 @@ public class ReglaCompraMasivaRifa implements ReglaDeFraude {
     private final RifaRepository rifaRepository;
     private final AlertasFraude alertas;
     private final EntityManager entityManager;
+    private final Clock clock;
 
     @Transactional
     public boolean evaluar(Long rifaId, Long usuarioId) {
@@ -42,7 +44,7 @@ public class ReglaCompraMasivaRifa implements ReglaDeFraude {
         }
         int maxNumeros = parametros.cantidad(ClaveParametro.FRAUDE_RIFA_NUMEROS_MAX);
         Duration ventana = parametros.minutos(ClaveParametro.FRAUDE_RIFA_VENTANA_MIN);
-        Instant desde = Instant.now().minus(ventana);
+        Instant desde = Instant.now(clock).minus(ventana);
 
         long cantidad = ((Number) entityManager.createNativeQuery("""
                 SELECT COUNT(*)
@@ -95,7 +97,7 @@ public class ReglaCompraMasivaRifa implements ReglaDeFraude {
     @Transactional
     public int evaluarTodo() {
         int maxNumeros = parametros.cantidad(ClaveParametro.FRAUDE_RIFA_NUMEROS_MAX);
-        Instant desde = Instant.now().minus(parametros.minutos(ClaveParametro.FRAUDE_RIFA_VENTANA_MIN));
+        Instant desde = Instant.now(clock).minus(parametros.minutos(ClaveParametro.FRAUDE_RIFA_VENTANA_MIN));
         @SuppressWarnings("unchecked")
         List<Object[]> compras = entityManager.createNativeQuery("""
                 SELECT n.rifa_id, t.comprador_id

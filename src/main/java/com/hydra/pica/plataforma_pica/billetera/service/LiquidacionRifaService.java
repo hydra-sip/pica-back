@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -63,6 +64,7 @@ public class LiquidacionRifaService {
     private final MovimientoRepository movimientoRepository;
     private final LiquidacionService liquidacionService;
     private final Acreditador acreditador;
+    private final Clock clock;
 
     /**
      * @param aporteAlTorneo   lo que va al pozo del torneo
@@ -74,7 +76,7 @@ public class LiquidacionRifaService {
 
     @Transactional
     public LiquidacionRifa liquidarRifa(Long rifaId) {
-        return liquidarRifa(rifaId, Instant.now());
+        return liquidarRifa(rifaId, Instant.now(clock));
     }
 
     /**

@@ -8,6 +8,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
+import com.hydra.pica.plataforma_pica.common.config.RelojConfig;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.JpaAuditingConfig;
 import com.hydra.pica.plataforma_pica.common.security.SecurityContextCurrentUserProvider;
@@ -41,6 +42,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
+        RelojConfig.class,
         JpaAuditingConfig.class,
         SecurityContextCurrentUserProvider.class,
         TestcontainersConfiguration.class,

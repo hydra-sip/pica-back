@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 
@@ -36,6 +37,7 @@ public class CheckinService {
     private final ResultadoService resultadoService;
     private final TorneoRepository torneoRepository;
     private final ApplicationEventPublisher eventos;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public CheckinPartido ver(Long usuarioId, Long partidoId) {
@@ -59,7 +61,7 @@ public class CheckinService {
             throw new ConflictoException(CodigoError.CHECKIN_SIN_VENTANA, "El partido " + partidoId
                     + " no tiene ventana de check-in: el torneo no la configuró o el partido no tiene fecha");
         }
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         if (ventanas.estado(ventana, ahora) != EstadoVentana.ABIERTA) {
             throw new ConflictoException(CodigoError.CHECKIN_FUERA_DE_VENTANA,
                     "La ventana de check-in del partido " + partidoId + " va de " + ventana.abreEn() + " a "
@@ -78,7 +80,7 @@ public class CheckinService {
 
     private CheckinPartido checkin(Partido partido, List<Juega> lados, Long usuarioId) {
         VentanaCheckin ventana = VentanasCheckin.de(partido);
-        return new CheckinPartido(ventana, ventanas.estado(ventana, Instant.now()), lado(lados, Lado.LOCAL),
+        return new CheckinPartido(ventana, ventanas.estado(ventana, Instant.now(clock)), lado(lados, Lado.LOCAL),
                 lado(lados, Lado.VISITANTE),
                 Partidos.deCapitan(lados, usuarioId).map(Juega::getLado).orElse(null));
     }

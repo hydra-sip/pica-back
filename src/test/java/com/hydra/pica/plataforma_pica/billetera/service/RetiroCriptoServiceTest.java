@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
+import java.time.Clock;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -33,7 +34,7 @@ class RetiroCriptoServiceTest {
         RetiroCriptoService servicio = new RetiroCriptoService(mock(RetiroCriptoRepository.class),
                 mock(BilleteraRepository.class), mock(UsuarioRepository.class), retiroService, firmante,
                 mock(LectorDeCadena.class), mock(CriptoProperties.class), mock(RetirosCriptoProperties.class),
-                mock(TransactionTemplate.class), mock(AuditoriaService.class));
+                mock(TransactionTemplate.class), mock(AuditoriaService.class), Clock.systemUTC());
 
         assertThatThrownBy(() -> servicio.solicitar(1L, new BigDecimal("1000"),
                 "0x262dfbfa37436e5b99a53377e633509d1a9b301a"))

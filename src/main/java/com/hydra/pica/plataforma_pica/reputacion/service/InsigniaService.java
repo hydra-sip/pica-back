@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.reputacion.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
@@ -52,6 +53,7 @@ public class InsigniaService {
     private final NominaRepository nominaRepository;
     private final TorneoRepository torneoRepository;
     private final UsuarioRepository usuarioRepository;
+    private final Clock clock;
 
     /** Las insignias obtenidas y las rifas ganadas del jugador. 404 USUARIO_NO_ENCONTRADO si no existe. */
     @Transactional(readOnly = true)
@@ -92,7 +94,7 @@ public class InsigniaService {
         if (usuarioId == null || codigo == null) {
             return false;
         }
-        return usuarioInsigniaRepository.otorgarSiNoTiene(usuarioId, codigo.name(), Instant.now()) > 0;
+        return usuarioInsigniaRepository.otorgarSiNoTiene(usuarioId, codigo.name(), Instant.now(clock)) > 0;
     }
 
     @Transactional

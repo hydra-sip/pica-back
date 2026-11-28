@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -48,6 +49,7 @@ public class RechazoReprogramacionService {
     private final Reintegrador reintegrador;
     private final AuditoriaService auditoriaService;
     private final ApplicationEventPublisher eventos;
+    private final Clock clock;
 
     /**
      * Bloquea el torneo antes de leer la inscripción: dos pedidos a la vez se ordenan y el segundo la encuentra ya
@@ -67,7 +69,7 @@ public class RechazoReprogramacionService {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE, "La inscripción " + inscripcionId
                     + " está " + inscripcion.getEstado() + ": solo se rechaza la nueva fecha con una confirmada");
         }
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         Reprogramacion reprogramacion = reprogramacionRepository.findByTorneoIdAndPlazoProcesadoEnIsNull(torneoId)
                 .filter(r -> !ahora.isAfter(r.getRechazoHasta()))
                 .orElseThrow(() -> new ConflictoException(CodigoError.PLAZO_RECHAZO_VENCIDO,

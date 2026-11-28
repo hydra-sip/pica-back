@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.common.security;
 
+import java.time.Clock;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -32,7 +33,7 @@ class JwtServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         keyPair = generarKeyPair();
-        jwtService = new JwtService(keyPair, SesionProperties.porDefecto());
+        jwtService = new JwtService(keyPair, SesionProperties.porDefecto(), Clock.systemUTC());
     }
 
     @Test
@@ -61,7 +62,7 @@ class JwtServiceTest {
     @Test
     void laVidaDelAccessTokenSaleDeLaConfiguracion() {
         var sesion = new SesionProperties(java.time.Duration.ofMinutes(5), null, null);
-        String token = new JwtService(keyPair, sesion).generarAccessToken(42L, "jperez", List.of(), List.of(), 0);
+        String token = new JwtService(keyPair, sesion, Clock.systemUTC()).generarAccessToken(42L, "jperez", List.of(), List.of(), 0);
 
         var claims = jwtService.validar(token).getPayload();
 
@@ -173,7 +174,7 @@ class JwtServiceTest {
                 new BigInteger(1, Base64.getUrlDecoder().decode(n)),
                 new BigInteger(1, Base64.getUrlDecoder().decode("AQAB"))));
 
-        var key = new JwtService(new KeyPair(publicKey, null), SesionProperties.porDefecto()).obtenerJwks().keys().get(0);
+        var key = new JwtService(new KeyPair(publicKey, null), SesionProperties.porDefecto(), Clock.systemUTC()).obtenerJwks().keys().get(0);
 
         assertThat(key.n()).isEqualTo(n);
         assertThat(key.e()).isEqualTo("AQAB");

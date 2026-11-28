@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -47,6 +48,7 @@ public class ReclamoAdminService {
     private final UsuarioRepository usuarioRepository;
     private final AuditoriaService auditoriaService;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public Page<ReclamoAdminDetalle> listar(EstadoReclamo estado, Pageable pageable) {
@@ -93,7 +95,7 @@ public class ReclamoAdminService {
         String resolucionLimpia = request.resolucion().strip();
         reclamo.setEstado(nuevoEstado);
         reclamo.setResolucion(resolucionLimpia);
-        reclamo.setResueltoEn(Instant.now());
+        reclamo.setResueltoEn(Instant.now(clock));
         reclamo.setResueltoPor(resolutor.getUsername());
         reclamo = reclamoRifaRepository.saveAndFlush(reclamo);
 

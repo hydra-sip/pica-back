@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.discord;
 
+import java.time.Clock;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
@@ -309,7 +310,7 @@ class AvisosDiscordIntegracionTest {
     void conLaRevisionCadaQuinceMinutosNoSePierdeUnaVentana() {
         conVentana(ahora.plus(18, ChronoUnit.MINUTES));   // abrió hace 12 minutos: entre dos revisiones
         AvisoCheckinDiscord cadaQuince = new AvisoCheckinDiscord(partidoRepository, juegaRepository, canal, avisos,
-                transaccion, Duration.ofMinutes(15), true);
+                transaccion, Duration.ofMinutes(15), true, Clock.systemUTC());
 
         esperar("⏰ Se abrió el check-in");
         assertThat(cadaQuince.avisarAbiertas(ahora)).isEqualTo(1);

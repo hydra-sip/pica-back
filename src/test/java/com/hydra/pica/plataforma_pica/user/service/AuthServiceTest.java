@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -62,7 +63,7 @@ class AuthServiceTest {
     void setUp() {
         authService = new AuthService(usuarioRepository, refreshTokenRepository, passwordEncoder, jwtService,
                 permisoService, usuarioService, oAuthCodeStore, SesionProperties.porDefecto(), bloqueoService,
-                intentosLogin);
+                intentosLogin, Clock.systemUTC());
         usuario = new Usuario();
         ReflectionTestUtils.setField(usuario, "id", 42L);
         usuario.setUsername("jperez");
@@ -238,7 +239,7 @@ class AuthServiceTest {
     private AuthService conSesion(Duration access, Duration inactividad, Duration maxima) {
         return new AuthService(usuarioRepository, refreshTokenRepository, passwordEncoder, jwtService,
                 permisoService, usuarioService, oAuthCodeStore, new SesionProperties(access, inactividad, maxima),
-                bloqueoService, intentosLogin);
+                bloqueoService, intentosLogin, Clock.systemUTC());
     }
 
     @Test

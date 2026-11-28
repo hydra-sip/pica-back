@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -47,6 +48,7 @@ public class LaudoService {
     private final EvidenciaRepository evidenciaRepository;
     private final UsuarioRepository usuarioRepository;
     private final AvanceLlave avanceLlave;
+    private final Clock clock;
 
     @Transactional
     public PartidoDetalle laudar(Long usuarioId, Long partidoId, LaudoRequest request) {
@@ -84,7 +86,7 @@ public class LaudoService {
         objecion.setJustificacion(justificacion);
         objecion.setEvidencia(evidencia);
         objecion.setLaudoHash(sello);
-        objecion.setResueltaEn(Instant.now());
+        objecion.setResueltaEn(Instant.now(clock));
         avanceLlave.confirmar(partido, lados,
                 decision == Decision.CONFIRMADO ? EstadoPartido.CONFIRMADO : EstadoPartido.CORREGIDO);
 

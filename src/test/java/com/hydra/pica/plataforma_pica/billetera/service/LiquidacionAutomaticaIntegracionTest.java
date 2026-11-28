@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
+import java.time.Clock;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
@@ -54,7 +55,7 @@ class LiquidacionAutomaticaIntegracionTest {
     void alConfirmarseLaFinalSeLiquida() {
         long torneo = torneoFinalizado();
         LiquidacionAutomatica encendida = new LiquidacionAutomatica(liquidacionService, liquidacionRifaService,
-                custodiaRepository, rifaRepository, transacciones, true);
+                custodiaRepository, rifaRepository, transacciones, true, Clock.systemUTC());
 
         encendida.alConfirmarResultado(new ResultadoConfirmado(torneo, null, null, true));
 
@@ -65,7 +66,7 @@ class LiquidacionAutomaticaIntegracionTest {
     void unResultadoQueNoEsLaFinalNoLiquida() {
         long torneo = torneoFinalizado();
         LiquidacionAutomatica encendida = new LiquidacionAutomatica(liquidacionService, liquidacionRifaService,
-                custodiaRepository, rifaRepository, transacciones, true);
+                custodiaRepository, rifaRepository, transacciones, true, Clock.systemUTC());
 
         encendida.alConfirmarResultado(new ResultadoConfirmado(torneo, null, null, false));
 

@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -59,6 +60,7 @@ public class LiberacionReclamoService {
     private final Reintegrador reintegrador;
     private final AuditoriaService auditoriaService;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     /**
      * Libera los fondos congelados de un reclamo resuelto, registrando en auditoría la rifa, el monto, el destino y el
@@ -189,7 +191,7 @@ public class LiberacionReclamoService {
         // Re-lee con bloqueo porque CustodiaService.liberarRifa limpia el EntityManager.
         ReclamoRifa reclamo = reclamoRifaRepository.buscarBloqueado(reclamoId)
                 .orElseThrow(() -> noEncontrado(reclamoId));
-        reclamo.setFondosLiberadosEn(Instant.now());
+        reclamo.setFondosLiberadosEn(Instant.now(clock));
         reclamo.setFondosLiberadosPor(ejecutadoPor);
         reclamo.setFondosLiberadosMonto(monto);
         reclamoRifaRepository.saveAndFlush(reclamo);

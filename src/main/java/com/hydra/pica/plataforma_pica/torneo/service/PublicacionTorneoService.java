@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
 import java.text.Normalizer;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -52,6 +53,7 @@ public class PublicacionTorneoService {
     private final GastoRepository gastoRepository;
     private final ParametrosPlataforma parametrosPlataforma;
     private final TorneoProperties torneoProperties;
+    private final Clock clock;
 
     /** Si le falta algo, 409 TORNEO_INCOMPLETO con todo lo que falta en {@code faltantes}; no se publica nada. */
     @Transactional
@@ -59,7 +61,7 @@ public class PublicacionTorneoService {
         Torneo torneo = torneosPropios.buscarEditable(organizadorId, id);
         List<Premio> premios = premioRepository.findByTorneoIdOrderByIdPuestoAsc(id);
         List<Gasto> gastos = gastoRepository.findByTorneoIdOrderByIdGastoIdAsc(id);
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         validar(torneo, premios, gastos, ahora, torneoProperties.sinValidarFechas());
 
         // el % queda fijo desde acá: un cambio del parámetro ya no lo toca

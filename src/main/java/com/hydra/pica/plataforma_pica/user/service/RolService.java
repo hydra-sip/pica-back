@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -72,6 +73,7 @@ public class RolService {
     private final UsuarioRolRepository usuarioRolRepository;
     private final PermisoRepository permisoRepository;
     private final AuditingHandler auditingHandler;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public Page<RolResumen> listar(FiltroRoles filtro, Pageable pageable) {
@@ -139,7 +141,7 @@ public class RolService {
             throw new ProhibidoException(CodigoError.ROL_PROTEGIDO, "El registro le asigna " + rol.getNombre()
                     + " a cada usuario nuevo: no se puede dar de baja");
         }
-        rol.setEliminadoEn(Instant.now());
+        rol.setEliminadoEn(Instant.now(clock));
     }
 
     /** Si no estaba dado de baja no cambia nada y lo devuelve igual. */

@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -76,7 +77,7 @@ class UsuarioEdicionServiceTest {
     @BeforeEach
     void crearServicio() {
         servicio = new UsuarioEdicionService(usuarioRepository, personaRepository, passwordEncoder,
-                new AdminProperties("admin", "admin@pica.local", "x"), eventos, currentUserProvider, bloqueoService);
+                new AdminProperties("admin", "admin@pica.local", "x"), eventos, currentUserProvider, bloqueoService, Clock.systemUTC());
     }
 
     // --- modificar ---------------------------------------------------------------

@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,13 +52,14 @@ public class CuentaBancariaService {
     private final AuditoriaService auditoriaService;
     private final PlatformTransactionManager transactionManager;
     private final ApplicationEventPublisher eventos;
+    private final Clock clock;
 
     public CuentaBancariaService(
             CuentaBancariaRepository cuentaBancariaRepository,
             UsuarioRepository usuarioRepository,
             AuditoriaService auditoriaService,
             PlatformTransactionManager transactionManager) {
-        this(cuentaBancariaRepository, usuarioRepository, auditoriaService, transactionManager, null);
+        this(cuentaBancariaRepository, usuarioRepository, auditoriaService, transactionManager, null, Clock.systemUTC());
     }
 
     @Autowired
@@ -66,12 +68,14 @@ public class CuentaBancariaService {
             UsuarioRepository usuarioRepository,
             AuditoriaService auditoriaService,
             PlatformTransactionManager transactionManager,
-            ApplicationEventPublisher eventos) {
+            ApplicationEventPublisher eventos,
+            Clock clock) {
         this.cuentaBancariaRepository = cuentaBancariaRepository;
         this.usuarioRepository = usuarioRepository;
         this.auditoriaService = auditoriaService;
         this.transactionManager = transactionManager;
         this.eventos = eventos;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -120,7 +124,7 @@ public class CuentaBancariaService {
         cuenta.setTitular(request.titular().strip());
         cuenta.setCuitCuil(request.cuitCuil().strip());
         cuenta.setEstadoValidacion(EstadoValidacion.VALIDADA);
-        cuenta.setValidadaEn(Instant.now());
+        cuenta.setValidadaEn(Instant.now(clock));
         cuenta.setEliminadoEn(null);
         CuentaBancaria guardada = cuentaBancariaRepository.save(cuenta);
 
@@ -143,7 +147,7 @@ public class CuentaBancariaService {
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.CUENTA_BANCARIA_NO_ENCONTRADA,
                         "Cuenta bancaria no encontrada"));
 
-        cuenta.setEliminadoEn(Instant.now());
+        cuenta.setEliminadoEn(Instant.now(clock));
         cuentaBancariaRepository.save(cuenta);
 
         auditoriaService.registrar(

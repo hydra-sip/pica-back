@@ -74,12 +74,12 @@ public final class TorneoSpecifications {
      * Orden por defecto: primero los que todavía no empezaron, del más cercano al más lejano, y después los ya
      * empezados. Un sort explícito del Pageable lo reemplaza. No filtra nada; el conteo de la página no lleva orden.
      */
-    public static Specification<Torneo> proximosPrimero() {
+    public static Specification<Torneo> proximosPrimero(Instant ahora) {
         return (root, query, cb) -> {
             if (!Long.class.equals(query.getResultType())) {
                 Expression<Instant> fechaInicio = root.get("fechaInicio");
                 query.orderBy(
-                        cb.asc(cb.selectCase().when(cb.greaterThanOrEqualTo(fechaInicio, Instant.now()), 0).otherwise(1)),
+                        cb.asc(cb.selectCase().when(cb.greaterThanOrEqualTo(fechaInicio, ahora), 0).otherwise(1)),
                         cb.asc(fechaInicio),
                         cb.asc(root.get("id")));
             }

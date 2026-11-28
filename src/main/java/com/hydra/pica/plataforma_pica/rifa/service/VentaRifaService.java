@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.rifa.service;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -78,11 +79,12 @@ public class VentaRifaService {
     private final ApplicationEventPublisher eventos;
     private final RifaProperties rifaProperties;
     private final BloqueoService bloqueoService;
+    private final Clock clock;
 
     /** Reemplaza la reserva que el usuario tuviera en la rifa: queda reservado solo lo que eligió ahora. */
     @Transactional
     public ReservaRifa reservar(Long usuarioId, Long rifaId, List<Integer> numeros) {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         Rifa rifa = buscarEnVenta(usuarioId, rifaId, ahora);
         List<Integer> elegidos = validarNumeros(rifa, numeros);
 
@@ -130,7 +132,7 @@ public class VentaRifaService {
         if (previo.isPresent()) {
             return repetida(previo.get(), compradorId, rifaId, numeros);
         }
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         // antes de leer la rifa: si se está cerrando la venta, espera y la ve ya sellada (HU-407)
         rifaRepository.bloquearParaVender(rifaId);
         Rifa rifa = buscarEnVenta(compradorId, rifaId, ahora);

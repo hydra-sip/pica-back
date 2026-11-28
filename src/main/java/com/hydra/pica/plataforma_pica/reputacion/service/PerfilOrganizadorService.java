@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.reputacion.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -51,6 +52,7 @@ public class PerfilOrganizadorService {
     private final EventoIndiceOrganizadorRepository eventoRepository;
     private final ParametrosPlataforma parametros;
     private final TorneoPublicoService torneoPublicoService;
+    private final Clock clock;
 
     /** Perfil público del organizador. 404 USUARIO_NO_ENCONTRADO si el usuario no existe. */
     @Transactional(readOnly = true)
@@ -111,7 +113,7 @@ public class PerfilOrganizadorService {
                 : ClaveParametro.INDICE_ORGANIZADOR_CANCELACION);
         int anterior = indice.getValor();
         int nuevo = Math.max(0, anterior - resta);
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         indice.setValor(nuevo);
         indice.setActualizadoEn(ahora);
 

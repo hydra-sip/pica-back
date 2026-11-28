@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.reputacion.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.HashMap;
@@ -49,6 +50,7 @@ public class CalificacionService {
     private final TorneoRepository torneoRepository;
     private final UsuarioRepository usuarioRepository;
     private final AuditoriaService auditoriaService;
+    private final Clock clock;
 
     /**
      * 404 TORNEO_NO_ENCONTRADO si no existe o es un borrador; 403 SIN_PERMISO si no lo organiza; 409
@@ -77,7 +79,7 @@ public class CalificacionService {
         calificacion.setComentario(request.comentario() == null || request.comentario().isBlank()
                 ? null : request.comentario().strip());
         calificacion.setNoConfiable(request.noConfiable());
-        calificacion.setCreadaEn(Instant.now());
+        calificacion.setCreadaEn(Instant.now(clock));
         calificacion = calificacionRepository.saveAndFlush(calificacion);
 
         Map<String, Object> detalle = new LinkedHashMap<>();

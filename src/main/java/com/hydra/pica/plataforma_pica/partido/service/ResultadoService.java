@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -69,6 +70,7 @@ public class ResultadoService {
     private final ObjecionRepository objecionRepository;
     private final EvidenciaRepository evidenciaRepository;
     private final ApplicationEventPublisher eventos;
+    private final Clock clock;
 
     @Transactional
     public PartidoDetalle cargar(Long usuarioId, Long partidoId, ResultadoRequest request) {
@@ -81,7 +83,7 @@ public class ResultadoService {
         fijarMarcador(lados, request.puntajeLocal(), request.puntajeVisitante(), request.penalesLocal(),
                 request.penalesVisitante());
 
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         partido.setEstado(EstadoPartido.RESULTADO_CARGADO);
         torneoRepository.subirVersionBracket(partido.getTorneo().getId());
         partido.setResultadoCargadoEn(ahora);
@@ -117,7 +119,7 @@ public class ResultadoService {
         Partido partido = partidos.buscarBloqueado(partidoId);
         List<Juega> lados = juegaRepository.delPartido(partidoId);
         Juega mio = exigirRival(partido, lados, usuarioId, "objetar");
-        if (!partido.getObjecionVenceEn().isAfter(Instant.now())) {
+        if (!partido.getObjecionVenceEn().isAfter(Instant.now(clock))) {
             throw new ConflictoException(CodigoError.PLAZO_OBJECION_VENCIDO,
                     "Venció el plazo para objetar el resultado del partido " + partidoId);
         }
