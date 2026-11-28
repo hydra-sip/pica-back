@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.email.EmailService;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
@@ -37,7 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class LiquidacionConGruposIntegracionTest extends TorneoConGruposBase {
 
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private ResultadoService resultadoService;
     @Autowired private LiquidacionService liquidacionService;
     @Autowired private ControlDeBalance controlDeBalance;
@@ -66,7 +66,7 @@ class LiquidacionConGruposIntegracionTest extends TorneoConGruposBase {
                     INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
                     VALUES (?, ?, 'PENDIENTE_PAGO', now()) RETURNING id""", Long.class, torneo, jugador);
             entityManager.clear();
-            inscripcionService.pagar(jugador, inscripcion);
+            pagoInscripcionService.pagar(jugador, inscripcion);
             inscripciones.add(inscripcion);
         }
         entityManager.flush();

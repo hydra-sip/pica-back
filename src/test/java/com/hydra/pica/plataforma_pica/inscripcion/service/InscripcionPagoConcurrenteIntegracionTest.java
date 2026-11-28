@@ -53,6 +53,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 class InscripcionPagoConcurrenteIntegracionTest {
 
     @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
+    @Autowired private ReemplazoInscripcionService reemplazoInscripcionService;
     @Autowired private InscripcionTorneoService inscripcionTorneoService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
@@ -605,7 +607,7 @@ class InscripcionPagoConcurrenteIntegracionTest {
             Long sale, Long entra) {
         return () -> {
             salida.await();
-            return inscripcionService.reemplazar(capitan, inscripcion, new ReemplazoRequest(sale, entra));
+            return reemplazoInscripcionService.reemplazar(capitan, inscripcion, new ReemplazoRequest(sale, entra));
         };
     }
 
@@ -645,7 +647,7 @@ class InscripcionPagoConcurrenteIntegracionTest {
     private Callable<EstadoInscripcion> pago(CyclicBarrier salida, Long usuario, long inscripcion) {
         return () -> {
             salida.await();
-            return inscripcionService.pagar(usuario, inscripcion).estado();
+            return pagoInscripcionService.pagar(usuario, inscripcion).estado();
         };
     }
 

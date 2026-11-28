@@ -19,7 +19,7 @@ import com.hydra.pica.plataforma_pica.billetera.service.CustodiaService;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.torneo.dto.ReprogramacionDetalle;
 import com.hydra.pica.plataforma_pica.torneo.dto.ReprogramacionRequest;
 import jakarta.persistence.EntityManager;
@@ -55,7 +55,7 @@ class ReprogramacionTorneoIntegracionTest {
     @Autowired private ReprogramacionTorneoService reprogramacionService;
     @Autowired private VencimientoReprogramacion vencimiento;
     @Autowired private InscripcionTorneoService inscripcionTorneoService;
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private CustodiaService custodiaService;
     @Autowired private ControlDeBalance controlDeBalance;
     @Autowired private EscenarioTorneo escenario;
@@ -77,7 +77,7 @@ class ReprogramacionTorneoIntegracionTest {
             inscripcion[i] = inscripcion(jugador[i]);
         }
         for (int i = 0; i < 3; i++) {
-            inscripcionService.pagar(jugador[i], inscripcion[i]);
+            pagoInscripcionService.pagar(jugador[i], inscripcion[i]);
         }
         entityManager.flush();
     }
@@ -228,7 +228,7 @@ class ReprogramacionTorneoIntegracionTest {
     void completarElCupoNoCierraLaInscripcion() {
         reprogramar();
 
-        inscripcionService.pagar(jugador[3], inscripcion[3]);
+        pagoInscripcionService.pagar(jugador[3], inscripcion[3]);
 
         entityManager.flush();
         assertThat(estado()).isEqualTo("INSCRIPCION_ABIERTA");
@@ -262,7 +262,7 @@ class ReprogramacionTorneoIntegracionTest {
     @Test
     void conElCupoCompletoSeCierraYSeVuelveASellarLaLista() {
         reprogramar();
-        inscripcionService.pagar(jugador[3], inscripcion[3]);
+        pagoInscripcionService.pagar(jugador[3], inscripcion[3]);
         vencerElPlazo();
 
         assertThat(vencimiento.resolverVencidas()).isEqualTo(1);

@@ -13,6 +13,7 @@ import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.ReemplazoInscripcionService;
 import com.hydra.pica.plataforma_pica.partido.dto.LaudoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoBracket;
@@ -68,6 +69,7 @@ class HistorialCompetitivoIntegracionTest {
     @Autowired private CancelacionTorneoService cancelacionService;
     @Autowired private ArbitrosTorneoService arbitrosService;
     @Autowired private InscripcionService inscripcionService;
+    @Autowired private ReemplazoInscripcionService reemplazoInscripcionService;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private ProgramacionService programacionService;
     @Autowired private CheckinService checkinService;
@@ -212,7 +214,7 @@ class HistorialCompetitivoIntegracionTest {
         Long companieroB = escenario.usuario("companiero_b", "PARTICIPANTE").getId();
         Long equipoA = inscribirEquipo(porEquipos, capitanA, "Los A", sale);
         inscribirEquipo(porEquipos, capitanB, "Los B", companieroB);
-        inscripcionService.reemplazar(capitanA, equipoA, new ReemplazoRequest(sale, entra));
+        reemplazoInscripcionService.reemplazar(capitanA, equipoA, new ReemplazoRequest(sale, entra));
         cerrarYSortear(porEquipos);
         PartidoBracket laFinal = bracketService.ver(porEquipos).rondas().getFirst().partidos().getFirst();
         Map<String, List<Long>> nominas = Map.of(

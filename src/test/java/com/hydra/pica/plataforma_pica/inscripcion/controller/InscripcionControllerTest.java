@@ -42,6 +42,8 @@ import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.RepartoIntegrante;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ResumenPago;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.ReemplazoInscripcionService;
 import com.hydra.pica.plataforma_pica.user.dto.UsuarioPublico;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -74,6 +76,12 @@ class InscripcionControllerTest {
     private InscripcionService inscripcionService;
 
     @MockitoBean
+    private PagoInscripcionService pagoInscripcionService;
+
+    @MockitoBean
+    private ReemplazoInscripcionService reemplazoInscripcionService;
+
+    @MockitoBean
     private CurrentUserProvider currentUserProvider;
 
     @Test
@@ -84,7 +92,7 @@ class InscripcionControllerTest {
         mockMvc.perform(delete("/api/v1/inscripciones/7")).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/v1/inscripciones/7/reemplazos")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/v1/inscripciones/7/reemplazos")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test
@@ -104,7 +112,7 @@ class InscripcionControllerTest {
                         .content("{\"saleUsuarioId\":8,\"entraUsuarioId\":9}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test
@@ -158,7 +166,7 @@ class InscripcionControllerTest {
     @DisplayName("POST /inscripciones/{id}/reemplazos usa la sesión y devuelve la inscripción actualizada")
     void reemplaza() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
-        when(inscripcionService.reemplazar(PARTICIPANTE, 7L, new ReemplazoRequest(8L, 9L)))
+        when(reemplazoInscripcionService.reemplazar(PARTICIPANTE, 7L, new ReemplazoRequest(8L, 9L)))
                 .thenReturn(detalle());
 
         mockMvc.perform(post("/api/v1/inscripciones/7/reemplazos")
@@ -167,7 +175,7 @@ class InscripcionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(7));
 
-        verify(inscripcionService).reemplazar(PARTICIPANTE, 7L, new ReemplazoRequest(8L, 9L));
+        verify(reemplazoInscripcionService).reemplazar(PARTICIPANTE, 7L, new ReemplazoRequest(8L, 9L));
     }
 
     @Test
@@ -228,7 +236,7 @@ class InscripcionControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("VALIDACION"));
 
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test
@@ -238,7 +246,7 @@ class InscripcionControllerTest {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
         UsuarioPublico sale = new UsuarioPublico(8L, "sale", "Sale", "Jugador");
         UsuarioPublico entra = new UsuarioPublico(9L, "entra", "Entra", "Jugador");
-        when(inscripcionService.reemplazos(PARTICIPANTE, 7L))
+        when(reemplazoInscripcionService.reemplazos(PARTICIPANTE, 7L))
                 .thenReturn(List.of(new ReemplazoDetalle(sale, entra, CREADA, new UsuarioPublico(PARTICIPANTE,
                         "capitan", "Capitán", "Test"))));
 
@@ -291,7 +299,7 @@ class InscripcionControllerTest {
     @DisplayName("PUT /inscripciones/{id}/confirmar sin autenticación responde 401")
     void confirmarSinAutenticacion() throws Exception {
         mockMvc.perform(put("/api/v1/inscripciones/7/confirmar")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test
@@ -304,7 +312,7 @@ class InscripcionControllerTest {
                         .content("{\"reglamentoAceptado\":true}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test
@@ -366,7 +374,7 @@ class InscripcionControllerTest {
     void pagoSinAutenticacion() throws Exception {
         mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago")).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/v1/inscripciones/7/pago")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test
@@ -381,7 +389,7 @@ class InscripcionControllerTest {
         mockMvc.perform(post("/api/v1/inscripciones/7/pago"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test
@@ -389,7 +397,7 @@ class InscripcionControllerTest {
     @DisplayName("GET /inscripciones/{id}/resumen-pago responde 200 con lo que se va a pagar")
     void resumenDePago() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
-        when(inscripcionService.resumenPago(PARTICIPANTE, 7L)).thenReturn(new ResumenPago(7L,
+        when(pagoInscripcionService.resumenPago(PARTICIPANTE, 7L)).thenReturn(new ResumenPago(7L,
                 new ResumenPago.TorneoPago(3L, "Copa"), new UsuarioPublico(PARTICIPANTE, "jugador", "Ana", "Paz"), null,
                 new BigDecimal("1500.00"), new BigDecimal("150.00"), new BigDecimal("1650.00"), "ARS", 8, 5L, CREADA));
 
@@ -413,9 +421,9 @@ class InscripcionControllerTest {
     @DisplayName("El resumen de una inscripción ajena responde 404 y fuera de PENDIENTE_PAGO responde 409 con su código")
     void resumenConError() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
-        when(inscripcionService.resumenPago(PARTICIPANTE, 7L))
+        when(pagoInscripcionService.resumenPago(PARTICIPANTE, 7L))
                 .thenThrow(new NoEncontradoException(CodigoError.INSCRIPCION_NO_ENCONTRADA, "no existe"));
-        when(inscripcionService.resumenPago(PARTICIPANTE, 8L))
+        when(pagoInscripcionService.resumenPago(PARTICIPANTE, 8L))
                 .thenThrow(new ConflictoException(CodigoError.INSCRIPCION_NO_EDITABLE, "confirmada"));
 
         mockMvc.perform(get("/api/v1/inscripciones/7/resumen-pago"))
@@ -431,7 +439,7 @@ class InscripcionControllerTest {
     @DisplayName("POST /inscripciones/{id}/pago paga con el usuario de la sesión y responde 200")
     void paga() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
-        when(inscripcionService.pagar(PARTICIPANTE, 7L))
+        when(pagoInscripcionService.pagar(PARTICIPANTE, 7L))
                 .thenReturn(new InscripcionDetalle(7L, 3L, TORNEO, PARTICIPANTE, EstadoInscripcion.CONFIRMADA, CREADA, CREADA, CREADA, null, null, null,
                         RolEnInscripcion.INDIVIDUAL));
 
@@ -446,11 +454,11 @@ class InscripcionControllerTest {
     @DisplayName("El pago deja pasar el código de cada regla: 404, cupo completo y cobro rechazado")
     void pagoConError() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
-        when(inscripcionService.pagar(PARTICIPANTE, 7L))
+        when(pagoInscripcionService.pagar(PARTICIPANTE, 7L))
                 .thenThrow(new NoEncontradoException(CodigoError.INSCRIPCION_NO_ENCONTRADA, "no existe"));
-        when(inscripcionService.pagar(PARTICIPANTE, 8L))
+        when(pagoInscripcionService.pagar(PARTICIPANTE, 8L))
                 .thenThrow(new ConflictoException(CodigoError.CUPO_COMPLETO, "lleno"));
-        when(inscripcionService.pagar(PARTICIPANTE, 9L)).thenThrow(new CobroRechazadoException("sin fondos"));
+        when(pagoInscripcionService.pagar(PARTICIPANTE, 9L)).thenThrow(new CobroRechazadoException("sin fondos"));
 
         mockMvc.perform(post("/api/v1/inscripciones/7/pago"))
                 .andExpect(status().isNotFound())
@@ -496,7 +504,7 @@ class InscripcionControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("VALIDACION"))
                 .andExpect(jsonPath("$.errores[0].campo").value("nombreEquipoNuevo"));
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test
@@ -530,7 +538,7 @@ class InscripcionControllerTest {
     void editarSinAutenticacion() throws Exception {
         mockMvc.perform(put("/api/v1/inscripciones/7").contentType(MediaType.APPLICATION_JSON).content("{\"equipoId\":4}"))
                 .andExpect(status().isUnauthorized());
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test
@@ -542,7 +550,7 @@ class InscripcionControllerTest {
         mockMvc.perform(put("/api/v1/inscripciones/7").contentType(MediaType.APPLICATION_JSON).content("{\"equipoId\":4}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test
@@ -582,7 +590,7 @@ class InscripcionControllerTest {
     @DisplayName("El resumen de pago de un equipo lleva el equipo y no el participante")
     void resumenDePagoDeEquipo() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(PARTICIPANTE));
-        when(inscripcionService.resumenPago(PARTICIPANTE, 7L)).thenReturn(new ResumenPago(7L,
+        when(pagoInscripcionService.resumenPago(PARTICIPANTE, 7L)).thenReturn(new ResumenPago(7L,
                 new ResumenPago.TorneoPago(3L, "Copa"), null, new InscripcionDetalle.EquipoInscripto(4L, "Los Halcones", PARTICIPANTE),
                 new BigDecimal("1500.00"), new BigDecimal("150.00"), new BigDecimal("1650.00"), "ARS", 8, 5L, CREADA));
 
@@ -641,7 +649,7 @@ class InscripcionControllerTest {
     @DisplayName("PUT /inscripciones/{id}/reabrir sin autenticación responde 401")
     void reabrirSinAutenticacion() throws Exception {
         mockMvc.perform(put("/api/v1/inscripciones/7/reabrir")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test
@@ -653,7 +661,7 @@ class InscripcionControllerTest {
         mockMvc.perform(put("/api/v1/inscripciones/7/reabrir"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("SIN_PERMISO"));
-        verifyNoInteractions(inscripcionService);
+        verifyNoInteractions(inscripcionService, pagoInscripcionService, reemplazoInscripcionService);
     }
 
     @Test

@@ -18,7 +18,7 @@ import com.hydra.pica.plataforma_pica.billetera.service.ControlDeBalance;
 import com.hydra.pica.plataforma_pica.billetera.service.CustodiaService;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.torneo.dto.RechazoReprogramacion;
 import com.hydra.pica.plataforma_pica.torneo.dto.ReprogramacionRequest;
 import com.hydra.pica.plataforma_pica.torneo.dto.SolicitudCancelacion;
@@ -52,7 +52,7 @@ class RechazoReprogramacionIntegracionTest {
     @Autowired private RechazoReprogramacionService rechazoService;
     @Autowired private ReprogramacionTorneoService reprogramacionService;
     @Autowired private CancelacionTorneoService cancelacionService;
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private CustodiaService custodiaService;
     @Autowired private ComprobanteService comprobanteService;
     @Autowired private ControlDeBalance controlDeBalance;
@@ -73,7 +73,7 @@ class RechazoReprogramacionIntegracionTest {
             jugador[i] = escenario.usuario("jug_rech_" + i, "PARTICIPANTE").getId();
             cargar(jugador[i]);
             inscripcion[i] = inscripcion(torneo, jugador[i]);
-            inscripcionService.pagar(jugador[i], inscripcion[i]);
+            pagoInscripcionService.pagar(jugador[i], inscripcion[i]);
         }
         reprogramacionService.reprogramar(organizador, torneo,
                 new ReprogramacionRequest(INICIO, null, CIERRE, RECHAZO, "Lluvia"));
@@ -174,7 +174,7 @@ class RechazoReprogramacionIntegracionTest {
         jdbc.update("UPDATE inscripcion SET creado_en = ? WHERE id = ?",
                 java.sql.Timestamp.from(Instant.now().plusSeconds(1)), posterior);
         entityManager.clear();
-        inscripcionService.pagar(nuevo, posterior);
+        pagoInscripcionService.pagar(nuevo, posterior);
 
         assertError(() -> rechazoService.rechazar(nuevo, posterior), HttpStatus.CONFLICT,
                 CodigoError.INSCRIPCION_POSTERIOR_A_REPROGRAMACION);
@@ -209,7 +209,7 @@ class RechazoReprogramacionIntegracionTest {
                     integrante, equipo);
         }
         entityManager.clear();
-        inscripcionService.pagar(capitan, deEquipo);
+        pagoInscripcionService.pagar(capitan, deEquipo);
         reprogramacionService.reprogramar(organizador, porEquipos,
                 new ReprogramacionRequest(INICIO, null, CIERRE, RECHAZO, "Lluvia"));
 

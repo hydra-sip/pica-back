@@ -23,6 +23,7 @@ import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionEquipoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.ReemplazoInscripcionService;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.ResultadoRequest;
 import com.hydra.pica.plataforma_pica.partido.event.CheckinHecho;
@@ -92,6 +93,7 @@ class InsigniasYLogrosIntegracionTest {
     @Autowired private TorneoService torneoService;
     @Autowired private ArbitrosTorneoService arbitrosService;
     @Autowired private InscripcionService inscripcionService;
+    @Autowired private ReemplazoInscripcionService reemplazoInscripcionService;
     @Autowired private BracketService bracketService;
     @Autowired private ResultadoService resultadoService;
     @Autowired private LiquidacionService liquidacionService;
@@ -282,7 +284,7 @@ class InsigniasYLogrosIntegracionTest {
 
         Long eqA = inscribirEquipo(torneoEq, capitanA, "Equipo Alfa", saleA);
         inscribirEquipo(torneoEq, capitanB, "Equipo Beta", compB);
-        inscripcionService.reemplazar(capitanA, eqA, new ReemplazoRequest(saleA, entraA));
+        reemplazoInscripcionService.reemplazar(capitanA, eqA, new ReemplazoRequest(saleA, entraA));
 
         jdbc.update("UPDATE torneo SET estado = 'INSCRIPCION_CERRADA' WHERE id = ?", torneoEq);
         entityManager.flush();
