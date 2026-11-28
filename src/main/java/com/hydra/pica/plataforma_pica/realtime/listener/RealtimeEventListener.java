@@ -18,6 +18,7 @@ import com.hydra.pica.plataforma_pica.rifa.event.NumerosVendidos;
 import com.hydra.pica.plataforma_pica.rifa.event.FondosReclamoLiberados;
 import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaRegistrado;
 import com.hydra.pica.plataforma_pica.rifa.event.ReclamoRifaResuelto;
+import com.hydra.pica.plataforma_pica.rifa.event.RifaCancelada;
 import com.hydra.pica.plataforma_pica.rifa.event.RifaSorteada;
 import com.hydra.pica.plataforma_pica.rifa.event.VentaRifaCerrada;
 import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
@@ -25,7 +26,9 @@ import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 
+import com.hydra.pica.plataforma_pica.torneo.event.ReprogramacionRechazada;
 import com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado;
+import com.hydra.pica.plataforma_pica.torneo.event.TorneoReprogramado;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.torneo.service.PozoTorneoService;
 import lombok.RequiredArgsConstructor;
@@ -104,6 +107,48 @@ public class RealtimeEventListener {
                 evento.torneoId(),
                 obtenerEstadoTorneo(evento.torneoId()),
                 evento.partidoId(),
+                null,
+                false,
+                obtenerBracket(evento.torneoId()),
+                pozoTorneoService.calcularPozo(evento.torneoId())
+        );
+
+        realtimeNotifier.publicarTorneo(evento.torneoId(), mensaje);
+    }
+
+    /**
+     * Alguien se bajó por la nueva fecha (CR-01-3): se liberó un lugar y bajó el pozo. La ficha y la consola vuelven a
+     * pedir el torneo, las inscripciones y el historial.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onReprogramacionRechazada(ReprogramacionRechazada evento) {
+        log.info("Inscripción {} reintegrada por la reprogramación del torneo {}", evento.inscripcionId(),
+                evento.torneoId());
+
+        EventoTorneoMessage mensaje = new EventoTorneoMessage(
+                "INSCRIPCION_REINTEGRADA",
+                evento.torneoId(),
+                obtenerEstadoTorneo(evento.torneoId()),
+                null,
+                null,
+                false,
+                null,
+                pozoTorneoService.calcularPozo(evento.torneoId())
+        );
+
+        realtimeNotifier.publicarTorneo(evento.torneoId(), mensaje);
+    }
+
+    /** Cambiaron las fechas (CR-01-4): la ficha y la consola vuelven a pedir el torneo y el historial. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onTorneoReprogramado(TorneoReprogramado evento) {
+        log.info("Torneo {} reprogramado", evento.torneoId());
+
+        EventoTorneoMessage mensaje = new EventoTorneoMessage(
+                "TORNEO_REPROGRAMADO",
+                evento.torneoId(),
+                obtenerEstadoTorneo(evento.torneoId()),
+                null,
                 null,
                 false,
                 obtenerBracket(evento.torneoId()),
@@ -237,6 +282,13 @@ public class RealtimeEventListener {
     public void onRifaSorteada(RifaSorteada evento) {
         log.info("Rifa {} sorteada", evento.rifaId());
         avisarEstado(evento.rifaId(), evento.torneoId(), EstadoRifa.SORTEADA);
+    }
+
+    /** PICA-445: la venta terminó sin vendidos y la rifa se canceló sola; quien la mira la ve pasar a CANCELADA. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onRifaCancelada(RifaCancelada evento) {
+        log.info("Rifa {} cancelada: terminó la venta sin números vendidos", evento.rifaId());
+        avisarEstado(evento.rifaId(), evento.torneoId(), EstadoRifa.CANCELADA);
     }
 
     private void avisarEstado(Long rifaId, Long torneoId, EstadoRifa estado) {

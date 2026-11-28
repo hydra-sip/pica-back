@@ -5,7 +5,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -30,13 +33,23 @@ class OAuthCodeStoreTest {
     @Mock
     private UsuarioRepository usuarioRepository;
 
+    /** La hora fija de los tests: el vencimiento se prueba moviendo el reloj, no tocando la entidad. */
+    private static final Instant AHORA = Instant.parse("2026-11-28T12:00:00Z");
+    private static final Clock RELOJ = Clock.fixed(AHORA, ZoneOffset.UTC);
+
     private OAuthCodeStore store;
     private final Map<String, CodigoCanjeOAuth> db = new HashMap<>();
 
     @BeforeEach
     void setUp() {
         db.clear();
-        store = new OAuthCodeStore(codigoCanjeOAuthRepository, usuarioRepository);
+        store = new OAuthCodeStore(codigoCanjeOAuthRepository, usuarioRepository, RELOJ);
+    }
+
+    /** El mismo almacén, consultado {@code segundos} después de {@link #AHORA}. */
+    private OAuthCodeStore despuesDe(long segundos) {
+        return new OAuthCodeStore(codigoCanjeOAuthRepository, usuarioRepository,
+                Clock.offset(RELOJ, Duration.ofSeconds(segundos)));
     }
 
     private void configurarMocks() {
@@ -79,25 +92,22 @@ class OAuthCodeStoreTest {
     }
 
     @Test
-    @DisplayName("Código expirado devuelve null")
+    @DisplayName("El código vence a los 60 segundos")
     void codigoExpiradoDevuelveNull() {
         configurarMocks();
-        String code = store.generarCodigo(42L);
-        // Expirar manualmente el código en la BD simulada
-        db.values().forEach(c -> c.setVenceEn(Instant.now().minusSeconds(10)));
+        String vencido = store.generarCodigo(42L);
+        String vigente = store.generarCodigo(43L);
 
-        assertThat(store.consumirCodigo(code)).isNull();
+        assertThat(despuesDe(61).consumirCodigo(vencido)).isNull();
+        assertThat(despuesDe(59).consumirCodigo(vigente)).isEqualTo(43L);
     }
 
     @Test
     @DisplayName("Al generar un código se borran los usados o vencidos")
     void generarBorraLosUsadosOVencidos() {
-        Instant antes = Instant.now();
-
         store.generarCodigo(42L);
 
-        verify(codigoCanjeOAuthRepository).borrarUsadosOVencidos(
-                org.mockito.ArgumentMatchers.argThat(ahora -> !ahora.isBefore(antes)));
+        verify(codigoCanjeOAuthRepository).borrarUsadosOVencidos(AHORA);
     }
 
     @Test

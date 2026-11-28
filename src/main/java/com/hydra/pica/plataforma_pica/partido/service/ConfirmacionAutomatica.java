@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
@@ -20,11 +21,12 @@ public class ConfirmacionAutomatica {
 
     private final ResultadoService resultadoService;
     private final PartidoRepository partidoRepository;
+    private final Clock clock;
 
     /** @return cuántos confirmó */
     @Scheduled(fixedDelayString = "${app.partidos.revision-plazos:30s}")
     public int confirmarVencidos() {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         int confirmados = 0;
         for (Long id : partidoRepository.conPlazoVencido(ahora)) {
             try {

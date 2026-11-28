@@ -11,6 +11,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Cancha;
 import com.hydra.pica.plataforma_pica.torneo.domain.CriterioSinPresentes;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
+import com.hydra.pica.plataforma_pica.torneo.domain.MinimoInscriptos;
+import com.hydra.pica.plataforma_pica.torneo.domain.ReglasGrupos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Modalidad;
 import com.hydra.pica.plataforma_pica.torneo.domain.Premio;
 import com.hydra.pica.plataforma_pica.torneo.domain.SelloTorneo;
@@ -21,6 +23,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * Un torneo propio como lo ve su organizador en el asistente, incluso en BORRADOR (PICA-199): los datos de los
  * tres pasos, con lo que falta en null. La vista pública es otra.
  *
+ * @param reglasGrupos las de la fase de grupos (CR-02); null en eliminación directa
  * @param pasoPendiente en BORRADOR, el paso donde reabrir el asistente (ver {@link AsistenteTorneo}); si no, null
  * @param checkinMinAntes la ventana de check-in (HU-308): cuántos minutos antes del cruce abre; null sin configurar
  * @param checkinDuracion cuántos minutos dura la ventana de check-in
@@ -35,6 +38,8 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
  * @param listaHash SHA-256 de la lista de inscriptos, sellada al cerrar la inscripción (ver {@link SelloTorneo})
  * @param camposBloqueados los de {@code InformacionTorneoRequest} que ya no se pueden cambiar (HU-202); vacío en
  *                         BORRADOR
+ * @param inscriptosMinimos las inscripciones confirmadas que hacen falta para cerrar la inscripción y jugar
+ *                          ({@link MinimoInscriptos}, PICA-447); null en un BORRADOR sin formato o sin cupo
  */
 public record TorneoInformacion(
         Long id,
@@ -44,6 +49,7 @@ public record TorneoInformacion(
         String disciplina,
         String descripcion,
         Formato formato,
+        ReglasGrupos reglasGrupos,
         Modalidad modalidad,
         TipoParticipante tipoParticipante,
         String sede,
@@ -70,7 +76,8 @@ public record TorneoInformacion(
         String listaHash,
         Instant creadoEn,
         Instant modificadoEn,
-        List<String> camposBloqueados) {
+        List<String> camposBloqueados,
+        Integer inscriptosMinimos) {
 
     /** {@code pctGastosAdministrativos}: el del torneo si ya lo tiene, si no el vigente de la plataforma. */
     public static TorneoInformacion de(Torneo t, List<Premio> premios, List<String> camposBloqueados,
@@ -80,12 +87,13 @@ public record TorneoInformacion(
                 .sorted(Comparator.comparing(String::toLowerCase))
                 .toList();
         return new TorneoInformacion(t.getId(), t.getEstado(), AsistenteTorneo.pasoPendiente(t), t.getNombre(),
-                t.getDisciplina(), t.getDescripcion(), t.getFormato(), t.getModalidad(), t.getTipoParticipante(),
-                t.getSede(), canchas, t.getFechaInicio(), t.getFechaFin(), t.getCierreInscripcionEn(),
+                t.getDisciplina(), t.getDescripcion(), t.getFormato(), ReglasGrupos.de(t), t.getModalidad(),
+                t.getTipoParticipante(), t.getSede(), canchas, t.getFechaInicio(), t.getFechaFin(), t.getCierreInscripcionEn(),
                 t.getReglamentoTexto(), t.getReglamentoUrl(), t.getReglamentoHash(), t.getCupoMaximo(), t.getCupoMinimo(),
                 t.getTamanioEquipo(), t.getNominaMaxima(), t.getCheckinMinAntes(), t.getCheckinDuracionMin(),
                 t.getCheckinSinPresentes(), WebhookDiscord.enmascarar(t.getDiscordWebhook()),
                 EconomiaTorneo.de(t, premios, pctGastosAdministrativos), t.getSlug(), t.getEsquemaHash(), t.getPublicadoEn(),
-                t.getListaSelladaEn(), t.getListaHash(), t.getCreadoEn(), t.getModificadoEn(), camposBloqueados);
+                t.getListaSelladaEn(), t.getListaHash(), t.getCreadoEn(), t.getModificadoEn(), camposBloqueados,
+                MinimoInscriptos.siEstaDefinido(t));
     }
 }

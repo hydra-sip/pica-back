@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
@@ -14,7 +15,8 @@ import org.springframework.stereotype.Component;
  * {@code app.rifas.revision-cierres}; se apaga con {@code app.rifas.cierre-automatico=false} (los tests la llaman a
  * mano). Cada rifa va en su propia transacción, con la fila bloqueada: si una falla, las demás se cierran igual, y si
  * corre en varias réplicas a la vez, cada rifa se cierra una sola vez. Mientras no pasa, reservar y comprar ya
- * rechazan por la fecha (409 VENTA_CERRADA).
+ * rechazan por la fecha (409 VENTA_CERRADA). Las que vencen sin ningún número vendido se cancelan en vez de cerrarse
+ * (PICA-445) y no cuentan como cerradas.
  */
 @Slf4j
 @Component
@@ -23,6 +25,7 @@ public class CierreAutomaticoRifa {
 
     private final CierreVentaService cierreVentaService;
     private final RifaRepository rifaRepository;
+    private final Clock clock;
 
     @Value("${app.rifas.cierre-automatico:true}")
     private boolean activo = true;
@@ -36,7 +39,7 @@ public class CierreAutomaticoRifa {
 
     /** @return cuántas cerró */
     public int cerrarVencidas() {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         int cerradas = 0;
         for (Long id : rifaRepository.conVentaVencida(ahora)) {
             try {

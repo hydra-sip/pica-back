@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,6 +16,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.torneo.domain.Cancelacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoCancelacion;
@@ -60,6 +62,7 @@ public class RevisionCancelacionService {
     private final AlmacenArchivos almacen;
     private final ApplicationEventPublisher eventos;
     private final AuditoriaService auditoriaService;
+    private final Clock clock;
 
     /** Las cancelaciones en revisión, de la más vieja a la más nueva; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
@@ -156,7 +159,7 @@ public class RevisionCancelacionService {
 
     private void resolver(Cancelacion cancelacion, Long revisorId) {
         cancelacion.setRevisor(usuarioRepository.getReferenceById(revisorId));
-        cancelacion.setRevisadaEn(Instant.now());
+        cancelacion.setRevisadaEn(Instant.now(clock));
         cancelacionRepository.saveAndFlush(cancelacion);
     }
 
@@ -169,7 +172,8 @@ public class RevisionCancelacionService {
         }
         detalle.put("reintegrado", reintegrado);
         detalle.put("alOrganizador", alOrganizador);
-        auditoriaService.registrar(revisorId, AccionAuditoria.CANCELACION, "TORNEO", torneoId.toString(), detalle);
+        auditoriaService.registrar(revisorId, AccionAuditoria.CANCELACION, EntidadAuditoria.TORNEO,
+                torneoId.toString(), detalle);
     }
 
     private static NoEncontradoException noEncontrada(Long torneoId) {

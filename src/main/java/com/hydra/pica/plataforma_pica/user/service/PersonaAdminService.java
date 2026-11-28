@@ -1,11 +1,13 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.common.error.NombreDeConstraint;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
 import com.hydra.pica.plataforma_pica.user.domain.TipoDoc;
@@ -37,6 +39,7 @@ public class PersonaAdminService {
 
     private final PersonaRepository personaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public Page<PersonaResumen> listar(String q, EstadoGeneral estado, boolean incluirEliminados, Pageable pageable) {
@@ -94,7 +97,7 @@ public class PersonaAdminService {
                     "La persona " + id + " tiene un usuario activo: primero hay que darlo de baja");
         }
 
-        persona.setEliminadoEn(Instant.now());
+        persona.setEliminadoEn(Instant.now(clock));
         personaRepository.saveAndFlush(persona);
     }
 
@@ -134,7 +137,7 @@ public class PersonaAdminService {
         try {
             return personaRepository.saveAndFlush(persona);
         } catch (DataIntegrityViolationException e) {
-            if (!PersonaService.UQ_DOCUMENTO.equals(PersonaService.nombreDeConstraint(e))) {
+            if (!PersonaService.UQ_DOCUMENTO.equals(NombreDeConstraint.de(e))) {
                 throw e;
             }
             throw new ConflictoException(CodigoError.DOCUMENTO_DUPLICADO,

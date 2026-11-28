@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -10,6 +11,7 @@ import com.hydra.pica.plataforma_pica.common.config.IntentosLoginConfig.Intentos
 import com.hydra.pica.plataforma_pica.common.error.DemasiadosIntentosException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import lombok.RequiredArgsConstructor;
@@ -33,11 +35,12 @@ public class IntentosLogin {
 
     private final AuditoriaRepository auditoriaRepository;
     private final IntentosLoginProperties propiedades;
+    private final Clock clock;
 
     /** 429 DEMASIADOS_INTENTOS si ya se llegó al máximo de fallidos en la ventana, aunque la clave sea la correcta. */
     @Transactional(readOnly = true)
     public void exigirDisponible(String identificador, Usuario usuario) {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         Instant desde = ahora.minus(propiedades.ventana());
         if (usuario != null) {
             Instant ultimoLogin = auditoriaRepository.ultimoLogin(usuario.getId());
@@ -69,7 +72,7 @@ public class IntentosLogin {
         Auditoria auditoria = new Auditoria();
         auditoria.setAccion(accion);
         auditoria.setUsuario(usuario);
-        auditoria.setEntidad("USUARIO");
+        auditoria.setEntidad(EntidadAuditoria.USUARIO.name());
         auditoria.setEntidadId(usuario == null ? null : String.valueOf(usuario.getId()));
         auditoria.setIp(ip);
         auditoria.setDetalle(Map.of("identificador", normalizar(identificador)));

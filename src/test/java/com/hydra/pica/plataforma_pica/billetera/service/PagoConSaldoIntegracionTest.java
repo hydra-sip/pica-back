@@ -13,7 +13,7 @@ import java.util.Map;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremioRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaRequest;
@@ -51,7 +51,7 @@ class PagoConSaldoIntegracionTest {
     private static final Instant MANIANA = Instant.now().plus(1, ChronoUnit.DAYS);
     private static final Instant EN_UNA_SEMANA = Instant.now().plus(7, ChronoUnit.DAYS);
 
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private VentaRifaService ventaRifaService;
     @Autowired private RifaService rifaService;
     @Autowired private UsuarioRepository usuarioRepository;
@@ -85,7 +85,7 @@ class PagoConSaldoIntegracionTest {
         saldo(jugador, "2000.00");
         long inscripcion = pendienteDePago(torneoConGastos());
 
-        assertThat(inscripcionService.pagar(jugador, inscripcion).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(pagoInscripcionService.pagar(jugador, inscripcion).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
 
         assertBilletera(jugador, "900.00", "1100.00");
         assertThat(jdbc.queryForList("SELECT tipo || ':' || monto FROM movimiento WHERE inscripcion_id = ? ORDER BY id",
@@ -99,7 +99,7 @@ class PagoConSaldoIntegracionTest {
         long inscripcion = pendienteDePago(torneo);
 
         SaldoInsuficienteException error = catchThrowableOfType(SaldoInsuficienteException.class,
-                () -> inscripcionService.pagar(jugador, inscripcion));
+                () -> pagoInscripcionService.pagar(jugador, inscripcion));
 
         assertThat(error.getStatus()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(error.getCodigo()).isEqualTo(CodigoError.SALDO_INSUFICIENTE);

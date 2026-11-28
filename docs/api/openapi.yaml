@@ -51,12 +51,15 @@ tags:
   - {name: Admin – Roles y permisos, description: 'Roles, catálogo de permisos, asignación. HU-105, Tomás.'}
   - {name: Admin – Parámetros, description: 'Parámetros de la plataforma (gastos administrativos, plazos y retiros). HU-702, Tomás.'}
   - {name: Admin – Reclamos, description: 'Reclamos sobre el resultado de rifas y su resolución definitiva. HU-706, Salvador.'}
+  - {name: Admin – Alertas de fraude, description: 'Detección y revisión de alertas de conductas fraudulentas. HU-705, Salvador.'}
   - {name: Rifas, description: 'Rifas del organizador logueado. HU-401 (con torneo, PICA-9) y HU-402 (sin torneo, PICA-10), Laura.'}
   - {name: Torneos, description: 'Asistente de crear torneo del organizador logueado (HU-201, PICA-38; HU-601, PICA-55), Tomás. Catálogo y ficha públicos (HU-208), Salvador.'}
   - {name: Equipos, description: 'Equipos del capitán para elegir al inscribirse. HU-204 (PICA-234), Mateo.'}
   - {name: Inscripciones, description: 'Inscripción de un participante a un torneo. HU-204 (PICA-50), Mateo.'}
   - {name: Torneos, description: 'Catálogo público y detalle de torneos. HU-208, Tomás.'}
   - {name: Partidos, description: 'Resultado y evidencia de cada partido. HU-301 (PICA-23), Tomás.'}
+  - {name: Reputación, description: 'Sanciones a jugadores (HU-803, PICA-64) e índice de fair play (HU-802, PICA-58), Tomás.'}
+  - {name: Notificaciones, description: 'Centro de notificaciones del usuario logueado, también por WebSocket en /user/queue/notificaciones (ver docs/realtime.md). HU-808 (PICA-431), Laura.'}
 
 security:
   - bearerAuth: []
@@ -274,6 +277,53 @@ paths:
         '204': {description: 'Cambiada, volver a iniciar sesión'}
         '400': {$ref: '#/components/responses/Error'}
 
+  /api/v1/me/notificaciones:
+    get:
+      tags: [Notificaciones]
+      summary: Mis notificaciones
+      x-jira: PICA-431
+      x-owner: Laura
+      description: >-
+        HU-808. Las del usuario logueado, de la más nueva a la más vieja; el orden no se elige. Sin `leida`, todas; con
+        `leida=false`, las que no marcó como leídas; con `leida=true`, las leídas. La campana pide `leida=false&size=1`
+        y usa `page.totalElements` como contador. Cada una llega además en vivo por WebSocket a
+        `/user/queue/notificaciones` (mismo schema) y por correo.
+      parameters:
+        - {name: leida, in: query, description: 'Sin el parámetro, todas', schema: {type: boolean}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200':
+          description: Una página de notificaciones
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PageNotificacion'}
+        '400': {$ref: '#/components/responses/Error'}
+
+  /api/v1/me/notificaciones/{id}/leida:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Notificaciones]
+      summary: Marcar una notificación como leída
+      x-jira: PICA-431
+      x-owner: Laura
+      description: >-
+        Idempotente: si ya estaba leída no cambia la fecha. La de otro usuario da 404 `NOTIFICACION_NO_ENCONTRADA`,
+        igual que una que no existe.
+      responses:
+        '204': {description: Leída}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/me/notificaciones/leidas:
+    post:
+      tags: [Notificaciones]
+      summary: Marcar todas como leídas
+      x-jira: PICA-431
+      x-owner: Laura
+      description: Marca como leídas todas las del usuario que faltaban leer. Sin ninguna, no hace nada.
+      responses:
+        '204': {description: Todas leídas}
+
   # --- Usuarios ----------------------------------------------------------------
 
   /api/v1/usuarios:
@@ -327,6 +377,8 @@ paths:
         La persona tiene que existir: se manda `personaId` (la pantalla la busca en
         `GET /admin/personas?q=` y si no está la crea). Nace ACTIVO con el mail verificado.
         Por dentro: `UsuarioService.crear(NuevoUsuario.porAdmin(...))`.
+        400 `BLOQUEO_POR_ENDPOINT_PROPIO` con `estado: BLOQUEADO`: nadie nace bloqueado, se lo bloquea después
+        con `POST /admin/usuarios/{id}/bloqueo` (HU-703, PICA-414).
         403 `SIN_PERMISO` si algún rol tiene permisos que quien llama no tiene (los nombres van en `roles`).
         404 `PERSONA_NO_ENCONTRADA`, `ROL_NO_ENCONTRADO`.
         409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`, `ROL_INACTIVO`.
@@ -357,15 +409,14 @@ paths:
       description: >-
         Se mandan todos los campos. Los roles van por su propio endpoint porque exigen otro permiso.
         Si cambia el `email`, el usuario queda con `emailVerificado: false` en `PENDIENTE_VERIFICACION` y
-        se le manda el mail de verificación al email nuevo (si a la vez se lo bloquea, queda `BLOQUEADO`).
-        Pasarlo a `BLOQUEADO` le revoca los refresh tokens. Para bloquear con motivo y fecha de fin está
-        `POST /admin/usuarios/{id}/bloqueo`; desde acá queda bloqueado sin motivo propio, y volver a `ACTIVO`
-        levanta el bloqueo.
+        se le manda el mail de verificación al email nuevo (si está bloqueado, sigue `BLOQUEADO`).
+        El `estado` se manda como está: bloquear y desbloquear van solo por `POST` y
+        `DELETE /admin/usuarios/{id}/bloqueo`, con permiso, motivo y auditoría. Pedir pasar a `BLOQUEADO` o
+        sacarlo de `BLOQUEADO` es 400 `BLOQUEO_POR_ENDPOINT_PROPIO` (HU-703, PICA-414).
         Un usuario con el mail sin verificar (`PENDIENTE_VERIFICACION`) no se puede pasar a `ACTIVO` a mano:
-        se activa solo cuando verifica. Pasarlo a `BLOQUEADO` sí se puede.
+        se activa solo cuando verifica.
         Un usuario dado de baja no se modifica: 404, primero hay que reactivarlo.
-        403 `USUARIO_PROTEGIDO` (el Admin del sistema), `ACCION_SOBRE_SI_MISMO` (pasarse uno mismo a
-        `BLOQUEADO`; el resto de los datos propios sí se pueden editar).
+        403 `USUARIO_PROTEGIDO` (el Admin del sistema).
         404 `USUARIO_NO_ENCONTRADO`, `PERSONA_NO_ENCONTRADA`.
         409 `USERNAME_DUPLICADO`, `EMAIL_DUPLICADO`, `PERSONA_INACTIVA`, `PERSONA_CON_USUARIO`,
         `EMAIL_NO_VERIFICADO` (se manda `estado: ACTIVO` y el mail no está verificado; en el login el mismo
@@ -429,9 +480,9 @@ paths:
     post:
       tags: [Admin – Usuarios]
       summary: Bloquear con motivo
-      x-jira: PICA-230
+      x-jira: PICA-230, PICA-414
       x-owner: Tomás
-      x-permiso: USUARIO_EDITAR
+      x-permiso: USUARIO_BLOQUEAR
       description: >-
         Pasa el usuario a `BLOQUEADO`, guarda el motivo y la fecha de fin, y le revoca las sesiones. Sin `hasta`
         es indefinido; con fecha, el primer login después de que vence lo levanta solo. Para cambiar el
@@ -449,9 +500,9 @@ paths:
     delete:
       tags: [Admin – Usuarios]
       summary: Levantar el bloqueo
-      x-jira: PICA-230
+      x-jira: PICA-230, PICA-414
       x-owner: Tomás
-      x-permiso: USUARIO_EDITAR
+      x-permiso: USUARIO_BLOQUEAR
       description: >-
         Vuelve a `ACTIVO`, o a `PENDIENTE_VERIFICACION` si el mail no está verificado. Idempotente: si no
         estaba bloqueado lo devuelve igual. 404 `USUARIO_NO_ENCONTRADO`.
@@ -990,6 +1041,78 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/admin/alertas-fraude:
+    get:
+      tags: [Admin – Alertas de fraude]
+      summary: Listar alertas de fraude
+      x-jira: PICA-416
+      x-owner: Salvador
+      x-permiso: ALERTA_FRAUDE_REVISAR
+      description: >-
+        HU-705 (T705-1). Lista paginada de alertas de fraude ordenadas con `PENDIENTE` primero y luego las más
+        recientes (`creadaEn` descendente). Todos los filtros son opcionales y se combinan. Acepta `torneoId`/`torneo`,
+        `rifaId`/`rifa` y `usuarioId`/`usuario`.
+      parameters:
+        - {name: estado, in: query, schema: {$ref: '#/components/schemas/EstadoAlertaFraude'}}
+        - {name: regla, in: query, schema: {$ref: '#/components/schemas/ReglaFraude'}}
+        - {name: torneoId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: rifaId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: usuarioId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: desde, in: query, schema: {type: string, format: date-time}}
+        - {name: hasta, in: query, schema: {type: string, format: date-time}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/size'}
+      responses:
+        '200': {description: Página de alertas de fraude, content: {application/json: {schema: {$ref: '#/components/schemas/PageAlertaFraudeDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/alertas-fraude/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Admin – Alertas de fraude]
+      summary: Ver detalle de una alerta de fraude
+      x-jira: PICA-416
+      x-owner: Salvador
+      x-permiso: ALERTA_FRAUDE_REVISAR
+      description: >-
+        HU-705 (T705-1). Devuelve el detalle completo de la alerta incluyendo `datos` JSON, el usuario involucrado
+        y el torneo o rifa asociado. 404 `ALERTA_FRAUDE_NO_ENCONTRADA` si no existe.
+      responses:
+        '200': {description: Detalle de la alerta, content: {application/json: {schema: {$ref: '#/components/schemas/AlertaFraudeDetalle'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/admin/alertas-fraude/{id}/revisar:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Admin – Alertas de fraude]
+      summary: Marcar una alerta de fraude como revisada
+      x-jira: PICA-416
+      x-owner: Salvador
+      x-permiso: ALERTA_FRAUDE_REVISAR
+      description: >-
+        HU-705 (T705-1). Marca la alerta como `REVISADA` exigiendo `nota` obligatoria no vacía (hasta 1000
+        caracteres), guarda `revisadaPor` y `revisadaEn` y registra la revisión en `auditoria` (`MODIFICACION` sobre
+        `ALERTA_FRAUDE`).
+        400 `VALIDACION` si falta `nota` o supera el máximo.
+        404 `ALERTA_FRAUDE_NO_ENCONTRADA` si no existe.
+        409 `ALERTA_FRAUDE_YA_REVISADA` si ya fue revisada.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RevisarAlertaFraudeRequest'}
+      responses:
+        '200': {description: Alerta marcada como revisada, content: {application/json: {schema: {$ref: '#/components/schemas/AlertaFraudeDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   # --- Rifas -------------------------------------------------------------------
   # Todas exigen RIFA_GESTIONAR (ORGANIZADOR, ADMINISTRADOR y SUPER_USUARIO); sin él, 403 SIN_PERMISO. La rifa de otro
   # organizador da 404 RIFA_NO_ENCONTRADA, como si no existiera.
@@ -1153,7 +1276,10 @@ paths:
         vendidos: `listaHash` es el SHA-256 de una línea por número vendido, de menor a mayor, con `número;código del
         ticket`, separadas con `\n` (ver `SelloRifa`), y `listaSelladaEn` la fecha del sellado. El cierre es
         definitivo: después, reservar, comprar, volver a borrador o eliminar responden 409 `LISTA_SELLADA`. 409
-        `RIFA_NO_EDITABLE` si no está EN_VENTA y `LISTA_SELLADA` si ya se cerró. Queda en la auditoría
+        `RIFA_NO_EDITABLE` si no está EN_VENTA, `LISTA_SELLADA` si ya se cerró y `RIFA_SIN_VENTAS` si no vendió
+        ningún número (la rifa sigue EN_VENTA y conserva sus reservas; si la venta vence así, la tarea programada la
+        cancela: pasa a CANCELADA, se borran las reservas y queda en la auditoría como `CANCELACION` con el motivo
+        `SIN_VENTAS`, sin sello ni compromiso). Queda en la auditoría
         (`CIERRE_VENTA`, con el motivo MANUAL o FECHA). Con el sello se publica el compromiso del sorteo (HU-502):
         `compromisoHash` = SHA-256 de `listaHash:fechaSorteo` y `compromisoPublicadoEn`, antes de que exista la semilla.
         Antes del compromiso se acomodan las fechas (PICA-264): a mano, `ventaHasta` pasa a ser el cierre; y si
@@ -1179,7 +1305,8 @@ paths:
         los vendidos por el SHA-256 de `semilla:número`, de menor a mayor, y el primero gana el premio del puesto 1,
         el segundo el del 2, y así; los premios que sobran quedan sin ganador. La rifa pasa a SORTEADA y queda en la
         auditoría (`SORTEO`, con la semilla, el compromiso y los ganadores). 409 `RIFA_NO_EDITABLE` si no está
-        CERRADA y `SORTEO_ANTICIPADO` antes de `fechaSorteo`. La semilla es el `randomness` de drand en la ronda
+        CERRADA, `SORTEO_ANTICIPADO` antes de `fechaSorteo` y `RIFA_SIN_VENTAS` si no tiene números vendidos (antes
+        de pedir la semilla); la tarea programada cancela esas rifas en vez de sortearlas. La semilla es el `randomness` de drand en la ronda
         vigente en `fechaSorteo` (HU-503); se controla que sea el SHA-256 de la firma.
       responses:
         '200': {$ref: '#/components/responses/Rifa'}
@@ -1306,7 +1433,8 @@ paths:
         administrativos que la rifa fijó al publicar. 400 `VALIDACION` con `RANGO_INVALIDO` en `numeros` si alguno
         está fuera del rango, y `VALOR_INVALIDO` si hay repetidos. 404 `RIFA_NO_ENCONTRADA`. 409 `VENTA_CERRADA`
         fuera de la ventana de venta, `LISTA_SELLADA` con la venta ya cerrada (HU-407), `RIFA_PROPIA` si es el
-        organizador y `NUMERO_NO_DISPONIBLE` (con `numeros`)
+        organizador, `ORGANIZADOR_BLOQUEADO` si el organizador está bloqueado (HU-703) y `NUMERO_NO_DISPONIBLE`
+        (con `numeros`)
         si alguno está vendido o reservado por otro; dos pedidos a la vez por el mismo número reservan uno solo.
       requestBody:
         required: true
@@ -1339,7 +1467,8 @@ paths:
         como la inscripción; el ticket también guarda el monto y los gastos por separado), emite el ticket y los números pasan a VENDIDO. Publica la venta en
         `/topic/rifas/{id}` y, con torneo, `/topic/torneos/{id}`. Idempotente: con la misma clave devuelve el mismo
         ticket sin volver a cobrar. 400 `VALIDACION` con `REQUERIDO` en `Idempotency-Key` sin la clave. 409
-        `VENTA_CERRADA`, `LISTA_SELLADA`, `RIFA_PROPIA`, `NUMERO_NO_DISPONIBLE` si alguno ya no es suyo, `RESERVA_VENCIDA` (con
+        `VENTA_CERRADA`, `LISTA_SELLADA`, `RIFA_PROPIA`, `ORGANIZADOR_BLOQUEADO` (HU-703: no se cobra nada),
+        `NUMERO_NO_DISPONIBLE` si alguno ya no es suyo, `RESERVA_VENCIDA` (con
         `numeros`) si la reserva venció o no existe, `CLAVE_IDEMPOTENCIA_USADA` si la clave es de otra compra y
         `SALDO_INSUFICIENTE` (con `faltante`) si el disponible no alcanza para los números más los gastos (HU-603): los
         números siguen reservados a su nombre hasta que venza la reserva, así que después de cargar saldo se compran
@@ -1730,6 +1859,116 @@ paths:
         '409':
           $ref: '#/components/responses/Conflicto'
 
+  /api/v1/billetera/retiros/cripto:
+    post:
+      tags: [Billetera]
+      summary: Pedir un retiro de saldo a la wallet
+      x-jira: PICA-455
+      x-owner: Tomás
+      description: >-
+        Retiro del saldo disponible a una wallet, en ETH de Base Sepolia, con el contrato PasarelaRetiros (HU-610).
+        Valida los mismos topes que el retiro a una cuenta (400 `RETIRO_FUERA_DE_TOPES`) y el saldo (409
+        `SALDO_INSUFICIENTE`; 403 `BILLETERA_BLOQUEADA`), descuenta el monto con un movimiento RETIRO PENDIENTE
+        («Retiro a la wallet 0x1234…abcd») y devuelve el permiso firmado por el back (EIP-712): la referencia, los
+        wei (cotización fija de testnet), el vencimiento y la firma. El usuario lo cobra llamando a
+        `cobrar(referencia, montoWei, vence, firma)` desde la wallet `destino`: el contrato solo le paga a esa
+        wallet. Si el permiso vence sin cobrarse (1 hora), el saldo vuelve solo a la billetera y el movimiento queda
+        RECHAZADO. 400 `VALIDACION` si `destino` no es una dirección 0x de 40 caracteres hex o es la dirección cero.
+        503 `RETIROS_CRIPTO_NO_DISPONIBLES` si el back no tiene configurado el contrato o la clave del firmante.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitarRetiroCripto'
+      responses:
+        '201':
+          description: Saldo descontado y permiso firmado, pendiente de cobro
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetiroCripto'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+        '503':
+          $ref: '#/components/responses/Error'
+    get:
+      tags: [Billetera]
+      summary: Mis retiros a la wallet pendientes de cobro
+      x-jira: PICA-455
+      x-owner: Tomás
+      description: >-
+        Los permisos del usuario autenticado que todavía no se cobraron ni se devolvieron, del más nuevo al más
+        viejo, con todo lo necesario para cobrarlos. Sirve para retomar un retiro si se cerró la pestaña antes de
+        cobrarlo.
+      responses:
+        '200':
+          description: Retiros pendientes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RetiroCripto'
+        '401':
+          $ref: '#/components/responses/Error'
+
+  /api/v1/billetera/retiros/cripto/{referencia}/confirmar:
+    post:
+      tags: [Billetera]
+      summary: Confirmar el cobro de un retiro a la wallet con el hash de la transacción
+      x-jira: PICA-455
+      x-owner: Tomás
+      description: >-
+        Lee la transacción en Base Sepolia y, si cobró este retiro, lo pasa a COBRADO: el movimiento RETIRO queda
+        CONFIRMADO con el hash como `referenciaExterna` (y su `enlaceExplorador`). Para confirmarse, la transacción
+        tiene que ser exitosa y tener un `RetiroCobrado` emitido por PasarelaRetiros con esta referencia, la wallet
+        `destino` y exactamente `montoWei`. 404 `RETIRO_NO_ENCONTRADO` si la referencia no existe o es de otro
+        usuario. 400 `VALIDACION` si el hash no es 0x y 64 caracteres hex. Si la transacción no lo cobró, 400 y el
+        rechazo queda en auditoría; el retiro sigue pendiente: `TRANSACCION_FALLIDA` (revirtió) ·
+        `TRANSACCION_SIN_RETIRO` (no tiene el evento con esta referencia, esta wallet y este monto) ·
+        `TRANSACCION_INEXISTENTE` · `TRANSACCION_YA_USADA` (ya confirmó otro retiro). 409 `TRANSACCION_PENDIENTE` sin
+        las confirmaciones mínimas: reintentar en unos segundos. 409 `RETIRO_VENCIDO` si el permiso venció y el saldo
+        ya volvió a la billetera. 503 `RED_NO_DISPONIBLE` si el nodo no respondió.
+        Es idempotente: con el mismo hash devuelve 200 sin consultar la red, y con otro hash es 409
+        `RETIRO_YA_COBRADO`.
+      parameters:
+        - name: referencia
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[0-9a-fA-F]{64}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmarCargaCripto'
+      responses:
+        '200':
+          description: Retiro cobrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetiroCripto'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+        '503':
+          $ref: '#/components/responses/Error'
+
   # --- Equipos -----------------------------------------------------------------
 
 
@@ -1832,7 +2071,9 @@ paths:
         dice `camposBloqueados` del torneo: nunca la disciplina, si es individual o por equipos ni el reglamento; con
         la inscripción cerrada, tampoco el cierre ni el cupo máximo (HU-206: el cierre es definitivo); y con al menos una inscripción paga, solo el nombre, la descripción y
         el cupo máximo. Se rechaza solo lo que cambia: 409 `CAMPOS_BLOQUEADOS` con la lista en `campos`. Publicado,
-        "no puede ser anterior a hoy" se mira solo en las fechas que cambian, no se puede vaciar lo que pidió la
+        "no puede ser anterior a hoy" se mira solo en las fechas que cambian (y nunca con
+        `app.torneos.sin-validar-fechas`, el ambiente de prueba de PICA-448, que sigue exigiendo el orden entre las
+        fechas y el margen), no se puede vaciar lo que pidió la
         publicación (400 `REQUERIDO`) y el cupo máximo no baja de los inscriptos (pendientes de pago y confirmados;
         400 `RANGO_INVALIDO`). Un campo que no es de estos pasos (por ejemplo `valorInscripcion`) es 400
         `VALOR_INVALIDO` en ese campo: la parte económica se carga en el paso 3, solo en BORRADOR. 409
@@ -1981,6 +2222,70 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
         '502': {$ref: '#/components/responses/Error'}
+  /api/v1/torneos/{id}/reprogramaciones:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: Historial de reprogramaciones del torneo (público)
+      x-jira: PICA-391
+      x-owner: Laura
+      security: []
+      description: >-
+        CR-01. Sin sesión, como la ficha: las reprogramaciones de un torneo publicado, de la más vieja a la más nueva,
+        con las fechas de antes y las nuevas, el motivo y si el plazo para rechazar sigue abierto (`plazoAbierto`). 404
+        `TORNEO_NO_ENCONTRADO` si no existe, está dado de baja o está en BORRADOR.
+      responses:
+        '200':
+          description: El historial
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ReprogramacionDetalle'}
+        '404': {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Torneos]
+      summary: Reprogramar el torneo
+      x-jira: PICA-391
+      x-permiso: TORNEO_GESTIONAR
+      x-owner: Laura
+      description: >-
+        CR-01. Solo el organizador (para otro, 404 `TORNEO_NO_ENCONTRADO`). Cambia las fechas sin cancelar el torneo:
+        la plata sigue en custodia y las inscripciones no cambian. Hasta `rechazoHasta` los inscriptos pueden decir
+        que la nueva fecha no les sirve. Con la inscripción abierta, sigue abierta, y mientras corre el plazo
+        completar el cupo no la cierra (tampoco se cierra a mano: 409 `REPROGRAMACION_EN_CURSO`). Con la inscripción
+        cerrada o en curso sin resultados, queda INSCRIPCION_CERRADA durante el plazo: se descartan la llave (y los
+        grupos, con sus pronósticos), la lista sellada (`listaHash`) y el compromiso del sorteo de grupos, que se
+        vuelven a fijar en el próximo cierre. Al vencer el plazo, una tarea programada abre la inscripción hasta
+        `cierreInscripcion` si quedaron lugares, o la cierra y vuelve a sellar la lista si el cupo sigue completo.
+        Queda en la auditoría (REPROGRAMACION, entidad TORNEO) con las fechas, el motivo y lo descartado. Avisos
+        (CR-01-4), después del commit: cada integrante de las inscripciones confirmadas recibe TORNEO_REPROGRAMADO en el
+        centro de notificaciones y por correo, y REPROGRAMACION_POR_VENCER un día antes de que venza el plazo; al
+        vencer, el organizador recibe REPROGRAMACION_RESUELTA; el canal de Discord del torneo (si tiene webhook) recibe
+        la nueva fecha, y `/topic/torneos/{id}` el evento TORNEO_REPROGRAMADO. Si un aviso falla, la reprogramación
+        queda hecha igual. 400
+        `VALIDACION`, con todos los errores juntos: `motivo` (`REQUERIDO`, o `LONGITUD` si pasa los 500
+        caracteres), `fechaInicio`, `cierreInscripcion` y `rechazoHasta` (`REQUERIDO`), y `FECHAS_INVALIDAS` si
+        `rechazoHasta` ya pasó, si `cierreInscripcion` no es posterior a `rechazoHasta`, si `fechaFin` es anterior a
+        `fechaInicio` o si entre `cierreInscripcion` y `fechaInicio` no está el margen MARGEN_CIERRE_INICIO_MIN. Con
+        `app.torneos.sin-validar-fechas` (PICA-448) las fechas pueden ser pasadas y el cierre no tiene que ser
+        posterior al plazo; el orden y el margen se exigen igual. 409 `TORNEO_NO_REPROGRAMABLE` en otro estado (trae
+        `estado`), `BRACKET_CON_RESULTADOS` si ya hay resultados cargados y `REPROGRAMACION_EN_CURSO` si ya hay una
+        con el plazo abierto.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReprogramacionRequest'}
+      responses:
+        '201':
+          description: La reprogramación
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReprogramacionDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
   /api/v1/arbitros:
     get:
       tags: [Torneos]
@@ -2178,6 +2483,11 @@ paths:
         (SORTEO). 409 `INSCRIPCION_NO_CERRADA` si la inscripción no está cerrada, `PARTICIPANTES_INSUFICIENTES` con
         menos de 2 confirmadas, `BRACKET_YA_GENERADO` si ya lo tiene, `SIN_ARBITROS` si ningún árbitro aceptó la
         designación. Solo el organizador del torneo; para otro, 404 `TORNEO_NO_ENCONTRADO`.
+
+        Con fase de grupos (CR-02, PICA-397) en cambio sortea los grupos: la semilla es el valor de la ronda de drand
+        fijada al cerrar la inscripción (ver `GET /torneos/{id}/sorteo-grupos`), y el torneo pasa a EN_CURSO. 409
+        `SEMILLA_NO_DISPONIBLE` si la ronda todavía no salió (unos segundos), `PARTICIPANTES_INSUFICIENTES` si no hay
+        en cada grupo uno más que los que pasan.
       responses:
         '201':
           description: El bracket generado
@@ -2200,7 +2510,8 @@ paths:
       description: >-
         Otro sorteo con otra semilla, con las mismas reglas que el alta, mientras no haya ningún resultado cargado
         (409 `BRACKET_CON_RESULTADOS`). La auditoría guarda también la semilla anterior. Sin bracket todavía, lo
-        genera. 409 `TORNEO_NO_EDITABLE` si el torneo terminó o se canceló.
+        genera. 409 `TORNEO_NO_EDITABLE` si el torneo terminó o se canceló. Con fase de grupos, 409
+        `GRUPOS_YA_SORTEADOS`: salen de drand y con la misma lista saldría lo mismo.
       responses:
         '200':
           description: El bracket nuevo
@@ -2209,6 +2520,63 @@ paths:
               schema: {$ref: '#/components/schemas/BracketTorneo'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
+
+  /api/v1/torneos/{id}/grupos:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: Ver los grupos, sus tablas y sus partidos (público)
+      x-jira: PICA-399
+      x-owner: Tomás
+      security: []
+      description: >-
+        CR-02. Se calcula con los partidos terminados (CONFIRMADO, CORREGIDO o WALKOVER): una objeción que cambia un
+        resultado cambia la tabla. Puntos según `reglas`; perder da 0; un walkover suma la victoria sin tantos y, sin
+        presentes, ninguno suma. Desempate en cascada: puntos, resultado entre sí (si separa a algunos, se vuelve a
+        empezar entre los que siguen), partidos ganados y partido de desempate. Lo que sigue igual comparte el puesto
+        (`criterio` EMPATE); con el grupo terminado, si toca un puesto que clasifica, va a `desempatesPendientes` y
+        se arma solo el partido de desempate (CR-02-6): un mini cuadro de eliminación directa entre los empatados, con
+        penales, BYE si son impares y árbitro en rueda, sorteado con SHA-256 de `semilla:desempate:<letra>:<ronda>`.
+        Su orden: el campeón, el finalista y después por la ronda en que cayeron; los que cayeron en la misma ronda,
+        por SHA-256 de `semilla:desempate:<letra>:<inscripcionId>`. Si hay más de uno en el grupo se juegan de a uno.
+        Con todos los grupos terminados y sin desempates por jugar, la llave se llena sola con cruces fijos: 1A–2B,
+        1B–2A, 1C–2D… (el i.º de un grupo con el puesto `pasan + 1 - i` del otro, alternando mitades del cuadro), sale
+        `LlaveSorteada` (aviso a Discord) y queda en la auditoría. Los eliminados en grupos no tienen puesto ni
+        premio. Al
+        confirmarse un partido de grupos llega `RESULTADO_CONFIRMADO` por WebSocket, como en la llave: es el aviso
+        para volver a pedir esto. Sin sortear, `grupos` vacío. 404 `TORNEO_NO_ENCONTRADO` si no existe, está en
+        BORRADOR o no es de grupos.
+      responses:
+        '200':
+          description: Los grupos
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GruposTorneo'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/sorteo-grupos:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Torneos]
+      summary: Ver el sorteo de los grupos (público, para verificarlo)
+      x-jira: PICA-397
+      x-owner: Tomás
+      security: []
+      description: >-
+        CR-02. Todo para recalcular el reparto. Al cerrar la inscripción se sella la lista (`listaHash`), se fija una
+        ronda de drand que todavía no salió (`semillaRonda`) y se publica `compromisoHash` = SHA-256 de
+        `listaHash:semillaRonda`. La semilla es el `randomness` de esa ronda (`semillaUrl`, con su firma). Versión 1 del
+        algoritmo: las `inscripciones` se ordenan por el SHA-256 en hexadecimal de `semilla:inscripcionId`, de menor a
+        mayor (como la llave), y se reparten en serpentina entre `cantidadGrupos` grupos: A, B, C, D, D, C, B, A, A…
+        Antes del sorteo, `semilla`, `semillaFirma` y `grupos` vienen vacíos. 404 `TORNEO_NO_ENCONTRADO` si no existe,
+        está en BORRADOR o no es de grupos.
+      responses:
+        '200':
+          description: El sorteo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SorteoGruposDetalle'}
+        '404': {$ref: '#/components/responses/Error'}
 
   /api/v1/torneos/{id}/checkin:
     parameters: [{$ref: '#/components/parameters/id'}]
@@ -2309,6 +2677,233 @@ paths:
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
 
+  /api/v1/torneos/{id}/sanciones:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Reputación]
+      summary: Sancionar a un jugador del torneo
+      x-jira: PICA-423
+      x-owner: Tomás
+      description: >-
+        HU-803. La aplica el organizador o un árbitro que aceptó la designación, con cualquier permiso (si no, 403
+        `SIN_PERMISO`). El jugador tiene que estar en una inscripción CONFIRMADA del torneo: la suya, si es individual,
+        o la de un equipo en cuya nómina figura (si no, 409 `JUGADOR_NO_PARTICIPA`). El partido es opcional; si viene,
+        tiene que ser del torneo y del jugador (si no, 400 `VALIDACION` en `partidoId`). Sin motivo o sin gravedad, 400
+        `VALIDACION`. Queda en la auditoría (`SANCION`, entidad TORNEO), le llega un mail al jugador y baja su índice de
+        fair play según la gravedad (HU-802). 404 `TORNEO_NO_ENCONTRADO` si no existe o está en BORRADOR.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SancionRequest'}
+      responses:
+        '201':
+          description: La sanción registrada
+          headers:
+            Location: {schema: {type: string}, description: 'Las sanciones del torneo'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SancionDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+    get:
+      tags: [Reputación]
+      summary: Sanciones del torneo
+      x-jira: PICA-423
+      x-owner: Tomás
+      description: >-
+        HU-803. Con sesión, cualquiera: la más reciente primero. 404 `TORNEO_NO_ENCONTRADO` si no existe o está en
+        BORRADOR.
+      responses:
+        '200':
+          description: Las sanciones del torneo
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/SancionDetalle'}}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/sanciones/jugadores:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Reputación]
+      summary: Jugadores que se pueden sancionar
+      x-jira: PICA-423
+      x-owner: Tomás
+      description: >-
+        HU-803. Para elegir a quién sancionar: los jugadores de las inscripciones CONFIRMADAS del torneo (el inscripto,
+        si es individual, o los de la nómina, si es de equipo), ordenados por inscripción. Con `partidoId`, solo los
+        de las dos inscripciones que lo juegan. Lo consultan el organizador o un árbitro que aceptó (si no, 403
+        `SIN_PERMISO`). 400 `VALIDACION` en `partidoId` si el partido no es del torneo. 404 `TORNEO_NO_ENCONTRADO` si
+        no existe o está en BORRADOR.
+      parameters:
+        - {name: partidoId, in: query, required: false, schema: {$ref: '#/components/schemas/Id'}}
+      responses:
+        '200':
+          description: Los jugadores
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/JugadorSancionable'}}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/torneos/{id}/calificaciones:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Reputación]
+      summary: Calificar a un jugador del torneo terminado
+      x-jira: PICA-427
+      x-owner: Laura
+      description: >-
+        HU-805. Solo el organizador del torneo (si no, 403 `SIN_PERMISO`) y con el torneo FINALIZADO o CANCELADO (si
+        no, 409 `TORNEO_NO_TERMINADO`). El jugador tiene que haber estado en una inscripción CONFIRMADA: la suya o la
+        nómina de un equipo (si no, 409 `JUGADOR_NO_PARTICIPA`). Una sola vez por jugador y torneo (si no, 409
+        `JUGADOR_YA_CALIFICADO`). Puntaje de 1 a 5 y comentario opcional; sin puntaje o fuera de rango, 400
+        `VALIDACION`. Con `noConfiable`, todos los organizadores ven la marca al revisar las inscripciones de sus torneos;
+        no bloquea al jugador. El puntaje entra en su reputación (`InscripcionDelTorneo.reputacion`). Queda en la
+        auditoría (`CALIFICACION`, entidad TORNEO). 404 `TORNEO_NO_ENCONTRADO` si no existe o está en BORRADOR.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CalificacionRequest'}
+      responses:
+        '201':
+          description: La calificación registrada
+          headers:
+            Location: {schema: {type: string}, description: 'Los jugadores calificables del torneo'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CalificacionDetalle'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+    get:
+      tags: [Reputación]
+      summary: Jugadores para calificar
+      x-jira: PICA-427
+      x-owner: Laura
+      description: >-
+        HU-805. Los jugadores de las inscripciones CONFIRMADAS del torneo terminado, ordenados por inscripción, con su
+        calificación si ya la tienen (null si no). Mismos errores que calificar: 403 `SIN_PERMISO`, 404
+        `TORNEO_NO_ENCONTRADO` y 409 `TORNEO_NO_TERMINADO`.
+      responses:
+        '200':
+          description: Los jugadores
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/JugadorCalificable'}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+
+  /api/v1/usuarios/{id}/fair-play:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Reputación]
+      summary: Índice de fair play de un usuario
+      x-jira: PICA-421
+      x-owner: Tomás
+      description: >-
+        HU-802. Con sesión, cualquiera: el valor y el historial de lo que lo movió, el último primero. Fórmula, con los
+        parámetros FAIR_PLAY_* (editables en HU-702): arranca en el inicial (100); cada check-in cumplido suma 1 sin
+        pasar del máximo (100), así que se mantiene o mejora; cada ausencia sin aviso (no hizo check-in y el partido
+        quedó en walkover o sin presentes) resta 10; una sanción (HU-803) resta 5, 15 o 30 según la gravedad; nunca
+        baja de 0. En un equipo, el check-in y la ausencia mueven el del capitán y la sanción, el del sancionado. Se
+        recalcula solo después de cada evento, sobre el valor anterior: un cambio de parámetro rige desde ahí.
+        `actualizadoEn` null si nunca se movió. 404 `USUARIO_NO_ENCONTRADO` si no existe.
+      responses:
+        '200':
+          description: El índice y su historial
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FairPlayDetalle'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/usuarios/{id}/logros:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Reputación]
+      summary: Insignias y rifas ganadas de un usuario
+      x-jira: PICA-425
+      x-owner: Salvador
+      description: >-
+        HU-804. Con sesión, cualquiera: las insignias obtenidas automáticamente por eventos (la más reciente primero) y
+        las rifas sorteadas o liquidadas en las que ganó algún premio. Vacías si todavía no tiene logros. 404
+        `USUARIO_NO_ENCONTRADO` si no existe.
+      responses:
+        '200':
+          description: Insignias y rifas ganadas del usuario
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LogrosJugador'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/usuarios/{id}/perfil-organizador:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Reputación]
+      summary: Perfil público del organizador
+      x-jira: PICA-429
+      x-owner: Salvador
+      security: []
+      description: >-
+        HU-806. Público (sin login obligatorio): identidad visible (sin datos privados), contadores de torneos
+        organizados (publicados), finalizados y cancelados, índice del organizador con historial y torneos próximos
+        vigentes. 404 `USUARIO_NO_ENCONTRADO` si no existe.
+      responses:
+        '200':
+          description: Perfil público del organizador
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PerfilOrganizador'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/usuarios/{id}/perfil:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      tags: [Reputación]
+      summary: Perfil público del jugador
+      x-jira: PICA-419
+      x-owner: Mateo
+      security: []
+      description: >-
+        HU-801. Público (sin login obligatorio): identidad visible (`nombreCompleto` sale de nombres y apellidos de la
+        persona, o del username si no tiene; `avatar` siempre null por ahora), el historial competitivo y el valor
+        actual del índice de fair play (HU-802), sin su historial: las sanciones y su gravedad siguen en
+        `GET /usuarios/{id}/fair-play`, con sesión. `ultimosTorneos` trae hasta 5 torneos que terminó, con el mismo
+        criterio que `historial.torneosJugados` (FINALIZADOS, en los que jugó al menos un partido cerrado con rival):
+        del más reciente al más viejo por la fecha de fin planificada (la de inicio si no tiene) y, si empatan, por id.
+        También las rifas que ganó y las insignias que obtuvo (HU-804). La marca «no confiable» no va: el organizador
+        la ve en la lista de inscripciones.
+        Nunca trae documento, email ni datos bancarios. Un jugador que nunca jugó tiene todo en cero, las listas
+        vacías y el fair play en el valor inicial (FAIR_PLAY_INICIAL). Un usuario bloqueado se
+        muestra igual. 404 `USUARIO_NO_ENCONTRADO` si no existe o está dado de baja.
+      responses:
+        '200':
+          description: Perfil público del jugador
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PerfilJugador'}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /api/v1/sanciones/mias:
+    get:
+      tags: [Reputación]
+      summary: Mis sanciones
+      x-jira: PICA-423
+      x-owner: Tomás
+      description: HU-803. Las que recibió el usuario logueado, en todos los torneos, la más reciente primero.
+      responses:
+        '200':
+          description: Mis sanciones
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/SancionDetalle'}}
+
   /api/v1/torneos/{id}/mi-proximo-partido:
     parameters: [{$ref: '#/components/parameters/id'}]
     get:
@@ -2354,8 +2949,9 @@ paths:
         o EN_CURSO y el partido PROGRAMADO, aunque todavía falte el rival (si no, 409 `PARTIDO_NO_PROGRAMABLE`: con un
         check-in hecho la fecha queda fija). Se puede reprogramar, pero no sacarle la fecha. 400 `VALIDACION` en
         `fechaProgramada`: `REQUERIDO` si no viene y `RANGO_INVALIDO` si es pasada, anterior a `fechaInicio` o
-        posterior a `fechaFin` del torneo. Queda en la auditoría (MODIFICACION, entidad PARTIDO) y en el historial del
-        partido como PROGRAMADO.
+        posterior a `fechaFin` del torneo (con `app.torneos.sin-validar-fechas`, solo para el ambiente de prueba,
+        cualquier fecha). Queda en la auditoría (MODIFICACION, entidad PARTIDO) y en el historial del partido como
+        PROGRAMADO.
       requestBody:
         required: true
         content:
@@ -2533,9 +3129,10 @@ paths:
         HU-301. Lo carga el capitán de uno de los dos lados: el jugador inscripto o el capitán del equipo (si no, 403
         `NO_ES_CAPITAN`). El partido tiene que estar en juego: torneo EN_CURSO, los dos rivales definidos y estado
         PROGRAMADO, CHECK_IN o EN_JUEGO (el check-in de HU-308 no es requisito); si no, 409
-        `PARTIDO_NO_EN_JUEGO`. Es eliminación directa: con empate van los dos penales y tienen que definir un ganador;
+        `PARTIDO_NO_EN_JUEGO`. En la llave: con empate van los dos penales y tienen que definir un ganador;
         sin empate, sin penales (400 `VALIDACION`: `REQUERIDO` o `VALOR_INVALIDO` en `penalesLocal` /
-        `penalesVisitante`). El partido queda RESULTADO_CARGADO, con `cargadoPor` y `objecionVenceEn` (ahora más
+        `penalesVisitante`). En la fase de grupos (CR-02) se puede empatar y nunca hay penales (`VALOR_INVALIDO` si
+        vienen); un empate deja a los dos lados con `ganador: false`. Las mismas reglas valen para objetar y laudar. El partido queda RESULTADO_CARGADO, con `cargadoPor` y `objecionVenceEn` (ahora más
         `app.partidos.plazo-objecion`, 15 minutos por defecto): hasta entonces el rival lo acepta o lo objeta. Queda en
         la auditoría (MODIFICACION, entidad PARTIDO). La evidencia es opcional y va aparte, en
         `POST /partidos/{id}/evidencias`. 404 `PARTIDO_NO_ENCONTRADO`.
@@ -2905,18 +3502,27 @@ paths:
       x-owner: Mateo
       description: >-
         HU-206. Sin cuerpo. Solo el organizador del torneo, en cualquier momento mientras la inscripción está abierta,
-        aunque no se haya llegado al cupo mínimo ni haya confirmadas. La inscripción también se cierra sola: cuando la
-        última confirmación completa el cupo (al pagar, o al confirmar en un torneo gratis) y cuando llega la fecha de
-        cierre, con una tarea programada. En los tres casos pasa lo mismo, bloqueando la fila del torneo: el torneo
+        con las inscripciones confirmadas que hacen falta para jugar (`inscriptosMinimos` de `TorneoInformacion`,
+        PICA-447): 2 en eliminación directa y, con grupos, `cupoMaximo / tamanioGrupo` grupos por `clasificanPorGrupo
+        + 1`; por debajo, 409 `PARTICIPANTES_INSUFICIENTES` con cuántas hay y cuántas faltan (antes, HU-206 dejaba
+        cerrar sin mínimo). La inscripción también se cierra sola: cuando la última confirmación completa el cupo (al
+        pagar, o al confirmar en un torneo gratis; con el cupo lleno siempre se llega al mínimo) y cuando llega la fecha
+        de cierre, con una tarea programada. Si la fecha llega por debajo del mínimo, la tarea no cierra: cancela el
+        torneo con las reglas de `POST /torneos/{id}/cancelacion` sin gastos declarados (CANCELADO y reintegro total;
+        CANCELACION_EN_REVISION si el torneo ya tiene gastos pagados) y queda en la auditoría como CANCELACION sin
+        usuario y con el motivo `INSCRIPTOS_INSUFICIENTES`. En los tres cierres pasa lo mismo, bloqueando la fila del torneo: el torneo
         pasa a INSCRIPCION_CERRADA; los borradores y las pendientes de pago pasan a CANCELADA (no se cobró nada); se
         sella la lista de confirmadas en `listaHash` (ver `TorneoInformacion`) con la fecha y hora en
         `inscripcionCerradaEn`; y queda en la auditoría (CIERRE_INSCRIPCION) con el motivo (CUPO, FECHA o MANUAL) y
         cuántas se cancelaron (el cierre a mano lleva al organizador; el automático, ningún usuario). El cierre es
-        definitivo y no se cambia el cupo máximo: crear y pagar una inscripción y reemplazar un jugador responden 409
+        definitivo (salvo que se reprograme el torneo, `POST /torneos/{id}/reprogramaciones`) y no se cambia el cupo
+        máximo: crear y pagar una inscripción y reemplazar un jugador responden 409
         `INSCRIPCION_NO_ABIERTA` (pagar lo chequea antes que el estado, porque la pendiente ya quedó cancelada), y
         editar o confirmar un borrador cancelado, `INSCRIPCION_NO_EDITABLE`. 404
         `TORNEO_NO_ENCONTRADO` si no existe, está dado de baja o quien llama no es el organizador. 409
-        `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA.
+        `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA, `REPROGRAMACION_EN_CURSO` mientras
+        corre el plazo para rechazar una reprogramación (CR-01; tampoco se cierra sola al completar el cupo) y
+        `PARTICIPANTES_INSUFICIENTES` por debajo del mínimo.
       parameters: [{$ref: '#/components/parameters/id'}]
       responses:
         '200': {$ref: '#/components/responses/TorneoInformacion'}
@@ -2952,6 +3558,7 @@ paths:
         404 `TORNEO_NO_ENCONTRADO` si el torneo no existe o está dado de baja; `EQUIPO_NO_ENCONTRADO` si el
         equipo no existe, está dado de baja o no es del capitán; `USUARIO_NO_ENCONTRADO` si un jugador no existe.
         409 `INSCRIPCION_NO_ABIERTA` si el torneo no está en INSCRIPCION_ABIERTA o ya pasó la fecha de cierre;
+        `ORGANIZADOR_BLOQUEADO` si el organizador del torneo está bloqueado (HU-703);
         `USUARIO_NO_ACTIVO` si el capitán o un jugador no está activo; `INSCRIPCION_DUPLICADA` si ya tiene un
         borrador o una inscripción activa en el torneo (individual), o si ya tiene un borrador de cualquiera de
         sus equipos o el equipo ya tiene una inscripción en el torneo (de equipo); `JUGADOR_YA_INSCRIPTO` si un
@@ -3103,7 +3710,7 @@ paths:
         404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario (también del organizador);
         `TORNEO_NO_ENCONTRADO` si el torneo fue dado de baja.
         409 `INSCRIPCION_NO_EDITABLE` si no está en BORRADOR; `REGLAMENTO_NO_ACEPTADO`; `INSCRIPCION_NO_ABIERTA`;
-        `USUARIO_NO_ACTIVO` (el capitán o un jugador de la nómina); `INSCRIPCION_DUPLICADA` (también si otra
+        `ORGANIZADOR_BLOQUEADO` (HU-703); `USUARIO_NO_ACTIVO` (el capitán o un jugador de la nómina); `INSCRIPCION_DUPLICADA` (también si otra
         confirmación del mismo usuario gana la carrera); `NOMINA_INVALIDA` si la nómina tiene menos jugadores que
         el tamaño de equipo o más que el máximo de nómina, o no incluye al capitán; `JUGADOR_YA_INSCRIPTO` si un
         jugador de la nómina figura en otra inscripción activa del torneo; `CUPO_COMPLETO` si las inscripciones
@@ -3150,6 +3757,34 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Conflicto'}
 
+  /api/v1/inscripciones/{id}/reparto:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      tags: [Inscripciones]
+      summary: Cambiar el reparto del premio del equipo
+      x-permiso: INSCRIPCION_GESTIONAR
+      description: >-
+        Solo el capitán, en una inscripción de equipo en BORRADOR, PENDIENTE_PAGO o CONFIRMADA (aunque ya haya pagado)
+        mientras el torneo tenga la inscripción abierta (CR-05). El cuerpo es la lista de `{usuarioId, pct}`: tienen
+        que estar todos los integrantes de la nómina una vez cada uno y nadie más, con `pct` entre 0 y 100 con hasta
+        dos decimales, y la suma exacta 100. Responde la inscripción actualizada. Cada cambio queda en la auditoría
+        (acción `MODIFICACION`, entidad `INSCRIPCION`) con quién lo hizo y el reparto de antes y de después; un PUT
+        que no cambia nada no deja entrada. Al guardar o cambiar la nómina en el borrador el reparto vuelve a partes
+        iguales, con el sobrante del redondeo para el capitán. 400 `VALIDACION` si el reparto no cumple lo anterior
+        o la inscripción es individual. 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si quien llama no es el
+        capitán. 409 `INSCRIPCION_NO_EDITABLE` si no está en un estado editable; `INSCRIPCION_NO_ABIERTA` si el
+        torneo cerró la inscripción.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/RepartoIntegrante'}}}}
+      responses:
+        '200': {description: Inscripción actualizada, content: {application/json: {schema: {$ref: '#/components/schemas/InscripcionDetalle'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
+
   /api/v1/inscripciones/{id}/reemplazos:
     parameters: [{$ref: '#/components/parameters/id'}]
     post:
@@ -3162,7 +3797,7 @@ paths:
         Solo el capitán, y solo en una inscripción CONFIRMADA de un torneo por equipos cuya inscripción siga
         abierta. Borra de la nómina al usuario indicado por `saleUsuarioId`, suma a la nómina al indicado por
         `entraUsuarioId` y devuelve la inscripción actualizada. El que sale sigue siendo integrante del equipo y el
-        que entra se suma o se reactiva como integrante. No cambia el estado, el pago, la aceptación del reglamento
+        que entra se suma o se reactiva como integrante y hereda el % del premio del que sale (CR-05). No cambia el estado, el pago, la aceptación del reglamento
         ni el cupo. 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si quien llama no es el capitán;
         `USUARIO_NO_ENCONTRADO` si no existe el que entra. 409 `INSCRIPCION_NO_EDITABLE` si no está CONFIRMADA;
         `INSCRIPCION_NO_ABIERTA` si el torneo cerró; `JUGADOR_YA_INSCRIPTO` si el que entra figura en otra
@@ -3239,7 +3874,8 @@ paths:
         404 `INSCRIPCION_NO_ENCONTRADA` si no existe o si es de otro usuario; `TORNEO_NO_ENCONTRADO` si el
         torneo fue dado de baja.
         409 `INSCRIPCION_NO_EDITABLE` si no está en PENDIENTE_PAGO (ni CONFIRMADA); `INSCRIPCION_NO_ABIERTA` si el
-        torneo ya no tiene la inscripción abierta; `USUARIO_NO_ACTIVO`; `CUPO_COMPLETO`; `SALDO_INSUFICIENTE` (con
+        torneo ya no tiene la inscripción abierta; `USUARIO_NO_ACTIVO`; `ORGANIZADOR_BLOQUEADO` (HU-703: no se cobra
+        nada y la inscripción sigue en PENDIENTE_PAGO); `CUPO_COMPLETO`; `SALDO_INSUFICIENTE` (con
         `faltante`) si el disponible no alcanza para el valor más los gastos: no se cobra nada y la inscripción sigue
         en PENDIENTE_PAGO, sin ocupar lugar; `COBRO_RECHAZADO` si el pago no se aprobó (por ejemplo, con la billetera
         bloqueada) y no se cobró nada.
@@ -3415,13 +4051,44 @@ paths:
       x-owner: Tomás
       description: >-
         Solo quien se inscribió (el capitán, en una de equipo). Sale de los movimientos del pago: número, fecha,
-        quién pagó, concepto, monto, gastos administrativos, total y en qué quedó la custodia. El de una compra de
-        números es su ticket (`GET /tickets/{id}`). 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o es de otro;
-        `COMPROBANTE_NO_ENCONTRADO` si no tiene un pago (pendiente, o de un torneo sin costo).
+        quién pagó, concepto, monto, gastos administrativos, total y en qué quedó la custodia. Si la inscripción se
+        devolvió al rechazar una reprogramación (CR-01-3), sigue mostrando el pago con la custodia REINTEGRADA. El de
+        una compra de números es su ticket (`GET /tickets/{id}`). 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o es de
+        otro; `COMPROBANTE_NO_ENCONTRADO` si no tiene un pago (pendiente, o de un torneo sin costo).
       responses:
         '200': {description: El comprobante, content: {application/json: {schema: {$ref: '#/components/schemas/ComprobantePago'}}}}
         '401': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
+  /api/v1/inscripciones/{id}/rechazo-reprogramacion:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      tags: [Inscripciones]
+      summary: Rechazar la nueva fecha del torneo
+      x-jira: PICA-392
+      x-permiso: INSCRIPCION_GESTIONAR
+      x-owner: Laura
+      description: >-
+        CR-01-3. El participante de la individual o el capitán del equipo dice que la nueva fecha de un torneo
+        reprogramado (`POST /torneos/{id}/reprogramaciones`) no le sirve, dentro del plazo (`rechazoHasta`). La
+        inscripción pasa a REINTEGRADA y libera su lugar; el pago de la inscripción queda REVERTIDO y el valor vuelve
+        del retenido al disponible de quien pagó con un movimiento REINTEGRO (`reint-t{torneo}-reprog-{inscripcion}`).
+        Los gastos administrativos no se devuelven y siguen en la custodia (si después se cancela el torneo, vuelven
+        con el resto). Queda en la auditoría: REINTEGRO (el movimiento) y REPROGRAMACION (entidad INSCRIPCION, con
+        `bajoElMinimo`). Si con las confirmadas que quedan el torneo no llega al mínimo para jugar, no se cancela: se
+        avisa al organizador (CR-01-4). 404 `INSCRIPCION_NO_ENCONTRADA` si no existe o no es suya; 403 `NO_ES_CAPITAN`
+        a un jugador de la nómina que no es el capitán. 409 `INSCRIPCION_NO_EDITABLE` si no está CONFIRMADA (también
+        si ya la rechazó: no se devuelve dos veces), `PLAZO_RECHAZO_VENCIDO` si el torneo no tiene una reprogramación
+        con el plazo abierto, `INSCRIPCION_POSTERIOR_A_REPROGRAMACION` si la inscripción se creó con la nueva fecha ya
+        publicada (la aceptó al anotarse), y `CUSTODIA_LIBERADA` si la custodia ya se liberó.
+      responses:
+        '200':
+          description: La inscripción reintegrada
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RechazoReprogramacion'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflicto'}
 
   # --- Torneos (Públicos) -----------------------------------------------------
 
@@ -3574,12 +4241,12 @@ components:
     Modulo: {type: string, enum: [USUARIOS, PERSONAS, ROLES, RIFAS, INSCRIPCIONES, TORNEOS, PARAMETROS, AUDITORIA]}
     CodigoPermiso:
       type: string
-      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), AUDITORIA_VER de V49 (PICA-345) y TORNEO_ADMINISTRAR de V50 (PICA-342). Si aparece uno nuevo se agrega acá.
+      description: Seed de V4 (PICA-124) más RIFA_GESTIONAR de V11 (PICA-226), INSCRIPCION_GESTIONAR de V14 (PICA-208), TORNEO_GESTIONAR de V18 (PICA-199), RIFA_ADMINISTRAR de V31 (PICA-224), PARAMETRO_ADMINISTRAR de V35 (PICA-282), CANCELACION_REVISAR de V43 (PICA-348; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), RECLAMO_RESOLVER de V47 (PICA-339; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO), AUDITORIA_VER de V49 (PICA-345), TORNEO_ADMINISTRAR de V50 (PICA-342), USUARIO_BLOQUEAR de V58 (PICA-414; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO) y ALERTA_FRAUDE_REVISAR de V60 (PICA-416; lo tienen SOPORTE, ADMINISTRADOR y SUPER_USUARIO). V62 (PICA-412) le suma AUDITORIA_VER a SOPORTE. Si aparece uno nuevo se agrega acá.
       enum: [USUARIO_VER, USUARIO_CREAR, USUARIO_EDITAR, USUARIO_ELIMINAR,
              PERSONA_VER, PERSONA_CREAR, PERSONA_EDITAR, PERSONA_ELIMINAR,
              ROL_VER, ROL_CREAR, ROL_EDITAR, ROL_ELIMINAR, ROL_ASIGNAR,
              RIFA_GESTIONAR, INSCRIPCION_GESTIONAR, TORNEO_GESTIONAR, RIFA_ADMINISTRAR, PARAMETRO_ADMINISTRAR,
-             CANCELACION_REVISAR, RECLAMO_RESOLVER, AUDITORIA_VER, TORNEO_ADMINISTRAR]
+             CANCELACION_REVISAR, RECLAMO_RESOLVER, AUDITORIA_VER, TORNEO_ADMINISTRAR, USUARIO_BLOQUEAR, ALERTA_FRAUDE_REVISAR]
 
     # --- errores -------------------------------------------------------------
     CodigoError:
@@ -3593,6 +4260,8 @@ components:
         transacción revirtió) · TRANSACCION_SIN_CARGA (no pagó esta carga en el contrato) · MONTO_NO_COINCIDE (pagó
         otro monto) · TRANSACCION_YA_USADA (ya acreditó otra carga) · CARGA_NO_ENCONTRADA 404 · TRANSACCION_PENDIENTE 409 (sin las confirmaciones mínimas; reintentar
         en unos segundos) · CARGA_YA_ACREDITADA 409 (se acreditó con otra transacción) · RED_NO_DISPONIBLE 503 (el nodo de Base Sepolia no respondió; reintentar más tarde).
+        Bloqueo: BLOQUEO_POR_ENDPOINT_PROPIO 400 (el `PUT` o el alta de un usuario que cambiaría su bloqueo; va
+        por `/admin/usuarios/{id}/bloqueo`, HU-703).
         Auth: CREDENCIALES_INVALIDAS 401 · EMAIL_NO_VERIFICADO / USUARIO_BLOQUEADO 403 (EMAIL_NO_VERIFICADO también 409 en `PUT /admin/usuarios/{id}`) ·
         REFRESH_INVALIDO / REFRESH_REUTILIZADO 401 · TOKEN_EXPIRADO / TOKEN_USADO / CODIGO_INVALIDO / PASSWORD_ACTUAL_INCORRECTA 400 ·
         DEMASIADOS_INTENTOS 429 (login).
@@ -3608,6 +4277,10 @@ components:
         TORNEO_NO_EDITABLE (la parte económica, el reglamento y la publicación solo en BORRADOR; los pasos 1 y 2, hasta que empieza) ·
         TORNEO_INCOMPLETO (le falta algo para publicarse; la lista va en `faltantes`) ·
         TORNEO_NO_CANCELABLE (se cancela con la inscripción abierta o cerrada, o en curso; una vez cancelado o en revisión, no; trae `estado`, HU-605) ·
+        TORNEO_NO_REPROGRAMABLE (se reprograma con la inscripción abierta o cerrada, o en curso sin resultados; trae `estado`, CR-01) ·
+        REPROGRAMACION_EN_CURSO (ya hay una reprogramación con el plazo para rechazar abierto; tampoco se cierra la inscripción a mano, CR-01) ·
+        PLAZO_RECHAZO_VENCIDO (el torneo no tiene una reprogramación con el plazo para rechazar la nueva fecha abierto, CR-01-3) ·
+        INSCRIPCION_POSTERIOR_A_REPROGRAMACION (la inscripción se hizo con la nueva fecha ya publicada: no se puede rechazar, CR-01-3) ·
         CAMPOS_BLOQUEADOS (el torneo publicado ya no admite cambios en esos campos; la lista va en `campos`) ·
         COBRO_RECHAZADO (el pago no se aprobó y no se cobró nada) · SALDO_INSUFICIENTE (el disponible de la
         billetera no alcanza para el total; lo que falta va en `faltante`, HU-603) · FONDOS_EN_CUSTODIA (los
@@ -3615,7 +4288,8 @@ components:
         en un torneo: "El evento debe estar cerrado y validado oficialmente para liberar la custodia"; en una rifa,
         sorteada, con el plazo de reclamo vencido y sin reclamos pendientes, HU-606) ·
         CUSTODIA_LIBERADA (la custodia ya se liquidó o reintegró, también si se liquida dos veces; trae `estado`) ·
-        INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
+        INSCRIPCION_NO_ABIERTA (el torneo no está abierto o ya pasó el cierre) ·
+        ORGANIZADOR_BLOQUEADO (el organizador del torneo o de la rifa está bloqueado: no se inscribe, confirma, paga, reserva ni compra; HU-703) · INSCRIPCION_DUPLICADA (ya hay un borrador o una activa en el torneo) ·
         INSCRIPCION_NO_EDITABLE (solo se cancela en BORRADOR o PENDIENTE_PAGO; solo se confirma en BORRADOR) ·
         REGLAMENTO_NO_ACEPTADO (confirmar sin aceptarlo) · CUPO_COMPLETO (las confirmadas ya completan el cupo del torneo) ·
         JUGADOR_YA_INSCRIPTO (figura en otra inscripción activa del torneo, como capitán o en la nómina; cuál va en `jugador`) ·
@@ -3631,9 +4305,11 @@ components:
         HONORARIO_NO_DEDUCIBLE (un honorario con un comprobante externo) · HONORARIO_YA_DEPOSITADO (ya hay un
         depósito; también al modificar o borrar ese gasto) · HONORARIO_SIN_DEPOSITAR (retirar sin depósito) ·
         GASTO_YA_PAGADO (el gasto común ya tiene comprobante) · INSCRIPCION_NO_CERRADA (el bracket se genera con la inscripción cerrada) ·
-        PARTICIPANTES_INSUFICIENTES (menos de 2 inscripciones confirmadas) · BRACKET_YA_GENERADO (se puede regenerar) ·
+        PARTICIPANTES_INSUFICIENTES (menos inscripciones confirmadas que `inscriptosMinimos`: al cerrar la inscripción,
+        al generar el bracket o al sortear los grupos) · BRACKET_YA_GENERADO (se puede regenerar) ·
         SIN_ARBITROS (cada partido necesita un árbitro que haya aceptado la designación) · BRACKET_CON_RESULTADOS (ya hay resultados: no se
-        regenera) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
+        regenera) · SEMILLA_NO_DISPONIBLE (la ronda de drand del sorteo de grupos todavía no salió) ·
+        GRUPOS_YA_SORTEADOS (los grupos no se vuelven a sortear) · PARTIDO_NO_EN_JUEGO (el resultado se carga con el torneo en curso, los dos rivales y el partido
         sin resultado) · PARTIDO_CERRADO (ya no se le suma evidencia) · RESULTADO_NO_PENDIENTE (no hay un resultado
         cargado para aceptar u objetar) · RESULTADO_PROPIO (el resultado lo acepta u objeta el rival, no quien lo
         cargó) · PLAZO_OBJECION_VENCIDO (venció el plazo para objetar el resultado) · PARTIDO_NO_OBJETADO
@@ -3649,6 +4325,7 @@ components:
         RESERVA_VENCIDA (la reserva se venció o no existe; la lista va en `numeros`) · RIFA_PROPIA (el organizador
         no compra su rifa) · CLAVE_IDEMPOTENCIA_USADA (la clave ya se usó para otra compra) · RIFA_CON_VENTAS
         (la rifa tiene números vendidos: no vuelve a borrador ni se elimina; trae `numerosVendidos`) ·
+        RIFA_SIN_VENTAS (cerrar la venta o sortear una rifa sin ningún número vendido) ·
         RIFA_CON_RESERVAS (alguien está pagando números de la rifa). Reclamo de una rifa (PICA-268):
         RIFA_NO_SORTEADA (todavía no se sorteó) · PLAZO_RECLAMO_VENCIDO (pasaron las 48 h o ya se liquidó o
         canceló) · RECLAMO_DUPLICADO (el usuario ya tiene un reclamo pendiente en la rifa) · RECLAMO_YA_RESUELTO (el
@@ -3658,6 +4335,15 @@ components:
         ("La cuenta destino debe estar a nombre del titular verificado en la plataforma"). Retiro de fondos (HU-607,
         PICA-337): RETIRO_FUERA_DE_TOPES 400 (el monto está fuera del rango mínimo y máximo) · CUENTA_NO_VALIDADA 409
         (solo se puede solicitar retiros a una cuenta bancaria validada).
+        Retiro a la wallet (HU-610, PICA-455): TRANSACCION_SIN_RETIRO 400 (la transacción no cobró ese retiro con esa
+        wallet y ese monto) · RETIRO_NO_ENCONTRADO 404 · RETIRO_YA_COBRADO 409 (se cobró con otra transacción) ·
+        RETIRO_VENCIDO 409 (venció y el saldo volvió a la billetera) · RETIROS_CRIPTO_NO_DISPONIBLES 503 (el back no
+        tiene el contrato o la clave del firmante).
+        Sanciones (HU-803, PICA-423): JUGADOR_NO_PARTICIPA 409 (el jugador no está en una inscripción confirmada del torneo).
+        Calificaciones (HU-805, PICA-427): TORNEO_NO_TERMINADO 409 (el torneo no está finalizado ni cancelado) ·
+        JUGADOR_YA_CALIFICADO 409 (el jugador ya tiene calificación en ese torneo).
+        Alertas de fraude (HU-705, PICA-416): ALERTA_FRAUDE_NO_ENCONTRADA 404 · ALERTA_FRAUDE_YA_REVISADA 409.
+        Notificaciones (HU-808, PICA-431): NOTIFICACION_NO_ENCONTRADA 404 (no existe o es de otro usuario).
         Protecciones (403): USUARIO_PROTEGIDO (Admin del sistema) · ROL_PROTEGIDO (SUPER_USUARIO; PARTICIPANTE en nombre, estado y baja) · ULTIMO_ASIGNADOR ·
         ACCION_SOBRE_SI_MISMO (darse de baja, bloquearse o resetearse la clave desde el ABM) ·
         INSCRIPCION_NO_PERMITIDA_EN_TORNEO (el organizador y los árbitros del torneo no se inscriben en él ni
@@ -3670,32 +4356,35 @@ components:
              ALMACENAMIENTO_NO_DISPONIBLE,
              RED_NO_DISPONIBLE, TRANSACCION_INEXISTENTE, TRANSACCION_FALLIDA, TRANSACCION_SIN_CARGA, MONTO_NO_COINCIDE,
              TRANSACCION_YA_USADA, TRANSACCION_PENDIENTE, CARGA_YA_ACREDITADA,
+             RETIROS_CRIPTO_NO_DISPONIBLES, TRANSACCION_SIN_RETIRO, RETIRO_NO_ENCONTRADO, RETIRO_YA_COBRADO, RETIRO_VENCIDO,
              USUARIO_NO_ENCONTRADO, PERSONA_NO_ENCONTRADA, ROL_NO_ENCONTRADO, PERMISO_NO_ENCONTRADO, RIFA_NO_ENCONTRADA,
              TORNEO_NO_ENCONTRADO, INSCRIPCION_NO_ENCONTRADA, EQUIPO_NO_ENCONTRADO, GASTO_NO_ENCONTRADO,
              REGLAMENTO_NO_ENCONTRADO, ARBITRO_NO_ENCONTRADO, DESIGNACION_NO_ENCONTRADA, PARTIDO_NO_ENCONTRADO, EVIDENCIA_NO_ENCONTRADA,
              OBJECION_NO_ENCONTRADA, TICKET_NO_ENCONTRADO, COMPROBANTE_NO_ENCONTRADO, CARGA_NO_ENCONTRADA,
-              CUENTA_BANCARIA_NO_ENCONTRADA, RECLAMO_NO_ENCONTRADO,
+              CUENTA_BANCARIA_NO_ENCONTRADA, RECLAMO_NO_ENCONTRADO, ALERTA_FRAUDE_NO_ENCONTRADA, NOTIFICACION_NO_ENCONTRADA,
              CREDENCIALES_INVALIDAS, EMAIL_NO_VERIFICADO, USUARIO_BLOQUEADO, REFRESH_INVALIDO, REFRESH_REUTILIZADO,
              TOKEN_EXPIRADO, TOKEN_USADO, CODIGO_INVALIDO, PASSWORD_ACTUAL_INCORRECTA,
              DEMASIADOS_INTENTOS,
              USERNAME_DUPLICADO, EMAIL_DUPLICADO, DOCUMENTO_DUPLICADO, ROL_DUPLICADO,
              PERSONA_INACTIVA, PERSONA_CON_USUARIO, DOCUMENTO_NO_EDITABLE, ROL_INACTIVO, USUARIO_NO_ACTIVO,
-             USUARIO_YA_BLOQUEADO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
-             TORNEO_INCOMPLETO,
+             USUARIO_YA_BLOQUEADO, BLOQUEO_POR_ENDPOINT_PROPIO, RIFA_NO_EDITABLE, RIFA_INCOMPLETA, TORNEO_NO_ADMITE_RIFA, TORNEO_NO_EDITABLE,
+             TORNEO_INCOMPLETO, TORNEO_NO_REPROGRAMABLE, REPROGRAMACION_EN_CURSO, PLAZO_RECHAZO_VENCIDO,
+             INSCRIPCION_POSTERIOR_A_REPROGRAMACION,
              CAMPOS_BLOQUEADOS, COBRO_RECHAZADO, SALDO_INSUFICIENTE, FONDOS_EN_CUSTODIA, CUSTODIA_LIBERADA,
-             INSCRIPCION_NO_ABIERTA, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
+             INSCRIPCION_NO_ABIERTA, ORGANIZADOR_BLOQUEADO, INSCRIPCION_DUPLICADA, INSCRIPCION_NO_EDITABLE, REGLAMENTO_NO_ACEPTADO,
              CUPO_COMPLETO, JUGADOR_YA_INSCRIPTO, NOMINA_INVALIDA, REEMPLAZO_INVALIDO,
              USUARIO_NO_ES_ARBITRO, ARBITRO_DUPLICADO, ARBITRO_NO_PERMITIDO, ARBITRO_CON_PARTIDOS,
              ARBITRO_NO_HABILITADO, DESIGNACION_YA_RESPONDIDA, COMPROMISO_NO_ACEPTADO, IDENTIDAD_NO_VERIFICADA,
              GASTO_NO_ES_HONORARIO, HONORARIO_NO_DEDUCIBLE, HONORARIO_YA_DEPOSITADO, HONORARIO_SIN_DEPOSITAR,
              GASTO_YA_PAGADO, INSCRIPCION_NO_CERRADA, PARTICIPANTES_INSUFICIENTES, BRACKET_YA_GENERADO,
-             SIN_ARBITROS, BRACKET_CON_RESULTADOS, PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
+             SIN_ARBITROS, BRACKET_CON_RESULTADOS, SEMILLA_NO_DISPONIBLE, GRUPOS_YA_SORTEADOS,
+             PARTIDO_NO_EN_JUEGO, PARTIDO_CERRADO,
              RESULTADO_NO_PENDIENTE, RESULTADO_PROPIO, PLAZO_OBJECION_VENCIDO,
-             PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
+             PARTIDO_NO_OBJETADO, PARTIDO_NO_PROGRAMABLE, JUGADOR_NO_PARTICIPA, CHECKIN_SIN_VENTANA, CHECKIN_FUERA_DE_VENTANA,
              NUMERO_NO_DISPONIBLE, VENTA_CERRADA, LISTA_SELLADA, COMPROMISO_NO_PUBLICADO, RESERVA_VENCIDA, RIFA_PROPIA, CLAVE_IDEMPOTENCIA_USADA,
-             RIFA_CON_VENTAS, RIFA_CON_RESERVAS,
+             RIFA_CON_VENTAS, RIFA_CON_RESERVAS, RIFA_SIN_VENTAS,
              PRONOSTICO_FUERA_DE_VENTANA, PLAZO_RECLAMO_VENCIDO, RIFA_NO_SORTEADA, SORTEO_ANTICIPADO, RECLAMO_DUPLICADO,
-             RECLAMO_YA_RESUELTO, RECLAMO_NO_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA,
+             RECLAMO_YA_RESUELTO, RECLAMO_NO_RESUELTO, CUENTA_BANCARIA_DUPLICADA, CUENTA_TITULAR_NO_COINCIDE, RETIRO_FUERA_DE_TOPES, CUENTA_NO_VALIDADA, ALERTA_FRAUDE_YA_REVISADA, TORNEO_NO_TERMINADO, JUGADOR_YA_CALIFICADO,
              USUARIO_PROTEGIDO, ROL_PROTEGIDO, ULTIMO_ASIGNADOR, ACCION_SOBRE_SI_MISMO,
              INSCRIPCION_NO_PERMITIDA_EN_TORNEO, NO_ES_CAPITAN, NO_ES_COMPRADOR, BILLETERA_BLOQUEADA]
 
@@ -4107,7 +4796,7 @@ components:
       required: [clave, unidad, valor, descripcion, modificadoEn, modificadoPor]
       properties:
         clave: {$ref: '#/components/schemas/ClaveParametro'}
-        unidad: {type: string, enum: [PORCENTAJE, MINUTOS, PESOS], description: 'PORCENTAJE de 0 a 100; MINUTOS enteros; PESOS con hasta dos decimales'}
+        unidad: {type: string, enum: [PORCENTAJE, MINUTOS, PESOS, PUNTOS, CANTIDAD], description: 'PORCENTAJE de 0 a 100; MINUTOS enteros; PESOS con hasta dos decimales; PUNTOS enteros de 0 a 1000; CANTIDAD enteros mayores que 0'}
         valor: {type: number, examples: [10]}
         descripcion: {type: string}
         modificadoEn: {type: string, format: date-time}
@@ -4115,12 +4804,101 @@ components:
     ClaveParametro:
       type: string
       enum: [GASTOS_ADMINISTRATIVOS, GASTOS_ADMINISTRATIVOS_TOPE, MARGEN_CIERRE_INICIO_MIN, CHECKIN_DURACION_MAX_MIN,
-             RETIRO_MINIMO, RETIRO_MAXIMO, CANCELACION_GASTOS_TOPE]
+             RETIRO_MINIMO, RETIRO_MAXIMO, CANCELACION_GASTOS_TOPE, FAIR_PLAY_INICIAL, FAIR_PLAY_MAXIMO,
+             FAIR_PLAY_CHECKIN, FAIR_PLAY_AUSENCIA, FAIR_PLAY_SANCION_LEVE, FAIR_PLAY_SANCION_MEDIA,
+             FAIR_PLAY_SANCION_GRAVE, FRAUDE_RIFA_NUMEROS_MAX, FRAUDE_RIFA_VENTANA_MIN,
+             FRAUDE_CARRUSEL_OPERACIONES_MIN, FRAUDE_CARRUSEL_VENTANA_MIN, FRAUDE_CANCELACIONES_MIN,
+             FRAUDE_OBJECIONES_MIN, FRAUDE_CUENTAS_USUARIOS_MIN]
       description: >-
         HU-702. GASTOS_ADMINISTRATIVOS (% que paga aparte quien se inscribe o compra) y su tope;
         MARGEN_CIERRE_INICIO_MIN (CE4-5); CHECKIN_DURACION_MAX_MIN (máximo de la ventana de check-in);
         RETIRO_MINIMO y RETIRO_MAXIMO (pesos, para HU-607); CANCELACION_GASTOS_TOPE (% máximo del pozo que el
-        organizador puede retener en gastos al cancelar un torneo, HU-605).
+        organizador puede retener en gastos al cancelar un torneo, HU-605). FAIR_PLAY_* (puntos del índice de fair play,
+        HU-802): el inicial y el máximo (el inicial no lo supera), lo que suma un check-in, lo que resta una ausencia y
+        lo que resta cada gravedad de sanción (leve <= media <= grave). FRAUDE_* (umbrales y ventanas de las reglas de
+        detección de fraude, HU-705).
+    PageAlertaFraudeDetalle:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/AlertaFraudeDetalle'}}, page: {$ref: '#/components/schemas/PageInfo'}}
+    AlertaFraudeDetalle:
+      type: object
+      required: [id, regla, estado, motivo, datos, torneo, rifa, usuario, nota, revisadaPor, revisadaEn, creadaEn]
+      description: Una alerta de fraude del panel de soporte/admin (HU-705, PICA-416).
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        regla: {$ref: '#/components/schemas/ReglaFraude'}
+        estado: {$ref: '#/components/schemas/EstadoAlertaFraude'}
+        motivo: {type: string}
+        datos: {type: object, additionalProperties: true}
+        torneo: {oneOf: [{$ref: '#/components/schemas/TorneoAlertaResumen'}, {type: 'null'}]}
+        rifa: {oneOf: [{$ref: '#/components/schemas/RifaAlertaResumen'}, {type: 'null'}]}
+        usuario: {$ref: '#/components/schemas/UsuarioAlertaResumen'}
+        nota: {type: [string, 'null']}
+        revisadaPor: {type: [string, 'null']}
+        revisadaEn: {type: [string, 'null'], format: date-time}
+        creadaEn: {type: string, format: date-time}
+    TorneoAlertaResumen:
+      type: object
+      required: [id, nombre]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        nombre: {type: string}
+    RifaAlertaResumen:
+      type: object
+      required: [id, titulo]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        titulo: {type: string}
+    UsuarioAlertaResumen:
+      type: object
+      required: [id, username, email]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        email: {type: string, format: email}
+    RevisarAlertaFraudeRequest:
+      type: object
+      required: [nota]
+      properties:
+        nota: {type: string, minLength: 1, maxLength: 1000, examples: ['Se verificó la operación con el usuario; sin indicios adicionales.']}
+    ReglaFraude:
+      type: string
+      enum: [COMPRA_MASIVA_RIFA, CARRUSEL_CARGA_RETIRO, CANCELACIONES_REITERADAS, OBJECIONES_ABUSIVAS, CUENTAS_COMPARTIDAS]
+    EstadoAlertaFraude:
+      type: string
+      enum: [PENDIENTE, REVISADA]
+    TipoNotificacion:
+      type: string
+      description: >-
+        Los eventos que le llegan a un usuario (HU-808). De la reprogramación de un torneo (CR-01-4):
+        TORNEO_REPROGRAMADO (a los inscriptos: la fecha de antes, la nueva, el motivo y hasta cuándo pueden bajarse),
+        REPROGRAMACION_POR_VENCER (el recordatorio un día antes de que venza el plazo, a los que siguen inscriptos),
+        INSCRIPTOS_BAJO_EL_MINIMO (al organizador, si con las bajas no llega al mínimo para jugar; el torneo no se
+        cancela solo) y REPROGRAMACION_RESUELTA (al organizador, al vencer el plazo: cuántos se bajaron y cómo quedó la
+        inscripción). Todos enlazan a la ficha del torneo y traen `torneoId`, `reprogramacionId` y `rechazoHasta` en
+        `datos`.
+      enum: [RIVAL_ASIGNADO, CHECKIN_ABIERTO, CRUCE_INICIADO, RECLAMO_RESUELTO, TORNEO_REPROGRAMADO,
+             REPROGRAMACION_POR_VENCER, INSCRIPTOS_BAJO_EL_MINIMO, REPROGRAMACION_RESUELTA]
+    Notificacion:
+      type: object
+      required: [id, tipo, titulo, cuerpo, enlace, datos, leidaEn, creadaEn]
+      description: >-
+        Un aviso del centro de notificaciones (PICA-431). Es lo que devuelve GET /me/notificaciones y lo que llega por
+        WebSocket a /user/queue/notificaciones.
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        tipo: {$ref: '#/components/schemas/TipoNotificacion'}
+        titulo: {type: string, maxLength: 200}
+        cuerpo: {type: string, description: El mismo texto que el correo, sin el enlace}
+        enlace: {type: string, nullable: true, maxLength: 255, description: 'Ruta del front sin dominio, ej. /torneos/copa-primavera'}
+        datos: {type: object, additionalProperties: true, description: 'Lo propio de cada tipo (ids del partido, del torneo, de la rifa...); vacío si no hay'}
+        leidaEn: {type: string, format: date-time, nullable: true}
+        creadaEn: {type: string, format: date-time}
+    PageNotificacion:
+      type: object
+      required: [content, page]
+      properties: {content: {type: array, items: {$ref: '#/components/schemas/Notificacion'}}, page: {$ref: '#/components/schemas/PageInfo'}}
     PageRegistroAuditoria:
       type: object
       required: [content, page]
@@ -4135,7 +4913,7 @@ components:
         usuarioId: {type: [integer, 'null'], format: int64, description: 'Null en lo que hace el sistema (liquidaciones, cierres por fecha) y en el login fallido de un usuario que no existe'}
         username: {type: [string, 'null']}
         accion: {$ref: '#/components/schemas/AccionAuditoria'}
-        entidad: {type: [string, 'null'], description: 'Sobre qué fue: TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO', examples: [TORNEO]}
+        entidad: {type: [string, 'null'], description: 'Sobre qué fue: TORNEO, PARTIDO, RIFA, CUSTODIA, BILLETERA, CARGA_CRIPTO, USUARIO, PARAMETRO, ALERTA_FRAUDE', examples: [TORNEO]}
         entidadId: {type: [string, 'null'], description: 'El id de la entidad, o la clave si es un PARAMETRO', examples: ['42']}
         descripcion:
           type: [string, 'null']
@@ -4149,7 +4927,235 @@ components:
     AccionAuditoria:
       type: string
       enum: [LOGIN, LOGIN_FALLIDO, LOGOUT, ALTA, MODIFICACION, BAJA, BLOQUEO, DESBLOQUEO, PAGO, LAUDO, SORTEO,
-             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO]
+             CIERRE_INSCRIPCION, CIERRE_VENTA, LIQUIDACION, CANCELACION, REINTEGRO, SANCION, CALIFICACION,
+             REPROGRAMACION]
+    LogrosJugador:
+      type: object
+      required: [usuarioId, insignias, rifasGanadas]
+      description: HU-804. Las insignias obtenidas y las rifas ganadas por un usuario.
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        insignias:
+          type: array
+          items:
+            type: object
+            required: [codigo, nombre, descripcion, icono, otorgadaEn]
+            properties:
+              codigo: {type: string, enum: [PRIMER_TORNEO_JUGADO, PRIMER_TORNEO_GANADO, PRIMER_PODIO, PRIMERA_RIFA_GANADA, DIEZ_CHECKINS_SEGUIDOS]}
+              nombre: {type: string}
+              descripcion: {type: string}
+              icono: {type: string}
+              otorgadaEn: {type: string, format: date-time}
+        rifasGanadas:
+          type: array
+          items:
+            type: object
+            required: [rifaId, rifaTitulo, torneoId, torneoNombre, torneoSlug, puesto, numeroGanador, fecha]
+            properties:
+              rifaId: {$ref: '#/components/schemas/Id'}
+              rifaTitulo: {type: string}
+              torneoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}]}
+              torneoNombre: {type: [string, 'null']}
+              torneoSlug: {type: [string, 'null']}
+              puesto: {type: integer, minimum: 1}
+              numeroGanador: {type: integer}
+              fecha: {type: string, format: date-time}
+    FairPlayDetalle:
+      type: object
+      required: [usuarioId, valor, actualizadoEn, historial]
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        valor: {type: integer, minimum: 0, examples: [85]}
+        actualizadoEn: {type: [string, 'null'], format: date-time, description: 'Null: nunca se movió, tiene el inicial'}
+        historial: {type: array, items: {$ref: '#/components/schemas/MovimientoFairPlay'}}
+    MovimientoFairPlay:
+      type: object
+      required: [tipo, delta, valorResultante, torneoId, torneo, partidoId, sancionId, gravedad, creadoEn]
+      properties:
+        tipo: {type: string, enum: [CHECKIN, AUSENCIA, SANCION]}
+        delta: {type: integer, description: 'Lo que cambió, ya con el máximo y el piso: un check-in en el máximo es 0', examples: [-15]}
+        valorResultante: {type: integer, minimum: 0}
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {type: string, description: Nombre del torneo}
+        partidoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'En el check-in y la ausencia'}
+        sancionId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'En la sanción'}
+        gravedad: {oneOf: [{$ref: '#/components/schemas/Gravedad'}, {type: 'null'}], description: 'En la sanción'}
+        creadoEn: {type: string, format: date-time}
+    PerfilOrganizador:
+      type: object
+      required: [id, username, nombreCompleto, torneosOrganizados, torneosFinalizados, torneosCancelados, indice, historialIndice, torneosProximos]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        nombreCompleto: {type: string}
+        avatar: {type: [string, 'null']}
+        torneosOrganizados: {type: integer, minimum: 0}
+        torneosFinalizados: {type: integer, minimum: 0}
+        torneosCancelados: {type: integer, minimum: 0}
+        indice: {type: integer, minimum: 0, examples: [100]}
+        indiceActualizadoEn: {type: [string, 'null'], format: date-time, description: 'Null: nunca tuvo cancelaciones, conserva el inicial'}
+        historialIndice: {type: array, items: {$ref: '#/components/schemas/MovimientoIndiceOrganizador'}}
+        torneosProximos: {type: array, items: {$ref: '#/components/schemas/TorneoResumen'}}
+    PerfilJugador:
+      type: object
+      required: [id, username, nombreCompleto, avatar, historial, fairPlay, ultimosTorneos, rifasGanadas, insignias]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        username: {type: string}
+        nombreCompleto: {type: string}
+        avatar: {type: [string, 'null'], description: 'Siempre null: la plataforma todavía no tiene avatares'}
+        historial: {$ref: '#/components/schemas/HistorialCompetitivo'}
+        fairPlay:
+          type: object
+          required: [valor, actualizadoEn]
+          description: El índice de fair play actual, sin el historial de movimientos
+          properties:
+            valor: {type: integer, minimum: 0, examples: [85]}
+            actualizadoEn: {type: [string, 'null'], format: date-time, description: 'Null: nunca se movió, tiene el inicial'}
+        ultimosTorneos:
+          type: array
+          maxItems: 5
+          items: {$ref: '#/components/schemas/TorneoJugado'}
+        rifasGanadas:
+          type: array
+          description: La más reciente primero
+          items: {$ref: '#/components/schemas/RifaGanada'}
+        insignias:
+          type: array
+          items: {$ref: '#/components/schemas/InsigniaObtenida'}
+    RifaGanada:
+      type: object
+      required: [rifaId, rifaTitulo, torneoId, torneoNombre, torneoSlug, puesto, numeroGanador, fecha]
+      description: HU-804. Un premio de una rifa sorteada (o liquidada) que ganó el usuario con un número suyo
+      properties:
+        rifaId: {$ref: '#/components/schemas/Id'}
+        rifaTitulo: {type: string}
+        torneoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'Null si la rifa no está asociada a un torneo'}
+        torneoNombre: {type: [string, 'null']}
+        torneoSlug: {type: [string, 'null']}
+        puesto: {type: integer, minimum: 1}
+        numeroGanador: {type: [integer, 'null']}
+        fecha: {type: [string, 'null'], format: date-time, description: Cuándo se sorteó}
+    InsigniaObtenida:
+      type: object
+      required: [codigo, nombre, descripcion, icono, otorgadaEn]
+      description: HU-804. Una insignia del catálogo que el usuario obtuvo
+      properties:
+        codigo: {type: string, examples: [PRIMER_TORNEO_JUGADO]}
+        nombre: {type: string}
+        descripcion: {type: string}
+        icono: {type: string}
+        otorgadaEn: {type: string, format: date-time}
+    TorneoJugado:
+      type: object
+      required: [torneoId, slug, nombre, disciplina, fechaFin, posicion, equipo]
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        slug: {type: string}
+        nombre: {type: string}
+        disciplina: {type: string}
+        fechaFin: {type: [string, 'null'], format: date-time, description: 'La planificada; null si el torneo no la tiene'}
+        posicion: {type: [integer, 'null'], minimum: 1, description: 'Null si quedó afuera en grupos'}
+        equipo: {type: [string, 'null'], description: 'El nombre del equipo con el que jugó; null si el torneo era individual'}
+    HistorialCompetitivo:
+      type: object
+      required: [torneosJugados, victorias, derrotas, podios]
+      description: >-
+        HU-801. Torneos FINALIZADOS en los que jugó al menos un partido cerrado con rival; partidos ganados y perdidos
+        (el walkover cuenta, el BYE no); y podios (puesto 1, 2 o 3 en un torneo finalizado). En un torneo por equipos
+        suma a cada integrante de la nómina definitiva.
+      properties:
+        torneosJugados: {type: integer, minimum: 0}
+        victorias: {type: integer, minimum: 0}
+        derrotas: {type: integer, minimum: 0}
+        podios: {type: integer, minimum: 0}
+    MovimientoIndiceOrganizador:
+      type: object
+      required: [torneoId, torneo, conGastos, delta, valorResultante, creadoEn]
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {type: string}
+        conGastos: {type: boolean}
+        delta: {type: integer, examples: [-15]}
+        valorResultante: {type: integer, minimum: 0}
+        creadoEn: {type: string, format: date-time}
+    Gravedad:
+      type: string
+      enum: [LEVE, MEDIA, GRAVE]
+      description: 'HU-803: cuánto resta del índice de fair play lo fija un parámetro de la plataforma (HU-802)'
+    SancionRequest:
+      type: object
+      required: [usuarioId, gravedad, motivo]
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        partidoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: 'Opcional: del torneo y del jugador'}
+        gravedad: {$ref: '#/components/schemas/Gravedad'}
+        motivo: {type: string, minLength: 1, maxLength: 1000, examples: [Insultó al árbitro al terminar el partido]}
+    JugadorSancionable:
+      type: object
+      description: >-
+        HU-803. Un jugador al que se puede sancionar: el de una inscripción individual confirmada o uno de la nómina de
+        un equipo confirmado.
+      required: [inscripcionId, jugador]
+      properties:
+        inscripcionId: {$ref: '#/components/schemas/Id'}
+        equipo: {type: [string, 'null'], description: 'Nombre del equipo; null si la inscripción es individual'}
+        jugador: {$ref: '#/components/schemas/UsuarioPublico'}
+    SancionDetalle:
+      type: object
+      required: [id, torneoId, torneo, jugador, partidoId, gravedad, motivo, aplicadaPor, aplicadaEn, anuladaEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {type: string, description: Nombre del torneo}
+        jugador: {$ref: '#/components/schemas/UsuarioPublico'}
+        partidoId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}]}
+        gravedad: {$ref: '#/components/schemas/Gravedad'}
+        motivo: {type: string}
+        aplicadaPor: {$ref: '#/components/schemas/UsuarioPublico', description: El organizador o el árbitro}
+        aplicadaEn: {type: string, format: date-time}
+        anuladaEn: {type: [string, 'null'], format: date-time, description: 'Null: vigente. Por ahora no hay cómo anularla'}
+    CalificacionRequest:
+      type: object
+      required: [usuarioId, puntaje]
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        puntaje: {type: integer, minimum: 1, maximum: 5}
+        comentario: {type: [string, 'null'], maxLength: 1000, examples: [Puntual y respetuoso con los rivales]}
+        noConfiable: {type: boolean, default: false, description: 'La marca la ven todos los organizadores en las inscripciones; no bloquea'}
+    CalificacionDetalle:
+      type: object
+      required: [id, torneoId, torneo, jugador, organizador, puntaje, comentario, noConfiable, creadaEn]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneo: {type: string, description: Nombre del torneo}
+        jugador: {$ref: '#/components/schemas/UsuarioPublico'}
+        organizador: {$ref: '#/components/schemas/UsuarioPublico'}
+        puntaje: {type: integer, minimum: 1, maximum: 5}
+        comentario: {type: [string, 'null']}
+        noConfiable: {type: boolean}
+        creadaEn: {type: string, format: date-time}
+    JugadorCalificable:
+      type: object
+      description: >-
+        HU-805. Un jugador del torneo terminado: el de una inscripción individual confirmada o uno de la nómina de un
+        equipo confirmado, con su calificación si ya la tiene.
+      required: [inscripcionId, jugador, calificacion]
+      properties:
+        inscripcionId: {$ref: '#/components/schemas/Id'}
+        equipo: {type: [string, 'null'], description: 'Nombre del equipo; null si la inscripción es individual'}
+        jugador: {$ref: '#/components/schemas/UsuarioPublico'}
+        calificacion:
+          oneOf: [{$ref: '#/components/schemas/CalificacionDetalle'}, {type: 'null'}]
+          description: Null mientras no lo califique
+    Reputacion:
+      type: object
+      description: 'HU-805: el promedio de las calificaciones que recibió de los organizadores, aparte del fair play'
+      required: [promedio, cantidad]
+      properties:
+        promedio: {type: [number, 'null'], minimum: 1, maximum: 5, description: 'Null sin calificaciones', examples: [4.5]}
+        cantidad: {type: integer, minimum: 0, examples: [2]}
     ActualizarParametrosRequest:
       type: object
       required: [valores]
@@ -4171,7 +5177,29 @@ components:
 
     # --- torneos -------------------------------------------------------------
     EstadoTorneo: {type: string, enum: [BORRADOR, INSCRIPCION_ABIERTA, INSCRIPCION_CERRADA, EN_CURSO, FINALIZADO, CANCELACION_EN_REVISION, CANCELADO]}
-    Formato: {type: string, enum: [ELIMINACION_DIRECTA]}
+    Formato: {type: string, enum: [ELIMINACION_DIRECTA, GRUPOS_Y_ELIMINACION]}
+    ReglasGrupos:
+      type: object
+      required: [tamanioGrupo, clasificanPorGrupo, puntosVictoria, puntosEmpate]
+      description: >-
+        Las reglas de la fase de grupos (CR-02), solo con `GRUPOS_Y_ELIMINACION`; las elige el organizador y quedan
+        selladas al publicar, en el esquema (líneas `formato`, `grupos:<tamaño>:<pasan>`, `puntos:<ganar>:<empatar>` y
+        `desempate:puntos,entre-si,ganados,partido`, después de la del torneo). El desempate no se configura: puntos,
+        resultado entre sí, partidos ganados y, si sigue y toca un puesto que clasifica, partido de desempate. Perder
+        da 0 puntos.
+      properties:
+        tamanioGrupo: {type: integer, minimum: 3, maximum: 8, description: 'Integrantes por grupo con el cupo lleno. Por defecto 4'}
+        clasificanPorGrupo: {type: integer, minimum: 1, description: 'Cuántos pasan a la llave; menos que el tamaño. Por defecto 2'}
+        puntosVictoria: {type: integer, minimum: 1, maximum: 10, description: 'Por defecto 3'}
+        puntosEmpate: {type: integer, minimum: 0, description: 'Menos que por ganar. Por defecto 1'}
+    ReglasGruposRequest:
+      type: object
+      description: 'Como ReglasGrupos, pero lo que no viene toma el valor por defecto (4, 2, 3 y 1).'
+      properties:
+        tamanioGrupo: {type: [integer, 'null']}
+        clasificanPorGrupo: {type: [integer, 'null']}
+        puntosVictoria: {type: [integer, 'null']}
+        puntosEmpate: {type: [integer, 'null']}
     Modalidad: {type: string, enum: [PRESENCIAL, ONLINE]}
     TipoParticipante: {type: string, enum: [INDIVIDUAL, EQUIPO]}
     InformacionTorneoRequest:
@@ -4185,12 +5213,17 @@ components:
         `sede` si es presencial o trae canchas · `VALOR_INVALIDO` en `canchas` si es online · `RANGO_INVALIDO` en
         `cupoMaximo` fuera de 2 a `OpcionesTorneo.cupoMaximo`, en `cupoMinimo` menor que 2 o mayor que el cupo, y
         en `nominaMaxima` menor que `tamanioEquipo` · `VALOR_INVALIDO` en `tamanioEquipo` o `nominaMaxima` si no
-        es por equipos, o si no son positivos.
+        es por equipos, o si no son positivos. Con grupos (CR-02): `VALOR_INVALIDO` en `reglasGrupos` si el formato es
+        eliminación directa · `RANGO_INVALIDO` en `reglasGrupos.tamanioGrupo`, `reglasGrupos.clasificanPorGrupo`,
+        `reglasGrupos.puntosVictoria` o `reglasGrupos.puntosEmpate` fuera de rango, en `cupoMaximo` si no es múltiplo
+        del tamaño del grupo, en `reglasGrupos.clasificanPorGrupo` si los que pasan a la llave (grupos × pasan) no
+        son potencia de 2 y en `cupoMinimo` si no deja en cada grupo uno más que los que pasan.
       properties:
         nombre: {type: string, maxLength: 100}
         disciplina: {type: string, maxLength: 50, description: 'Texto libre; las sugeridas salen de `GET /torneos/opciones`'}
         descripcion: {type: [string, 'null'], maxLength: 2000}
         formato: {oneOf: [{$ref: '#/components/schemas/Formato'}, {type: 'null'}], description: 'Sin valor, ELIMINACION_DIRECTA'}
+        reglasGrupos: {oneOf: [{$ref: '#/components/schemas/ReglasGruposRequest'}, {type: 'null'}], description: 'Solo con GRUPOS_Y_ELIMINACION; sin valor, las de por defecto'}
         modalidad: {oneOf: [{$ref: '#/components/schemas/Modalidad'}, {type: 'null'}]}
         tipoParticipante: {oneOf: [{$ref: '#/components/schemas/TipoParticipante'}, {type: 'null'}]}
         sede: {type: [string, 'null'], maxLength: 255}
@@ -4215,6 +5248,7 @@ components:
         disciplina: {type: string}
         descripcion: {type: [string, 'null']}
         formato: {$ref: '#/components/schemas/Formato'}
+        reglasGrupos: {oneOf: [{$ref: '#/components/schemas/ReglasGrupos'}, {type: 'null'}], description: 'Null en eliminación directa'}
         modalidad: {oneOf: [{$ref: '#/components/schemas/Modalidad'}, {type: 'null'}]}
         tipoParticipante: {oneOf: [{$ref: '#/components/schemas/TipoParticipante'}, {type: 'null'}]}
         sede: {type: [string, 'null']}
@@ -4265,7 +5299,9 @@ components:
             cerró. Se calcula sobre un texto en UTF-8 con una línea por inscripción CONFIRMADA, ordenadas por id y
             separadas con `\n`, sin salto al final: `<inscripcionId>;U;<usuarioId>` en una individual y
             `<inscripcionId>;E;<equipoId>;<ids>` en una de equipo, con los ids de la nómina (el capitán incluido) de
-            menor a mayor separados por comas. Sin confirmadas el texto es vacío.
+            menor a mayor separados por comas. Si la inscripción tiene reparto del premio (CR-05), cada id lleva su
+            porcentaje con dos decimales, `<usuarioId>:<pct>`, p. ej. `32;E;4;7:40.00,9:20.00,12:40.00`; una sin
+            reparto conserva la forma de antes (`32;E;4;7,9,12`). Sin confirmadas el texto es vacío.
         creadoEn: {type: string, format: date-time}
         modificadoEn: {type: string, format: date-time}
         camposBloqueados:
@@ -4273,7 +5309,13 @@ components:
           items: {type: string}
           description: >-
             Los campos de InformacionTorneoRequest que ya no se pueden cambiar (HU-202). Vacío en BORRADOR; en curso,
-            finalizado o cancelado, todos.
+            finalizado o cancelado, todos. Publicado, siempre `formato` y `reglasGrupos` (quedan sellados, CR-02).
+        inscriptosMinimos:
+          type: [integer, 'null']
+          description: >-
+            Las inscripciones confirmadas que hacen falta para cerrar la inscripción y jugar (PICA-447): 2 en
+            eliminación directa; con grupos, `cupoMaximo / tamanioGrupo` grupos por `clasificanPorGrupo + 1`. Null en
+            un BORRADOR sin formato o, con grupos, sin cupo máximo.
     PermisoArbitro:
       type: string
       enum: [CARGAR_RESULTADOS, RESOLVER_OBJECIONES]
@@ -4350,15 +5392,96 @@ components:
       type: object
       properties:
         motivo: {type: [string, 'null'], maxLength: 500, description: Opcional; le llega al organizador}
+    GruposTorneo:
+      type: object
+      required: [torneoId, reglas, desempate, grupos]
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        reglas: {$ref: '#/components/schemas/ReglasGrupos'}
+        desempate: {type: string, description: 'El orden sellado: puntos,entre-si,ganados,partido'}
+        grupos:
+          type: array
+          items:
+            type: object
+            required: [letra, terminado, tabla, partidos, desempate, desempatesPendientes]
+            properties:
+              letra: {type: string}
+              terminado: {type: boolean, description: Si se jugaron todos sus partidos}
+              tabla:
+                type: array
+                items:
+                  type: object
+                  required: [inscripcionId, nombre, posicion, jugados, ganados, empatados, perdidos, aFavor, enContra, diferencia, puntos, criterio, clasifica]
+                  properties:
+                    inscripcionId: {$ref: '#/components/schemas/Id'}
+                    nombre: {type: string}
+                    posicion: {type: integer, description: Los que comparten puesto tienen la misma}
+                    jugados: {type: integer}
+                    ganados: {type: integer}
+                    empatados: {type: integer}
+                    perdidos: {type: integer}
+                    aFavor: {type: integer}
+                    enContra: {type: integer}
+                    diferencia: {type: integer}
+                    puntos: {type: integer}
+                    criterio: {type: string, enum: [PUNTOS, ENTRE_SI, GANADOS, DESEMPATE, EMPATE], description: 'Con qué se definió el puesto; EMPATE si lo comparte'}
+                    clasifica: {type: boolean, description: Si pasa a la llave}
+              partidos: {type: array, items: {$ref: '#/components/schemas/PartidoBracket'}, description: 'Todos contra todos; la ronda es la fecha'}
+              desempate: {type: array, items: {$ref: '#/components/schemas/PartidoBracket'}, description: El partido de desempate, si hubo}
+              desempatesPendientes:
+                type: array
+                items: {type: array, items: {$ref: '#/components/schemas/Id'}}
+                description: Con el grupo terminado, los empatados que tocan un puesto que clasifica
+    SorteoGruposDetalle:
+      type: object
+      required: [torneoId, torneoNombre, version, listaHash, inscripciones, cantidadGrupos, grupos]
+      properties:
+        torneoId: {$ref: '#/components/schemas/Id'}
+        torneoNombre: {type: string}
+        version: {type: integer, description: '1: el orden de la llave repartido en serpentina'}
+        listaHash: {type: string, description: SHA-256 de la lista de inscriptos sellada al cerrar}
+        listaSelladaEn: {type: [string, 'null'], format: date-time}
+        inscripciones: {type: array, items: {$ref: '#/components/schemas/Id'}, description: 'Las confirmadas que entran al sorteo, por id'}
+        semillaRonda: {type: [integer, 'null'], format: int64, description: Ronda de drand fijada al cerrar}
+        compromisoHash: {type: [string, 'null'], description: 'SHA-256 de listaHash:semillaRonda'}
+        semilla: {type: [string, 'null'], description: El randomness de la ronda; null antes del sorteo}
+        semillaFirma: {type: [string, 'null']}
+        semillaUrl: {type: [string, 'null'], description: Donde se consulta la ronda en drand}
+        cantidadGrupos: {type: integer, description: 'cupoMaximo / tamanioGrupo'}
+        grupos:
+          type: array
+          items:
+            type: object
+            required: [letra, integrantes]
+            properties:
+              letra: {type: string}
+              integrantes:
+                type: array
+                description: En el orden del sorteo
+                items:
+                  type: object
+                  required: [inscripcionId, nombre]
+                  properties:
+                    inscripcionId: {$ref: '#/components/schemas/Id'}
+                    nombre: {type: string}
     BracketTorneo:
       type: object
-      required: [torneoId, rondas]
-      description: Las rondas de la primera a la final. Sin generar, `rondas` vacío y `semilla` null.
+      required: [torneoId, rondas, version]
+      description: >-
+        Las rondas de la primera a la final. Sin generar, `rondas` vacío y `semilla` null. Con fase de grupos (CR-02)
+        es solo la llave: se crea vacía al empezar y se llena con los que pasan; `semilla` es la del sorteo de grupos.
       properties:
         torneoId: {$ref: '#/components/schemas/Id'}
         semilla: {type: [string, 'null'], description: 'Con la que se sorteó: 64 caracteres hexadecimales'}
         listaHash: {type: [string, 'null'], description: SHA-256 de la lista de inscriptos, sellada al cerrar la inscripción}
         rondas: {type: array, items: {$ref: '#/components/schemas/RondaBracket'}}
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            La versión del bracket (HU-809): sube con cada cambio de la llave. La misma viaja en el tópico del torneo;
+            un bracket con versión menor que el que ya se muestra es más viejo y se descarta.
     RondaBracket:
       type: object
       required: [numero, nombre, partidos]
@@ -4395,14 +5518,15 @@ components:
     Lado: {type: string, enum: [LOCAL, VISITANTE]}
     PartidoDetalle:
       type: object
-      required: [id, torneoId, torneo, ronda, nombreRonda, posicion, estado, bye]
+      required: [id, torneoId, torneo, ronda, nombreRonda, fase, posicion, estado, bye]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         torneoId: {$ref: '#/components/schemas/Id'}
         torneo: {type: string, description: Nombre del torneo}
         torneoSlug: {type: [string, 'null'], description: El del enlace de la ficha pública}
         ronda: {type: integer, minimum: 1}
-        nombreRonda: {type: string, description: 'Como en `RondaBracket.nombre`'}
+        nombreRonda: {type: string, description: 'Como en `RondaBracket.nombre`; en la fase de grupos (CR-02), «Grupo A · Fecha 2» o «Desempate del grupo A»'}
+        fase: {type: string, enum: [GRUPOS, DESEMPATE, ELIMINACION], description: 'CR-02: en GRUPOS se puede empatar y no hay penales; en eliminación directa, siempre ELIMINACION'}
         posicion: {type: integer, minimum: 1}
         estado: {$ref: '#/components/schemas/EstadoPartido'}
         bye: {type: boolean}
@@ -4417,6 +5541,9 @@ components:
         miLado: {oneOf: [{$ref: '#/components/schemas/Lado'}, {type: 'null'}], description: El lado del que es capitán quien consulta}
         objecion: {oneOf: [{$ref: '#/components/schemas/ObjecionDetalle'}, {type: 'null'}], description: 'Si lo objetaron, con su laudo si ya se resolvió'}
         puedoResolver: {type: boolean, description: 'Con el partido OBJETADO, si quien consulta lo puede laudar'}
+        puedoSancionar:
+          type: boolean
+          description: 'Si quien consulta puede sancionar a sus jugadores (HU-803): el organizador o un árbitro que aceptó'
     ObjecionDetalle:
       type: object
       required: [lado, motivo, puntajeLocal, puntajeVisitante, creadaEn]
@@ -4576,7 +5703,7 @@ components:
     ResultadoRequest:
       type: object
       required: [puntajeLocal, puntajeVisitante]
-      description: Los penales solo con empate, y tienen que definir un ganador.
+      description: En la llave, los penales solo con empate, y tienen que definir un ganador. En la fase de grupos no hay penales y se puede empatar.
       properties:
         puntajeLocal: {type: integer, minimum: 0}
         puntajeVisitante: {type: integer, minimum: 0}
@@ -4608,7 +5735,7 @@ components:
         paso 2 incompleto (cupos y, por equipos, tamaño y nómina máxima). ECONOMIA: sin valor de inscripción.
         SIN_PREMIOS: no hay premios por puesto. PREMIOS_NO_SUMAN_100: la suma va en `sumaPremios`.
         POZO_NETO_NO_POSITIVO: con el cupo mínimo, los gastos previstos se comen el pozo de competidores.
-        CIERRE_VENCIDO: el cierre de la inscripción ya pasó.
+        CIERRE_VENCIDO: el cierre de la inscripción ya pasó (no se pide con `app.torneos.sin-validar-fechas`).
       enum: [INFORMACION, CUPOS, ECONOMIA, SIN_PREMIOS, PREMIOS_NO_SUMAN_100, POZO_NETO_NO_POSITIVO, CIERRE_VENCIDO]
     EconomiaTorneoRequest:
       type: object
@@ -4734,7 +5861,7 @@ components:
         disciplinas: {type: array, items: {type: string}, description: 'Las de los torneos del organizador, para el filtro'}
     OpcionesTorneo:
       type: object
-      required: [disciplinas, formatos, modalidades, cupoMaximo, pctGastosAdministrativos, margenCierreInicioMin, checkinDuracionMaxMin, canchas]
+      required: [disciplinas, formatos, modalidades, cupoMaximo, pctGastosAdministrativos, margenCierreInicioMin, checkinDuracionMaxMin, canchas, sinValidarFechas]
       properties:
         disciplinas:
           type: array
@@ -4764,6 +5891,11 @@ components:
         margenCierreInicioMin: {type: integer, minimum: 0, description: 'Minutos que tienen que pasar como mínimo entre el cierre de la inscripción y el inicio; lo fija la plataforma', examples: [60]}
         checkinDuracionMaxMin: {type: integer, minimum: 1, description: 'Minutos que puede durar como máximo la ventana de check-in; lo fija la plataforma (HU-702)', examples: [60]}
         canchas: {type: array, items: {type: string}, description: Las que ya existen en la `sede` pedida}
+        sinValidarFechas:
+          type: boolean
+          description: >-
+            El ambiente de prueba (`app.torneos.sin-validar-fechas`, PICA-448): el torneo se crea, edita y publica con
+            fechas pasadas y los partidos se programan en cualquier fecha. El orden entre las fechas se exige igual.
     # --- rifas ---------------------------------------------------------------
     EstadoRifa: {type: string, enum: [BORRADOR, EN_VENTA, CERRADA, SORTEADA, EN_REVISION, LIQUIDADA, CANCELADA]}
     PremioRifaRequest:
@@ -4913,7 +6045,7 @@ components:
         rol: {$ref: '#/components/schemas/RolEnInscripcion'}
     InscripcionDelTorneo:
       type: object
-      required: [id, estado, creadoEn]
+      required: [id, estado, creadoEn, fairPlay, reputacion, noConfiable]
       description: >-
         Una inscripción como la ve el organizador en la lista de su torneo (HU-206). La individual lleva `usuario`; la
         de equipo lleva `equipo`, `capitan` y `jugadores`.
@@ -4931,6 +6063,9 @@ components:
           oneOf: [{$ref: '#/components/schemas/UsuarioPublico'}, {type: 'null'}]
           description: Solo en la de equipo
         jugadores: {type: [integer, 'null'], description: 'Solo en la de equipo: cuántos hay en la nómina, el capitán incluido'}
+        fairPlay: {type: integer, minimum: 0, description: 'HU-802: el índice de fair play de quien responde por la inscripción (el jugador o el capitán)', examples: [100]}
+        reputacion: {$ref: '#/components/schemas/Reputacion', description: 'HU-805: de la misma persona que el fair play'}
+        noConfiable: {type: boolean, description: 'HU-805: si algún organizador lo marcó como no confiable'}
     InscripcionEquipoRequest:
       type: object
       description: >-
@@ -4966,7 +6101,20 @@ components:
           type: [array, 'null']
           description: Solo en la de equipo; incluye siempre al capitán
           items: {$ref: '#/components/schemas/UsuarioPublico'}
+        reparto:
+          type: [array, 'null']
+          description: >-
+            El % del premio del equipo que le toca a cada integrante de la nómina (CR-05), sumando 100. Lo ven quienes
+            ya ven la inscripción: el capitán, la nómina y el organizador. Null en la individual y en la de equipo
+            que se liquida con todo al capitán.
+          items: {$ref: '#/components/schemas/RepartoIntegrante'}
         rol: {$ref: '#/components/schemas/RolEnInscripcion'}
+    RepartoIntegrante:
+      type: object
+      required: [usuarioId, pct]
+      properties:
+        usuarioId: {$ref: '#/components/schemas/Id'}
+        pct: {type: number, minimum: 0, maximum: 100, multipleOf: 0.01, description: '% del premio del equipo que le toca a ese integrante'}
     ReemplazoRequest:
       type: object
       required: [saleUsuarioId, entraUsuarioId]
@@ -5057,7 +6205,7 @@ components:
         fechaSorteo: {type: string, format: date-time}
     RifaPublicaDetalle:
       type: object
-      required: [id, titulo, estado, pctDestinadoTorneo, numeroDesde, numeroHasta, precioNumero, moneda, premios, reparto]
+      required: [id, titulo, estado, pctDestinadoTorneo, numeroDesde, numeroHasta, precioNumero, moneda, premios, reparto, ventaSuspendida]
       description: >-
         Una rifa como la ve quien compra (PICA-221), sin datos del organizador ni de los compradores. `reparto` es lo
         recaudado hasta ahora y cuánto va al pozo del torneo y a los premios (HU-405).
@@ -5089,6 +6237,7 @@ components:
         listaSelladaEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se cerró la venta y se selló la lista; null antes'}
         compromisoHash: {type: [string, 'null'], description: 'Compromiso del sorteo (HU-502): SHA-256 de `listaHash:fechaSorteo`, con la fecha en ISO-8601 UTC como la devuelve la API; null antes del cierre'}
         compromisoPublicadoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se publicó el compromiso, con el sello; siempre antes de obtener la semilla'}
+        ventaSuspendida: {type: boolean, description: 'La rifa está en venta pero el organizador está bloqueado: no se reserva ni se compra (HU-703, PICA-414)'}
     VentaRifaRequest:
       type: object
       required: [numeros]
@@ -5163,6 +6312,42 @@ components:
         totalGastos: {type: number, description: La suma de los gastos declarados}
         pozo: {type: number, description: Lo recaudado en inscripciones, sin gastos administrativos}
         reintegrado: {type: number, description: Lo devuelto a las billeteras}
+    ReprogramacionRequest:
+      type: object
+      required: [fechaInicio, cierreInscripcion, rechazoHasta, motivo]
+      description: La reprogramación que pide el organizador (CR-01). Las reglas, en `POST /torneos/{id}/reprogramaciones`.
+      properties:
+        fechaInicio: {type: string, format: date-time}
+        fechaFin: {type: [string, 'null'], format: date-time, description: Opcional, como en el torneo}
+        cierreInscripcion: {type: string, format: date-time, description: Hasta cuándo se anota gente en los lugares que se liberen; posterior al plazo}
+        rechazoHasta: {type: string, format: date-time, description: Hasta cuándo los inscriptos pueden rechazar la nueva fecha}
+        motivo: {type: string, maxLength: 500}
+    ReprogramacionDetalle:
+      type: object
+      required: [id, fechaInicioAnterior, fechaInicioNueva, cierreInscripcion, rechazoHasta, motivo, plazoAbierto,
+                 rechazos, creadaEn]
+      description: Una reprogramación del historial del torneo (CR-01). Es pública, sale en la ficha.
+      properties:
+        id: {type: integer, format: int64}
+        fechaInicioAnterior: {type: string, format: date-time}
+        fechaFinAnterior: {type: [string, 'null'], format: date-time}
+        fechaInicioNueva: {type: string, format: date-time}
+        fechaFinNueva: {type: [string, 'null'], format: date-time}
+        cierreInscripcion: {type: string, format: date-time}
+        rechazoHasta: {type: string, format: date-time}
+        motivo: {type: string}
+        plazoAbierto: {type: boolean, description: Si todavía se puede rechazar la nueva fecha}
+        rechazos: {type: integer, description: 'Cuántas inscripciones se bajaron por esta nueva fecha (CR-01-4)'}
+        creadaEn: {type: string, format: date-time}
+    RechazoReprogramacion:
+      type: object
+      required: [inscripcionId, torneoId, estado, reintegrado]
+      description: El resultado de rechazar la nueva fecha (CR-01-3).
+      properties:
+        inscripcionId: {type: integer, format: int64}
+        torneoId: {type: integer, format: int64}
+        estado: {type: string, enum: [REINTEGRADA]}
+        reintegrado: {type: number, description: Lo que volvió a la billetera de quien pagó, sin los gastos administrativos; 0 en un torneo sin costo}
     ResolucionCancelacion:
       type: object
       required: [torneoId, estado, reintegrado, retenido, alOrganizador]
@@ -5281,7 +6466,7 @@ components:
         puesto: {type: [integer, 'null'], description: El de un premio}
         beneficiarioNombre: {type: [string, 'null'], description: 'Nombres y apellidos; null en la plataforma'}
         beneficiarioUsername: {type: [string, 'null']}
-        equipoNombre: {type: [string, 'null'], description: 'El equipo del capitán que cobra, en un torneo por equipos'}
+        equipoNombre: {type: [string, 'null'], description: 'El equipo del integrante que cobra, en un torneo por equipos (CR-05: el premio de un equipo trae una línea por integrante)'}
         monto: {type: number}
         acreditadoEn: {type: string, format: date-time}
     ComprobantePago:
@@ -5443,9 +6628,10 @@ components:
         cierreInscripcionEn: {type: string, format: date-time}
         fechaInicio: {type: string, format: date-time}
         fechaFin: {type: [string, 'null'], format: date-time}
+        organizador: {oneOf: [{$ref: '#/components/schemas/OrganizadorResumen'}, {type: 'null'}]}
     TorneoDetalle:
       type: object
-      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoMinimo, cupoDisponible, valorInscripcion, moneda, gastosAdministrativos, totalAPagar, pozoEstimado, premios, cierreInscripcionEn, fechaInicio, publicadoEn]
+      required: [id, slug, nombre, disciplina, formato, modalidad, tipoParticipante, estado, cupoMaximo, cupoMinimo, cupoDisponible, valorInscripcion, moneda, gastosAdministrativos, totalAPagar, pozoEstimado, premios, cierreInscripcionEn, fechaInicio, publicadoEn, inscripcionSuspendida]
       properties:
         id: {$ref: '#/components/schemas/Id'}
         slug: {type: string}
@@ -5453,6 +6639,7 @@ components:
         descripcion: {type: [string, 'null']}
         disciplina: {type: string}
         formato: {$ref: '#/components/schemas/Formato'}
+        reglasGrupos: {oneOf: [{$ref: '#/components/schemas/ReglasGrupos'}, {type: 'null'}], description: 'Las selladas; null en eliminación directa'}
         modalidad: {$ref: '#/components/schemas/Modalidad'}
         tipoParticipante: {$ref: '#/components/schemas/TipoParticipante'}
         sede: {type: [string, 'null']}
@@ -5478,6 +6665,7 @@ components:
         organizador: {$ref: '#/components/schemas/OrganizadorResumen'}
         publicadoEn: {type: [string, 'null'], format: date-time}
         liquidadoEn: {type: [string, 'null'], format: date-time, description: 'Cuándo se repartió la custodia del torneo terminado (HU-606, PICA-329); null mientras no se liquidó'}
+        inscripcionSuspendida: {type: boolean, description: 'La inscripción está abierta pero el organizador está bloqueado: no se empieza, confirma ni paga ninguna (HU-703, PICA-414)'}
 
     PronosticoDetalle:
       type: object
@@ -5853,6 +7041,82 @@ components:
           type: string
           description: CUIT o CUIL del titular (11 dígitos).
           example: '20-12345678-9'
+
+    SolicitarRetiroCripto:
+      type: object
+      required: [monto, destino]
+      properties:
+        monto:
+          type: number
+          format: double
+          minimum: 0.01
+          description: >-
+            Monto a retirar en ARS. Debe respetar los topes mínimo y máximo parametrizados en la plataforma
+            (400 RETIRO_FUERA_DE_TOPES si no los cumple).
+          example: 10000.00
+        destino:
+          type: string
+          pattern: '^0x(?!0{40})[0-9a-fA-F]{40}$'
+          description: La wallet que va a cobrar el retiro. Se guarda en minúscula; solo ella puede cobrarlo.
+          example: '0x262DFbfA37436e5B99A53377e633509D1a9B301A'
+
+    RetiroCripto:
+      type: object
+      required: [referencia, contrato, chainId, destino, montoPesos, montoWei, vence, venceEn, firma, estado]
+      properties:
+        referencia:
+          type: string
+          pattern: '^0x[0-9a-f]{64}$'
+          description: El bytes32 del permiso. Al azar y único.
+          example: '0x5d21dd9f5a6ddcd83ba7be317d447dfd70f0dd0ff1a4c7c050cecac6232588c5'
+        contrato:
+          type: string
+          description: La dirección de PasarelaRetiros.
+          example: '0x00000000000000000000000000000000000ca5a5'
+        chainId:
+          type: integer
+          description: La red del contrato (84532 es Base Sepolia).
+          example: 84532
+        destino:
+          type: string
+          description: La wallet que puede cobrarlo, en minúscula.
+          example: '0x262dfbfa37436e5b99a53377e633509d1a9b301a'
+        montoPesos:
+          type: number
+          format: double
+          description: Los pesos que se descontaron del saldo.
+          example: 10000.00
+        montoWei:
+          type: string
+          pattern: '^[1-9][0-9]*$'
+          description: "Los wei que paga el contrato. Va como texto, para usar con `BigInt(montoWei)`."
+          example: '100000000000000'
+        vence:
+          type: integer
+          format: int64
+          description: El vencimiento en segundos desde 1970, tal como se le pasa a `cobrar`.
+          example: 1800000000
+        venceEn:
+          type: string
+          format: date-time
+          description: El mismo vencimiento, para mostrarlo.
+        firma:
+          type: string
+          pattern: '^0x[0-9a-f]{130}$'
+          description: La firma EIP-712 del back (r, s y v), tal como se le pasa a `cobrar`.
+        estado:
+          type: string
+          enum: [PENDIENTE, COBRADO, DEVUELTO]
+        hash:
+          type: string
+          nullable: true
+          description: >-
+            La transacción que lo cobró, cuando el usuario la confirmó. Un retiro que la devolución automática encontró
+            cobrado en el contrato queda COBRADO sin hash.
+        enlaceExplorador:
+          type: string
+          nullable: true
+          description: La transacción en BaseScan, si hay hash.
 
     SolicitarRetiroRequest:
       type: object

@@ -26,6 +26,8 @@ import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionResumen;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.TorneoDeInscripcion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.ReemplazoInscripcionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -56,6 +58,12 @@ class InscripcionMiasControllerTest {
 
     @MockitoBean
     private InscripcionService inscripcionService;
+
+    @MockitoBean
+    private PagoInscripcionService pagoInscripcionService;
+
+    @MockitoBean
+    private ReemplazoInscripcionService reemplazoInscripcionService;
 
     @MockitoBean
     private CurrentUserProvider currentUserProvider;

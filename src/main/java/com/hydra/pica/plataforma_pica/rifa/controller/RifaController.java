@@ -4,7 +4,7 @@ import java.net.URI;
 
 import jakarta.validation.Valid;
 
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.rifa.dto.PremiosRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.PublicarRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.dto.RifaDetalle;
@@ -18,7 +18,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -42,29 +41,27 @@ public class RifaController {
     private final RifaService rifaService;
     private final CierreVentaService cierreVentaService;
     private final SorteoRifaService sorteoRifaService;
-    private final CurrentUserProvider currentUserProvider;
 
     public RifaController(RifaService rifaService, CierreVentaService cierreVentaService,
-            SorteoRifaService sorteoRifaService, CurrentUserProvider currentUserProvider) {
+            SorteoRifaService sorteoRifaService) {
         this.rifaService = rifaService;
         this.cierreVentaService = cierreVentaService;
         this.sorteoRifaService = sorteoRifaService;
-        this.currentUserProvider = currentUserProvider;
     }
 
     @GetMapping("/mis-rifas")
-    public Page<RifaResumen> misRifas(@PageableDefault(size = 20) Pageable pageable) {
-        return rifaService.listarMias(usuarioActual(), pageable);
+    public Page<RifaResumen> misRifas(@PageableDefault(size = 20) Pageable pageable, @UsuarioActual Long usuarioId) {
+        return rifaService.listarMias(usuarioId, pageable);
     }
 
     @GetMapping("/{id}")
-    public RifaDetalle ver(@PathVariable Long id) {
-        return rifaService.detalle(usuarioActual(), id);
+    public RifaDetalle ver(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return rifaService.detalle(usuarioId, id);
     }
 
     @PostMapping
-    public ResponseEntity<RifaDetalle> crear(@Valid @RequestBody RifaRequest request) {
-        RifaDetalle creada = rifaService.crear(usuarioActual(), request);
+    public ResponseEntity<RifaDetalle> crear(@Valid @RequestBody RifaRequest request, @UsuarioActual Long usuarioId) {
+        RifaDetalle creada = rifaService.crear(usuarioId, request);
         URI ubicacion = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
                 .buildAndExpand(creada.id())
@@ -73,47 +70,45 @@ public class RifaController {
     }
 
     @PutMapping("/{id}")
-    public RifaDetalle modificar(@PathVariable Long id, @Valid @RequestBody RifaRequest request) {
-        return rifaService.modificar(usuarioActual(), id, request);
+    public RifaDetalle modificar(@PathVariable Long id, @Valid @RequestBody RifaRequest request,
+            @UsuarioActual Long usuarioId) {
+        return rifaService.modificar(usuarioId, id, request);
     }
 
     @PutMapping("/{id}/premios")
-    public RifaDetalle reemplazarPremios(@PathVariable Long id, @Valid @RequestBody PremiosRifaRequest request) {
-        return rifaService.reemplazarPremios(usuarioActual(), id, request.premios());
+    public RifaDetalle reemplazarPremios(@PathVariable Long id, @Valid @RequestBody PremiosRifaRequest request,
+            @UsuarioActual Long usuarioId) {
+        return rifaService.reemplazarPremios(usuarioId, id, request.premios());
     }
 
     /** El body exige términos y lotería en true (400 si no); lo demás lo controla el servicio. */
     @PostMapping("/{id}/publicar")
-    public RifaDetalle publicar(@PathVariable Long id, @Valid @RequestBody PublicarRifaRequest request) {
-        return rifaService.publicar(usuarioActual(), id);
+    public RifaDetalle publicar(@PathVariable Long id, @Valid @RequestBody PublicarRifaRequest request,
+            @UsuarioActual Long usuarioId) {
+        return rifaService.publicar(usuarioId, id);
     }
 
     /** Para modificar una rifa publicada que nadie compró (PICA-287). */
     @PostMapping("/{id}/volver-a-borrador")
-    public RifaDetalle volverABorrador(@PathVariable Long id) {
-        return rifaService.volverABorrador(usuarioActual(), id);
+    public RifaDetalle volverABorrador(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return rifaService.volverABorrador(usuarioId, id);
     }
 
     /** HU-407: cierra la venta antes de la fecha y sella la lista; el cierre es definitivo. */
     @PostMapping("/{id}/cerrar-venta")
-    public RifaDetalle cerrarVenta(@PathVariable Long id) {
-        return cierreVentaService.cerrar(usuarioActual(), id);
+    public RifaDetalle cerrarVenta(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return cierreVentaService.cerrar(usuarioId, id);
     }
 
     /** HU-504: sortea la rifa cerrada desde su fecha de sorteo; los premios quedan con su ganador. */
     @PostMapping("/{id}/sorteo")
-    public RifaDetalle sortear(@PathVariable Long id) {
-        return sorteoRifaService.sortear(usuarioActual(), id);
+    public RifaDetalle sortear(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return sorteoRifaService.sortear(usuarioId, id);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
-        rifaService.eliminar(usuarioActual(), id);
+    public ResponseEntity<Void> eliminar(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        rifaService.eliminar(usuarioId, id);
         return ResponseEntity.noContent().build();
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
     }
 }

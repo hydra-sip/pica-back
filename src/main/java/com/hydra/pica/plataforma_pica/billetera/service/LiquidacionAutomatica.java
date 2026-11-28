@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
@@ -34,11 +35,12 @@ public class LiquidacionAutomatica {
     private final RifaRepository rifaRepository;
     private final TransactionTemplate propia;
     private final boolean activa;
+    private final Clock clock;
 
     public LiquidacionAutomatica(LiquidacionService liquidacionService, LiquidacionRifaService liquidacionRifaService,
                                  CustodiaRepository custodiaRepository, RifaRepository rifaRepository,
                                  PlatformTransactionManager transacciones,
-                                 @Value("${app.liquidacion.automatica:true}") boolean activa) {
+                                 @Value("${app.liquidacion.automatica:true}") boolean activa, Clock clock) {
         this.liquidacionService = liquidacionService;
         this.liquidacionRifaService = liquidacionRifaService;
         this.custodiaRepository = custodiaRepository;
@@ -46,6 +48,7 @@ public class LiquidacionAutomatica {
         this.propia = new TransactionTemplate(transacciones);
         this.propia.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.activa = activa;
+        this.clock = clock;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -70,7 +73,7 @@ public class LiquidacionAutomatica {
                 liquidados++;
             }
         }
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         for (Long rifaId : rifaRepository.paraLiquidar(
                 ahora.minus(ReclamoRifaService.HORAS_LIMITE_RECLAMO, ChronoUnit.HOURS))) {
             if (liquidarRifa(rifaId, ahora)) {

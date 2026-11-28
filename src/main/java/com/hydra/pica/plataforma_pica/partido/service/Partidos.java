@@ -15,6 +15,7 @@ import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.dto.LadoBracket;
+import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -29,6 +30,8 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class Partidos {
+
+    private static final int RONDA_INICIAL = 1;
 
     /** Ya no cambian: el ganador pasó a la ronda siguiente (o el torneo terminó). */
     public static final Set<EstadoPartido> CERRADOS =
@@ -84,6 +87,25 @@ public class Partidos {
                 .map(j -> new LadoBracket(j.getId().getInscripcionId(), nombre(j.getInscripcion()), j.getPuntaje(),
                         j.getPenales(), j.getEsGanador()))
                 .orElse(null);
+    }
+
+    /** Un partido es bye cuando en la primera ronda solo tiene lado local y avanza sin rival. */
+    public static boolean esBye(Partido partido, LadoBracket local, LadoBracket visitante) {
+        return partido.getRonda() != null && partido.getRonda() == RONDA_INICIAL && local != null && visitante == null;
+    }
+
+    /**
+     * Cómo se nombra la ronda del partido: en la llave, por las que faltan ("Final", "Semifinal"…); en la fase de
+     * grupos (CR-02), el grupo y la fecha, o el desempate del grupo.
+     *
+     * @param rondas las de la llave ({@code PartidoRepository#rondasDelTorneo})
+     */
+    public static String nombreRonda(Partido partido, int rondas) {
+        return switch (partido.getFase()) {
+            case GRUPOS -> "Grupo " + partido.getGrupo().getLetra() + " · Fecha " + partido.getRonda();
+            case DESEMPATE -> "Desempate del grupo " + partido.getGrupo().getLetra();
+            case ELIMINACION -> RondaBracket.nombre(partido.getRonda(), rondas);
+        };
     }
 
     /** El del equipo o, si se inscribe un jugador, su nombre y apellido. */

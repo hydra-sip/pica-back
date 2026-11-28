@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionDelTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.CancelacionRealizada;
 import com.hydra.pica.plataforma_pica.torneo.dto.GastoDeclarado;
@@ -15,7 +15,6 @@ import com.hydra.pica.plataforma_pica.torneo.service.CancelacionTorneoService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,12 +31,9 @@ import org.springframework.web.multipart.MultipartFile;
 public class CancelacionTorneoController {
 
     private final CancelacionTorneoService cancelacionTorneoService;
-    private final CurrentUserProvider currentUserProvider;
 
-    public CancelacionTorneoController(CancelacionTorneoService cancelacionTorneoService,
-            CurrentUserProvider currentUserProvider) {
+    public CancelacionTorneoController(CancelacionTorneoService cancelacionTorneoService) {
         this.cancelacionTorneoService = cancelacionTorneoService;
-        this.currentUserProvider = currentUserProvider;
     }
 
     /**
@@ -47,19 +43,15 @@ public class CancelacionTorneoController {
      */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public CancelacionRealizada cancelar(@PathVariable Long id, @ModelAttribute FormularioCancelacion formulario) {
-        return cancelacionTorneoService.cancelar(usuarioActual(), id, formulario.solicitud());
+    public CancelacionRealizada cancelar(@PathVariable Long id, @ModelAttribute FormularioCancelacion formulario,
+            @UsuarioActual Long usuarioId) {
+        return cancelacionTorneoService.cancelar(usuarioId, id, formulario.solicitud());
     }
 
     /** El pozo y el tope de gastos; si ya se canceló, también la decisión y lo devuelto. */
     @GetMapping
-    public CancelacionDelTorneo detalle(@PathVariable Long id) {
-        return cancelacionTorneoService.detalle(usuarioActual(), id);
-    }
-
-    private Long usuarioActual() {
-        return currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+    public CancelacionDelTorneo detalle(@PathVariable Long id, @UsuarioActual Long usuarioId) {
+        return cancelacionTorneoService.detalle(usuarioId, id);
     }
 
     /** Lo que llega en el multipart; mutable porque así lo arma el binding de Spring con los índices. */

@@ -107,6 +107,7 @@ class TorneoPublicoControllerTest {
                 "Torneo abierto de fútbol 5",
                 "Fútbol 5",
                 Formato.ELIMINACION_DIRECTA,
+                null,
                 Modalidad.PRESENCIAL,
                 TipoParticipante.EQUIPO,
                 "Sede Central",
@@ -132,7 +133,8 @@ class TorneoPublicoControllerTest {
                 "abc123hash",
                 new OrganizadorResumen(2L, "Juan Perez", "juanp"),
                 Instant.parse("2026-10-15T09:00:00Z"),
-                null);
+                null,
+                false);
 
         when(torneoPublicoService.detallePublico("copa-verano")).thenReturn(detalle);
 

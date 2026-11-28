@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -29,6 +30,7 @@ import org.springframework.messaging.SubscribableChannel;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
@@ -78,6 +80,9 @@ public class RnfTre01Test {
     @Qualifier("clientOutboundChannel")
     private SubscribableChannel clientOutboundChannel;
 
+    @Autowired
+    private SimpleBrokerMessageHandler broker;
+
     @Test
     @DisplayName("RNF-TRE-01: Dos clientes conectados a /topic/torneos/{id}, 100 repeticiones, p95 <= 5s")
     void pruebaRnfTre01Torneos() throws Exception {
@@ -88,6 +93,7 @@ public class RnfTre01Test {
         // Conectar y suscribir ambos clientes al topic de torneos
         conectarYSubscribir(session1, "sub-torneo-1", topic);
         conectarYSubscribir(session2, "sub-torneo-2", topic);
+        esperarSuscripciones(topic, session1, session2);
 
         List<Double> latenciasMs = new ArrayList<>();
 
@@ -120,7 +126,7 @@ public class RnfTre01Test {
                         (long) i,
                         1000L + i,
                         false,
-                        new BracketTorneo(101L, "seed-" + i, "hash-" + i, List.of()),
+                        new BracketTorneo(101L, "seed-" + i, "hash-" + i, List.of(), 0L),
                         new BigDecimal("150000.00")
                 );
 
@@ -153,6 +159,7 @@ public class RnfTre01Test {
         // Conectar y suscribir ambos clientes al topic de rifas
         conectarYSubscribir(session1, "sub-rifa-1", topic);
         conectarYSubscribir(session2, "sub-rifa-2", topic);
+        esperarSuscripciones(topic, session1, session2);
 
         List<Double> latenciasMs = new ArrayList<>();
 
@@ -220,6 +227,23 @@ public class RnfTre01Test {
         subscribe.setDestination(destination);
         subscribe.setLeaveMutable(true);
         clientInboundChannel.send(MessageBuilder.createMessage(new byte[0], subscribe.getMessageHeaders()));
+    }
+
+    /**
+     * El CONNECT y el SUBSCRIBE viajan por un canal asíncrono: sin esta espera, la primera publicación puede
+     * llegar al broker antes que la suscripción y perderse (fallaba al azar en el CI en "la repetición 1").
+     */
+    private void esperarSuscripciones(String destination, String... sesiones) throws InterruptedException {
+        SimpMessageHeaderAccessor consulta = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
+        consulta.setDestination(destination);
+        var mensaje = MessageBuilder.createMessage(new byte[0], consulta.getMessageHeaders());
+        long limite = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (!broker.getSubscriptionRegistry().findSubscriptions(mensaje).keySet().containsAll(Set.of(sesiones))) {
+            if (System.nanoTime() > limite) {
+                throw new AssertionError("Las suscripciones a " + destination + " no se registraron en 10 segundos");
+            }
+            Thread.sleep(10);
+        }
     }
 
     private void imprimirYValidarInforme(String caso, List<Double> latencias) {

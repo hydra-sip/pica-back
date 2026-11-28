@@ -78,6 +78,19 @@ public class Torneo extends AuditableEntity {
     @Column(name = "formato", length = 30, nullable = false)
     private Formato formato = Formato.ELIMINACION_DIRECTA;
 
+    /** Solo con grupos (CR-02): ver {@link ReglasGrupos}. En eliminación directa, las cuatro en null. */
+    @Column(name = "tamanio_grupo")
+    private Integer tamanioGrupo;
+
+    @Column(name = "clasifican_por_grupo")
+    private Integer clasificanPorGrupo;
+
+    @Column(name = "puntos_victoria")
+    private Integer puntosVictoria;
+
+    @Column(name = "puntos_empate")
+    private Integer puntosEmpate;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "modalidad", length = 20)
     private Modalidad modalidad;
@@ -152,8 +165,22 @@ public class Torneo extends AuditableEntity {
     @Column(name = "lista_sellada_en")
     private Instant listaSelladaEn;
 
+    /** La de la llave; con grupos, la del sorteo de grupos, que sale de drand (CR-02). */
     @Column(name = "semilla_bracket", length = 64)
     private String semillaBracket;
+
+    /** Grupos (CR-02, V55): la ronda de drand fijada al sellar la lista; su valor es la semilla. */
+    @Column(name = "semilla_ronda")
+    private Long semillaRonda;
+
+    /** Grupos: SHA-256(listaHash:semillaRonda), publicado al sellar la lista, antes de que exista la semilla. */
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "compromiso_hash", length = 64)
+    private String compromisoHash;
+
+    /** Grupos: la firma de drand de la ronda. */
+    @Column(name = "semilla_firma", columnDefinition = "TEXT")
+    private String semillaFirma;
 
     @Column(name = "checkin_min_antes")
     private Integer checkinMinAntes;
@@ -178,4 +205,12 @@ public class Torneo extends AuditableEntity {
             joinColumns = @JoinColumn(name = "torneo_id"),
             inverseJoinColumns = @JoinColumn(name = "cancha_id"))
     private Set<Cancha> canchas = new HashSet<>();
+
+    /** Con null (eliminación directa), las cuatro quedan vacías. */
+    public void setReglasGrupos(ReglasGrupos reglas) {
+        tamanioGrupo = reglas == null ? null : reglas.tamanioGrupo();
+        clasificanPorGrupo = reglas == null ? null : reglas.clasificanPorGrupo();
+        puntosVictoria = reglas == null ? null : reglas.puntosVictoria();
+        puntosEmpate = reglas == null ? null : reglas.puntosEmpate();
+    }
 }

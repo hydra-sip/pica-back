@@ -12,7 +12,6 @@ import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.dto.LadoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
-import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.ObjecionRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
@@ -68,15 +67,16 @@ public class PartidoService {
                 .map(Juega::getLado)
                 .findFirst()
                 .orElse(null);
-        boolean bye = partido.getRonda() == 1 && local != null && visitante == null;
+        boolean bye = Partidos.esBye(partido, local, visitante);
         return new PartidoDetalle(partido.getId(), partido.getTorneo().getId(), partido.getTorneo().getNombre(),
-                partido.getTorneo().getSlug(), partido.getRonda(), RondaBracket.nombre(partido.getRonda(), rondas),
-                partido.getPosicion(), partido.getEstado(), bye, local, visitante,
+                partido.getTorneo().getSlug(), partido.getRonda(), Partidos.nombreRonda(partido, rondas),
+                partido.getFase(), partido.getPosicion(), partido.getEstado(), bye, local, visitante,
                 partido.getCancha() == null ? null : partido.getCancha().getNombre(), partido.getFechaProgramada(),
                 Partidos.nombre(partido.getArbitro()), cargadoPor, partido.getResultadoCargadoEn(),
                 partido.getObjecionVenceEn(), Partidos.deCapitan(lados, usuarioId).map(Juega::getLado).orElse(null),
                 objecion(partido, lados),
-                partido.getEstado() == EstadoPartido.OBJETADO && puedeResolver(partido, usuarioId));
+                partido.getEstado() == EstadoPartido.OBJETADO && puedeResolver(partido, usuarioId),
+                puedeSancionar(partido.getTorneo(), usuarioId));
     }
 
     /** El organizador o un árbitro aceptado del torneo con permiso para resolver objeciones. */
@@ -89,6 +89,12 @@ public class PartidoService {
         return usuarioId != null
                 && (torneo.getOrganizador().getId().equals(usuarioId)
                         || arbitraje.puedeArbitrar(torneo.getId(), usuarioId, PermisoArbitro.RESOLVER_OBJECIONES));
+    }
+
+    /** El organizador o un árbitro que aceptó, con los permisos que sean (HU-803). */
+    private boolean puedeSancionar(Torneo torneo, Long usuarioId) {
+        return usuarioId != null && (torneo.getOrganizador().getId().equals(usuarioId)
+                || arbitraje.esArbitroAceptado(torneo.getId(), usuarioId));
     }
 
     private ObjecionDetalle objecion(Partido partido, List<Juega> lados) {

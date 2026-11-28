@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -12,6 +13,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
@@ -41,13 +43,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class ReclamoAdminService {
 
-    private static final String ENTIDAD_AUDITORIA = "RECLAMO_RIFA";
-
     private final ReclamoRifaRepository reclamoRifaRepository;
     private final RifaRepository rifaRepository;
     private final UsuarioRepository usuarioRepository;
     private final AuditoriaService auditoriaService;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public Page<ReclamoAdminDetalle> listar(EstadoReclamo estado, Pageable pageable) {
@@ -94,7 +95,7 @@ public class ReclamoAdminService {
         String resolucionLimpia = request.resolucion().strip();
         reclamo.setEstado(nuevoEstado);
         reclamo.setResolucion(resolucionLimpia);
-        reclamo.setResueltoEn(Instant.now());
+        reclamo.setResueltoEn(Instant.now(clock));
         reclamo.setResueltoPor(resolutor.getUsername());
         reclamo = reclamoRifaRepository.saveAndFlush(reclamo);
 
@@ -112,7 +113,7 @@ public class ReclamoAdminService {
         detalleAuditoria.put("estado", nuevoEstado.name());
         detalleAuditoria.put("resolucion", resolucionLimpia);
         detalleAuditoria.put("rifaEstadoFinal", rifa.getEstado().name());
-        auditoriaService.registrar(resolutorId, AccionAuditoria.LAUDO, ENTIDAD_AUDITORIA,
+        auditoriaService.registrar(resolutorId, AccionAuditoria.LAUDO, EntidadAuditoria.RECLAMO_RIFA,
                 String.valueOf(reclamoId), detalleAuditoria);
 
         log.info("Reclamo {} de la rifa {} resuelto con decisión {} ({}). Estado actual de rifa: {}",

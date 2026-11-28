@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -13,6 +14,7 @@ import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.common.error.NombreDeConstraint;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.Permiso;
@@ -26,7 +28,6 @@ import com.hydra.pica.plataforma_pica.user.repository.RolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRolRepository.CantidadPorRol;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.auditing.AuditingHandler;
 import org.springframework.data.domain.Page;
@@ -72,6 +73,7 @@ public class RolService {
     private final UsuarioRolRepository usuarioRolRepository;
     private final PermisoRepository permisoRepository;
     private final AuditingHandler auditingHandler;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public Page<RolResumen> listar(FiltroRoles filtro, Pageable pageable) {
@@ -139,7 +141,7 @@ public class RolService {
             throw new ProhibidoException(CodigoError.ROL_PROTEGIDO, "El registro le asigna " + rol.getNombre()
                     + " a cada usuario nuevo: no se puede dar de baja");
         }
-        rol.setEliminadoEn(Instant.now());
+        rol.setEliminadoEn(Instant.now(clock));
     }
 
     /** Si no estaba dado de baja no cambia nada y lo devuelve igual. */
@@ -234,20 +236,12 @@ public class RolService {
             // flush ahora para que el choque salte acá y no al cerrar la transacción
             return rolRepository.saveAndFlush(rol);
         } catch (DataIntegrityViolationException e) {
-            if (!UQ_NOMBRE.equals(nombreDeConstraint(e))) {
+            if (!UQ_NOMBRE.equals(NombreDeConstraint.de(e))) {
                 throw e;
             }
             throw new ConflictoException(CodigoError.ROL_DUPLICADO,
                     "El rol " + rol.getNombre() + " se creó al mismo tiempo desde otra solicitud");
         }
-    }
-
-    private static String nombreDeConstraint(DataIntegrityViolationException e) {
-        Throwable causa = e;
-        while (causa != null && !(causa instanceof ConstraintViolationException)) {
-            causa = causa.getCause();
-        }
-        return causa == null ? null : ((ConstraintViolationException) causa).getConstraintName();
     }
 
     private RolDetalle detalle(Rol rol) {

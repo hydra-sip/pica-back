@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.common.security;
 
+import java.time.Clock;
 import java.security.KeyPair;
 import java.time.Duration;
 import java.time.Instant;
@@ -29,11 +30,13 @@ public class JwtService {
     private final KeyPair keyPair;
     private final JwkKeyDto jwk;
     private final Duration accessTtl;
+    private final Clock clock;
 
-    public JwtService(KeyPair keyPair, SesionProperties sesion) {
+    public JwtService(KeyPair keyPair, SesionProperties sesion, Clock clock) {
         this.keyPair = keyPair;
         this.jwk = armarJwk((RSAPublicKey) keyPair.getPublic());
         this.accessTtl = sesion.accessTtl();
+        this.clock = clock;
     }
 
     public String generarAccessToken(
@@ -42,7 +45,7 @@ public class JwtService {
             List<String> roles,
             List<String> permisos,
             int versionSesion) {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
 
         return Jwts.builder()
                 .header().keyId(jwk.kid()).and()

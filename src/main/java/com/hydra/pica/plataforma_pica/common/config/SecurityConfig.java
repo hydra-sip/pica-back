@@ -74,6 +74,11 @@ public class SecurityConfig {
                                 "/api/v1/torneos/*/reglamento",
                                 // el de un torneo publicado (PICA-216)
                                 "/api/v1/torneos/*/bracket",
+                                // el sorteo de grupos, para el portal de verificación (CR-02)
+                                "/api/v1/torneos/*/sorteo-grupos",
+                                "/api/v1/torneos/*/grupos",
+                                // el historial de reprogramaciones, para la ficha (CR-01)
+                                "/api/v1/torneos/*/reprogramaciones",
                                 // las rifas para quien compra (PICA-221)
                                 "/api/v1/rifas/publicas",
                                 "/api/v1/rifas/publicas/*",
@@ -81,7 +86,11 @@ public class SecurityConfig {
                                 "/api/v1/rifas/publicas/*/lista-sellada",
                                 "/api/v1/rifas/publicas/*/sorteo",
                                 "/api/v1/pronosticos/partidos",
-                                "/api/v1/pronosticos/ranking")
+                                "/api/v1/pronosticos/ranking",
+                                // perfil público del organizador (HU-806)
+                                "/api/v1/usuarios/*/perfil-organizador",
+                                // perfil público del jugador (HU-801)
+                                "/api/v1/usuarios/*/perfil")
                         .permitAll()
 
                         .anyRequest().authenticated());
@@ -105,11 +114,14 @@ public class SecurityConfig {
     }
 
     private AuthenticationEntryPoint authenticationEntryPoint() {
-        return (request, response, exception) -> escribirProblema(
-                response,
-                HttpStatus.UNAUTHORIZED,
-                codigoAutenticacion(request),
-                detalleAutenticacion(request));
+        return (request, response, exception) -> {
+            CodigoError codigo = codigoAutenticacion(request);
+            escribirProblema(
+                    response,
+                    HttpStatus.UNAUTHORIZED,
+                    codigo,
+                    detalleAutenticacion(codigo));
+        };
     }
 
     private AccessDeniedHandler accessDeniedHandler() {
@@ -121,21 +133,12 @@ public class SecurityConfig {
     }
 
     private CodigoError codigoAutenticacion(HttpServletRequest request) {
-        Object jwtError = request.getAttribute("jwt-error");
-        if ("TOKEN_VENCIDO".equals(jwtError)) {
-            return CodigoError.TOKEN_VENCIDO;
-        }
-        if ("TOKEN_INVALIDO".equals(jwtError)) {
-            return CodigoError.TOKEN_INVALIDO;
-        }
-        if ("SESION_REVOCADA".equals(jwtError)) {
-            return CodigoError.SESION_REVOCADA;
-        }
-        return CodigoError.NO_AUTENTICADO;
+        Object jwtError = request.getAttribute(JwtAuthenticationFilter.ATRIBUTO_ERROR);
+        return jwtError instanceof CodigoError codigo ? codigo : CodigoError.NO_AUTENTICADO;
     }
 
-    private String detalleAutenticacion(HttpServletRequest request) {
-        return switch (codigoAutenticacion(request)) {
+    private String detalleAutenticacion(CodigoError codigo) {
+        return switch (codigo) {
             case TOKEN_VENCIDO -> "El token de acceso venció";
             case TOKEN_INVALIDO -> "El token de acceso no es válido";
             case SESION_REVOCADA -> "La sesión fue cerrada; hay que volver a iniciarla";

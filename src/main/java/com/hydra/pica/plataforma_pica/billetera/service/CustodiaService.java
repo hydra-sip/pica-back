@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,6 +19,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Rifa;
@@ -40,13 +42,12 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CustodiaService {
 
-    private static final String ENTIDAD = "CUSTODIA";
-
     private final CustodiaRepository custodiaRepository;
     private final MovimientoRepository movimientoRepository;
     private final TorneoRepository torneoRepository;
     private final RifaRepository rifaRepository;
     private final AuditoriaService auditoriaService;
+    private final Clock clock;
 
     // --- ingreso ------------------------------------------------------------------------------------
 
@@ -83,7 +84,8 @@ public class CustodiaService {
         detalle.put("monto", pago.getMonto());
         detalle.put("evento", custodia.getRifa() != null ? "RIFA" : "TORNEO");
         detalle.put("eventoId", custodia.getRifa() != null ? custodia.getRifa().getId() : custodia.getTorneo().getId());
-        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, ENTIDAD, custodia.getId().toString(), detalle);
+        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, EntidadAuditoria.CUSTODIA,
+                custodia.getId().toString(), detalle);
     }
 
     // --- la puerta de salida ------------------------------------------------------------------------
@@ -104,7 +106,7 @@ public class CustodiaService {
     @Transactional
     public LiberacionCustodia liberarRifa(Long rifaId) {
         Rifa rifa = rifaRepository.findByIdAndEliminadoEnIsNull(rifaId).orElseThrow(() -> rifaNoEncontrada(rifaId));
-        EstadoCustodia destino = destino(rifa, Instant.now());
+        EstadoCustodia destino = destino(rifa, Instant.now(clock));
         return liberar(custodiaRepository.findParaLiberarPorRifaId(rifaId), destino);
     }
 
@@ -121,7 +123,7 @@ public class CustodiaService {
         Totales totales = totales(custodia.getId());
         Long custodiaId = custodia.getId();
         custodia.setEstado(destino);
-        custodia.setLiberadaEn(Instant.now());
+        custodia.setLiberadaEn(Instant.now(clock));
         custodiaRepository.saveAndFlush(custodia);
         custodiaRepository.descontarDelRetenido(custodiaId);
 
@@ -129,7 +131,8 @@ public class CustodiaService {
         detalle.put("estado", destino);
         detalle.put("total", totales.total());
         detalle.put("gastosAdministrativos", totales.gastos());
-        auditoriaService.registrar(null, AccionAuditoria.PAGO, ENTIDAD, custodiaId.toString(), detalle);
+        auditoriaService.registrar(null, AccionAuditoria.PAGO, EntidadAuditoria.CUSTODIA,
+                custodiaId.toString(), detalle);
         return new LiberacionCustodia(custodiaId, destino, totales.total(), totales.gastos());
     }
 
@@ -152,7 +155,7 @@ public class CustodiaService {
     @Transactional(readOnly = true)
     public CustodiaResumen resumenDeLaRifa(Long usuarioId, Long rifaId) {
         Rifa rifa = rifaDelOrganizador(usuarioId, rifaId);
-        return resumen(custodiaRepository.findByRifaId(rifaId), terminada(rifa, Instant.now()));
+        return resumen(custodiaRepository.findByRifaId(rifaId), terminada(rifa, Instant.now(clock)));
     }
 
     /**
@@ -170,7 +173,7 @@ public class CustodiaService {
     @Transactional(readOnly = true)
     public void retirarDeLaRifa(Long usuarioId, Long rifaId) {
         Rifa rifa = rifaDelOrganizador(usuarioId, rifaId);
-        destino(rifa, Instant.now());
+        destino(rifa, Instant.now(clock));
         throw sinRetiroDirecto(custodiaRepository.findByRifaId(rifaId), "de la rifa");
     }
 
@@ -212,7 +215,7 @@ public class CustodiaService {
 
     /** Liquidada, cancelada o sorteada con el plazo de reclamo vencido; con un reclamo abierto está EN_REVISION. */
     private static boolean terminada(Rifa rifa, Instant ahora) {
-        if (rifa.getEstado() == EstadoRifa.LIQUIDADA || rifa.getEstado() == EstadoRifa.CANCELADA) {
+        if (rifa.getEstado().esTerminal()) {
             return true;
         }
         Instant plazo = ReclamoRifaService.plazoReclamo(rifa);

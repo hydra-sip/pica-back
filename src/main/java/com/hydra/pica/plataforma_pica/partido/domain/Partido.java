@@ -54,6 +54,15 @@ public class Partido extends AuditableEntity {
     @JoinColumn(name = "cancha_id")
     private Cancha cancha;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fase", length = 20, nullable = false)
+    private FasePartido fase = FasePartido.ELIMINACION;
+
+    /** El de los partidos de grupos y de desempate (CR-02); null en la llave. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "grupo_id")
+    private Grupo grupo;
+
     @Column(name = "ronda", nullable = false)
     private Integer ronda;
 
@@ -76,6 +85,10 @@ public class Partido extends AuditableEntity {
     /** La apertura de la ventana de check-in que ya se avisó al canal de Discord del torneo (PICA-371). */
     @Column(name = "checkin_avisado_para")
     private Instant checkinAvisadoPara;
+
+    /** La apertura de la ventana de check-in que ya se notificó a los dos lados (HU-808); aparte de la de Discord. */
+    @Column(name = "checkin_notificado_para")
+    private Instant checkinNotificadoPara;
 
     /** La parte que cargó el resultado (V22); la otra es la que lo acepta u objeta. */
     @ManyToOne(fetch = FetchType.LAZY)

@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
@@ -25,6 +26,7 @@ public class SemillaRifaService {
 
     private final RifaRepository rifaRepository;
     private final Drand drand;
+    private final Clock clock;
 
     @Transactional
     public Rifa obtener(Long rifaId) {
@@ -40,7 +42,7 @@ public class SemillaRifaService {
             rifa.setSemilla(pulso.randomness());
             rifa.setSemillaFirma(pulso.signature());
             rifa.setSemillaRonda(ronda);
-            rifa.setSemillaObtenidaEn(Instant.now());
+            rifa.setSemillaObtenidaEn(Instant.now(clock));
         }
         return rifa;
     }

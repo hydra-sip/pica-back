@@ -1,11 +1,13 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.hydra.pica.plataforma_pica.common.config.TorneoConfig.TorneoProperties;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
@@ -15,6 +17,7 @@ import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +35,9 @@ public class ProgramacionService {
     private final Partidos partidos;
     private final PartidoService partidoService;
     private final ResultadoService resultadoService;
+    private final TorneoProperties torneoProperties;
+    private final TorneoRepository torneoRepository;
+    private final Clock clock;
 
     @Transactional
     public PartidoDetalle programar(Long usuarioId, Long partidoId, Instant fechaProgramada) {
@@ -46,8 +52,9 @@ public class ProgramacionService {
             throw new ConflictoException(CodigoError.PARTIDO_NO_PROGRAMABLE, "El partido " + partidoId + " está "
                     + partido.getEstado() + " en un torneo " + torneo + ": solo se programa uno PROGRAMADO");
         }
-        validar(fechaProgramada, partido.getTorneo());
+        validar(fechaProgramada, partido.getTorneo(), torneoProperties.sinValidarFechas());
         partido.setFechaProgramada(fechaProgramada);
+        torneoRepository.subirVersionBracket(partido.getTorneo().getId());
 
         Map<String, Object> detalle = new LinkedHashMap<>();
         detalle.put("resultado", "PROGRAMADO");
@@ -56,12 +63,17 @@ public class ProgramacionService {
         return partidoService.detalle(partido, usuarioId);
     }
 
-    /** Futura y dentro de las fechas del torneo; sin fecha no se programa (no se desprograma). */
-    private static void validar(Instant fecha, Torneo torneo) {
+    /**
+     * Futura y dentro de las fechas del torneo; sin fecha no se programa (no se desprograma). Con
+     * {@code app.torneos.sin-validar-fechas} (PICA-448), cualquier fecha.
+     */
+    private void validar(Instant fecha, Torneo torneo, boolean sinValidarFechas) {
         List<ErrorCampo> errores = new ArrayList<>();
         if (fecha == null) {
             errores.add(new ErrorCampo(CAMPO, ErrorCampo.Codigo.REQUERIDO, "Falta la fecha del partido"));
-        } else if (fecha.isBefore(Instant.now())) {
+        } else if (sinValidarFechas) {
+            return;
+        } else if (fecha.isBefore(Instant.now(clock))) {
             errores.add(new ErrorCampo(CAMPO, ErrorCampo.Codigo.RANGO_INVALIDO, "No puede ser pasada"));
         } else if (torneo.getFechaInicio() != null && fecha.isBefore(torneo.getFechaInicio())) {
             errores.add(new ErrorCampo(CAMPO, ErrorCampo.Codigo.RANGO_INVALIDO,

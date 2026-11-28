@@ -20,6 +20,7 @@ import com.hydra.pica.plataforma_pica.rifa.repository.NumeroRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.event.ReprogramacionRechazada;
 import com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import com.hydra.pica.plataforma_pica.torneo.service.PozoTorneoService;
@@ -59,7 +60,7 @@ class RealtimeEventListenerTest {
         torneo.setNombre("Torneo CS2");
         torneo.setEstado(EstadoTorneo.EN_CURSO);
 
-        bracket = new BracketTorneo(1L, "semilla-test", "hash-test", List.of());
+        bracket = new BracketTorneo(1L, "semilla-test", "hash-test", List.of(), 0L);
     }
 
     @Test
@@ -120,6 +121,23 @@ class RealtimeEventListenerTest {
         assertThat(msg.tipo()).isEqualTo("ESTADO_CAMBIADO");
         assertThat(msg.estado()).isEqualTo(EstadoTorneo.EN_CURSO);
         assertThat(msg.torneoFinalizado()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Quien se baja por la nueva fecha (CR-01-3) publica INSCRIPCION_REINTEGRADA con el pozo nuevo")
+    void bajaPorReprogramacionPublicaEnTopic() {
+        torneo.setEstado(EstadoTorneo.INSCRIPCION_CERRADA);
+        when(torneoRepository.findById(1L)).thenReturn(Optional.of(torneo));
+        when(pozoTorneoService.calcularPozo(1L)).thenReturn(new BigDecimal("30000.00"));
+
+        listener.onReprogramacionRechazada(new ReprogramacionRechazada(1L, 5L, 9L, false));
+
+        ArgumentCaptor<EventoTorneoMessage> captor = ArgumentCaptor.forClass(EventoTorneoMessage.class);
+        verify(realtimeNotifier).publicarTorneo(eq(1L), captor.capture());
+        EventoTorneoMessage msg = captor.getValue();
+        assertThat(msg.tipo()).isEqualTo("INSCRIPCION_REINTEGRADA");
+        assertThat(msg.estado()).isEqualTo(EstadoTorneo.INSCRIPCION_CERRADA);
+        assertThat(msg.pozo()).isEqualByComparingTo("30000.00");
     }
 
     @Test

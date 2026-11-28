@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.hydra.pica.plataforma_pica.partido.event.CheckinHecho;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -20,10 +21,10 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
-import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.EstadoVentana;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.LadoCheckin;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.VentanaCheckin;
+import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.EventoPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.ObjecionRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoDetalle;
@@ -41,6 +42,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -52,6 +55,7 @@ import org.springframework.transaction.annotation.Transactional;
 @ActiveProfiles("dev")
 @Import({TestcontainersConfiguration.class, EscenarioTorneo.class})
 @Transactional
+@RecordApplicationEvents
 class CheckinIntegracionTest {
 
     /** Después del inicio del torneo, que el escenario pone dentro de dos semanas. */
@@ -70,6 +74,7 @@ class CheckinIntegracionTest {
     @Autowired private EscenarioTorneo escenario;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
+    @Autowired private ApplicationEvents eventos;
 
     private Long organizador;
     private Long arbitro;
@@ -309,6 +314,19 @@ class CheckinIntegracionTest {
         assertThat(delVisitante.local().checkinEn()).isEqualTo(delLocal.local().checkinEn());
         assertThat(delVisitante.visitante().checkinEn()).isNotNull();
         assertThat(partidoService.ver(arbitro, partido).estado()).isEqualTo(EstadoPartido.EN_JUEGO);
+    }
+
+    @Test
+    void cadaCheckinVaUnaSolaVezAlFairPlay() {
+        programarDentroDe(20);
+        Long local = escenario.jugador(partido, "LOCAL");
+        Long inscripcion = jdbc.queryForObject(
+                "SELECT inscripcion_id FROM juega WHERE partido_id = ? AND lado = 'LOCAL'", Long.class, partido);
+
+        checkinService.hacer(local, partido);
+        checkinService.hacer(local, partido);
+
+        assertThat(eventos.stream(CheckinHecho.class)).containsExactly(new CheckinHecho(torneo, partido, inscripcion));
     }
 
     @Test

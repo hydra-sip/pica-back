@@ -15,10 +15,14 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FixtureGrupos;
+import com.hydra.pica.plataforma_pica.partido.domain.Grupo;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
@@ -29,11 +33,16 @@ import com.hydra.pica.plataforma_pica.partido.dto.BracketTorneo;
 import com.hydra.pica.plataforma_pica.partido.dto.LadoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.PartidoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
+import com.hydra.pica.plataforma_pica.partido.repository.GrupoInscripcionRepository;
+import com.hydra.pica.plataforma_pica.partido.repository.GrupoRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
+import com.hydra.pica.plataforma_pica.partido.repository.PronosticoRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.ArbitroDesignado;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoDesignacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
+import com.hydra.pica.plataforma_pica.torneo.domain.MinimoInscriptos;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.ArbitroDesignadoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -41,6 +50,7 @@ import com.hydra.pica.plataforma_pica.user.domain.Usuario;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -54,6 +64,8 @@ import org.springframework.transaction.annotation.Transactional;
  * un partido de primera ronda con un solo lado, ya CONFIRMADO, y quien lo recibe ya está en la segunda ronda.</li>
  * <li>Cada partido necesita un árbitro designado (FK de V9): se reparten en rueda entre los que aceptaron la
  * designación (HU-807). Sin ninguno que haya aceptado, el bracket no se genera (409 SIN_ARBITROS).</li>
+ * <li>Con fase de grupos (CR-02), generar sortea los grupos ({@link SorteoGruposService}), arma el fixture de cada
+ * grupo y la llave vacía, que se llena al terminar los grupos; no se regenera.</li>
  * <li>Regenerar es otro sorteo con otra semilla, mientras no haya ningún resultado cargado. Cada sorteo queda en la
  * auditoría, con la semilla anterior si la hubo: rearmar el cuadro hasta que guste queda a la vista.</li>
  * </ul>
@@ -72,6 +84,10 @@ public class BracketService {
     private final JuegaRepository juegaRepository;
     private final AuditoriaRepository auditoriaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final SorteoGruposService sorteoGruposService;
+    private final GrupoRepository grupoRepository;
+    private final GrupoInscripcionRepository grupoInscripcionRepository;
+    private final PronosticoRepository pronosticoRepository;
     private final org.springframework.context.ApplicationEventPublisher eventos;
 
     @Transactional
@@ -86,7 +102,12 @@ public class BracketService {
                     "El torneo " + torneoId + " está " + torneo.getEstado() + ": el bracket se genera con la "
                             + "inscripción cerrada");
         }
-        sortear(torneo, organizadorId, null);
+        if (torneo.getFormato() == Formato.GRUPOS_Y_ELIMINACION) {
+            empezarConGrupos(torneo, organizadorId);
+        } else {
+            sortear(torneo, organizadorId, null);
+        }
+        torneoRepository.subirVersionBracket(torneoId);
         return armar(torneo);
     }
 
@@ -96,6 +117,11 @@ public class BracketService {
         Torneo torneo = propio(organizadorId, torneoId);
         if (torneo.getSemillaBracket() == null) {
             return generar(organizadorId, torneoId);
+        }
+        if (torneo.getFormato() == Formato.GRUPOS_Y_ELIMINACION) {
+            throw new ConflictoException(CodigoError.GRUPOS_YA_SORTEADOS,
+                    "Los grupos del torneo " + torneoId + " salen de drand: con la misma lista sale lo mismo, no se "
+                            + "vuelven a sortear");
         }
         if (!CON_BRACKET.contains(torneo.getEstado())) {
             throw new ConflictoException(CodigoError.TORNEO_NO_EDITABLE,
@@ -109,7 +135,31 @@ public class BracketService {
         juegaRepository.borrarDelTorneo(torneoId);
         partidoRepository.borrarDelTorneo(torneoId);
         sortear(torneo, organizadorId, anterior);
+        torneoRepository.subirVersionBracket(torneoId);
         return armar(torneo);
+    }
+
+    /**
+     * Deshace la llave, y con fase de grupos también los grupos, al reprogramar el torneo (CR-01): se borran los
+     * partidos con sus lados y pronósticos, y el torneo queda sin semilla, como antes de generarla. Igual que
+     * regenerar, solo sin resultados cargados; si no, 409 BRACKET_CON_RESULTADOS. Corre dentro de la transacción de
+     * quien lo llama, con la fila del torneo bloqueada.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void descartar(Torneo torneo) {
+        Long torneoId = torneo.getId();
+        if (juegaRepository.existsByPartidoTorneoIdAndPuntajeIsNotNull(torneoId)) {
+            throw new ConflictoException(CodigoError.BRACKET_CON_RESULTADOS,
+                    "El torneo " + torneoId + " ya tiene resultados cargados: la llave no se descarta");
+        }
+        pronosticoRepository.borrarDelTorneo(torneoId);
+        juegaRepository.borrarDelTorneo(torneoId);
+        partidoRepository.borrarDelTorneo(torneoId);
+        grupoInscripcionRepository.borrarDelTorneo(torneoId);
+        grupoRepository.borrarDelTorneo(torneoId);
+        torneo.setSemillaBracket(null);
+        torneo.setSemillaFirma(null);
+        torneoRepository.subirVersionBracket(torneoId);
     }
 
     /** Público (PICA-216): el de un torneo publicado; sin generar, con las rondas vacías. */
@@ -126,10 +176,11 @@ public class BracketService {
     private void sortear(Torneo torneo, Long organizadorId, String semillaAnterior) {
         List<Long> inscriptos =
                 inscripcionRepository.idsPorTorneoYEstado(torneo.getId(), EstadoInscripcion.CONFIRMADA);
-        if (inscriptos.size() < 2) {
+        int minimo = MinimoInscriptos.de(torneo);
+        if (inscriptos.size() < minimo) {
             throw new ConflictoException(CodigoError.PARTICIPANTES_INSUFICIENTES,
                     "El torneo " + torneo.getId() + " tiene " + inscriptos.size()
-                            + " inscripciones confirmadas: hacen falta al menos 2");
+                            + " inscripciones confirmadas: hacen falta al menos " + minimo);
         }
         List<Usuario> arbitros = arbitros(torneo.getId());
         if (arbitros.isEmpty()) {
@@ -168,6 +219,49 @@ public class BracketService {
                 semillaAnterior != null));
     }
 
+    /**
+     * Con fase de grupos (CR-02): se sortean los grupos con la semilla de drand ({@link SorteoGruposService}), se arma
+     * el fixture de cada grupo (todos contra todos, {@link FixtureGrupos}) y la llave vacía para los que pasen, todo
+     * con árbitro en rueda, y el torneo empieza.
+     */
+    private void empezarConGrupos(Torneo torneo, Long organizadorId) {
+        List<Usuario> arbitros = arbitros(torneo.getId());
+        if (arbitros.isEmpty()) {
+            throw new ConflictoException(CodigoError.SIN_ARBITROS,
+                    "El torneo " + torneo.getId() + " no tiene árbitros que hayan aceptado: cada partido necesita uno");
+        }
+        Map<Grupo, List<Long>> grupos = sorteoGruposService.sortear(torneo, organizadorId);
+        int asignados = 0;
+        List<Juega> lados = new ArrayList<>();
+        for (Map.Entry<Grupo, List<Long>> grupo : grupos.entrySet()) {
+            List<List<FixtureGrupos.Cruce>> fechas = FixtureGrupos.fechas(grupo.getValue());
+            for (int fecha = 1; fecha <= fechas.size(); fecha++) {
+                List<FixtureGrupos.Cruce> cruces = fechas.get(fecha - 1);
+                for (int posicion = 1; posicion <= cruces.size(); posicion++) {
+                    Partido partido = new Partido();
+                    partido.setTorneo(torneo);
+                    partido.setFase(FasePartido.GRUPOS);
+                    partido.setGrupo(grupo.getKey());
+                    partido.setRonda(fecha);
+                    partido.setPosicion(posicion);
+                    partido.setArbitro(arbitros.get(asignados++ % arbitros.size()));
+                    partido = partidoRepository.save(partido);
+                    FixtureGrupos.Cruce cruce = cruces.get(posicion - 1);
+                    lados.add(new Juega(partido, inscripcionRepository.getReferenceById(cruce.local()), Lado.LOCAL));
+                    lados.add(new Juega(partido, inscripcionRepository.getReferenceById(cruce.visitante()),
+                            Lado.VISITANTE));
+                }
+            }
+        }
+        juegaRepository.saveAll(lados);
+        int clasificados = grupos.size() * torneo.getClasificanPorGrupo();
+        int rondas = Integer.numberOfTrailingZeros(clasificados);
+        crearPartidos(torneo, new Cuadro(rondas, List.of()), arbitros);
+        torneo.setEstado(EstadoTorneo.EN_CURSO);
+        eventos.publishEvent(new com.hydra.pica.plataforma_pica.torneo.event.TorneoEstadoCambiado(
+                torneo.getId(), EstadoTorneo.INSCRIPCION_CERRADA, EstadoTorneo.EN_CURSO));
+    }
+
     /** Solo los que aceptaron la designación (HU-807): un pendiente no arbitra, así que tampoco recibe partidos. */
     private List<Usuario> arbitros(Long torneoId) {
         return arbitroDesignadoRepository.delTorneo(torneoId).stream()
@@ -204,7 +298,7 @@ public class BracketService {
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(usuarioRepository.getReferenceById(organizadorId));
         auditoria.setAccion(AccionAuditoria.SORTEO);
-        auditoria.setEntidad("TORNEO");
+        auditoria.setEntidad(EntidadAuditoria.TORNEO.name());
         auditoria.setEntidadId(String.valueOf(torneo.getId()));
         auditoria.setDetalle(detalle);
         auditoriaRepository.save(auditoria);
@@ -226,13 +320,14 @@ public class BracketService {
         List<RondaBracket> lista = porRonda.entrySet().stream()
                 .map(e -> new RondaBracket(e.getKey(), RondaBracket.nombre(e.getKey(), rondas), e.getValue()))
                 .toList();
-        return new BracketTorneo(torneo.getId(), torneo.getSemillaBracket(), torneo.getListaHash(), lista);
+        return new BracketTorneo(torneo.getId(), torneo.getSemillaBracket(), torneo.getListaHash(), lista,
+                torneoRepository.versionBracket(torneo.getId()));
     }
 
-    private static PartidoBracket partidoBracket(Partido partido, List<Juega> lados) {
+    static PartidoBracket partidoBracket(Partido partido, List<Juega> lados) {
         LadoBracket local = Partidos.ladoBracket(lados, Lado.LOCAL);
         LadoBracket visitante = Partidos.ladoBracket(lados, Lado.VISITANTE);
-        boolean bye = partido.getRonda() == 1 && local != null && visitante == null;
+        boolean bye = Partidos.esBye(partido, local, visitante);
         return new PartidoBracket(partido.getId(), partido.getRonda(), partido.getPosicion(), partido.getEstado(), bye,
                 local, visitante, partido.getCancha() == null ? null : partido.getCancha().getNombre(),
                 partido.getFechaProgramada(), Partidos.nombre(partido.getArbitro()));

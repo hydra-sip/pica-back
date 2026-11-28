@@ -17,6 +17,8 @@ import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDelTorneo;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.ReemplazoRequest;
 import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.ReemplazoInscripcionService;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.dto.TorneoInformacion;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
@@ -50,6 +52,9 @@ class CierreInscripcionIntegracionTest {
 
     @Autowired private InscripcionTorneoService inscripcionTorneoService;
     @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
+    @Autowired private ReemplazoInscripcionService reemplazoInscripcionService;
+    @Autowired private TorneoService torneoService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
@@ -67,6 +72,7 @@ class CierreInscripcionIntegracionTest {
 
     @Test
     void elOrganizadorCierraLaInscripcionYQuedaLaFechaYHoraDelCierre() {
+        confirmadas(torneo, "fecha_cierre", 2);
         Instant antes = Instant.now();
 
         TorneoInformacion cerrado = inscripcionTorneoService.cerrar(organizador, torneo);
@@ -88,6 +94,7 @@ class CierreInscripcionIntegracionTest {
 
     @Test
     void unaInscripcionYaCerradaNoSeVuelveACerrarNiCambiaElSello() {
+        confirmadas(torneo, "ya_cerrada", 2);
         TorneoInformacion cerrado = inscripcionTorneoService.cerrar(organizador, torneo);
 
         assertError(() -> inscripcionTorneoService.cerrar(organizador, torneo), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
@@ -97,9 +104,61 @@ class CierreInscripcionIntegracionTest {
 
     @Test
     void conLaInscripcionCerradaNoSeCambiaElCupoMaximo() {
+        confirmadas(torneo, "cupo_bloqueado", 2);
         TorneoInformacion cerrado = inscripcionTorneoService.cerrar(organizador, torneo);
 
         assertThat(cerrado.camposBloqueados()).contains("cupoMaximo", "cierreInscripcionEn");
+    }
+
+    // --- el mínimo para jugar (PICA-447) ------------------------------------------
+
+    @Test
+    void enEliminacionDirectaConCeroOUnaConfirmadaNoSeCierraYConDosSi() {
+        long individual = torneo("INDIVIDUAL", 1000);
+        // los borradores y las pendientes de pago no cuentan
+        inscripcionIndividual(individual, usuario("min_borrador").getId(), "BORRADOR");
+        inscripcionIndividual(individual, usuario("min_pendiente").getId(), "PENDIENTE_PAGO");
+
+        ApiException conCero = assertError(() -> inscripcionTorneoService.cerrar(organizador, individual),
+                HttpStatus.CONFLICT, CodigoError.PARTICIPANTES_INSUFICIENTES);
+        confirmadas(individual, "min_uno", 1);
+        ApiException conUna = assertError(() -> inscripcionTorneoService.cerrar(organizador, individual),
+                HttpStatus.CONFLICT, CodigoError.PARTICIPANTES_INSUFICIENTES);
+
+        assertThat(conCero.getMessage()).contains("tiene 0 inscripciones confirmadas", "al menos 2");
+        assertThat(conUna.getMessage()).contains("tiene 1 inscripciones confirmadas", "al menos 2");
+        assertThat(estadoDelTorneo(individual)).isEqualTo("INSCRIPCION_ABIERTA");
+        assertThat(jdbc.queryForObject("SELECT lista_hash FROM torneo WHERE id = ?", String.class, individual)).isNull();
+
+        confirmadas(individual, "min_dos", 1);
+        assertThat(inscripcionTorneoService.cerrar(organizador, individual).estado())
+                .isEqualTo(EstadoTorneo.INSCRIPCION_CERRADA);
+    }
+
+    @Test
+    void conGruposPorDebajoDeGruposPorUnoMasQueLosQuePasanNoSeCierraYEnElMinimoSi() {
+        // cupo 8 en grupos de 4: 2 grupos; pasan 2, así que hacen falta 2 × 3 = 6
+        long conGrupos = torneoConGrupos(8, 4, 2);
+        confirmadas(conGrupos, "grupos_min", 5);
+
+        ApiException error = assertError(() -> inscripcionTorneoService.cerrar(organizador, conGrupos),
+                HttpStatus.CONFLICT, CodigoError.PARTICIPANTES_INSUFICIENTES);
+
+        assertThat(error.getMessage()).contains("tiene 5 inscripciones confirmadas", "al menos 6");
+        assertThat(estadoDelTorneo(conGrupos)).isEqualTo("INSCRIPCION_ABIERTA");
+
+        confirmadas(conGrupos, "grupos_sexta", 1);
+        assertThat(inscripcionTorneoService.cerrar(organizador, conGrupos).estado())
+                .isEqualTo(EstadoTorneo.INSCRIPCION_CERRADA);
+    }
+
+    @Test
+    void elDetalleDelTorneoTraeElMinimoDeInscripcionesConfirmadas() {
+        long individual = torneo("INDIVIDUAL", 1000);
+        long conGrupos = torneoConGrupos(16, 4, 2);
+
+        assertThat(torneoService.detalle(organizador, individual).inscriptosMinimos()).isEqualTo(2);
+        assertThat(torneoService.detalle(organizador, conGrupos).inscriptosMinimos()).isEqualTo(12);
     }
 
     // --- después del cierre --------------------------------------------------
@@ -110,11 +169,12 @@ class CierreInscripcionIntegracionTest {
         Long pendiente = usuario("post_pendiente").getId();
         long id = inscripcionIndividual(individual, pendiente, "PENDIENTE_PAGO");
         Long nuevo = usuario("post_nuevo").getId();
+        confirmadas(individual, "post_conf", 2);
 
         inscripcionTorneoService.cerrar(organizador, individual);
 
         assertError(() -> inscripcionService.crear(nuevo, individual, null), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
-        assertError(() -> inscripcionService.pagar(pendiente, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+        assertError(() -> pagoInscripcionService.pagar(pendiente, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
     }
 
     @Test
@@ -127,10 +187,11 @@ class CierreInscripcionIntegracionTest {
         long id = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
         enNomina(id, capitan, equipo);
         enNomina(id, sale, equipo);
+        confirmadas(torneo, "post_reemplazo", 1);
 
         inscripcionTorneoService.cerrar(organizador, torneo);
 
-        assertError(() -> inscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
+        assertError(() -> reemplazoInscripcionService.reemplazar(capitan, id, new ReemplazoRequest(sale, entra)),
                 HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
     }
 
@@ -144,7 +205,7 @@ class CierreInscripcionIntegracionTest {
         long id = inscripcionIndividual(individual, ultimo, "PENDIENTE_PAGO");
         long borrador = inscripcionIndividual(individual, usuario("cupo_borrador").getId(), "BORRADOR");
 
-        InscripcionDetalle pagada = inscripcionService.pagar(ultimo, id);
+        InscripcionDetalle pagada = pagoInscripcionService.pagar(ultimo, id);
 
         assertThat(pagada.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
         assertThat(estadoDelTorneo(individual)).isEqualTo("INSCRIPCION_CERRADA");
@@ -173,19 +234,12 @@ class CierreInscripcionIntegracionTest {
         long id = inscripcionIndividual(individual, primero, "PENDIENTE_PAGO");
         inscripcionIndividual(individual, usuario("cupo_otra_pendiente").getId(), "PENDIENTE_PAGO");
 
-        inscripcionService.pagar(primero, id);
+        pagoInscripcionService.pagar(primero, id);
 
         assertThat(estadoDelTorneo(individual)).isEqualTo("INSCRIPCION_ABIERTA");
     }
 
     // --- sello de la lista ---------------------------------------------------
-
-    @Test
-    void sinConfirmadasElSelloEsElDeLaListaVacia() {
-        TorneoInformacion cerrado = inscripcionTorneoService.cerrar(organizador, torneo);
-
-        assertThat(cerrado.listaHash()).isEqualTo("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-    }
 
     @Test
     void elSelloDeUnaInscripcionDeEquipoLlevaElEquipoYLaNominaOrdenada() {
@@ -198,10 +252,39 @@ class CierreInscripcionIntegracionTest {
         enNomina(inscripcion, capitan, equipo);
         long menor = Math.min(capitan, jugador);
         long mayor = Math.max(capitan, jugador);
+        // el mínimo para cerrar: otro equipo, con su capitán solo
+        Long otroCapitan = usuario("cap_sello_2").getId();
+        long otroEquipo = equipo("Los Otros", otroCapitan);
+        long otra = inscripcionDeEquipo(torneo, otroEquipo, "CONFIRMADA");
+        enNomina(otra, otroCapitan, otroEquipo);
 
         TorneoInformacion cerrado = inscripcionTorneoService.cerrar(organizador, torneo);
 
-        assertThat(cerrado.listaHash()).isEqualTo(sha256(inscripcion + ";E;" + equipo + ";" + menor + "," + mayor));
+        assertThat(cerrado.listaHash()).isEqualTo(sha256(inscripcion + ";E;" + equipo + ";" + menor + "," + mayor
+                + "\n" + otra + ";E;" + otroEquipo + ";" + otroCapitan));
+    }
+
+    @Test
+    void elSelloDeUnEquipoConRepartoLlevaElPorcentajeDeCadaIntegrante() {
+        Long capitan = usuario("cap_sello_rep").getId();
+        Long jugador = usuario("jug_sello_rep").getId();
+        long equipo = equipo("Los Repartidos", capitan);
+        integrante(equipo, jugador);
+        long inscripcion = inscripcionDeEquipo(torneo, equipo, "CONFIRMADA");
+        enNominaConPct(inscripcion, jugador, equipo, "35.50");
+        enNominaConPct(inscripcion, capitan, equipo, "64.50");
+        String menor = capitan < jugador ? capitan + ":64.50" : jugador + ":35.50";
+        String mayor = capitan < jugador ? jugador + ":35.50" : capitan + ":64.50";
+        // el mínimo para cerrar: otro equipo sin reparto, que conserva la línea de antes
+        Long otroCapitan = usuario("cap_sello_rep_2").getId();
+        long otroEquipo = equipo("Los Otros Repartidos", otroCapitan);
+        long otra = inscripcionDeEquipo(torneo, otroEquipo, "CONFIRMADA");
+        enNomina(otra, otroCapitan, otroEquipo);
+
+        TorneoInformacion cerrado = inscripcionTorneoService.cerrar(organizador, torneo);
+
+        assertThat(cerrado.listaHash()).isEqualTo(sha256(inscripcion + ";E;" + equipo + ";" + menor + "," + mayor
+                + "\n" + otra + ";E;" + otroEquipo + ";" + otroCapitan));
     }
 
     @Test
@@ -228,6 +311,7 @@ class CierreInscripcionIntegracionTest {
         long pendiente = inscripcionIndividual(individual, usuario("ind_pendiente").getId(), "PENDIENTE_PAGO");
         long confirmada = inscripcionIndividual(individual, usuario("ind_confirmada").getId(), "CONFIRMADA");
         long cancelada = inscripcionIndividual(individual, usuario("ind_cancelada").getId(), "CANCELADA");
+        confirmadas(individual, "ind_otra", 1);
 
         inscripcionTorneoService.cerrar(organizador, individual);
 
@@ -241,6 +325,7 @@ class CierreInscripcionIntegracionTest {
     void lasInscripcionesDeOtroTorneoNoSeTocan() {
         long otro = torneo("INDIVIDUAL", 1000);
         long pendienteDeOtro = inscripcionIndividual(otro, usuario("ind_otro_torneo").getId(), "PENDIENTE_PAGO");
+        confirmadas(torneo, "otro_torneo", 2);
 
         inscripcionTorneoService.cerrar(organizador, torneo);
 
@@ -254,6 +339,7 @@ class CierreInscripcionIntegracionTest {
         long individual = torneo("INDIVIDUAL", 1000);
         inscripcionIndividual(individual, usuario("aud_borrador").getId(), "BORRADOR");
         inscripcionIndividual(individual, usuario("aud_pendiente").getId(), "PENDIENTE_PAGO");
+        confirmadas(individual, "aud_conf", 2);
 
         inscripcionTorneoService.cerrar(organizador, individual);
 
@@ -391,11 +477,44 @@ class CierreInscripcionIntegracionTest {
         jdbc.update("INSERT INTO nomina (inscripcion_id, usuario_id, equipo_id) VALUES (?, ?, ?)", inscripcionId, usuarioId, equipoId);
     }
 
-    private void assertError(ThrowingCallable accion, HttpStatus status, CodigoError codigo) {
+    private void enNominaConPct(long inscripcionId, Long usuarioId, long equipoId, String pct) {
+        jdbc.update("INSERT INTO nomina (inscripcion_id, usuario_id, equipo_id, pct_premio) VALUES (?, ?, ?, ?)",
+                inscripcionId, usuarioId, equipoId, new java.math.BigDecimal(pct));
+    }
+
+    private ApiException assertError(ThrowingCallable accion, HttpStatus status, CodigoError codigo) {
         ApiException error = catchThrowableOfType(ApiException.class, accion);
         assertThat(error).isNotNull();
         assertThat(error.getStatus()).isEqualTo(status);
         assertThat(error.getCodigo()).isEqualTo(codigo);
+        return error;
+    }
+
+    /**
+     * Suma {@code cuantas} inscripciones confirmadas: individuales o, si el torneo es de equipos, de un equipo con su
+     * capitán solo en la nómina.
+     */
+    private void confirmadas(long torneoId, String prefijo, int cuantas) {
+        boolean deEquipos = "EQUIPO".equals(jdbc.queryForObject(
+                "SELECT tipo_participante FROM torneo WHERE id = ?", String.class, torneoId));
+        for (int i = 0; i < cuantas; i++) {
+            Long usuario = usuario(prefijo + i).getId();
+            if (deEquipos) {
+                long equipo = equipo("Equipo " + prefijo + i, usuario);
+                enNomina(inscripcionDeEquipo(torneoId, equipo, "CONFIRMADA"), usuario, equipo);
+            } else {
+                inscripcionIndividual(torneoId, usuario, "CONFIRMADA");
+            }
+        }
+    }
+
+    private long torneoConGrupos(int cupoMaximo, int tamanioGrupo, int pasan) {
+        long id = torneo("INDIVIDUAL", 1000, cupoMaximo);
+        jdbc.update("""
+                UPDATE torneo SET formato = 'GRUPOS_Y_ELIMINACION', tamanio_grupo = ?, clasifican_por_grupo = ?,
+                                  puntos_victoria = 3, puntos_empate = 1
+                WHERE id = ?""", tamanioGrupo, pasan, id);
+        return id;
     }
 
     private long torneo(String tipoParticipante, int valorInscripcion) {

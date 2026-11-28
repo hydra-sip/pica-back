@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
@@ -24,22 +25,30 @@ public class Drand {
     private final String chainHash;
     private final long genesis;
     private final long periodo;
+    private final Clock clock;
 
     Drand(RestClient.Builder builder,
           @Value("${app.rifas.drand.url:https://api.drand.sh}") String url,
           @Value("${app.rifas.drand.chain-hash:52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971}") String chainHash,
           @Value("${app.rifas.drand.genesis:1692803367}") long genesis,
-          @Value("${app.rifas.drand.periodo:3}") long periodo) {
+          @Value("${app.rifas.drand.periodo:3}") long periodo,
+          Clock clock) {
         this.url = url.replaceAll("/+$", "");
         this.http = builder.baseUrl(this.url).build();
         this.chainHash = chainHash;
         this.genesis = genesis;
         this.periodo = periodo;
+        this.clock = clock;
     }
 
     /** La ronda vigente en ese instante: la última que salió hasta ahí. La 1 sale en el genesis. */
     public long ronda(Instant instante) {
         return (instante.getEpochSecond() - genesis) / periodo + 1;
+    }
+
+    /** Si la ronda ya salió: hasta entonces su valor no existe. */
+    public boolean salio(long ronda) {
+        return ronda(Instant.now(clock)) >= ronda;
     }
 
     public Duration periodo() {

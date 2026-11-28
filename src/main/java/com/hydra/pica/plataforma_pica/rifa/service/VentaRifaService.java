@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.rifa.service;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -21,6 +22,7 @@ import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.ErrorCampo;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.Numero;
@@ -76,11 +78,13 @@ public class VentaRifaService {
     private final PozoTorneoService pozoTorneoService;
     private final ApplicationEventPublisher eventos;
     private final RifaProperties rifaProperties;
+    private final BloqueoService bloqueoService;
+    private final Clock clock;
 
     /** Reemplaza la reserva que el usuario tuviera en la rifa: queda reservado solo lo que eligió ahora. */
     @Transactional
     public ReservaRifa reservar(Long usuarioId, Long rifaId, List<Integer> numeros) {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         Rifa rifa = buscarEnVenta(usuarioId, rifaId, ahora);
         List<Integer> elegidos = validarNumeros(rifa, numeros);
 
@@ -128,7 +132,7 @@ public class VentaRifaService {
         if (previo.isPresent()) {
             return repetida(previo.get(), compradorId, rifaId, numeros);
         }
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         // antes de leer la rifa: si se está cerrando la venta, espera y la ve ya sellada (HU-407)
         rifaRepository.bloquearParaVender(rifaId);
         Rifa rifa = buscarEnVenta(compradorId, rifaId, ahora);
@@ -202,6 +206,11 @@ public class VentaRifaService {
                     "La venta de la rifa " + rifaId + " no está abierta")
                     .con("ventaDesde", rifa.getVentaDesde())
                     .con("ventaHasta", rifa.getVentaHasta());
+        }
+        // HU-703: con el organizador bloqueado la rifa no vende; lo vendido sigue valiendo y no se mueve plata
+        if (bloqueoService.estaBloqueado(rifa.getOrganizador())) {
+            throw new ConflictoException(CodigoError.ORGANIZADOR_BLOQUEADO,
+                    "El organizador de la rifa " + rifaId + " está bloqueado: la venta está suspendida");
         }
         return rifa;
     }

@@ -3,6 +3,8 @@ package com.hydra.pica.plataforma_pica.billetera.service;
 import java.math.BigDecimal;
 import java.util.List;
 
+import com.hydra.pica.plataforma_pica.billetera.domain.EstadoCustodia;
+import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.dto.ComprobantePago;
@@ -37,8 +39,12 @@ public class ComprobanteService {
         Movimiento pago = movimientos.stream().filter(m -> m.getTipo() == TipoMovimiento.INSCRIPCION).findFirst()
                 .orElseThrow(() -> new NoEncontradoException(CodigoError.COMPROBANTE_NO_ENCONTRADO,
                         "La inscripción " + inscripcionId + " no tiene un pago"));
-        BigDecimal gastos = movimientos.stream().filter(m -> m.getTipo() == TipoMovimiento.COMISION)
+        BigDecimal gastos = movimientos.stream()
+                .filter(m -> m.getTipo() == TipoMovimiento.COMISION && m.getEstado() == EstadoMovimiento.CONFIRMADO)
                 .map(Movimiento::getMonto).reduce(BigDecimal.ZERO, BigDecimal::add);
+        // el pago que se devolvió al rechazar una reprogramación (CR-01-3) ya salió de la custodia
+        EstadoCustodia custodia = pago.getEstado() == EstadoMovimiento.REVERTIDO ? EstadoCustodia.REINTEGRADA
+                : pago.getCustodia() != null ? pago.getCustodia().getEstado() : null;
 
         Inscripcion inscripcion = inscripcionRepository.findById(inscripcionId).orElseThrow();
         Usuario pagador = pago.getBilletera().getUsuario();
@@ -57,6 +63,6 @@ public class ComprobanteService {
                 gastos,
                 pago.getMonto().add(gastos),
                 pago.getMoneda(),
-                pago.getCustodia() != null ? pago.getCustodia().getEstado() : null);
+                custodia);
     }
 }

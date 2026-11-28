@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -46,6 +47,7 @@ public class ReclamoRifaService {
     private final ReclamoRifaRepository reclamoRifaRepository;
     private final UsuarioRepository usuarioRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     /** Hasta cuándo se puede reclamar: 48 h desde que se sorteó de verdad o, si falta, desde la fecha programada. */
     public static Instant plazoReclamo(Rifa rifa) {
@@ -56,7 +58,7 @@ public class ReclamoRifaService {
     /** Si un comprador puede reclamar ahora: la rifa sorteada (o ya en revisión por otro reclamo) y dentro del plazo. */
     public static boolean ventanaAbierta(Rifa rifa, Instant ahora) {
         Instant plazo = plazoReclamo(rifa);
-        return (rifa.getEstado() == EstadoRifa.SORTEADA || rifa.getEstado() == EstadoRifa.EN_REVISION)
+        return rifa.getEstado().admiteReclamos()
                 && plazo != null && !ahora.isAfter(plazo);
     }
 
@@ -79,12 +81,11 @@ public class ReclamoRifaService {
         }
 
         // Validación de estado de la rifa
-        if (rifa.getEstado() == EstadoRifa.BORRADOR || rifa.getEstado() == EstadoRifa.EN_VENTA
-                || rifa.getEstado() == EstadoRifa.CERRADA) {
+        if (rifa.getEstado().esPreSorteo()) {
             throw new ConflictoException(CodigoError.RIFA_NO_SORTEADA,
                     "La rifa " + rifaId + " está " + rifa.getEstado() + ": aún no ha finalizado su sorteo");
         }
-        if (rifa.getEstado() == EstadoRifa.LIQUIDADA || rifa.getEstado() == EstadoRifa.CANCELADA) {
+        if (rifa.getEstado().esTerminal()) {
             throw new ConflictoException(CodigoError.PLAZO_RECLAMO_VENCIDO,
                     "La rifa " + rifaId + " está " + rifa.getEstado() + ": no admite reclamos");
         }
@@ -96,7 +97,7 @@ public class ReclamoRifaService {
                     "La rifa " + rifaId + " no registra fecha de finalización");
         }
 
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         if (ahora.isAfter(plazoLimite)) {
             throw new ConflictoException(CodigoError.PLAZO_RECLAMO_VENCIDO,
                     "Venció el plazo de 48 horas para reclamar el resultado de la rifa " + rifaId);

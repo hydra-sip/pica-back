@@ -5,7 +5,8 @@ package com.hydra.pica.plataforma_pica.partido.event;
  * siguiente: porque el rival lo aceptó, porque venció el plazo para objetarlo, por el laudo del árbitro o por ausencia.
  * Lo escuchan los pronósticos (HU-306) y el tiempo real (HU-305).
  *
- * @param ganadorId       la inscripción que ganó
+ * @param ganadorId       la inscripción que ganó; null en un empate de la fase de grupos (CR-02), donde además nadie
+ *                        avanza
  * @param torneoFinalizado si era la final: el torneo terminó y las posiciones ya están guardadas
  */
 public record ResultadoConfirmado(Long torneoId, Long partidoId, Long ganadorId, boolean torneoFinalizado) {

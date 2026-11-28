@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +31,6 @@ import com.hydra.pica.plataforma_pica.partido.dto.PosicionRanking;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoDetalle;
 import com.hydra.pica.plataforma_pica.partido.dto.PronosticoRequest;
 import com.hydra.pica.plataforma_pica.partido.dto.RankingResponse;
-import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
@@ -67,6 +67,7 @@ public class PronosticoService {
     private final PronosticoRepository pronosticoRepository;
     private final UsuarioRepository usuarioRepository;
     private final TorneoRepository torneoRepository;
+    private final Clock clock;
 
 
     /**
@@ -84,7 +85,7 @@ public class PronosticoService {
                         .collect(Collectors.toMap(p -> p.getId().getPartidoId(), p -> p))
                 : Map.of();
 
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         List<PartidoPronostico> resultado = new ArrayList<>();
 
         Map<Long, Integer> rondasPorTorneo = partidosList.stream()
@@ -99,7 +100,7 @@ public class PronosticoService {
                 continue;
             }
             int rondas = rondasPorTorneo.getOrDefault(partido.getTorneo().getId(), 1);
-            String nombreRonda = RondaBracket.nombre(partido.getRonda(), rondas);
+            String nombreRonda = Partidos.nombreRonda(partido, rondas);
             LadoBracket local = Partidos.ladoBracket(lados, Lado.LOCAL);
             LadoBracket visitante = Partidos.ladoBracket(lados, Lado.VISITANTE);
 
@@ -296,7 +297,7 @@ public class PronosticoService {
     /**
      * Valida que la ventana para pronosticar esté abierta; si no, lanza 409 PRONOSTICO_FUERA_DE_VENTANA.
      */
-    private static void validarVentanaPronostico(Partido partido, List<Juega> lados) {
+    private void validarVentanaPronostico(Partido partido, List<Juega> lados) {
         EstadoTorneo torneoEstado = partido.getTorneo().getEstado();
         if (torneoEstado == EstadoTorneo.BORRADOR || torneoEstado == EstadoTorneo.CANCELADO
                 || torneoEstado == EstadoTorneo.CANCELACION_EN_REVISION) {
@@ -312,7 +313,7 @@ public class PronosticoService {
             throw new ConflictoException(CodigoError.PRONOSTICO_FUERA_DE_VENTANA,
                     "El partido " + partido.getId() + " aún no tiene ambos rivales definidos");
         }
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         if (partido.getFechaProgramada() != null && ahora.isAfter(partido.getFechaProgramada())) {
             throw new ConflictoException(CodigoError.PRONOSTICO_FUERA_DE_VENTANA,
                     "La ventana de pronósticos cerró el " + partido.getFechaProgramada());

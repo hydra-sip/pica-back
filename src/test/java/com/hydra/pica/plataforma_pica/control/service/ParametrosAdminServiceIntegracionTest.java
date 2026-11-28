@@ -76,7 +76,24 @@ class ParametrosAdminServiceIntegracionTest {
                         tuple(ClaveParametro.CHECKIN_DURACION_MAX_MIN, "60"),
                         tuple(ClaveParametro.RETIRO_MINIMO, "1000"),
                         tuple(ClaveParametro.RETIRO_MAXIMO, "500000"),
-                        tuple(ClaveParametro.CANCELACION_GASTOS_TOPE, "20"));
+                        tuple(ClaveParametro.CANCELACION_GASTOS_TOPE, "20"),
+                        tuple(ClaveParametro.FAIR_PLAY_INICIAL, "100"),
+                        tuple(ClaveParametro.FAIR_PLAY_MAXIMO, "100"),
+                        tuple(ClaveParametro.FAIR_PLAY_CHECKIN, "1"),
+                        tuple(ClaveParametro.FAIR_PLAY_AUSENCIA, "10"),
+                        tuple(ClaveParametro.FAIR_PLAY_SANCION_LEVE, "5"),
+                        tuple(ClaveParametro.FAIR_PLAY_SANCION_MEDIA, "15"),
+                        tuple(ClaveParametro.FAIR_PLAY_SANCION_GRAVE, "30"),
+                        tuple(ClaveParametro.FRAUDE_RIFA_NUMEROS_MAX, "10"),
+                        tuple(ClaveParametro.FRAUDE_RIFA_VENTANA_MIN, "30"),
+                        tuple(ClaveParametro.FRAUDE_CARRUSEL_OPERACIONES_MIN, "4"),
+                        tuple(ClaveParametro.FRAUDE_CARRUSEL_VENTANA_MIN, "60"),
+                        tuple(ClaveParametro.FRAUDE_CANCELACIONES_MIN, "2"),
+                        tuple(ClaveParametro.FRAUDE_OBJECIONES_MIN, "3"),
+                        tuple(ClaveParametro.FRAUDE_CUENTAS_USUARIOS_MIN, "2"),
+                        tuple(ClaveParametro.INDICE_ORGANIZADOR_INICIAL, "100"),
+                        tuple(ClaveParametro.INDICE_ORGANIZADOR_CANCELACION, "15"),
+                        tuple(ClaveParametro.INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS, "30"));
         assertThat(parametrosAdminService.listar())
                 .allSatisfy(p -> {
                     assertThat(p.descripcion()).isNotBlank();
@@ -135,6 +152,47 @@ class ParametrosAdminServiceIntegracionTest {
     }
 
     @Test
+    void losPuntosDelFairPlaySonEnterosDe0A1000() {
+        assertErrores(Map.of("FAIR_PLAY_CHECKIN", new BigDecimal("1.5")),
+                new ErrorCampo("FAIR_PLAY_CHECKIN", ErrorCampo.Codigo.FORMATO_INVALIDO, "Son puntos enteros"));
+        assertErrores(Map.of("FAIR_PLAY_AUSENCIA", BigDecimal.valueOf(-1)),
+                new ErrorCampo("FAIR_PLAY_AUSENCIA", ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que estar entre 0 y 1000"));
+        assertErrores(Map.of("FAIR_PLAY_MAXIMO", BigDecimal.valueOf(1001)),
+                new ErrorCampo("FAIR_PLAY_MAXIMO", ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que estar entre 0 y 1000"));
+
+        parametrosAdminService.actualizar(admin.getId(), Map.of("FAIR_PLAY_SANCION_GRAVE", BigDecimal.valueOf(50)));
+        assertThat(parametrosPlataforma.puntos(ClaveParametro.FAIR_PLAY_SANCION_GRAVE)).isEqualTo(50);
+    }
+
+    @Test
+    void elInicialNoSuperaAlMaximoYLasSancionesVanDeMenorAMayor() {
+        assertErrores(Map.of("FAIR_PLAY_INICIAL", BigDecimal.valueOf(120)),
+                new ErrorCampo("FAIR_PLAY_INICIAL", ErrorCampo.Codigo.RANGO_INVALIDO, "No puede superar el índice máximo"));
+        assertErrores(Map.of("FAIR_PLAY_MAXIMO", BigDecimal.valueOf(90)),
+                new ErrorCampo("FAIR_PLAY_MAXIMO", ErrorCampo.Codigo.RANGO_INVALIDO,
+                        "No puede ser menor que el índice inicial"));
+        assertErrores(Map.of("FAIR_PLAY_SANCION_MEDIA", BigDecimal.valueOf(40)),
+                new ErrorCampo("FAIR_PLAY_SANCION_MEDIA", ErrorCampo.Codigo.RANGO_INVALIDO,
+                        "No puede restar más que una sanción grave"));
+        assertErrores(Map.of("FAIR_PLAY_SANCION_LEVE", BigDecimal.valueOf(20)),
+                new ErrorCampo("FAIR_PLAY_SANCION_LEVE", ErrorCampo.Codigo.RANGO_INVALIDO,
+                        "No puede restar más que una sanción media"));
+        assertErrores(Map.of("INDICE_ORGANIZADOR_CANCELACION", BigDecimal.valueOf(40)),
+                new ErrorCampo("INDICE_ORGANIZADOR_CANCELACION", ErrorCampo.Codigo.RANGO_INVALIDO,
+                        "No puede restar más que una cancelación con gastos"));
+        assertErrores(Map.of("INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS", BigDecimal.valueOf(10)),
+                new ErrorCampo("INDICE_ORGANIZADOR_CANCELACION_CON_GASTOS", ErrorCampo.Codigo.RANGO_INVALIDO,
+                        "No puede restar menos que una cancelación sin gastos"));
+    }
+
+    @Test
+    void losPuntosSoloSeLeenDeUnParametroEnPuntos() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> parametrosPlataforma.puntos(ClaveParametro.GASTOS_ADMINISTRATIVOS))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void unTopeMenorALosGastosVigentesEsError() {
         assertErrores(Map.of("GASTOS_ADMINISTRATIVOS_TOPE", BigDecimal.valueOf(8)),
                 new ErrorCampo("GASTOS_ADMINISTRATIVOS_TOPE", ErrorCampo.Codigo.RANGO_INVALIDO,
@@ -156,6 +214,17 @@ class ParametrosAdminServiceIntegracionTest {
                 new ErrorCampo("CHECKIN_DURACION_MAX_MIN", ErrorCampo.Codigo.FORMATO_INVALIDO, "Son minutos enteros"));
         assertErrores(Map.of("MARGEN_CIERRE_INICIO_MIN", BigDecimal.valueOf(-1)),
                 new ErrorCampo("MARGEN_CIERRE_INICIO_MIN", ErrorCampo.Codigo.RANGO_INVALIDO, "No puede ser negativo"));
+    }
+
+    @Test
+    void lasCantidadesDeFraudeSonEnterosPositivos() {
+        assertErrores(Map.of("FRAUDE_RIFA_NUMEROS_MAX", BigDecimal.ZERO),
+                new ErrorCampo("FRAUDE_RIFA_NUMEROS_MAX", ErrorCampo.Codigo.RANGO_INVALIDO, "Tiene que ser mayor que 0"));
+        assertErrores(Map.of("FRAUDE_CANCELACIONES_MIN", new BigDecimal("2.5")),
+                new ErrorCampo("FRAUDE_CANCELACIONES_MIN", ErrorCampo.Codigo.FORMATO_INVALIDO,
+                        "Tiene que ser una cantidad entera"));
+        parametrosAdminService.actualizar(admin.getId(), Map.of("FRAUDE_RIFA_NUMEROS_MAX", BigDecimal.valueOf(15)));
+        assertThat(parametrosPlataforma.cantidad(ClaveParametro.FRAUDE_RIFA_NUMEROS_MAX)).isEqualTo(15);
     }
 
     @Test

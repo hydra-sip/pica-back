@@ -2,6 +2,8 @@ package com.hydra.pica.plataforma_pica;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
@@ -77,24 +79,37 @@ public class EscenarioTorneo {
     /**
      * Un torneo individual de ajedrez del organizador, con el árbitro designado para cargar resultados (aceptó: sin
      * eso el bracket no se genera, HU-807), {@code jugadores} inscripciones confirmadas de "{prefijo}0",
-     * "{prefijo}1"... y el bracket generado: queda EN_CURSO.
+     * "{prefijo}1"... y el bracket generado: queda EN_CURSO, con el slug "escenario-{id}".
      */
     public Long individualEnCurso(Long organizador, Long arbitro, String nombre, String prefijo, int jugadores) {
+        List<Usuario> inscriptos = new ArrayList<>();
+        for (int i = 0; i < jugadores; i++) {
+            inscriptos.add(usuario(prefijo + i, "PARTICIPANTE"));
+        }
+        return individualEnCurso(organizador, arbitro, nombre, EN_DOS_SEMANAS, null, inscriptos);
+    }
+
+    /**
+     * Como {@link #individualEnCurso(Long, Long, String, String, int)}, con jugadores que ya existen (en ese orden de
+     * inscripción) y las fechas de inicio y fin que se pidan: la inscripción cierra a la semana.
+     */
+    public Long individualEnCurso(Long organizador, Long arbitro, String nombre, Instant fechaInicio,
+                                  Instant fechaFin, List<Usuario> jugadores) {
         Long torneo = torneoService.crear(organizador, new InformacionTorneoRequest(nombre, "Ajedrez", null, null,
-                Modalidad.ONLINE, TipoParticipante.INDIVIDUAL, null, null, EN_DOS_SEMANAS, null, EN_UNA_SEMANA,
+                Modalidad.ONLINE, TipoParticipante.INDIVIDUAL, null, null, fechaInicio, fechaFin, EN_UNA_SEMANA,
                 "Partidas de 10 minutos", 16, 2, null, null)).id();
         arbitrosService.designar(organizador, torneo,
                 new DesignarArbitroRequest(arbitro, Set.of(PermisoArbitro.CARGAR_RESULTADOS)));
         jdbc.update("UPDATE torneo_arbitro SET estado = 'ACEPTADO' WHERE torneo_id = ?", torneo);
         jdbc.update("""
                 UPDATE torneo SET valor_inscripcion = 1000, pct_pozo_competidores = 90, pct_premio_rifa = 0,
-                                  estado = 'INSCRIPCION_CERRADA', publicado_en = now()
+                                  estado = 'INSCRIPCION_CERRADA', publicado_en = now(), slug = 'escenario-' || id
                 WHERE id = ?""", torneo);
         entityManager.clear();
-        for (int i = 0; i < jugadores; i++) {
+        for (Usuario jugador : jugadores) {
             Inscripcion inscripcion = new Inscripcion();
             inscripcion.setTorneo(torneoRepository.findById(torneo).orElseThrow());
-            inscripcion.setUsuario(usuario(prefijo + i, "PARTICIPANTE"));
+            inscripcion.setUsuario(jugador);
             inscripcion.setEstado(EstadoInscripcion.CONFIRMADA);
             inscripcion.setReglamentoAceptadoEn(Instant.now());
             inscripcionRepository.saveAndFlush(inscripcion);

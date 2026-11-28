@@ -14,6 +14,7 @@ import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.billetera.service.Acreditacion.Rol;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
@@ -59,19 +60,19 @@ public class Acreditador {
     }
 
     /** Qué se liquida: el torneo o la rifa del movimiento, y dónde queda en la auditoría. */
-    public record Evento(Long torneoId, Long rifaId, String entidad, Long entidadId) {
+    public record Evento(Long torneoId, Long rifaId, EntidadAuditoria entidad, Long entidadId) {
 
         static Evento torneo(Long torneoId) {
-            return new Evento(torneoId, null, "TORNEO", torneoId);
+            return new Evento(torneoId, null, EntidadAuditoria.TORNEO, torneoId);
         }
 
         static Evento rifa(Long rifaId) {
-            return new Evento(null, rifaId, "RIFA", rifaId);
+            return new Evento(null, rifaId, EntidadAuditoria.RIFA, rifaId);
         }
 
         /** Lo que una rifa aporta al pozo de su torneo: movimiento de los dos, auditoría de la rifa. */
         static Evento aporte(Long torneoId, Long rifaId) {
-            return new Evento(torneoId, rifaId, "RIFA", rifaId);
+            return new Evento(torneoId, rifaId, EntidadAuditoria.RIFA, rifaId);
         }
     }
 
@@ -84,47 +85,23 @@ public class Acreditador {
     }
 
     private void acreditar(Evento evento, Acreditacion acreditacion) {
-        Billetera billetera = acreditacion.rol() == Rol.PLATAFORMA
-                ? billeteraRepository.findPlataformaConBloqueo()
-                        .orElseThrow(() -> new IllegalStateException("Falta la billetera de la plataforma (V40)"))
-                : bloqueada(acreditacion.usuarioId());
-        billetera.setSaldoDisponible(billetera.getSaldoDisponible().add(acreditacion.monto()));
-        billetera.setGananciaAcumulada(billetera.getGananciaAcumulada().add(acreditacion.monto()));
-        billeteraRepository.save(billetera);
+        Billetera billetera = resolverBilletera(acreditacion);
+        acreditarSaldo(billetera, acreditacion.monto());
 
-        Movimiento movimiento = new Movimiento();
-        movimiento.setBilletera(billetera);
-        if (evento.torneoId() != null) {
-            movimiento.setTorneo(torneoRepository.getReferenceById(evento.torneoId()));
-        }
-        if (evento.rifaId() != null) {
-            movimiento.setRifa(rifaRepository.getReferenceById(evento.rifaId()));
-        }
-        if (acreditacion.inscripcionId() != null) {
-            movimiento.setInscripcion(inscripcionRepository.getReferenceById(acreditacion.inscripcionId()));
-        }
-        movimiento.setTipo(switch (acreditacion.rol()) {
-            case PREMIO -> TipoMovimiento.PREMIO;
-            case HONORARIO -> TipoMovimiento.HONORARIO;
-            default -> TipoMovimiento.LIQUIDACION;
-        });
-        movimiento.setMonto(acreditacion.monto());
-        movimiento.setMoneda(billetera.getMoneda());
-        movimiento.setSaldoResultante(billetera.getSaldoDisponible());
-        movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
-        movimiento.setReferenciaExterna(acreditacion.referencia());
-        String descripcion = acreditacion.descripcion();
-        movimiento.setDescripcion(descripcion.length() > 255 ? descripcion.substring(0, 255) : descripcion);
-        Movimiento guardado = movimientoRepository.save(movimiento);
+        Movimiento guardado = movimientoRepository.save(crearMovimiento(evento, acreditacion, billetera));
 
+        publicarAuditoria(evento, detalleDeAuditoria(evento, acreditacion, guardado));
+    }
+
+    private Map<String, Object> detalleDeAuditoria(Evento evento, Acreditacion acreditacion, Movimiento movimiento) {
         Map<String, Object> detalle = new LinkedHashMap<>();
         detalle.put("tipo", switch (acreditacion.rol()) {
             case PREMIO -> "LIQUIDACION_PREMIO";
             case HONORARIO -> "LIQUIDACION_HONORARIO";
-            default -> "LIQUIDACION_" + evento.entidad();
+            default -> "LIQUIDACION_" + evento.entidad().name();
         });
         detalle.put("rol", acreditacion.rol());
-        detalle.put("movimientoId", guardado.getId());
+        detalle.put("movimientoId", movimiento.getId());
         detalle.put("usuarioId", acreditacion.usuarioId());
         detalle.put("monto", acreditacion.monto());
         if (acreditacion.puesto() != null) {
@@ -133,6 +110,10 @@ public class Acreditador {
         if (acreditacion.inscripcionId() != null) {
             detalle.put("inscripcionId", acreditacion.inscripcionId());
         }
+        return detalle;
+    }
+
+    private void publicarAuditoria(Evento evento, Map<String, Object> detalle) {
         auditoriaService.registrar(null, AccionAuditoria.LIQUIDACION, evento.entidad(), evento.entidadId().toString(),
                 detalle);
     }
@@ -152,13 +133,46 @@ public class Acreditador {
         return acreditaciones.stream().map(Acreditacion::monto).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private Billetera bloqueada(Long usuarioId) {
-        return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElseGet(() -> {
-            // respaldo por si algún test persiste un Usuario directo sin pasar por UsuarioService.crear
-            Billetera nueva = new Billetera();
-            nueva.setUsuario(usuarioRepository.getReferenceById(usuarioId));
-            billeteraRepository.saveAndFlush(nueva);
-            return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElseThrow();
-        });
+    private Billetera resolverBilletera(Acreditacion acreditacion) {
+        return acreditacion.rol() == Rol.PLATAFORMA
+                ? billeteraRepository.findPlataformaConBloqueo()
+                        .orElseThrow(() -> new IllegalStateException("Falta la billetera de la plataforma (V40)"))
+                : Billeteras.obtenerOCrearBloqueada(billeteraRepository, usuarioRepository, acreditacion.usuarioId());
+    }
+
+    private void acreditarSaldo(Billetera billetera, BigDecimal monto) {
+        billetera.setSaldoDisponible(billetera.getSaldoDisponible().add(monto));
+        billetera.setGananciaAcumulada(billetera.getGananciaAcumulada().add(monto));
+        billeteraRepository.save(billetera);
+    }
+
+    private Movimiento crearMovimiento(Evento evento, Acreditacion acreditacion, Billetera billetera) {
+        Movimiento movimiento = new Movimiento();
+        movimiento.setBilletera(billetera);
+        if (evento.torneoId() != null) {
+            movimiento.setTorneo(torneoRepository.getReferenceById(evento.torneoId()));
+        }
+        if (evento.rifaId() != null) {
+            movimiento.setRifa(rifaRepository.getReferenceById(evento.rifaId()));
+        }
+        if (acreditacion.inscripcionId() != null) {
+            movimiento.setInscripcion(inscripcionRepository.getReferenceById(acreditacion.inscripcionId()));
+        }
+        movimiento.setTipo(tipoMovimiento(acreditacion.rol()));
+        movimiento.setMonto(acreditacion.monto());
+        movimiento.setMoneda(billetera.getMoneda());
+        movimiento.setSaldoResultante(billetera.getSaldoDisponible());
+        movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
+        movimiento.setReferenciaExterna(acreditacion.referencia());
+        movimiento.setDescripcion(Movimiento.truncarDescripcion(acreditacion.descripcion()));
+        return movimiento;
+    }
+
+    private static TipoMovimiento tipoMovimiento(Rol rol) {
+        return switch (rol) {
+            case PREMIO -> TipoMovimiento.PREMIO;
+            case HONORARIO -> TipoMovimiento.HONORARIO;
+            default -> TipoMovimiento.LIQUIDACION;
+        };
     }
 }

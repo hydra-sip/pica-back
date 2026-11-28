@@ -192,7 +192,7 @@ class EdicionTorneoIntegracionTest {
     @Test
     void dicenQueEstaBloqueadoSegunLasInscripciones() {
         assertThat(torneoService.detalle(organizador, torneo).camposBloqueados())
-                .containsExactly("disciplina", "tipoParticipante", "reglamentoTexto");
+                .containsExactly("disciplina", "formato", "reglasGrupos", "tipoParticipante", "reglamentoTexto");
 
         inscribir(EstadoInscripcion.CONFIRMADA);
 
@@ -243,8 +243,8 @@ class EdicionTorneoIntegracionTest {
     private static InformacionTorneoRequest publicado(Consumer<Datos> cambios) {
         Datos d = new Datos();
         cambios.accept(d);
-        return new InformacionTorneoRequest(d.nombre, d.disciplina, d.descripcion, d.formato, Modalidad.PRESENCIAL,
-                TipoParticipante.INDIVIDUAL, d.sede, d.canchas, d.fechaInicio, EN_UN_MES, d.cierre, d.reglamento,
+        return new InformacionTorneoRequest(d.nombre, d.disciplina, d.descripcion, d.formato, null,
+                Modalidad.PRESENCIAL, TipoParticipante.INDIVIDUAL, d.sede, d.canchas, d.fechaInicio, EN_UN_MES, d.cierre, d.reglamento,
                 d.cupoMaximo, d.cupoMinimo, null, null, d.otros);
     }
 

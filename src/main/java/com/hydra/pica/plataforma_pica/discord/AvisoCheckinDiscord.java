@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.discord;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -8,7 +9,6 @@ import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.VentanaCheckin;
-import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.partido.service.Partidos;
@@ -43,11 +43,12 @@ public class AvisoCheckinDiscord {
     private final TransactionTemplate transaccion;
     private final Duration reciente;
     private final boolean activo;
+    private final Clock clock;
 
     AvisoCheckinDiscord(PartidoRepository partidoRepository, JuegaRepository juegaRepository, CanalDiscord canal,
                         AvisosDiscord avisos, TransactionTemplate transaccion,
                         @Value("${app.partidos.revision-plazos:30s}") Duration revision,
-                        @Value("${app.discord.aviso-checkin:true}") boolean activo) {
+                        @Value("${app.discord.aviso-checkin:true}") boolean activo, Clock clock) {
         this.partidoRepository = partidoRepository;
         this.juegaRepository = juegaRepository;
         this.canal = canal;
@@ -55,12 +56,13 @@ public class AvisoCheckinDiscord {
         this.transaccion = transaccion;
         this.reciente = revision.compareTo(RECIENTE) > 0 ? revision : RECIENTE;
         this.activo = activo;
+        this.clock = clock;
     }
 
     @Scheduled(fixedDelayString = "${app.partidos.revision-plazos:30s}")
     void programada() {
         if (activo) {
-            avisarAbiertas(Instant.now());
+            avisarAbiertas(Instant.now(clock));
         }
     }
 
@@ -100,7 +102,7 @@ public class AvisoCheckinDiscord {
     private String texto(Partido partido, VentanaCheckin ventana) {
         Torneo torneo = partido.getTorneo();
         List<Juega> lados = juegaRepository.delPartido(partido.getId());
-        String ronda = RondaBracket.nombre(partido.getRonda(), partidoRepository.rondasDelTorneo(torneo.getId()));
+        String ronda = Partidos.nombreRonda(partido, partidoRepository.rondasDelTorneo(torneo.getId()));
         long cierre = ventana.cierraEn().getEpochSecond();
         return avisos.firmado(torneo, "⏰ Se abrió el check-in de **" + ronda + "**: " + nombre(lados, Lado.LOCAL)
                 + " vs " + nombre(lados, Lado.VISITANTE) + ". Cierra a las <t:" + cierre + ":t> (<t:" + cierre

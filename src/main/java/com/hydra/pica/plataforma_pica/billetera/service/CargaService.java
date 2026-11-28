@@ -11,20 +11,23 @@ import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.Movimiento;
 import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
+import com.hydra.pica.plataforma_pica.billetera.event.MovimientoBilleteraRegistrado;
 import com.hydra.pica.plataforma_pica.billetera.repository.BilleteraRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
+import com.hydra.pica.plataforma_pica.common.error.NombreDeConstraint;
 import com.hydra.pica.plataforma_pica.common.error.ProhibidoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.user.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -45,6 +48,7 @@ public class CargaService {
     private final MovimientoRepository movimientoRepository;
     private final UsuarioRepository usuarioRepository;
     private final AuditoriaService auditoriaService;
+    private final ApplicationEventPublisher eventos;
 
     /**
      * Acredita un monto en la billetera del usuario especificado de forma idempotente.
@@ -72,18 +76,7 @@ public class CargaService {
         }
 
         // 2. Bloqueo pesimista de la billetera del usuario (SELECT ... FOR UPDATE)
-        Billetera billetera = billeteraRepository.findConBloqueoPorUsuarioId(usuarioId)
-                .orElseGet(() -> {
-                    Billetera nueva = new Billetera();
-                    nueva.setUsuario(usuarioRepository.getReferenceById(usuarioId));
-                    nueva.setSaldoDisponible(BigDecimal.ZERO);
-                    nueva.setSaldoRetenido(BigDecimal.ZERO);
-                    nueva.setGananciaAcumulada(BigDecimal.ZERO);
-                    nueva.setMoneda("ARS");
-                    nueva.setEstado(EstadoBilletera.ACTIVA);
-                    billeteraRepository.save(nueva);
-                    return billeteraRepository.findConBloqueoPorUsuarioId(usuarioId).orElse(nueva);
-                });
+        Billetera billetera = Billeteras.obtenerOCrearBloqueada(billeteraRepository, usuarioRepository, usuarioId);
 
         // 3. Verificación de idempotencia tras adquirir el bloqueo (doble verificación concurrente)
         Optional<Movimiento> existenteConBloqueo = movimientoRepository.findByReferenciaExterna(referencia);
@@ -108,7 +101,7 @@ public class CargaService {
         movimiento.setBilletera(billetera);
         movimiento.setTipo(TipoMovimiento.CARGA);
         movimiento.setMonto(montoAcreditado);
-        movimiento.setMoneda(billetera.getMoneda() != null ? billetera.getMoneda() : "ARS");
+        movimiento.setMoneda(billetera.getMoneda() != null ? billetera.getMoneda() : Billetera.MONEDA_POR_DEFECTO);
         movimiento.setSaldoResultante(nuevoSaldo);
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(referencia);
@@ -131,7 +124,13 @@ public class CargaService {
         detalleAuditoria.put("descripcion", movimiento.getDescripcion());
         detalleAuditoria.put("saldoResultante", nuevoSaldo);
         detalleAuditoria.put("movimientoId", movimiento.getId());
-        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, "BILLETERA", billetera.getId().toString(), detalleAuditoria);
+        auditoriaService.registrar(usuarioId, AccionAuditoria.PAGO, EntidadAuditoria.BILLETERA,
+                billetera.getId().toString(), detalleAuditoria);
+
+        if (eventos != null) {
+            eventos.publishEvent(new MovimientoBilleteraRegistrado(
+                    movimiento.getId(), usuarioId, TipoMovimiento.CARGA, montoAcreditado));
+        }
 
         log.info("Carga acreditada con éxito para usuario {}: {} {}, nuevo saldo: {}, referencia: {}",
                 usuarioId, montoAcreditado, movimiento.getMoneda(), nuevoSaldo, referencia);
@@ -164,7 +163,8 @@ public class CargaService {
         }
         detalle.put("estado", "RECHAZADA");
 
-        return auditoriaService.registrarEnTransaccionNueva(usuarioId, AccionAuditoria.PAGO, "BILLETERA", entidadId, detalle);
+        return auditoriaService.registrarEnTransaccionNueva(usuarioId, AccionAuditoria.PAGO,
+                EntidadAuditoria.BILLETERA, entidadId, detalle);
     }
 
     private Movimiento validarYDevolverExistente(Movimiento existente, Long usuarioId) {
@@ -178,15 +178,8 @@ public class CargaService {
     }
 
     private static boolean esViolacionReferenciaUnica(DataIntegrityViolationException e) {
-        Throwable causa = e;
-        while (causa != null && !(causa instanceof ConstraintViolationException)) {
-            causa = causa.getCause();
-        }
-        if (causa instanceof ConstraintViolationException cve) {
-            String nombre = cve.getConstraintName();
-            if (nombre != null && nombre.equalsIgnoreCase("uq_movimiento_referencia_externa")) {
-                return true;
-            }
+        if ("uq_movimiento_referencia_externa".equalsIgnoreCase(NombreDeConstraint.de(e))) {
+            return true;
         }
         String msg = e.getMessage();
         return msg != null && msg.contains("uq_movimiento_referencia_externa");

@@ -1,17 +1,20 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.billetera.domain.Custodia;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoCustodia;
 import com.hydra.pica.plataforma_pica.billetera.domain.TipoMovimiento;
+import com.hydra.pica.plataforma_pica.billetera.event.TorneoLiquidado;
 import com.hydra.pica.plataforma_pica.billetera.repository.CustodiaRepository;
 import com.hydra.pica.plataforma_pica.billetera.repository.MovimientoRepository;
 import com.hydra.pica.plataforma_pica.billetera.service.Acreditacion.Rol;
@@ -19,7 +22,10 @@ import com.hydra.pica.plataforma_pica.billetera.service.Acreditador.Evento;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.equipo.domain.Nomina;
+import com.hydra.pica.plataforma_pica.equipo.repository.NominaRepository;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.Inscripcion;
+import com.hydra.pica.plataforma_pica.inscripcion.domain.RepartoPremio;
 import com.hydra.pica.plataforma_pica.inscripcion.repository.InscripcionRepository;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 import com.hydra.pica.plataforma_pica.rifa.domain.RepartoRifa;
@@ -32,6 +38,7 @@ import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
 import com.hydra.pica.plataforma_pica.torneo.repository.GastoRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.PremioRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,7 +53,8 @@ import org.springframework.transaction.annotation.Transactional;
  * depositó en la custodia (HU-604): si no, queda en el pozo.</li>
  * <li>Lo que depositó para cada árbitro se le acredita al árbitro.</li>
  * <li>Lo que queda es el pozo y va a los ganadores con los porcentajes sellados al publicar ({@link RepartoPorPuesto});
- * en equipos cobra el capitán. Si nadie terminó en un puesto con premio, va al organizador.</li>
+ * en equipos se divide entre los integrantes según el reparto de su nómina, con los centavos que sobran al capitán
+ * (CR-05); una inscripción sin reparto cobra todo el capitán. Si nadie terminó en un puesto con premio, va al organizador.</li>
  * <li>Lo que aporta su rifa al pozo se reparte igual, cuando terminaron los dos: si la rifa se liquidó antes, acá; si
  * no, al liquidarse la rifa ({@link #pagarAporteDeLaRifa}).</li>
  * </ul>
@@ -67,12 +75,15 @@ public class LiquidacionService {
     private final CustodiaService custodiaService;
     private final MovimientoRepository movimientoRepository;
     private final Acreditador acreditador;
+    private final NominaRepository nominaRepository;
+    private final ApplicationEventPublisher eventos;
 
     public LiquidacionService(TorneoRepository torneoRepository, InscripcionRepository inscripcionRepository,
                               PremioRepository premioRepository, GastoRepository gastoRepository,
                               RifaRepository rifaRepository, CustodiaRepository custodiaRepository,
                               CustodiaService custodiaService, MovimientoRepository movimientoRepository,
-                              Acreditador acreditador) {
+                              Acreditador acreditador, NominaRepository nominaRepository,
+                              ApplicationEventPublisher eventos) {
         this.torneoRepository = torneoRepository;
         this.inscripcionRepository = inscripcionRepository;
         this.premioRepository = premioRepository;
@@ -82,6 +93,8 @@ public class LiquidacionService {
         this.custodiaService = custodiaService;
         this.movimientoRepository = movimientoRepository;
         this.acreditador = acreditador;
+        this.nominaRepository = nominaRepository;
+        this.eventos = eventos;
     }
 
     public record LiquidacionTorneo(Long torneoId, Long custodiaId, BigDecimal retenido,
@@ -121,6 +134,8 @@ public class LiquidacionService {
         List<Acreditacion> acreditaciones = new ArrayList<>(entreLosGanadores(torneo,
                 retenido.recaudado().subtract(alOrganizador), ref,
                 puesto -> "Premio del " + puesto + ".º puesto en " + nombre,
+                (puesto, pct, equipo) -> "Tu parte (" + pct + " %) del premio del " + puesto + ".º puesto en " + nombre
+                        + ", equipo " + equipo,
                 "Liquidación del torneo " + nombre + ": gastos del torneo"));
         if (alOrganizador.signum() > 0) {
             acreditaciones.add(new Acreditacion(Rol.ORGANIZADOR, torneo.getOrganizador().getId(), alOrganizador, null,
@@ -151,6 +166,7 @@ public class LiquidacionService {
         rifaRepository.findByTorneoIdAndEliminadoEnIsNull(torneoId).stream()
                 .filter(rifa -> rifa.getEstado() == EstadoRifa.LIQUIDADA)
                 .forEach(rifa -> pagarAporteDeLaRifa(rifa.getId()));
+        eventos.publishEvent(new TorneoLiquidado(torneoId, custodiaId));
         return new LiquidacionTorneo(torneoId, custodiaId, retenido.total(), acreditaciones);
     }
 
@@ -175,6 +191,8 @@ public class LiquidacionService {
         List<Acreditacion> acreditaciones = entreLosGanadores(torneo, aporte, "liq-r" + rifaId + "-aporte",
                 puesto -> "Premio del " + puesto + ".º puesto en " + torneoNombre + ": lo que aporta la rifa "
                         + rifaTitulo,
+                (puesto, pct, equipo) -> "Tu parte (" + pct + " %) de lo que aporta la rifa " + rifaTitulo
+                        + " al premio del " + puesto + ".º puesto en " + torneoNombre + ", equipo " + equipo,
                 "Liquidación del torneo " + torneoNombre + ": lo que aporta la rifa " + rifaTitulo);
         Long torneoId = torneo.getId();
         custodiaService.liberarRifa(rifaId); // deja la sesión vacía
@@ -183,11 +201,16 @@ public class LiquidacionService {
     }
 
     /**
-     * Un pozo entre los que terminaron en un puesto con premio, en equipos al capitán. Sin ninguno, va al organizador
-     * con la referencia {@code ref + "-organizador"}.
+     * Un pozo entre los que terminaron en un puesto con premio. Lo de un equipo se divide entre los integrantes de su
+     * nómina según su reparto (CR-05); un equipo sin reparto (inscripto antes del cambio) cobra todo el capitán. Sin
+     * ningún ganador, va al organizador con la referencia {@code ref + "-organizador"}.
+     *
+     * @param descripcionDelPremio lo que dice el movimiento de quien cobra todo el premio
+     * @param descripcionDeLaParte lo que dice el de un integrante que cobra su parte: puesto, su % y el equipo
      */
     private List<Acreditacion> entreLosGanadores(Torneo torneo, BigDecimal pozo, String ref,
                                                  IntFunction<String> descripcionDelPremio,
+                                                 DescripcionDeLaParte descripcionDeLaParte,
                                                  String descripcionDelOrganizador) {
         if (pozo.signum() <= 0) {
             return List.of();
@@ -205,11 +228,59 @@ public class LiquidacionService {
         List<Acreditacion> acreditaciones = new ArrayList<>();
         for (RepartoPorPuesto.Cobro cobro : cobros) {
             Inscripcion inscripcion = conPuesto.get(cobro.inscripcionId());
-            acreditaciones.add(new Acreditacion(Rol.PREMIO, inscripcion.titular().getId(), cobro.monto(),
-                    inscripcion.getId(), cobro.puesto(), ref + "-premio-" + inscripcion.getId(),
-                    descripcionDelPremio.apply(cobro.puesto())));
+            List<Nomina> nomina = inscripcion.esDeEquipo()
+                    ? nominaRepository.findAllByIdInscripcionId(inscripcion.getId()) : List.of();
+            if (nomina.isEmpty() || nomina.stream().anyMatch(n -> n.getPctPremio() == null)) {
+                acreditaciones.add(new Acreditacion(Rol.PREMIO, inscripcion.titular().getId(), cobro.monto(),
+                        inscripcion.getId(), cobro.puesto(), ref + "-premio-" + inscripcion.getId(),
+                        descripcionDelPremio.apply(cobro.puesto())));
+            } else {
+                acreditaciones.addAll(partesDelEquipo(inscripcion, nomina, cobro, ref, descripcionDeLaParte));
+            }
         }
         return acreditaciones;
+    }
+
+    /**
+     * Lo que gana un equipo, entre sus integrantes: cada uno su % redondeado hacia abajo al centavo, y los centavos
+     * que sobran al capitán, así lo repartido suma exactamente lo que ganó el equipo. Quien tiene 0 % no cobra.
+     */
+    private List<Acreditacion> partesDelEquipo(Inscripcion inscripcion, List<Nomina> nomina,
+                                               RepartoPorPuesto.Cobro cobro, String ref,
+                                               DescripcionDeLaParte descripcion) {
+        Long capitanId = inscripcion.titular().getId();
+        Map<Long, BigDecimal> montos = new TreeMap<>();
+        BigDecimal repartido = BigDecimal.ZERO;
+        for (Nomina fila : nomina) {
+            BigDecimal parte = cobro.monto().multiply(fila.getPctPremio()).divide(RepartoPremio.CIEN, 2, RoundingMode.DOWN);
+            montos.put(fila.getId().getUsuarioId(), parte);
+            repartido = repartido.add(parte);
+        }
+        montos.merge(capitanId, cobro.monto().subtract(repartido), BigDecimal::add);
+
+        String equipo = inscripcion.getEquipo().getNombre();
+        List<Acreditacion> partes = new ArrayList<>();
+        for (Nomina fila : nomina) {
+            Long usuarioId = fila.getId().getUsuarioId();
+            BigDecimal monto = montos.get(usuarioId);
+            if (monto.signum() > 0) {
+                partes.add(new Acreditacion(Rol.PREMIO, usuarioId, monto, inscripcion.getId(), cobro.puesto(),
+                        ref + "-premio-" + inscripcion.getId() + "-u" + usuarioId,
+                        descripcion.de(cobro.puesto(), porcentaje(fila.getPctPremio()), equipo)));
+            }
+        }
+        return partes;
+    }
+
+    /** 40 o 33,34: sin ceros de más y con coma decimal. */
+    private static String porcentaje(BigDecimal pct) {
+        return pct.stripTrailingZeros().toPlainString().replace('.', ',');
+    }
+
+    /** El texto del movimiento de un integrante que cobra su parte del premio de un puesto. */
+    @FunctionalInterface
+    private interface DescripcionDeLaParte {
+        String de(int puesto, String pct, String equipo);
     }
 
     /** Si el pozo fue al organizador porque nadie cobra, va en un solo movimiento con sus gastos. */

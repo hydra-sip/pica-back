@@ -9,7 +9,7 @@ import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.billetera.service.ControlDeBalance.DiferenciaBilletera;
 import com.hydra.pica.plataforma_pica.billetera.service.ControlDeBalance.DiferenciaCustodia;
 import com.hydra.pica.plataforma_pica.billetera.service.Reintegrador.Retencion;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -39,7 +39,7 @@ class ControlDeBalanceIntegracionTest {
 
     @Autowired private ControlDeBalance control;
     @Autowired private CargaService cargaService;
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private LiquidacionService liquidacionService;
     @Autowired private Reintegrador reintegrador;
     @Autowired private UsuarioRepository usuarioRepository;
@@ -64,7 +64,7 @@ class ControlDeBalanceIntegracionTest {
                     INSERT INTO inscripcion (torneo_id, usuario_id, estado, reglamento_aceptado_en)
                     VALUES (?, ?, 'PENDIENTE_PAGO', now()) RETURNING id
                     """, Long.class, torneo, jugador[i]);
-            inscripcionService.pagar(jugador[i], inscripcion[i]);
+            pagoInscripcionService.pagar(jugador[i], inscripcion[i]);
         }
         entityManager.flush();
     }

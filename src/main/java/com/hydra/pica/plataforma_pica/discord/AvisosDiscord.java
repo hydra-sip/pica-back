@@ -1,25 +1,35 @@
 package com.hydra.pica.plataforma_pica.discord;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.domain.SorteoBracket;
 import com.hydra.pica.plataforma_pica.partido.dto.RondaBracket;
+import com.hydra.pica.plataforma_pica.partido.event.GruposSorteados;
 import com.hydra.pica.plataforma_pica.partido.event.LlaveSorteada;
 import com.hydra.pica.plataforma_pica.partido.event.PaseDirecto;
 import com.hydra.pica.plataforma_pica.partido.event.ResultadoConfirmado;
+import com.hydra.pica.plataforma_pica.partido.repository.GrupoInscripcionRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.partido.repository.PartidoRepository;
 import com.hydra.pica.plataforma_pica.partido.service.Partidos;
+import com.hydra.pica.plataforma_pica.torneo.domain.Reprogramacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.Torneo;
+import com.hydra.pica.plataforma_pica.torneo.event.TorneoReprogramado;
 import com.hydra.pica.plataforma_pica.torneo.event.WebhookDiscordGuardado;
+import com.hydra.pica.plataforma_pica.torneo.repository.ReprogramacionRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -41,15 +51,23 @@ public class AvisosDiscord {
     private final TorneoRepository torneoRepository;
     private final PartidoRepository partidoRepository;
     private final JuegaRepository juegaRepository;
+    private static final ZoneId ARGENTINA = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final DateTimeFormatter DIA_HORA = DateTimeFormatter.ofPattern("dd/MM 'a las' HH:mm");
+
+    private final GrupoInscripcionRepository grupoInscripcionRepository;
+    private final ReprogramacionRepository reprogramacionRepository;
     private final CanalDiscord canal;
     private final String webUrl;
 
     AvisosDiscord(TorneoRepository torneoRepository, PartidoRepository partidoRepository,
-                  JuegaRepository juegaRepository, CanalDiscord canal,
+                  JuegaRepository juegaRepository, GrupoInscripcionRepository grupoInscripcionRepository,
+                  ReprogramacionRepository reprogramacionRepository, CanalDiscord canal,
                   @Value("${app.web-url:http://localhost:5173}") String webUrl) {
         this.torneoRepository = torneoRepository;
         this.partidoRepository = partidoRepository;
         this.juegaRepository = juegaRepository;
+        this.grupoInscripcionRepository = grupoInscripcionRepository;
+        this.reprogramacionRepository = reprogramacionRepository;
         this.canal = canal;
         this.webUrl = webUrl;
     }
@@ -68,6 +86,12 @@ public class AvisosDiscord {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void alSortearGrupos(GruposSorteados evento) {
+        avisar(evento);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public void alConfirmar(ResultadoConfirmado evento) {
         avisar(evento);
     }
@@ -76,6 +100,30 @@ public class AvisosDiscord {
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public void alPasarDirecto(PaseDirecto evento) {
         avisar(evento);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void alReprogramar(TorneoReprogramado evento) {
+        avisar(evento);
+    }
+
+    /** La nueva fecha (CR-01-4): la de antes, la nueva, el motivo y hasta cuándo se pueden bajar los inscriptos. */
+    void avisar(TorneoReprogramado evento) {
+        Reprogramacion r = reprogramacionRepository.findById(evento.reprogramacionId()).orElseThrow();
+        Torneo torneo = r.getTorneo();
+        if (torneo.getDiscordWebhook() == null) {
+            return;
+        }
+        canal.publicar(torneo.getDiscordWebhook(), firmado(torneo, "📅 **Cambió la fecha**: del " + diaYHora(
+                r.getFechaInicioAnterior()) + " pasa al **" + diaYHora(r.getFechaInicioNueva()) + "**. Motivo: "
+                + r.getMotivo() + "\nQuien no pueda tiene hasta el " + diaYHora(r.getRechazoHasta())
+                + " para bajarse desde PICA y recuperar la inscripción."));
+    }
+
+    /** En la hora de Argentina, como los avisos del centro de notificaciones. */
+    private static String diaYHora(Instant instante) {
+        return DIA_HORA.format(instante.atZone(ARGENTINA));
     }
 
     /** El mensaje de prueba: sale cada vez que se guarda, aunque sea el mismo webhook. */
@@ -95,7 +143,7 @@ public class AvisosDiscord {
             return;
         }
         Map<Integer, List<Juega>> primeraRonda = juegaRepository.delTorneo(torneo.getId()).stream()
-                .filter(j -> j.getPartido().getRonda() == 1)
+                .filter(j -> j.getPartido().getFase() == FasePartido.ELIMINACION && j.getPartido().getRonda() == 1)
                 .collect(Collectors.groupingBy(j -> j.getPartido().getPosicion()));
         List<String> cruces = primeraRonda.keySet().stream().sorted()
                 .map(posicion -> cruce(primeraRonda.get(posicion)))
@@ -107,6 +155,24 @@ public class AvisosDiscord {
         String encabezado = titulo + "\n**" + RondaBracket.nombre(1, rondas)
                 + "**";
         canal.publicar(torneo.getDiscordWebhook(), firmado(torneo, encabezado + "\n" + entrando(cruces,
+                CanalDiscord.LARGO_MAXIMO - encabezado.length() - firma(torneo).length() - 2)));
+    }
+
+    /** Los grupos que salieron del sorteo (CR-02), uno por línea, con sus integrantes. */
+    void avisar(GruposSorteados evento) {
+        Torneo torneo = torneoRepository.findById(evento.torneoId()).orElseThrow();
+        if (torneo.getDiscordWebhook() == null) {
+            return;
+        }
+        Map<String, List<String>> porLetra = new TreeMap<>();
+        grupoInscripcionRepository.delTorneo(torneo.getId()).forEach(gi -> porLetra
+                .computeIfAbsent(gi.getGrupo().getLetra(), l -> new ArrayList<>())
+                .add(Partidos.nombre(gi.getInscripcion())));
+        List<String> grupos = porLetra.entrySet().stream()
+                .map(e -> "• **Grupo " + e.getKey() + "**: " + String.join(", ", e.getValue()))
+                .toList();
+        String encabezado = "🎲 Los grupos están sorteados (semilla de drand, verificable en el portal).";
+        canal.publicar(torneo.getDiscordWebhook(), firmado(torneo, encabezado + "\n" + entrando(grupos,
                 CanalDiscord.LARGO_MAXIMO - encabezado.length() - firma(torneo).length() - 2)));
     }
 
@@ -122,6 +188,11 @@ public class AvisosDiscord {
         }
         int rondas = partidoRepository.rondasDelTorneo(torneo.getId());
         List<Juega> lados = juegaRepository.delPartido(partido.getId());
+        if (partido.getFase() != FasePartido.ELIMINACION) {
+            canal.publicar(torneo.getDiscordWebhook(), firmado(torneo, "✅ **" + Partidos.nombreRonda(partido, rondas)
+                    + "**: " + resultadoDeGrupo(partido, lados)));
+            return;
+        }
         Juega ganador = lados.stream().filter(j -> Boolean.TRUE.equals(j.getEsGanador())).findFirst().orElseThrow();
         String nombreGanador = Partidos.nombre(ganador.getInscripcion());
         List<String> lineas = new ArrayList<>();
@@ -172,6 +243,18 @@ public class AvisosDiscord {
             marcador += " (penales " + ganador.getPenales() + "–" + perdedor.getPenales() + ")";
         }
         return gano + " le ganó " + marcador + " a " + perdio + ".";
+    }
+
+    /** Como {@link #resultado}, o «A empató 1–1 con B» (CR-02). */
+    private static String resultadoDeGrupo(Partido partido, List<Juega> lados) {
+        Juega ganador = lados.stream().filter(j -> Boolean.TRUE.equals(j.getEsGanador())).findFirst().orElse(null);
+        if (ganador != null) {
+            return resultado(partido, ganador, lados.stream().filter(j -> j != ganador).findFirst().orElseThrow());
+        }
+        Juega local = Partidos.lado(lados, Lado.LOCAL).orElseThrow();
+        Juega visitante = Partidos.lado(lados, Lado.VISITANTE).orElseThrow();
+        return "**" + Partidos.nombre(local.getInscripcion()) + "** empató " + local.getPuntaje() + "–"
+                + visitante.getPuntaje() + " con **" + Partidos.nombre(visitante.getInscripcion()) + "**.";
     }
 
     /** «A vs B», o «A pasa directo» si es un BYE. */

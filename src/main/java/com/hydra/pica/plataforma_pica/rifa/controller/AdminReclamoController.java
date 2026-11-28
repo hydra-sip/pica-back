@@ -1,7 +1,7 @@
 package com.hydra.pica.plataforma_pica.rifa.controller;
 
 import com.hydra.pica.plataforma_pica.common.dto.PaginaResponse;
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoReclamo;
 import com.hydra.pica.plataforma_pica.rifa.dto.ReclamoAdminDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.ResolverReclamoRequest;
@@ -13,7 +13,6 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,7 +31,6 @@ public class AdminReclamoController {
 
     private final ReclamoAdminService reclamoAdminService;
     private final LiberacionReclamoService liberacionReclamoService;
-    private final CurrentUserProvider currentUserProvider;
 
     @GetMapping
     @PreAuthorize("hasAuthority('RECLAMO_RESOLVER')")
@@ -53,17 +51,14 @@ public class AdminReclamoController {
     @PreAuthorize("hasAuthority('RECLAMO_RESOLVER')")
     public ReclamoAdminDetalle resolver(
             @PathVariable Long id,
-            @Valid @RequestBody ResolverReclamoRequest request) {
-        Long resolutorId = currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+            @Valid @RequestBody ResolverReclamoRequest request,
+            @UsuarioActual Long resolutorId) {
         return reclamoAdminService.resolver(resolutorId, id, request);
     }
 
     @PostMapping("/{id}/liberar")
     @PreAuthorize("hasAuthority('RECLAMO_RESOLVER')")
-    public ReclamoAdminDetalle liberar(@PathVariable Long id) {
-        Long ejecutorId = currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+    public ReclamoAdminDetalle liberar(@PathVariable Long id, @UsuarioActual Long ejecutorId) {
         return liberacionReclamoService.liberarFondos(ejecutorId, id);
     }
 }

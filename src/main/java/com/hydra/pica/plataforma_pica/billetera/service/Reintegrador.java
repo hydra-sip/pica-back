@@ -23,6 +23,7 @@ import com.hydra.pica.plataforma_pica.billetera.service.Acreditador.Evento;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
 import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
@@ -32,7 +33,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * El reintegro de un torneo cancelado (HU-605): a cada billetera que pagó con saldo le devuelve lo que pagó, del retenido
+ * Los reintegros. El de un inscripto que rechaza la reprogramación del torneo (CR-01-3) va aparte, en
+ * {@link #reintegrarInscripcion}. El de un torneo cancelado (HU-605): a cada billetera que pagó con saldo le devuelve lo que pagó, del retenido
  * al disponible, y libera la custodia como REINTEGRADA. No es una ganancia: no suma a la ganancia acumulada.
  * <p>
  * Con una retención aprobada por soporte, a cada billetera se le descuenta su parte de los gastos, proporcional a lo que
@@ -108,7 +110,7 @@ public class Reintegrador {
                     m -> m.setRifa(rifaRepository.getReferenceById(rifaId)),
                     "reint-r" + rifaId + "-b" + pago.billeteraId,
                     descripcion,
-                    "RIFA",
+                    EntidadAuditoria.RIFA,
                     rifaId.toString(),
                     null));
         }
@@ -151,7 +153,7 @@ public class Reintegrador {
                     m -> m.setTorneo(torneoRepository.getReferenceById(torneoId)),
                     "reint-t" + torneoId + "-b" + pago.billeteraId,
                     descripcion,
-                    "TORNEO",
+                    EntidadAuditoria.TORNEO,
                     torneoId.toString(),
                     pago.descuento);
         }
@@ -161,6 +163,72 @@ public class Reintegrador {
                     "Gastos aprobados de la cancelación del torneo " + nombre)));
         }
         return devuelto;
+    }
+
+    /**
+     * Devuelve la inscripción de alguien que se baja de un torneo que sigue (CR-01-3, rechazo de una reprogramación).
+     * El pago de la inscripción queda REVERTIDO (ya no cuenta en la custodia, ni para la liquidación ni para una
+     * cancelación) y vuelve del retenido al disponible de quien pagó con un REINTEGRO; los gastos administrativos no se
+     * devuelven y siguen en la custodia. Un pago simulado no tocó la billetera: solo se revierte. La custodia se bloquea
+     * como para liberarla: si ya se liberó, 409 CUSTODIA_LIBERADA.
+     *
+     * @param referencia la del reintegro: es única, así un reintento no devuelve dos veces
+     * @return lo que volvió a la billetera; 0 si no había pago (un torneo gratis)
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public BigDecimal reintegrarInscripcion(Long torneoId, Long inscripcionId, String referencia, String descripcion) {
+        Optional<Movimiento> encontrado = movimientoRepository.pagosDeLaInscripcion(inscripcionId).stream()
+                .filter(m -> m.getTipo() == TipoMovimiento.INSCRIPCION && m.getEstado() == EstadoMovimiento.CONFIRMADO)
+                .findFirst();
+        if (encontrado.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        Movimiento pago = encontrado.get();
+        if (pago.getCustodia() != null) {
+            EstadoCustodia estado = custodiaRepository.findParaLiberarPorTorneoId(torneoId).orElseThrow().getEstado();
+            if (estado != EstadoCustodia.RETENIDA) {
+                throw new ConflictoException(CodigoError.CUSTODIA_LIBERADA,
+                        "La custodia del torneo " + torneoId + " ya está " + estado + ": la inscripción no se devuelve")
+                        .con("estado", estado);
+            }
+        }
+        pago.setEstado(EstadoMovimiento.REVERTIDO);
+        movimientoRepository.save(pago);
+        if (!pago.getReferenciaExterna().startsWith("pago-")) {
+            return BigDecimal.ZERO;
+        }
+
+        Billetera billetera = billeteraRepository.findConBloqueoPorId(pago.getBilletera().getId()).orElseThrow();
+        BigDecimal monto = pago.getMonto();
+        billetera.setSaldoRetenido(billetera.getSaldoRetenido().subtract(monto));
+        billetera.setSaldoDisponible(billetera.getSaldoDisponible().add(monto));
+        billeteraRepository.save(billetera);
+
+        Movimiento reintegro = new Movimiento();
+        reintegro.setBilletera(billetera);
+        reintegro.setTorneo(torneoRepository.getReferenceById(torneoId));
+        reintegro.setInscripcion(pago.getInscripcion());
+        reintegro.setTipo(TipoMovimiento.REINTEGRO);
+        reintegro.setMonto(monto);
+        reintegro.setMoneda(billetera.getMoneda());
+        reintegro.setSaldoResultante(billetera.getSaldoDisponible());
+        reintegro.setEstado(EstadoMovimiento.CONFIRMADO);
+        reintegro.setReferenciaExterna(referencia);
+        reintegro.setDescripcion(Movimiento.truncarDescripcion(descripcion));
+        reintegro = movimientoRepository.save(reintegro);
+
+        Map<String, Object> detalle = new LinkedHashMap<>();
+        detalle.put("movimientoId", reintegro.getId());
+        detalle.put("pagoRevertidoId", pago.getId());
+        detalle.put("inscripcionId", inscripcionId);
+        detalle.put("billeteraId", billetera.getId());
+        detalle.put("monto", monto);
+        if (billetera.getUsuario() != null) {
+            detalle.put("usuarioId", billetera.getUsuario().getId());
+        }
+        auditoriaService.registrar(null, AccionAuditoria.REINTEGRO, EntidadAuditoria.TORNEO, torneoId.toString(),
+                detalle);
+        return monto;
     }
 
     /** Lo que pagó cada billetera, en orden de billetera: el total y la parte que fue inscripción. */
@@ -206,7 +274,7 @@ public class Reintegrador {
             Consumer<Movimiento> vincularEvento,
             String referencia,
             String descripcion,
-            String entidadAuditoria,
+            EntidadAuditoria entidadAuditoria,
             String entidadIdAuditoria,
             BigDecimal retenidoOpcional) {
         Billetera billetera = billeteraRepository.findConBloqueoPorId(pago.billeteraId).orElseThrow();
@@ -223,7 +291,7 @@ public class Reintegrador {
         movimiento.setSaldoResultante(billetera.getSaldoDisponible());
         movimiento.setEstado(EstadoMovimiento.CONFIRMADO);
         movimiento.setReferenciaExterna(referencia);
-        movimiento.setDescripcion(descripcion.length() > 255 ? descripcion.substring(0, 255) : descripcion);
+        movimiento.setDescripcion(Movimiento.truncarDescripcion(descripcion));
         Movimiento guardado = movimientoRepository.save(movimiento);
 
         Map<String, Object> detalle = new LinkedHashMap<>();

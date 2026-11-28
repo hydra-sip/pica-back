@@ -5,12 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 
+import com.hydra.pica.plataforma_pica.common.config.RelojConfig;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.AdminConfig;
 import com.hydra.pica.plataforma_pica.common.config.JpaAuditingConfig;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.security.SecurityContextCurrentUserProvider;
+import com.hydra.pica.plataforma_pica.control.service.AuditoriaService;
 import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
@@ -41,12 +43,14 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @DataJpaTest(properties = "app.admin.username=admin")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
+        RelojConfig.class,
         JpaAuditingConfig.class,
         SecurityContextCurrentUserProvider.class,
         TestcontainersConfiguration.class,
         AdminConfig.class,
         UsuarioEdicionService.class,
-        BloqueoService.class
+        BloqueoService.class,
+        AuditoriaService.class
 })
 class UsuarioEdicionServiceIntegracionTest {
 

@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,6 +11,7 @@ import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
 import com.hydra.pica.plataforma_pica.control.domain.AccionAuditoria;
 import com.hydra.pica.plataforma_pica.control.domain.Auditoria;
+import com.hydra.pica.plataforma_pica.control.domain.EntidadAuditoria;
 import com.hydra.pica.plataforma_pica.control.repository.AuditoriaRepository;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
@@ -39,6 +41,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>El organizador sortea desde {@code fechaSorteo}, que es parte del compromiso; antes, 409 SORTEO_ANTICIPADO. Con
  * {@code app.rifas.sorteo-anticipado=true} (solo para la demo) el cierre a mano adelanta {@code fechaSorteo} a unos
  * segundos después del cierre ({@link CierreVentaService}), así puede sortear enseguida.
+ *
+ * <p>Una rifa sin vendidos nunca se sortea (PICA-445): a mano, 409 RIFA_SIN_VENTAS antes de pedir la semilla; la
+ * tarea programada la cancela ({@link CancelacionRifaSinVentas}), para las CERRADA vacías de antes del arreglo.
  */
 @Service
 @RequiredArgsConstructor
@@ -52,6 +57,8 @@ public class SorteoRifaService {
     private final UsuarioRepository usuarioRepository;
     private final RifaService rifaService;
     private final ApplicationEventPublisher eventos;
+    private final CancelacionRifaSinVentas cancelacion;
+    private final Clock clock;
 
     @Transactional
     public RifaDetalle sortear(Long organizadorId, Long id) {
@@ -62,9 +69,12 @@ public class SorteoRifaService {
             throw new ConflictoException(CodigoError.RIFA_NO_EDITABLE,
                     "La rifa " + id + " está " + rifa.getEstado() + ": solo se sortea una CERRADA");
         }
-        if (Instant.now().isBefore(rifa.getSorteadaEn())) {
+        if (Instant.now(clock).isBefore(rifa.getSorteadaEn())) {
             throw new ConflictoException(CodigoError.SORTEO_ANTICIPADO,
                     "La rifa " + id + " se sortea desde la fecha comprometida: " + rifa.getSorteadaEn());
+        }
+        if (cancelacion.sinVentas(rifa)) {
+            throw CancelacionRifaSinVentas.error(id);
         }
         sortear(rifa, organizadorId);
         return rifaService.detalle(organizadorId, id);
@@ -72,14 +82,18 @@ public class SorteoRifaService {
 
     /**
      * Sortea si la rifa sigue CERRADA y ya llegó su fecha. Bloquea la fila y vuelve a mirar: el organizador u otra
-     * réplica pudieron sortearla mientras tanto.
+     * réplica pudieron sortearla mientras tanto. Si no tiene vendidos, la cancela.
      *
-     * @return si la sorteó
+     * @return si la sorteó; false también si la canceló
      */
     @Transactional
     public boolean sortearSiLlegoLaFecha(Long id, Instant ahora) {
         Rifa rifa = rifaRepository.buscarBloqueado(id).orElse(null);
         if (rifa == null || rifa.getEstado() != EstadoRifa.CERRADA || rifa.getSorteadaEn().isAfter(ahora)) {
+            return false;
+        }
+        if (cancelacion.sinVentas(rifa)) {
+            cancelacion.cancelar(rifa);
             return false;
         }
         sortear(rifa, null);
@@ -117,7 +131,7 @@ public class SorteoRifaService {
         Auditoria auditoria = new Auditoria();
         auditoria.setUsuario(actorId == null ? null : usuarioRepository.getReferenceById(actorId));
         auditoria.setAccion(AccionAuditoria.SORTEO);
-        auditoria.setEntidad("RIFA");
+        auditoria.setEntidad(EntidadAuditoria.RIFA.name());
         auditoria.setEntidadId(String.valueOf(rifa.getId()));
         auditoria.setDetalle(detalle);
         auditoriaRepository.save(auditoria);

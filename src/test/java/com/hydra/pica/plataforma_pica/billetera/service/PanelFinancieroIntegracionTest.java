@@ -18,7 +18,7 @@ import com.hydra.pica.plataforma_pica.billetera.service.Acreditacion.Rol;
 import com.hydra.pica.plataforma_pica.billetera.service.PanelFinancieroService.LiquidacionFinal;
 import com.hydra.pica.plataforma_pica.common.error.ApiException;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
-import com.hydra.pica.plataforma_pica.inscripcion.service.InscripcionService;
+import com.hydra.pica.plataforma_pica.inscripcion.service.PagoInscripcionService;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoGeneral;
 import com.hydra.pica.plataforma_pica.user.domain.EstadoUsuario;
 import com.hydra.pica.plataforma_pica.user.domain.Persona;
@@ -55,7 +55,7 @@ class PanelFinancieroIntegracionTest {
     @Autowired private PanelFinancieroService panelFinancieroService;
     @Autowired private LiquidacionService liquidacionService;
     @Autowired private CustodiaService custodiaService;
-    @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private PersonaRepository personaRepository;
     @Autowired private JdbcTemplate jdbc;
@@ -87,7 +87,7 @@ class PanelFinancieroIntegracionTest {
                     VALUES (?, ?, 'PENDIENTE_PAGO', now()) RETURNING id
                     """, Long.class, torneo, jugador);
             entityManager.clear();
-            inscripcionService.pagar(jugador, inscripcion[i]);
+            pagoInscripcionService.pagar(jugador, inscripcion[i]);
         }
         entityManager.flush();
     }

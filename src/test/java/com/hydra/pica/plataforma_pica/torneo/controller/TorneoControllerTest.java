@@ -31,6 +31,7 @@ import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
 import com.hydra.pica.plataforma_pica.inscripcion.domain.EstadoInscripcion;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDelTorneo;
 import com.hydra.pica.plataforma_pica.inscripcion.dto.InscripcionDetalle.EquipoInscripto;
+import com.hydra.pica.plataforma_pica.reputacion.dto.Reputacion;
 import com.hydra.pica.plataforma_pica.torneo.domain.CriterioSinPresentes;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
 import com.hydra.pica.plataforma_pica.torneo.domain.Formato;
@@ -271,6 +272,7 @@ class TorneoControllerTest {
     @WithMockUser(authorities = "INSCRIPCION_GESTIONAR")
     @DisplayName("PUT /api/v1/torneos/{id}/checkin sin TORNEO_GESTIONAR responde 403")
     void configuraCheckinSinPermiso() throws Exception {
+        when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
         mockMvc.perform(put("/api/v1/torneos/9/checkin")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"minAntes\": 30, \"duracion\": 20}"))
@@ -297,7 +299,7 @@ class TorneoControllerTest {
     void opciones() throws Exception {
         when(torneoService.opciones("Club Mercedes")).thenReturn(new OpcionesTorneo(List.of(),
                 List.of(new OpcionesTorneo.FormatoOpcion("ELIMINACION_DIRECTA", "Eliminación directa", true)),
-                List.of(Modalidad.values()), 64, BigDecimal.TEN, 60, 45, List.of("Cancha 1")));
+                List.of(Modalidad.values()), 64, BigDecimal.TEN, 60, 45, List.of("Cancha 1"), false));
 
         mockMvc.perform(get("/api/v1/torneos/opciones").param("sede", "Club Mercedes"))
                 .andExpect(status().isOk())
@@ -305,7 +307,8 @@ class TorneoControllerTest {
                 .andExpect(jsonPath("$.margenCierreInicioMin").value(60))
                 .andExpect(jsonPath("$.checkinDuracionMaxMin").value(45))
                 .andExpect(jsonPath("$.canchas[0]").value("Cancha 1"))
-                .andExpect(jsonPath("$.formatos[0].disponible").value(true));
+                .andExpect(jsonPath("$.formatos[0].disponible").value(true))
+                .andExpect(jsonPath("$.sinValidarFechas").value(false));
     }
 
     @Test
@@ -379,7 +382,8 @@ class TorneoControllerTest {
     void inscripcionesDelTorneo() throws Exception {
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(ORGANIZADOR));
         InscripcionDelTorneo fila = new InscripcionDelTorneo(31L, EstadoInscripcion.CONFIRMADA, CREADO, null,
-                new EquipoInscripto(4L, "Los Halcones", 7L), new UsuarioPublico(7L, "cap", "Ana", "Paz"), 5);
+                new EquipoInscripto(4L, "Los Halcones", 7L), new UsuarioPublico(7L, "cap", "Ana", "Paz"), 5, 85,
+                new Reputacion(4.5, 2), true);
         when(inscripcionTorneoService.listar(eq(ORGANIZADOR), eq(9L), eq(EstadoInscripcion.CONFIRMADA), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(fila), PageRequest.of(0, 10), 1));
 
@@ -389,6 +393,10 @@ class TorneoControllerTest {
                 .andExpect(jsonPath("$.content[0].equipo.nombre").value("Los Halcones"))
                 .andExpect(jsonPath("$.content[0].capitan.username").value("cap"))
                 .andExpect(jsonPath("$.content[0].jugadores").value(5))
+                .andExpect(jsonPath("$.content[0].fairPlay").value(85))
+                .andExpect(jsonPath("$.content[0].reputacion.promedio").value(4.5))
+                .andExpect(jsonPath("$.content[0].reputacion.cantidad").value(2))
+                .andExpect(jsonPath("$.content[0].noConfiable").value(true))
                 .andExpect(jsonPath("$.page.totalElements").value(1));
 
         ArgumentCaptor<Pageable> pagina = ArgumentCaptor.forClass(Pageable.class);
@@ -474,8 +482,8 @@ class TorneoControllerTest {
 
     private static TorneoInformacion borrador() {
         return new TorneoInformacion(9L, EstadoTorneo.BORRADOR, 1, "Apertura F5", "Fútbol 5", null,
-                Formato.ELIMINACION_DIRECTA, Modalidad.PRESENCIAL, null, "Club Mercedes", List.of("Cancha 1"), null,
-                null, null, null, null, null, null, null, null, null, null, null, CriterioSinPresentes.REPROGRAMAR, null,
-                null, null, null, null, null, null, CREADO, CREADO, List.of());
+                Formato.ELIMINACION_DIRECTA, null, Modalidad.PRESENCIAL, null, "Club Mercedes", List.of("Cancha 1"),
+                null, null, null, null, null, null, null, null, null, null, null, null, CriterioSinPresentes.REPROGRAMAR, null,
+                null, null, null, null, null, null, CREADO, CREADO, List.of(), 2);
     }
 }

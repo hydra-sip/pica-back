@@ -1,7 +1,5 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
-import java.math.BigDecimal;
-
 import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoMovimiento;
@@ -38,8 +36,7 @@ public class CobroSimulado implements CobroService {
     @Transactional
     public Movimiento cobrar(SolicitudCobro solicitud) {
         String referencia = PREFIJO_REFERENCIA + solicitud.claveIdempotencia();
-        Billetera billetera = billeteraRepository.findByUsuarioId(solicitud.usuarioId())
-                .orElseGet(() -> nuevaBilletera(solicitud.usuarioId()));
+        Billetera billetera = Billeteras.obtenerOCrear(billeteraRepository, usuarioRepository, solicitud.usuarioId());
 
         var anterior = movimientoRepository.findByReferenciaExterna(referencia);
         if (anterior.isPresent()) {
@@ -65,18 +62,6 @@ public class CobroSimulado implements CobroService {
             movimiento.setInscripcion(inscripcionRepository.getReferenceById(solicitud.inscripcionId()));
         }
         return movimientoRepository.save(movimiento);
-    }
-
-    // Respaldo por si algún test persiste un Usuario directo sin pasar por UsuarioService.crear
-    private Billetera nuevaBilletera(Long usuarioId) {
-        Billetera billetera = new Billetera();
-        billetera.setUsuario(usuarioRepository.getReferenceById(usuarioId));
-        billetera.setSaldoDisponible(BigDecimal.ZERO);
-        billetera.setSaldoRetenido(BigDecimal.ZERO);
-        billetera.setGananciaAcumulada(BigDecimal.ZERO);
-        billetera.setMoneda("ARS");
-        billetera.setEstado(EstadoBilletera.ACTIVA);
-        return billeteraRepository.save(billetera);
     }
 
     // la misma clave para otro pago es un error de quien cobra, no un reintento

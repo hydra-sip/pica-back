@@ -5,14 +5,13 @@ import java.util.List;
 
 import jakarta.validation.Valid;
 
-import com.hydra.pica.plataforma_pica.common.security.CurrentUserProvider;
+import com.hydra.pica.plataforma_pica.common.security.UsuarioActual;
 import com.hydra.pica.plataforma_pica.rifa.dto.ReclamoRifaDetalle;
 import com.hydra.pica.plataforma_pica.rifa.dto.ReclamoRifaRequest;
 import com.hydra.pica.plataforma_pica.rifa.service.ReclamoRifaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,7 +29,6 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class ReclamoRifaController {
 
     private final ReclamoRifaService reclamoRifaService;
-    private final CurrentUserProvider currentUserProvider;
 
     /**
      * Permite a un comprador disputar el resultado del sorteo de una rifa dentro de las 48 horas posteriores a su finalización.
@@ -39,9 +37,8 @@ public class ReclamoRifaController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ReclamoRifaDetalle> registrarReclamo(
             @PathVariable Long id,
-            @Valid @RequestBody ReclamoRifaRequest request) {
-        Long usuarioId = currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+            @Valid @RequestBody ReclamoRifaRequest request,
+            @UsuarioActual Long usuarioId) {
         ReclamoRifaDetalle detalle = reclamoRifaService.registrarReclamo(usuarioId, id, request);
         URI ubicacion = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{reclamoId}")
@@ -55,9 +52,7 @@ public class ReclamoRifaController {
      */
     @GetMapping
     @PreAuthorize("isAuthenticated()")
-    public List<ReclamoRifaDetalle> listarReclamos(@PathVariable Long id) {
-        Long usuarioId = currentUserProvider.getCurrentUserId()
-                .orElseThrow(() -> new AuthenticationCredentialsNotFoundException("Sin usuario en la sesión"));
+    public List<ReclamoRifaDetalle> listarReclamos(@PathVariable Long id, @UsuarioActual Long usuarioId) {
         return reclamoRifaService.listarPorRifa(usuarioId, id);
     }
 }

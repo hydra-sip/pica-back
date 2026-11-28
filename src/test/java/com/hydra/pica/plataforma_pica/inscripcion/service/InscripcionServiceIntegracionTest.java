@@ -59,6 +59,7 @@ import org.springframework.transaction.annotation.Transactional;
 class InscripcionServiceIntegracionTest {
 
     @Autowired private InscripcionService inscripcionService;
+    @Autowired private PagoInscripcionService pagoInscripcionService;
     @MockitoSpyBean private InscripcionRepository inscripcionRepository;
     @MockitoSpyBean private CobroService cobroService;
     @Autowired private BloqueoService bloqueoService;
@@ -489,7 +490,7 @@ class InscripcionServiceIntegracionTest {
     void pagarConfirmaLaInscripcionYRegistraElCobroDelValorDelTorneo() {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
 
-        InscripcionDetalle pagada = inscripcionService.pagar(jugador, id);
+        InscripcionDetalle pagada = pagoInscripcionService.pagar(jugador, id);
 
         assertThat(pagada.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
         assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
@@ -508,13 +509,13 @@ class InscripcionServiceIntegracionTest {
         jdbc.update("UPDATE torneo SET pct_gastos_administrativos = 10 WHERE id = ?", torneo);
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
 
-        inscripcionService.pagar(jugador, id);
+        pagoInscripcionService.pagar(jugador, id);
 
         assertThat(jdbc.queryForList("SELECT tipo, monto FROM movimiento WHERE inscripcion_id = ? ORDER BY id", id))
                 .extracting(m -> m.get("tipo") + " " + ((BigDecimal) m.get("monto")).stripTrailingZeros().toPlainString())
                 .containsExactly("INSCRIPCION 1000", "COMISION 100");
         // reintentar no cobra de nuevo ninguno de los dos
-        inscripcionService.pagar(jugador, id);
+        pagoInscripcionService.pagar(jugador, id);
         assertThat(movimientosDe(id)).isEqualTo(2);
     }
 
@@ -523,7 +524,7 @@ class InscripcionServiceIntegracionTest {
         jdbc.update("UPDATE torneo SET pct_gastos_administrativos = 10 WHERE id = ?", torneo);
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
 
-        ResumenPago resumen = inscripcionService.resumenPago(jugador, id);
+        ResumenPago resumen = pagoInscripcionService.resumenPago(jugador, id);
 
         assertThat(resumen.monto()).isEqualByComparingTo("1000");
         assertThat(resumen.gastosAdministrativos()).isEqualByComparingTo("100");
@@ -533,9 +534,9 @@ class InscripcionServiceIntegracionTest {
     @Test
     void reintentarElPagoDeUnaConfirmadaRespondeConExitoYNoCobraDeNuevo() {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
-        inscripcionService.pagar(jugador, id);
+        pagoInscripcionService.pagar(jugador, id);
 
-        InscripcionDetalle reintento = inscripcionService.pagar(jugador, id);
+        InscripcionDetalle reintento = pagoInscripcionService.pagar(jugador, id);
 
         assertThat(reintento.estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
         assertThat(movimientosDe(id)).isEqualTo(1);
@@ -546,7 +547,7 @@ class InscripcionServiceIntegracionTest {
         long id = inscripcionDe(jugador, "CONFIRMADA");
         jdbc.update("UPDATE torneo SET estado = 'INSCRIPCION_CERRADA' WHERE id = ?", torneo);
 
-        assertThat(inscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(pagoInscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
         assertThat(movimientosDe(id)).isZero();
     }
 
@@ -554,7 +555,7 @@ class InscripcionServiceIntegracionTest {
     void elCobroLlevaLaClaveDeLaInscripcionElMontoDelTorneoYElTipoInscripcion() {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
 
-        inscripcionService.pagar(jugador, id);
+        pagoInscripcionService.pagar(jugador, id);
 
         ArgumentCaptor<SolicitudCobro> solicitud = ArgumentCaptor.forClass(SolicitudCobro.class);
         verify(cobroService).cobrar(solicitud.capture());
@@ -571,7 +572,7 @@ class InscripcionServiceIntegracionTest {
         long id = inscripcionDe(jugador, "CONFIRMADA");
         jdbc.update("UPDATE torneo SET eliminado_en = now() WHERE id = ?", torneo);
 
-        assertThat(inscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(pagoInscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
         verify(cobroService, never()).cobrar(any());
     }
 
@@ -581,7 +582,7 @@ class InscripcionServiceIntegracionTest {
             Long dueno = usuario("pagar_" + estado.toLowerCase()).getId();
             long id = inscripcionDe(dueno, estado);
 
-            assertError(() -> inscripcionService.pagar(dueno, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
+            assertError(() -> pagoInscripcionService.pagar(dueno, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
             assertThat(movimientosDe(id)).isZero();
         }
     }
@@ -590,9 +591,9 @@ class InscripcionServiceIntegracionTest {
     void soloElParticipantePagaSuInscripcion() {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
 
-        assertError(() -> inscripcionService.pagar(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
-        assertError(() -> inscripcionService.pagar(usuario("otro_pago").getId(), id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
-        assertError(() -> inscripcionService.pagar(jugador, 999_999L), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> pagoInscripcionService.pagar(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> pagoInscripcionService.pagar(usuario("otro_pago").getId(), id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> pagoInscripcionService.pagar(jugador, 999_999L), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
         assertThat(movimientosDe(id)).isZero();
     }
 
@@ -601,7 +602,7 @@ class InscripcionServiceIntegracionTest {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
         jdbc.update("UPDATE torneo SET estado = 'INSCRIPCION_CERRADA' WHERE id = ?", torneo);
 
-        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+        assertError(() -> pagoInscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
         assertThat(movimientosDe(id)).isZero();
         assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
     }
@@ -611,7 +612,7 @@ class InscripcionServiceIntegracionTest {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
         jdbc.update("UPDATE torneo SET cierre_inscripcion_en = now() - interval '1 minute' WHERE id = ?", torneo);
 
-        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
+        assertError(() -> pagoInscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_ABIERTA);
         assertThat(movimientosDe(id)).isZero();
     }
 
@@ -620,7 +621,7 @@ class InscripcionServiceIntegracionTest {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
         jdbc.update("UPDATE torneo SET eliminado_en = now() WHERE id = ?", torneo);
 
-        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
+        assertError(() -> pagoInscripcionService.pagar(jugador, id), HttpStatus.NOT_FOUND, CodigoError.TORNEO_NO_ENCONTRADO);
         assertThat(movimientosDe(id)).isZero();
     }
 
@@ -630,7 +631,7 @@ class InscripcionServiceIntegracionTest {
         long id = inscripcionDe(bloqueado.getId(), "PENDIENTE_PAGO");
         bloqueoService.bloquear(bloqueado, "Mala conducta", Instant.now().plus(5, ChronoUnit.DAYS));
 
-        assertError(() -> inscripcionService.pagar(bloqueado.getId(), id), HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO);
+        assertError(() -> pagoInscripcionService.pagar(bloqueado.getId(), id), HttpStatus.FORBIDDEN, CodigoError.USUARIO_BLOQUEADO);
         assertThat(movimientosDe(id)).isZero();
     }
 
@@ -641,7 +642,7 @@ class InscripcionServiceIntegracionTest {
         inactivo.setEstado(EstadoUsuario.PENDIENTE_VERIFICACION);
         usuarioRepository.saveAndFlush(inactivo);
 
-        assertError(() -> inscripcionService.pagar(inactivo.getId(), id), HttpStatus.CONFLICT, CodigoError.USUARIO_NO_ACTIVO);
+        assertError(() -> pagoInscripcionService.pagar(inactivo.getId(), id), HttpStatus.CONFLICT, CodigoError.USUARIO_NO_ACTIVO);
         assertThat(movimientosDe(id)).isZero();
     }
 
@@ -650,7 +651,7 @@ class InscripcionServiceIntegracionTest {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
         llenarElCupo(2);
 
-        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
+        assertError(() -> pagoInscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
 
         verify(cobroService, never()).cobrar(any());
         assertThat(movimientosDe(id)).isZero();
@@ -664,7 +665,7 @@ class InscripcionServiceIntegracionTest {
         inscripcionDe(usuario("conf_pago").getId(), "CONFIRMADA");
         inscripcionDe(usuario("pend_pago").getId(), "PENDIENTE_PAGO");
 
-        assertThat(inscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(pagoInscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
     }
 
     @Test
@@ -672,7 +673,7 @@ class InscripcionServiceIntegracionTest {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
         doThrow(new CobroRechazadoException("sin fondos")).when(cobroService).cobrar(any());
 
-        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.COBRO_RECHAZADO);
+        assertError(() -> pagoInscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.COBRO_RECHAZADO);
 
         assertThat(inscripcionService.detalle(jugador, id).estado()).isEqualTo(EstadoInscripcion.PENDIENTE_PAGO);
         assertThat(movimientosDe(id)).isZero();
@@ -683,7 +684,7 @@ class InscripcionServiceIntegracionTest {
         long gratis = torneoIndividualGratis();
         long id = inscripcionEn(gratis, jugador, "PENDIENTE_PAGO");
 
-        assertThat(inscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
+        assertThat(pagoInscripcionService.pagar(jugador, id).estado()).isEqualTo(EstadoInscripcion.CONFIRMADA);
 
         verify(cobroService, never()).cobrar(any());
     }
@@ -696,7 +697,7 @@ class InscripcionServiceIntegracionTest {
         inscripcionEn(gratis, usuario("g2_pago").getId(), "CONFIRMADA");
         long id = inscripcionEn(gratis, jugador, "PENDIENTE_PAGO");
 
-        assertError(() -> inscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
+        assertError(() -> pagoInscripcionService.pagar(jugador, id), HttpStatus.CONFLICT, CodigoError.CUPO_COMPLETO);
     }
 
     // --- resumen de pago ----------------------------------------------------
@@ -708,7 +709,7 @@ class InscripcionServiceIntegracionTest {
         inscripcionDe(usuario("conf2_res").getId(), "CONFIRMADA");
         inscripcionDe(usuario("pend_res").getId(), "PENDIENTE_PAGO");
 
-        ResumenPago resumen = inscripcionService.resumenPago(jugador, id);
+        ResumenPago resumen = pagoInscripcionService.resumenPago(jugador, id);
 
         assertThat(resumen.inscripcionId()).isEqualTo(id);
         assertThat(resumen.torneo().id()).isEqualTo(torneo);
@@ -729,7 +730,7 @@ class InscripcionServiceIntegracionTest {
             Long dueno = usuario("res_" + estado.toLowerCase()).getId();
             long id = inscripcionDe(dueno, estado);
 
-            assertError(() -> inscripcionService.resumenPago(dueno, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
+            assertError(() -> pagoInscripcionService.resumenPago(dueno, id), HttpStatus.CONFLICT, CodigoError.INSCRIPCION_NO_EDITABLE);
         }
     }
 
@@ -737,9 +738,9 @@ class InscripcionServiceIntegracionTest {
     void elResumenSoloLoVeElParticipante() {
         long id = inscripcionDe(jugador, "PENDIENTE_PAGO");
 
-        assertError(() -> inscripcionService.resumenPago(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
-        assertError(() -> inscripcionService.resumenPago(usuario("otro_res").getId(), id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
-        assertError(() -> inscripcionService.resumenPago(jugador, 999_999L), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> pagoInscripcionService.resumenPago(organizador, id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> pagoInscripcionService.resumenPago(usuario("otro_res").getId(), id), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
+        assertError(() -> pagoInscripcionService.resumenPago(jugador, 999_999L), HttpStatus.NOT_FOUND, CodigoError.INSCRIPCION_NO_ENCONTRADA);
     }
 
     // --- reabrir ------------------------------------------------------------

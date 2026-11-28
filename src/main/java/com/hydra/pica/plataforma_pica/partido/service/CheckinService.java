@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 
@@ -9,12 +10,15 @@ import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Lado;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
-import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.EstadoVentana;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.LadoCheckin;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.VentanaCheckin;
+import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido;
+import com.hydra.pica.plataforma_pica.partido.event.CheckinHecho;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +35,9 @@ public class CheckinService {
     private final JuegaRepository juegaRepository;
     private final VentanasCheckin ventanas;
     private final ResultadoService resultadoService;
+    private final TorneoRepository torneoRepository;
+    private final ApplicationEventPublisher eventos;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public CheckinPartido ver(Long usuarioId, Long partidoId) {
@@ -54,7 +61,7 @@ public class CheckinService {
             throw new ConflictoException(CodigoError.CHECKIN_SIN_VENTANA, "El partido " + partidoId
                     + " no tiene ventana de check-in: el torneo no la configuró o el partido no tiene fecha");
         }
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         if (ventanas.estado(ventana, ahora) != EstadoVentana.ABIERTA) {
             throw new ConflictoException(CodigoError.CHECKIN_FUERA_DE_VENTANA,
                     "La ventana de check-in del partido " + partidoId + " va de " + ventana.abreEn() + " a "
@@ -65,13 +72,15 @@ public class CheckinService {
         mio.setCheckinEn(ahora);
         boolean losDos = lados.stream().allMatch(j -> j.getCheckinEn() != null);
         partido.setEstado(losDos ? EstadoPartido.EN_JUEGO : EstadoPartido.CHECK_IN);
+        torneoRepository.subirVersionBracket(partido.getTorneo().getId());
         resultadoService.auditar(partido, usuarioId, ResultadoService.detalle("CHECKIN", mio));
+        eventos.publishEvent(new CheckinHecho(partido.getTorneo().getId(), partidoId, mio.getId().getInscripcionId()));
         return checkin(partido, lados, usuarioId);
     }
 
     private CheckinPartido checkin(Partido partido, List<Juega> lados, Long usuarioId) {
         VentanaCheckin ventana = VentanasCheckin.de(partido);
-        return new CheckinPartido(ventana, ventanas.estado(ventana, Instant.now()), lado(lados, Lado.LOCAL),
+        return new CheckinPartido(ventana, ventanas.estado(ventana, Instant.now(clock)), lado(lados, Lado.LOCAL),
                 lado(lados, Lado.VISITANTE),
                 Partidos.deCapitan(lados, usuarioId).map(Juega::getLado).orElse(null));
     }

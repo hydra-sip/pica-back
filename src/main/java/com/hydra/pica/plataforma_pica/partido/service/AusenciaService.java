@@ -6,13 +6,16 @@ import java.util.List;
 import java.util.Map;
 
 import com.hydra.pica.plataforma_pica.partido.domain.EstadoPartido;
+import com.hydra.pica.plataforma_pica.partido.domain.FasePartido;
 import com.hydra.pica.plataforma_pica.partido.domain.Juega;
 import com.hydra.pica.plataforma_pica.partido.domain.Partido;
 import com.hydra.pica.plataforma_pica.partido.dto.CheckinPartido.EstadoVentana;
+import com.hydra.pica.plataforma_pica.partido.event.AusenciaDeclarada;
 import com.hydra.pica.plataforma_pica.partido.event.PartidoSinPresentes;
 import com.hydra.pica.plataforma_pica.partido.repository.JuegaRepository;
 import com.hydra.pica.plataforma_pica.torneo.domain.CriterioSinPresentes;
 import com.hydra.pica.plataforma_pica.torneo.domain.EstadoTorneo;
+import com.hydra.pica.plataforma_pica.torneo.repository.TorneoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -32,7 +35,9 @@ public class AusenciaService {
     private final JuegaRepository juegaRepository;
     private final VentanasCheckin ventanas;
     private final AvanceLlave avanceLlave;
+    private final FaseDeGrupos faseDeGrupos;
     private final ResultadoService resultadoService;
+    private final TorneoRepository torneoRepository;
     private final ApplicationEventPublisher eventos;
 
     /**
@@ -63,6 +68,8 @@ public class AusenciaService {
         ausente.setEsGanador(false);
         avanceLlave.confirmar(partido, lados, EstadoPartido.WALKOVER);
         resultadoService.auditar(partido, null, ResultadoService.detalle("WALKOVER", ausente));
+        eventos.publishEvent(new AusenciaDeclarada(partido.getTorneo().getId(), partidoId,
+                List.of(ausente.getId().getInscripcionId())));
         return true;
     }
 
@@ -74,7 +81,11 @@ public class AusenciaService {
      */
     private boolean sinPresentes(Partido partido, List<Juega> lados) {
         CriterioSinPresentes criterio = partido.getTorneo().getCheckinSinPresentes();
-        if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS
+        if (partido.getFase() == FasePartido.DESEMPATE) {
+            criterio = CriterioSinPresentes.REPROGRAMAR; // un desempate tiene que tener ganador (CR-02)
+        }
+        boolean deGrupos = partido.getFase() == FasePartido.GRUPOS;
+        if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS && !deGrupos
                 && (avanceLlave.esFinal(partido) || avanceLlave.terminoSinGanador(avanceLlave.hermano(partido)))) {
             criterio = CriterioSinPresentes.REPROGRAMAR;
         }
@@ -84,11 +95,21 @@ public class AusenciaService {
             lados.forEach(j -> j.setEsGanador(false));
             partido.setEstado(EstadoPartido.WALKOVER);
         }
+        torneoRepository.subirVersionBracket(partido.getTorneo().getId());
         Map<String, Object> detalle = new LinkedHashMap<>();
         detalle.put("resultado", "SIN_PRESENTES");
         detalle.put("criterio", criterio.name());
         resultadoService.auditar(partido, null, detalle);
         eventos.publishEvent(new PartidoSinPresentes(partido.getTorneo().getId(), partido.getId()));
+        eventos.publishEvent(new AusenciaDeclarada(partido.getTorneo().getId(), partido.getId(),
+                lados.stream().map(j -> j.getId().getInscripcionId()).toList()));
+        if (deGrupos) {
+            // en grupos no hay a quién pasar: descalificados, ninguno suma (CR-02)
+            if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS) {
+                faseDeGrupos.terminado(partido);
+            }
+            return true;
+        }
         if (criterio == CriterioSinPresentes.DESCALIFICAR_AMBOS) {
             Partido siguiente = avanceLlave.siguiente(partido);
             List<Juega> esperan = juegaRepository.delPartido(siguiente.getId());

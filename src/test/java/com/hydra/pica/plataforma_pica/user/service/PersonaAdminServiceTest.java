@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -31,6 +32,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -51,6 +53,13 @@ class PersonaAdminServiceTest {
 
     @Mock
     private UsuarioRepository usuarioRepository;
+
+    /** El reloj real: Mockito lo pasa al constructor del servicio. */
+
+    @Spy
+
+    private Clock clock = Clock.systemUTC();
+
 
     @InjectMocks
     private PersonaAdminService servicio;

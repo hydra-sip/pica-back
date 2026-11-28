@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -12,6 +13,7 @@ import com.hydra.pica.plataforma_pica.common.config.RifaConfig.RifaProperties;
 import com.hydra.pica.plataforma_pica.common.error.CodigoError;
 import com.hydra.pica.plataforma_pica.common.error.ConflictoException;
 import com.hydra.pica.plataforma_pica.common.error.NoEncontradoException;
+import com.hydra.pica.plataforma_pica.control.service.BloqueoService;
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoNumero;
 import com.hydra.pica.plataforma_pica.rifa.domain.Numero;
 import com.hydra.pica.plataforma_pica.rifa.domain.SelloRifa;
@@ -54,6 +56,8 @@ public class RifaPublicaService {
     private final NumeroRepository numeroRepository;
     private final RifaProperties rifaProperties;
     private final Drand drand;
+    private final BloqueoService bloqueoService;
+    private final Clock clock;
 
     /**
      * En venta y con la venta sin terminar, también las que todavía no empezaron. Primero las que cierran antes; el
@@ -63,21 +67,23 @@ public class RifaPublicaService {
     public Page<RifaPublicaResumen> listarEnVenta(Pageable pageable) {
         Pageable porCierre = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
                 Sort.by("ventaHasta", "id"));
-        return rifaRepository.findByEstadoAndVentaHastaAfterAndEliminadoEnIsNull(EstadoRifa.EN_VENTA, Instant.now(),
+        return rifaRepository.findByEstadoAndVentaHastaAfterAndEliminadoEnIsNull(EstadoRifa.EN_VENTA, Instant.now(clock),
                 porCierre).map(RifaPublicaResumen::de);
     }
 
     @Transactional(readOnly = true)
     public RifaPublicaDetalle detalle(Long id) {
         Rifa rifa = buscarPublica(id);
+        boolean ventaSuspendida = rifa.getEstado() == EstadoRifa.EN_VENTA
+                && bloqueoService.estaBloqueado(rifa.getOrganizador());
         return RifaPublicaDetalle.de(rifa, premioRifaRepository.buscarPorRifa(rifa.getId()),
-                numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO));
+                numeroRepository.countByIdRifaIdAndEstado(rifa.getId(), EstadoNumero.VENDIDO), ventaSuspendida);
     }
 
     @Transactional(readOnly = true)
     public List<NumeroOcupado> numerosOcupados(Long id) {
         Rifa rifa = buscarPublica(id);
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         return numeroRepository.findByIdRifaIdOrderByIdNumero(rifa.getId()).stream()
                 .filter(n -> !n.reservaVencida(ahora, rifaProperties.duracionReserva()))
                 .map(NumeroOcupado::de)

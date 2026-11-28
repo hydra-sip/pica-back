@@ -71,7 +71,7 @@ class WebSocketBrokerTest {
                     10L,
                     100L,
                     false,
-                    new BracketTorneo(42L, "seed", "hash", List.of()),
+                    new BracketTorneo(42L, "seed", "hash", List.of(), 0L),
                     new BigDecimal("50000.00")
             );
 

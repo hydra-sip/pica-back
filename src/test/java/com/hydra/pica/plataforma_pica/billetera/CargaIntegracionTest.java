@@ -96,7 +96,11 @@ class CargaIntegracionTest {
                 .filter(a -> a.getUsuario() != null && usuario.getId().equals(a.getUsuario().getId()))
                 .filter(a -> a.getAccion() == AccionAuditoria.PAGO)
                 .toList();
-        assertThat(auditorias).isNotEmpty();
+        assertThat(auditorias).singleElement().satisfies(a -> {
+            assertThat(a.getEntidad()).isEqualTo("BILLETERA");
+            assertThat(new BigDecimal(a.getDetalle().get("monto").toString())).isEqualByComparingTo("15000.50");
+            assertThat(new BigDecimal(a.getDetalle().get("saldoResultante").toString())).isEqualByComparingTo("15000.50");
+        });
     }
 
     @Test

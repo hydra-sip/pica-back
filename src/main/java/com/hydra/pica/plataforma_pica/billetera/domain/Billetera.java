@@ -34,6 +34,8 @@ import org.hibernate.type.SqlTypes;
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Billetera extends AuditableEntity {
 
+    public static final String MONEDA_POR_DEFECTO = "ARS";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
@@ -57,9 +59,21 @@ public class Billetera extends AuditableEntity {
 
     @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "moneda", length = 3, nullable = false)
-    private String moneda = "ARS";
+    private String moneda = MONEDA_POR_DEFECTO;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "estado", length = 20, nullable = false)
     private EstadoBilletera estado = EstadoBilletera.ACTIVA;
+
+    /** Crea una billetera activa en ARS con todos los saldos en cero para {@code usuario}. */
+    public static Billetera nuevaPara(Usuario usuario) {
+        Billetera billetera = new Billetera();
+        billetera.setUsuario(usuario);
+        billetera.setSaldoDisponible(BigDecimal.ZERO);
+        billetera.setSaldoRetenido(BigDecimal.ZERO);
+        billetera.setGananciaAcumulada(BigDecimal.ZERO);
+        billetera.setMoneda(MONEDA_POR_DEFECTO);
+        billetera.setEstado(EstadoBilletera.ACTIVA);
+        return billetera;
+    }
 }

@@ -1,5 +1,8 @@
 package com.hydra.pica.plataforma_pica.rifa.event;
 
+import java.math.BigDecimal;
+import java.util.Map;
+
 import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
 
 /**
@@ -9,11 +12,13 @@ import com.hydra.pica.plataforma_pica.rifa.domain.EstadoRifa;
  * @param rifaId          identificador de la rifa
  * @param torneoId        identificador del torneo asociado, o null si es independiente
  * @param rifaEstadoFinal estado definitivo de la rifa tras liberar ({@code LIQUIDADA} o {@code CANCELADA})
+ * @param acreditados     cuánto se le acreditó a cada usuario (por id): ganadores y organizador si se liquidó,
+ *                        cada comprador si se reintegró; para avisarle a cada uno su monto (HU-808)
  */
 public record FondosReclamoLiberados(
         Long reclamoId,
         Long rifaId,
         Long torneoId,
-        EstadoRifa rifaEstadoFinal) {
+        EstadoRifa rifaEstadoFinal,
+        Map<Long, BigDecimal> acreditados) {
 }
-
