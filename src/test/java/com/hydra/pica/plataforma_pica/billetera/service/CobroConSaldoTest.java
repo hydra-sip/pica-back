@@ -10,6 +10,7 @@ import java.time.temporal.ChronoUnit;
 
 import jakarta.persistence.EntityManager;
 
+import com.hydra.pica.plataforma_pica.common.config.RelojConfig;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.billetera.domain.Billetera;
 import com.hydra.pica.plataforma_pica.billetera.domain.EstadoBilletera;
@@ -48,6 +49,7 @@ import org.springframework.context.annotation.Import;
 @DataJpaTest(properties = "app.cobro.modo=saldo")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
+        RelojConfig.class,
         CobroConSaldo.class,
         CustodiaService.class,
         AuditoriaService.class,

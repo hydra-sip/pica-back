@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.startsWith;
@@ -35,7 +36,7 @@ class VerificacionEmailServiceEmailCambiadoTest {
 
     @BeforeEach
     void crearServicio() {
-        servicio = new VerificacionEmailService(usuarioRepository, emailService, "http://localhost/verificar");
+        servicio = new VerificacionEmailService(usuarioRepository, emailService, "http://localhost/verificar", Clock.systemUTC());
     }
 
     @Test

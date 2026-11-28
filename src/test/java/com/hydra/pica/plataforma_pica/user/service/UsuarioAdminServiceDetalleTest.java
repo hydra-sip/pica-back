@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 
+import com.hydra.pica.plataforma_pica.common.config.RelojConfig;
 import com.hydra.pica.plataforma_pica.TestcontainersConfiguration;
 import com.hydra.pica.plataforma_pica.common.config.AdminConfig;
 import com.hydra.pica.plataforma_pica.common.config.JpaAuditingConfig;
@@ -30,6 +31,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @DataJpaTest(properties = "app.admin.username=admin")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
+        RelojConfig.class,
         JpaAuditingConfig.class,
         SecurityContextCurrentUserProvider.class,
         TestcontainersConfiguration.class,

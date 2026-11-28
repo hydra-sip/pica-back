@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
@@ -13,7 +14,7 @@ class DrandTest {
     private static final long GENESIS = 1692803367;
 
     private final Drand drand = new Drand(RestClient.builder(), "https://api.drand.sh/",
-            "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971", GENESIS, 3);
+            "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971", GENESIS, 3, Clock.systemUTC());
 
     @Test
     void laRondaEsLaUltimaQueSalioHastaEseInstante() {

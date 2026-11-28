@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.common.config;
 
+import java.time.Clock;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 
@@ -24,7 +25,7 @@ public class JwtTestSupportConfiguration {
 
     @Bean
     JwtService jwtService(KeyPair keyPair) {
-        return new JwtService(keyPair, SesionConfig.SesionProperties.porDefecto());
+        return new JwtService(keyPair, SesionConfig.SesionProperties.porDefecto(), Clock.systemUTC());
     }
 
     @Bean
