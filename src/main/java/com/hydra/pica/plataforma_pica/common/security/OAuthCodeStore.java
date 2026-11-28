@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.common.security;
 
+import java.time.Clock;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -29,18 +30,21 @@ public class OAuthCodeStore {
 
     private final CodigoCanjeOAuthRepository codigoCanjeOAuthRepository;
     private final UsuarioRepository usuarioRepository;
+    private final Clock clock;
 
     public OAuthCodeStore(
             CodigoCanjeOAuthRepository codigoCanjeOAuthRepository,
-            UsuarioRepository usuarioRepository) {
+            UsuarioRepository usuarioRepository,
+            Clock clock) {
         this.codigoCanjeOAuthRepository = codigoCanjeOAuthRepository;
         this.usuarioRepository = usuarioRepository;
+        this.clock = clock;
     }
 
     @Transactional
     public String generarCodigo(Long usuarioId) {
         // Sin un job programado (habría que coordinarlo entre réplicas): cada alta barre lo que ya no sirve
-        codigoCanjeOAuthRepository.borrarUsadosOVencidos(Instant.now());
+        codigoCanjeOAuthRepository.borrarUsadosOVencidos(Instant.now(clock));
 
         String code = UUID.randomUUID().toString();
         String hash = sha256Hex(code);
@@ -50,7 +54,7 @@ public class OAuthCodeStore {
         CodigoCanjeOAuth entidad = new CodigoCanjeOAuth();
         entidad.setCodigoHash(hash);
         entidad.setUsuario(usuario);
-        entidad.setVenceEn(Instant.now().plus(CODE_TTL));
+        entidad.setVenceEn(Instant.now(clock).plus(CODE_TTL));
         entidad.setUsado(false);
 
         codigoCanjeOAuthRepository.save(entidad);
@@ -70,7 +74,7 @@ public class OAuthCodeStore {
         }
 
         CodigoCanjeOAuth entidad = opt.get();
-        if (entidad.isUsado() || entidad.getVenceEn().isBefore(Instant.now())) {
+        if (entidad.isUsado() || entidad.getVenceEn().isBefore(Instant.now(clock))) {
             return null;
         }
 

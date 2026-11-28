@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.control.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -47,6 +48,7 @@ public class AlertaFraudeAdminService {
     private final AlertaFraudeRepository alertaFraudeRepository;
     private final UsuarioRepository usuarioRepository;
     private final AuditoriaService auditoriaService;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public Page<AlertaFraudeDetalle> listar(
@@ -97,7 +99,7 @@ public class AlertaFraudeAdminService {
         alerta.setEstado(EstadoAlertaFraude.REVISADA);
         alerta.setNota(nota);
         alerta.setRevisadaPor(revisor);
-        alerta.setRevisadaEn(Instant.now());
+        alerta.setRevisadaEn(Instant.now(clock));
         alerta = alertaFraudeRepository.saveAndFlush(alerta);
 
         Map<String, Object> detalleAuditoria = new LinkedHashMap<>();

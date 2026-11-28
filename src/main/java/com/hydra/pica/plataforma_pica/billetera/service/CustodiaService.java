@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -46,6 +47,7 @@ public class CustodiaService {
     private final TorneoRepository torneoRepository;
     private final RifaRepository rifaRepository;
     private final AuditoriaService auditoriaService;
+    private final Clock clock;
 
     // --- ingreso ------------------------------------------------------------------------------------
 
@@ -104,7 +106,7 @@ public class CustodiaService {
     @Transactional
     public LiberacionCustodia liberarRifa(Long rifaId) {
         Rifa rifa = rifaRepository.findByIdAndEliminadoEnIsNull(rifaId).orElseThrow(() -> rifaNoEncontrada(rifaId));
-        EstadoCustodia destino = destino(rifa, Instant.now());
+        EstadoCustodia destino = destino(rifa, Instant.now(clock));
         return liberar(custodiaRepository.findParaLiberarPorRifaId(rifaId), destino);
     }
 
@@ -121,7 +123,7 @@ public class CustodiaService {
         Totales totales = totales(custodia.getId());
         Long custodiaId = custodia.getId();
         custodia.setEstado(destino);
-        custodia.setLiberadaEn(Instant.now());
+        custodia.setLiberadaEn(Instant.now(clock));
         custodiaRepository.saveAndFlush(custodia);
         custodiaRepository.descontarDelRetenido(custodiaId);
 
@@ -153,7 +155,7 @@ public class CustodiaService {
     @Transactional(readOnly = true)
     public CustodiaResumen resumenDeLaRifa(Long usuarioId, Long rifaId) {
         Rifa rifa = rifaDelOrganizador(usuarioId, rifaId);
-        return resumen(custodiaRepository.findByRifaId(rifaId), terminada(rifa, Instant.now()));
+        return resumen(custodiaRepository.findByRifaId(rifaId), terminada(rifa, Instant.now(clock)));
     }
 
     /**
@@ -171,7 +173,7 @@ public class CustodiaService {
     @Transactional(readOnly = true)
     public void retirarDeLaRifa(Long usuarioId, Long rifaId) {
         Rifa rifa = rifaDelOrganizador(usuarioId, rifaId);
-        destino(rifa, Instant.now());
+        destino(rifa, Instant.now(clock));
         throw sinRetiroDirecto(custodiaRepository.findByRifaId(rifaId), "de la rifa");
     }
 

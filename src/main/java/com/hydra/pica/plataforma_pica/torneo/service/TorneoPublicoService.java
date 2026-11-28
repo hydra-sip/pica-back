@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +50,7 @@ public class TorneoPublicoService {
     private final GastoRepository gastoRepository;
     private final CustodiaRepository custodiaRepository;
     private final BloqueoService bloqueoService;
+    private final Clock clock;
 
     public TorneoPublicoService(
             TorneoRepository torneoRepository,
@@ -56,13 +58,15 @@ public class TorneoPublicoService {
             PremioRepository premioRepository,
             GastoRepository gastoRepository,
             CustodiaRepository custodiaRepository,
-            BloqueoService bloqueoService) {
+            BloqueoService bloqueoService,
+            Clock clock) {
         this.torneoRepository = torneoRepository;
         this.inscripcionRepository = inscripcionRepository;
         this.premioRepository = premioRepository;
         this.gastoRepository = gastoRepository;
         this.custodiaRepository = custodiaRepository;
         this.bloqueoService = bloqueoService;
+        this.clock = clock;
     }
 
     public Page<TorneoResumen> listarPublicos(
@@ -73,7 +77,7 @@ public class TorneoPublicoService {
                 .and(TorneoSpecifications.conDisciplina(disciplina))
                 .and(TorneoSpecifications.conModalidad(modalidad))
                 .and(TorneoSpecifications.conEstado(estado))
-                .and(TorneoSpecifications.proximosPrimero());
+                .and(TorneoSpecifications.proximosPrimero(Instant.now(clock)));
 
         Page<Torneo> pagina = torneoRepository.findAll(spec, pageable);
         if (pagina.isEmpty()) {
@@ -88,7 +92,7 @@ public class TorneoPublicoService {
         Specification<Torneo> spec = Specification.where(TorneoSpecifications.noEliminado())
                 .and(TorneoSpecifications.conOrganizador(organizadorId))
                 .and(TorneoSpecifications.vigente())
-                .and(TorneoSpecifications.proximosPrimero());
+                .and(TorneoSpecifications.proximosPrimero(Instant.now(clock)));
         List<Torneo> torneos = torneoRepository.findAll(spec, PageRequest.of(0, 20)).getContent();
         return torneos.isEmpty() ? List.of() : resumenesDe(torneos);
     }

@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.notificacion.aviso;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -36,23 +37,25 @@ public class AvisoCheckinAbierto {
     private final TransactionTemplate transaccion;
     private final Duration reciente;
     private final boolean activo;
+    private final Clock clock;
 
     AvisoCheckinAbierto(PartidoRepository partidoRepository, JuegaRepository juegaRepository, AvisosDePartido avisos,
                         TransactionTemplate transaccion,
                         @Value("${app.partidos.revision-plazos:30s}") Duration revision,
-                        @Value("${app.notificaciones.aviso-checkin:true}") boolean activo) {
+                        @Value("${app.notificaciones.aviso-checkin:true}") boolean activo, Clock clock) {
         this.partidoRepository = partidoRepository;
         this.juegaRepository = juegaRepository;
         this.avisos = avisos;
         this.transaccion = transaccion;
         this.reciente = revision.compareTo(RECIENTE) > 0 ? revision : RECIENTE;
         this.activo = activo;
+        this.clock = clock;
     }
 
     @Scheduled(fixedDelayString = "${app.partidos.revision-plazos:30s}")
     void programada() {
         if (activo) {
-            notificarAbiertas(Instant.now());
+            notificarAbiertas(Instant.now(clock));
         }
     }
 

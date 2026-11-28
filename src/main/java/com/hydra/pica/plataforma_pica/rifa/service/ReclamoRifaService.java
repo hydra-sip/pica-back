@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -46,6 +47,7 @@ public class ReclamoRifaService {
     private final ReclamoRifaRepository reclamoRifaRepository;
     private final UsuarioRepository usuarioRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     /** Hasta cuándo se puede reclamar: 48 h desde que se sorteó de verdad o, si falta, desde la fecha programada. */
     public static Instant plazoReclamo(Rifa rifa) {
@@ -95,7 +97,7 @@ public class ReclamoRifaService {
                     "La rifa " + rifaId + " no registra fecha de finalización");
         }
 
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         if (ahora.isAfter(plazoLimite)) {
             throw new ConflictoException(CodigoError.PLAZO_RECLAMO_VENCIDO,
                     "Venció el plazo de 48 horas para reclamar el resultado de la rifa " + rifaId);

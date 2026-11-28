@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.inscripcion.service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -80,6 +81,7 @@ public class InscripcionService {
     private final NominaRepository nominaRepository;
     private final AuditoriaRepository auditoriaRepository;
     private final InscripcionComun comun;
+    private final Clock clock;
 
     /**
      * Crea el borrador. En un torneo individual se inscribe el usuario y no lleva cuerpo; en uno por equipos
@@ -430,7 +432,7 @@ public class InscripcionService {
         }
         comun.validarCupo(torneo);
         inscripcion.setEstado(gratis ? EstadoInscripcion.CONFIRMADA : EstadoInscripcion.PENDIENTE_PAGO);
-        inscripcion.setReglamentoAceptadoEn(Instant.now());
+        inscripcion.setReglamentoAceptadoEn(Instant.now(clock));
         Inscripcion guardada;
         try {
             guardada = inscripcionRepository.saveAndFlush(inscripcion);

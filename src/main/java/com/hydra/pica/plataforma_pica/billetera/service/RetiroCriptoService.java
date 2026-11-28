@@ -2,6 +2,7 @@ package com.hydra.pica.plataforma_pica.billetera.service;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
@@ -68,6 +69,7 @@ public class RetiroCriptoService {
     private final RetirosCriptoProperties retiros;
     private final TransactionTemplate enTransaccion;
     private final AuditoriaService auditoriaService;
+    private final Clock clock;
 
     @Transactional
     public RetiroCripto solicitar(Long usuarioId, BigDecimal monto, String destino) {
@@ -89,7 +91,7 @@ public class RetiroCriptoService {
         retiro.setMontoPesos(montoEscalado);
         retiro.setMontoWei(cripto.weiPara(montoEscalado));
         // el contrato compara contra block.timestamp, en segundos
-        retiro.setVenceEn(Instant.now().plus(retiros.vigencia()).truncatedTo(ChronoUnit.SECONDS));
+        retiro.setVenceEn(Instant.now(clock).plus(retiros.vigencia()).truncatedTo(ChronoUnit.SECONDS));
         retiro.setFirma(firmante.firmar(referencia, wallet, retiro.getMontoWei(), retiro.getVenceEn().getEpochSecond()));
         retiro.setMovimiento(movimiento);
         return retiroCriptoRepository.save(retiro);

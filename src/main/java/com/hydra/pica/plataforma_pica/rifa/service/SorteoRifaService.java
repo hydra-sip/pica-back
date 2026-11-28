@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -57,6 +58,7 @@ public class SorteoRifaService {
     private final RifaService rifaService;
     private final ApplicationEventPublisher eventos;
     private final CancelacionRifaSinVentas cancelacion;
+    private final Clock clock;
 
     @Transactional
     public RifaDetalle sortear(Long organizadorId, Long id) {
@@ -67,7 +69,7 @@ public class SorteoRifaService {
             throw new ConflictoException(CodigoError.RIFA_NO_EDITABLE,
                     "La rifa " + id + " está " + rifa.getEstado() + ": solo se sortea una CERRADA");
         }
-        if (Instant.now().isBefore(rifa.getSorteadaEn())) {
+        if (Instant.now(clock).isBefore(rifa.getSorteadaEn())) {
             throw new ConflictoException(CodigoError.SORTEO_ANTICIPADO,
                     "La rifa " + id + " se sortea desde la fecha comprometida: " + rifa.getSorteadaEn());
         }

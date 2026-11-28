@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.rifa.repository.RifaRepository;
@@ -21,6 +22,7 @@ public class SorteoAutomaticoRifa {
 
     private final SorteoRifaService sorteoRifaService;
     private final RifaRepository rifaRepository;
+    private final Clock clock;
 
     @Value("${app.rifas.sorteo-automatico:true}")
     private boolean activo = true;
@@ -34,7 +36,7 @@ public class SorteoAutomaticoRifa {
 
     /** @return cuántas sorteó */
     public int sortearLasQueLlegaron() {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         int sorteadas = 0;
         for (Long id : rifaRepository.paraSortear(ahora)) {
             try {

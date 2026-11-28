@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -59,6 +60,7 @@ public class UsuarioService {
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventos;
     private final BilleteraRepository billeteraRepository;
+    private final Clock clock;
 
     @Transactional
     public Usuario crear(NuevoUsuario nuevo) {
@@ -98,7 +100,7 @@ public class UsuarioService {
         String asignadoPor = currentUserProvider.getCurrentUserId().map(String::valueOf).orElse(AuditConstants.SISTEMA);
         for (Rol rol : roles) {
             UsuarioRol asignacion = new UsuarioRol(usuario, rol);
-            asignacion.setAsignadoEn(Instant.now());
+            asignacion.setAsignadoEn(Instant.now(clock));
             asignacion.setAsignadoPor(asignadoPor);
             usuario.getRoles().add(usuarioRolRepository.save(asignacion));
         }

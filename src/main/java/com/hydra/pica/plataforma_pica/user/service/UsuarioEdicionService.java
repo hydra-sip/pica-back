@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.common.config.AdminConfig.AdminProperties;
@@ -53,6 +54,7 @@ public class UsuarioEdicionService {
     private final ApplicationEventPublisher eventos;
     private final CurrentUserProvider currentUserProvider;
     private final BloqueoService bloqueoService;
+    private final Clock clock;
 
     /**
      * Reemplaza username, email, descripción y persona. El estado se manda igual que está: bloquear y desbloquear
@@ -168,7 +170,7 @@ public class UsuarioEdicionService {
             return;
         }
 
-        usuario.setEliminadoEn(Instant.now());
+        usuario.setEliminadoEn(Instant.now(clock));
         usuarioRepository.saveAndFlush(usuario);
         eventos.publishEvent(new SesionesDeUsuarioInvalidadas(usuario.getId()));
     }

@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.inscripcion.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,13 +44,14 @@ public class CierreInscripcion {
     private final UsuarioRepository usuarioRepository;
     private final TorneoRepository torneoRepository;
     private final Drand drand;
+    private final Clock clock;
 
     /** @param actorId el organizador que cierra a mano; null si se cierra sola, por cupo o por fecha */
     public void cerrar(Torneo torneo, MotivoCierre motivo, Long actorId) {
         torneo.setEstado(EstadoTorneo.INSCRIPCION_CERRADA);
         int canceladas = cancelarLasQueQuedanEnCurso(torneo);
         torneo.setListaHash(SelloTorneo.lista(lineas(torneo)));
-        torneo.setListaSelladaEn(Instant.now());
+        torneo.setListaSelladaEn(Instant.now(clock));
         if (torneo.getFormato() == Formato.GRUPOS_Y_ELIMINACION) {
             comprometerSorteoDeGrupos(torneo);
         }
@@ -63,7 +65,7 @@ public class CierreInscripcion {
      * plataforma) elige la semilla.
      */
     private void comprometerSorteoDeGrupos(Torneo torneo) {
-        long ronda = drand.ronda(Instant.now()) + 1;
+        long ronda = drand.ronda(Instant.now(clock)) + 1;
         torneo.setSemillaRonda(ronda);
         torneo.setCompromisoHash(SorteoGrupos.compromiso(torneo.getListaHash(), ronda));
     }

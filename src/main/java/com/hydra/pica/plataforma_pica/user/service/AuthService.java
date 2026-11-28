@@ -3,6 +3,7 @@ package com.hydra.pica.plataforma_pica.user.service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
@@ -46,6 +47,7 @@ public class AuthService {
     private final SesionProperties sesion;
     private final BloqueoService bloqueoService;
     private final IntentosLogin intentosLogin;
+    private final Clock clock;
 
     @Transactional
     public Usuario procesarLoginGoogle(
@@ -94,7 +96,7 @@ public class AuthService {
                         "El usuario asociado al código no existe"));
 
         validarEstado(usuario);
-        return emitirPar(usuario, userAgent, Instant.now());
+        return emitirPar(usuario, userAgent, Instant.now(clock));
     }
 
     @Transactional
@@ -119,7 +121,7 @@ public class AuthService {
 
         validarEstado(usuario);
         intentosLogin.registrarLogin(request.identificador(), usuario, ip);
-        return emitirPar(usuario, userAgent, Instant.now());
+        return emitirPar(usuario, userAgent, Instant.now(clock));
     }
 
     // noRollbackFor: al detectar un refresh reutilizado se revoca la familia y además se responde 401;
@@ -137,12 +139,12 @@ public class AuthService {
                     "El refresh token ya fue utilizado y la sesión fue invalidada");
         }
         // cerrado por logout, por una baja/bloqueo/cambio de clave o de roles, o vencido por inactividad
-        if (actual.getRevocadoEn() != null || !actual.getExpiraEn().isAfter(Instant.now())) {
+        if (actual.getRevocadoEn() != null || !actual.getExpiraEn().isAfter(Instant.now(clock))) {
             throw refreshInvalido();
         }
         // la sesión llegó a su máximo absoluto desde el login, aunque se haya usado todo el tiempo
         Instant inicioSesion = inicioDeSesion(actual);
-        if (!inicioSesion.plus(sesion.sesionMaxima()).isAfter(Instant.now())) {
+        if (!inicioSesion.plus(sesion.sesionMaxima()).isAfter(Instant.now(clock))) {
             throw refreshInvalido();
         }
         // dado de baja, bloqueado o con el mail cambiado sin verificar no renueva aunque el token siga vivo
@@ -151,7 +153,7 @@ public class AuthService {
         }
 
         TokenPair par = emitirPar(actual.getUsuario(), userAgent, inicioSesion);
-        actual.setRevocadoEn(Instant.now());
+        actual.setRevocadoEn(Instant.now(clock));
         actual.setReemplazadoPor(hash(par.refreshToken()));
         refreshTokenRepository.save(actual);
         return par;
@@ -164,7 +166,7 @@ public class AuthService {
         }
         refreshTokenRepository.findByTokenHash(hash(refreshToken)).ifPresent(token -> {
             if (token.getRevocadoEn() == null) {
-                token.setRevocadoEn(Instant.now());
+                token.setRevocadoEn(Instant.now(clock));
                 refreshTokenRepository.save(token);
             }
         });
@@ -190,7 +192,7 @@ public class AuthService {
     // Revocar los refresh corta la renovación; subir la versión corta los access ya emitidos,
     // que si no seguirían andando hasta 15 minutos (CE2-2)
     private void cerrarSesiones(Long usuarioId) {
-        refreshTokenRepository.revocarActivosPorUsuario(usuarioId, Instant.now());
+        refreshTokenRepository.revocarActivosPorUsuario(usuarioId, Instant.now(clock));
         usuarioRepository.incrementarVersionSesion(usuarioId);
     }
 
@@ -217,11 +219,11 @@ public class AuthService {
     }
 
     // Tokens anteriores a V8 traen la columna completada con su creado_en; null solo llega de un token armado a mano
-    private static Instant inicioDeSesion(RefreshToken token) {
+    private Instant inicioDeSesion(RefreshToken token) {
         if (token.getSesionIniciadaEn() != null) {
             return token.getSesionIniciadaEn();
         }
-        return token.getCreadoEn() != null ? token.getCreadoEn() : Instant.now();
+        return token.getCreadoEn() != null ? token.getCreadoEn() : Instant.now(clock);
     }
 
     /**
@@ -243,7 +245,7 @@ public class AuthService {
         String accessToken = jwtService.generarAccessToken(
                 usuario.getId(), usuario.getUsername(), roles, permisos, usuario.getVersionSesion());
         String refreshToken = UUID.randomUUID().toString();
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         Instant porInactividad = ahora.plus(sesion.refreshTtl());
         Instant porMaximo = inicioSesion.plus(sesion.sesionMaxima());
         RefreshToken entidad = new RefreshToken();

@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.common.config.PartidoConfig.PartidoProperties;
@@ -24,6 +25,7 @@ public class AusenciaAutomatica {
     private final AusenciaService ausenciaService;
     private final PartidoRepository partidoRepository;
     private final PartidoProperties partidoProperties;
+    private final Clock clock;
 
     @Value("${app.partidos.ausencia-automatica:true}")
     private boolean activa = true;
@@ -37,7 +39,7 @@ public class AusenciaAutomatica {
 
     /** @return cuántos partidos resolvió */
     public int declararVencidas() {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         int resueltos = 0;
         for (Long id : partidoRepository.conVentanaVencida(ahora.minus(partidoProperties.toleranciaCheckin()))) {
             try {

@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.billetera.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -35,13 +36,14 @@ public class ConciliacionService {
     private final CargaCriptoRepository cargaCriptoRepository;
     private final EventosDelContrato eventosDelContrato;
     private final CriptoProperties cripto;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public ConciliacionCargas conciliar() {
         List<Evento> eventos = eventosDelContrato.cargasRegistradas();
         List<CargaCripto> cargas = cargaCriptoRepository.todasConUsuarioYMovimiento();
         List<Registro> registros = conciliar(cargas, eventos);
-        return new ConciliacionCargas(Instant.now(), cripto.bloqueDeploy(), eventos.size(),
+        return new ConciliacionCargas(Instant.now(clock), cripto.bloqueDeploy(), eventos.size(),
                 (int) cargas.stream().filter(c -> c.getEstado() == EstadoCargaCripto.ACREDITADA).count(),
                 cuantas(registros, Estado.CONCILIADA), cuantas(registros, Estado.HUERFANA),
                 cuantas(registros, Estado.NO_ACREDITADA), cuantas(registros, Estado.MONTO_DISTINTO), registros);

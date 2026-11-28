@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
 
@@ -38,6 +39,7 @@ public class PersonaAdminService {
 
     private final PersonaRepository personaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public Page<PersonaResumen> listar(String q, EstadoGeneral estado, boolean incluirEliminados, Pageable pageable) {
@@ -95,7 +97,7 @@ public class PersonaAdminService {
                     "La persona " + id + " tiene un usuario activo: primero hay que darlo de baja");
         }
 
-        persona.setEliminadoEn(Instant.now());
+        persona.setEliminadoEn(Instant.now(clock));
         personaRepository.saveAndFlush(persona);
     }
 

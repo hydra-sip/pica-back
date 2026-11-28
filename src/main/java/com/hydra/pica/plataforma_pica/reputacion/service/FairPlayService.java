@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.reputacion.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.HashMap;
@@ -50,6 +51,7 @@ public class FairPlayService {
     private final SancionRepository sancionRepository;
     private final UsuarioRepository usuarioRepository;
     private final InscripcionRepository inscripcionRepository;
+    private final Clock clock;
 
     /** El índice y su historial. 404 USUARIO_NO_ENCONTRADO si no existe. */
     @Transactional(readOnly = true)
@@ -107,7 +109,7 @@ public class FairPlayService {
             case AUSENCIA -> Math.max(0, anterior - parametros.puntos(ClaveParametro.FAIR_PLAY_AUSENCIA));
             case SANCION -> Math.max(0, anterior - parametros.puntos(resta(gravedad)));
         };
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         indice.setValor(nuevo);
         indice.setActualizadoEn(ahora);
 

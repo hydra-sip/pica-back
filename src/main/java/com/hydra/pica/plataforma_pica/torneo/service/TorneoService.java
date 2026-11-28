@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -78,6 +79,7 @@ public class TorneoService {
     private final ParametrosPlataforma parametrosPlataforma;
     private final AuditingHandler auditingHandler;
     private final AuditoriaRepository auditoriaRepository;
+    private final Clock clock;
 
     /** {@code sede} es opcional: con ella vienen también las canchas que ya existen ahí. */
     @Transactional(readOnly = true)
@@ -354,7 +356,7 @@ public class TorneoService {
     /** Con {@code app.torneos.sin-validar-fechas} (PICA-448) pueden ser pasadas; el orden se exige igual. */
     private void validarFechas(InformacionTorneoRequest request, Collection<String> cambiados,
             List<ErrorCampo> errores) {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         boolean futuras = !torneoProperties.sinValidarFechas();
         Instant inicio = request.fechaInicio();
         if (futuras && inicio != null && cambiados.contains("fechaInicio") && !inicio.isAfter(ahora)) {

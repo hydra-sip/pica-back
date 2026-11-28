@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import com.hydra.pica.plataforma_pica.torneo.repository.ReprogramacionRepository;
@@ -23,6 +24,7 @@ public class VencimientoReprogramacion {
 
     private final ReprogramacionTorneoService reprogramacionTorneoService;
     private final ReprogramacionRepository reprogramacionRepository;
+    private final Clock clock;
 
     @Value("${app.torneos.cierre-automatico:true}")
     private boolean activo = true;
@@ -41,7 +43,7 @@ public class VencimientoReprogramacion {
      * @return cuántos mandó
      */
     public int recordar() {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         int recordados = 0;
         for (Long torneoId : reprogramacionRepository.torneosParaRecordar(ahora,
                 ahora.plus(ReprogramacionTorneoService.RECORDATORIO))) {
@@ -58,7 +60,7 @@ public class VencimientoReprogramacion {
 
     /** @return cuántas resolvió */
     public int resolverVencidas() {
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         int resueltas = 0;
         for (Long torneoId : reprogramacionRepository.torneosConPlazoVencido(ahora)) {
             try {

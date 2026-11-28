@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -66,6 +67,7 @@ public class PronosticoService {
     private final PronosticoRepository pronosticoRepository;
     private final UsuarioRepository usuarioRepository;
     private final TorneoRepository torneoRepository;
+    private final Clock clock;
 
 
     /**
@@ -83,7 +85,7 @@ public class PronosticoService {
                         .collect(Collectors.toMap(p -> p.getId().getPartidoId(), p -> p))
                 : Map.of();
 
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         List<PartidoPronostico> resultado = new ArrayList<>();
 
         Map<Long, Integer> rondasPorTorneo = partidosList.stream()
@@ -295,7 +297,7 @@ public class PronosticoService {
     /**
      * Valida que la ventana para pronosticar esté abierta; si no, lanza 409 PRONOSTICO_FUERA_DE_VENTANA.
      */
-    private static void validarVentanaPronostico(Partido partido, List<Juega> lados) {
+    private void validarVentanaPronostico(Partido partido, List<Juega> lados) {
         EstadoTorneo torneoEstado = partido.getTorneo().getEstado();
         if (torneoEstado == EstadoTorneo.BORRADOR || torneoEstado == EstadoTorneo.CANCELADO
                 || torneoEstado == EstadoTorneo.CANCELACION_EN_REVISION) {
@@ -311,7 +313,7 @@ public class PronosticoService {
             throw new ConflictoException(CodigoError.PRONOSTICO_FUERA_DE_VENTANA,
                     "El partido " + partido.getId() + " aún no tiene ambos rivales definidos");
         }
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         if (partido.getFechaProgramada() != null && ahora.isAfter(partido.getFechaProgramada())) {
             throw new ConflictoException(CodigoError.PRONOSTICO_FUERA_DE_VENTANA,
                     "La ventana de pronósticos cerró el " + partido.getFechaProgramada());

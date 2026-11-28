@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.partido.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -36,6 +37,7 @@ public class ProgramacionService {
     private final ResultadoService resultadoService;
     private final TorneoProperties torneoProperties;
     private final TorneoRepository torneoRepository;
+    private final Clock clock;
 
     @Transactional
     public PartidoDetalle programar(Long usuarioId, Long partidoId, Instant fechaProgramada) {
@@ -65,13 +67,13 @@ public class ProgramacionService {
      * Futura y dentro de las fechas del torneo; sin fecha no se programa (no se desprograma). Con
      * {@code app.torneos.sin-validar-fechas} (PICA-448), cualquier fecha.
      */
-    private static void validar(Instant fecha, Torneo torneo, boolean sinValidarFechas) {
+    private void validar(Instant fecha, Torneo torneo, boolean sinValidarFechas) {
         List<ErrorCampo> errores = new ArrayList<>();
         if (fecha == null) {
             errores.add(new ErrorCampo(CAMPO, ErrorCampo.Codigo.REQUERIDO, "Falta la fecha del partido"));
         } else if (sinValidarFechas) {
             return;
-        } else if (fecha.isBefore(Instant.now())) {
+        } else if (fecha.isBefore(Instant.now(clock))) {
             errores.add(new ErrorCampo(CAMPO, ErrorCampo.Codigo.RANGO_INVALIDO, "No puede ser pasada"));
         } else if (torneo.getFechaInicio() != null && fecha.isBefore(torneo.getFechaInicio())) {
             errores.add(new ErrorCampo(CAMPO, ErrorCampo.Codigo.RANGO_INVALIDO,

@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -37,15 +38,18 @@ public class VerificacionEmailService {
     private final UsuarioRepository usuarioRepository;
     private final EmailService emailService;
     private final String baseUrl;
+    private final Clock clock;
 
     public VerificacionEmailService(UsuarioRepository usuarioRepository,
                                     EmailService emailService,
                                     @org.springframework.beans.factory.annotation.Value(
                                             "${app.auth.verification-base-url:http://localhost:8080/api/v1/auth/verificar}")
-                                    String baseUrl) {
+                                    String baseUrl,
+                                    Clock clock) {
         this.usuarioRepository = usuarioRepository;
         this.emailService = emailService;
         this.baseUrl = baseUrl;
+        this.clock = clock;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -85,7 +89,7 @@ public class VerificacionEmailService {
             throw error(CodigoError.TOKEN_USADO, "El token ya fue utilizado");
         }
 
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         if (usuario.getTokenVerificacionExpiraEn() == null
                 || usuario.getTokenVerificacionExpiraEn().isBefore(ahora)) {
             throw error(CodigoError.TOKEN_EXPIRADO, "El token expiró");
@@ -129,7 +133,7 @@ public class VerificacionEmailService {
     private String emitirToken(Usuario usuario) {
         String token = UUID.randomUUID().toString();
         usuario.setTokenVerificacionHash(hash(token));
-        usuario.setTokenVerificacionExpiraEn(Instant.now().plus(DURACION_TOKEN));
+        usuario.setTokenVerificacionExpiraEn(Instant.now(clock).plus(DURACION_TOKEN));
         usuarioRepository.saveAndFlush(usuario);
         return baseUrl + "?token=" + token;
     }

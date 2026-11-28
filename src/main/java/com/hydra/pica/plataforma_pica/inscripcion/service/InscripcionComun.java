@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.inscripcion.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -53,6 +54,7 @@ class InscripcionComun {
     private final CierreInscripcion cierreInscripcion;
     private final BloqueoService bloqueoService;
     private final ReprogramacionRepository reprogramacionRepository;
+    private final Clock clock;
 
     Inscripcion buscar(Long id) {
         return inscripcionRepository.findById(id).orElseThrow(() -> noEncontrada(id));
@@ -90,7 +92,7 @@ class InscripcionComun {
         if (torneo.getEliminadoEn() != null) {
             throw new NoEncontradoException(CodigoError.TORNEO_NO_ENCONTRADO, "No existe el torneo " + torneo.getId());
         }
-        if (torneo.getEstado() != EstadoTorneo.INSCRIPCION_ABIERTA || !torneo.getCierreInscripcionEn().isAfter(Instant.now())) {
+        if (torneo.getEstado() != EstadoTorneo.INSCRIPCION_ABIERTA || !torneo.getCierreInscripcionEn().isAfter(Instant.now(clock))) {
             throw new ConflictoException(CodigoError.INSCRIPCION_NO_ABIERTA,
                     "El torneo " + torneo.getId() + " no tiene la inscripción abierta");
         }

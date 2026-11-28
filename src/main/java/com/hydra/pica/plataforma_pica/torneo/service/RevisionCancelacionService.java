@@ -1,6 +1,7 @@
 package com.hydra.pica.plataforma_pica.torneo.service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -61,6 +62,7 @@ public class RevisionCancelacionService {
     private final AlmacenArchivos almacen;
     private final ApplicationEventPublisher eventos;
     private final AuditoriaService auditoriaService;
+    private final Clock clock;
 
     /** Las cancelaciones en revisión, de la más vieja a la más nueva; el orden no se elige desde afuera. */
     @Transactional(readOnly = true)
@@ -157,7 +159,7 @@ public class RevisionCancelacionService {
 
     private void resolver(Cancelacion cancelacion, Long revisorId) {
         cancelacion.setRevisor(usuarioRepository.getReferenceById(revisorId));
-        cancelacion.setRevisadaEn(Instant.now());
+        cancelacion.setRevisadaEn(Instant.now(clock));
         cancelacionRepository.saveAndFlush(cancelacion);
     }
 

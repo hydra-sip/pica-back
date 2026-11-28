@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -56,6 +57,7 @@ public class RifaPublicaService {
     private final RifaProperties rifaProperties;
     private final Drand drand;
     private final BloqueoService bloqueoService;
+    private final Clock clock;
 
     /**
      * En venta y con la venta sin terminar, también las que todavía no empezaron. Primero las que cierran antes; el
@@ -65,7 +67,7 @@ public class RifaPublicaService {
     public Page<RifaPublicaResumen> listarEnVenta(Pageable pageable) {
         Pageable porCierre = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
                 Sort.by("ventaHasta", "id"));
-        return rifaRepository.findByEstadoAndVentaHastaAfterAndEliminadoEnIsNull(EstadoRifa.EN_VENTA, Instant.now(),
+        return rifaRepository.findByEstadoAndVentaHastaAfterAndEliminadoEnIsNull(EstadoRifa.EN_VENTA, Instant.now(clock),
                 porCierre).map(RifaPublicaResumen::de);
     }
 
@@ -81,7 +83,7 @@ public class RifaPublicaService {
     @Transactional(readOnly = true)
     public List<NumeroOcupado> numerosOcupados(Long id) {
         Rifa rifa = buscarPublica(id);
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         return numeroRepository.findByIdRifaIdOrderByIdNumero(rifa.getId()).stream()
                 .filter(n -> !n.reservaVencida(ahora, rifaProperties.duracionReserva()))
                 .map(NumeroOcupado::de)

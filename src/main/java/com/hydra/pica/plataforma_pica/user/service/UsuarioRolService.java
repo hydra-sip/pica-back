@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.user.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -56,6 +57,7 @@ public class UsuarioRolService {
     private final AuditingHandler auditingHandler;
     private final ApplicationEventPublisher eventos;
     private final EntityManager entityManager;
+    private final Clock clock;
 
     /**
      * Deja al usuario con exactamente estos roles. Quitar uno es darlo de baja en usuario_rol, no
@@ -100,7 +102,7 @@ public class UsuarioRolService {
         }
 
         String actor = currentUserProvider.getCurrentUserId().map(String::valueOf).orElse(AuditConstants.SISTEMA);
-        Instant ahora = Instant.now();
+        Instant ahora = Instant.now(clock);
         for (UsuarioRol asignacion : quitados) {
             asignacion.setEliminadoEn(ahora);
             asignacion.setEliminadoPor(actor);

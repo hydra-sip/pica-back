@@ -1,5 +1,6 @@
 package com.hydra.pica.plataforma_pica.rifa.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
@@ -57,6 +58,7 @@ public class CierreVentaService {
     private final ApplicationEventPublisher eventos;
     private final Drand drand;
     private final CancelacionRifaSinVentas cancelacion;
+    private final Clock clock;
 
     @Value("${app.rifas.sorteo-anticipado:false}")
     private boolean anticipado;
@@ -77,7 +79,7 @@ public class CierreVentaService {
         if (cancelacion.sinVentas(rifa)) {
             throw CancelacionRifaSinVentas.error(id);
         }
-        sellar(rifa, MotivoCierre.MANUAL, organizadorId, Instant.now());
+        sellar(rifa, MotivoCierre.MANUAL, organizadorId, Instant.now(clock));
         return rifaService.detalle(organizadorId, id);
     }
 
